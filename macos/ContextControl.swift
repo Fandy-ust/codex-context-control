@@ -166,6 +166,52 @@ private struct ApplyButtonStyle:ButtonStyle {
 
 private enum BudgetThumb {case compact,window}
 
+/// Integrate motion locally so changing the budget changes speed without
+/// teleporting particles. Additional short streams make the right side denser.
+private struct BudgetFlowParticles:View {
+    let intensity:Double
+    let paused:Bool
+    let reducedMotion:Bool
+    @State private var phase=0.0
+    @State private var speed=0.055
+    var body:some View {
+        Canvas {context,size in
+                guard !reducedMotion else{return}
+                let level=max(0,min(1,intensity))
+                let population=max(2,min(40,size.width/38*(0.55+1.5*level)))
+                for index in 0..<40 {
+                    let visibility=max(0,min(1,population-Double(index)))
+                    guard visibility>0 else{continue}
+                    let seed=(Double(index)*0.61803398875).truncatingRemainder(dividingBy:1)
+                    let start=[0.0,0.25,0.50,0.70][index%4]
+                    let progress=(phase*(0.85+seed*0.3)/(1-start)+seed).truncatingRemainder(dividingBy:1)
+                    let accelerated=(exp(progress*1.25)-1)/(exp(1.25)-1)
+                    let x=(start+(1-start)*accelerated)*size.width
+                    let lane=(Double((index*7)%13)/12-0.5)*size.height*0.58
+                    let y=size.height/2+lane+sin(progress*Double.pi*2+seed*6)*1.5
+                    let diameter=1.4+seed*1.6
+                    let fade=pow(max(0,sin(progress*Double.pi)),0.65)
+                    let opacity=visibility*fade*(0.24+0.32*level)
+                    context.fill(Path(ellipseIn:CGRect(x:x-diameter/2,y:y-diameter/2,width:diameter,height:diameter)),with:.color(.white.opacity(opacity)))
+                }
+            }
+        .onChange(of:intensity,initial:true){_,level in speed=0.055+0.18*max(0,min(1,level))}
+        .task(id:paused){
+            guard !paused else{return}
+            var previousTime=Date.timeIntervalSinceReferenceDate
+            while !Task.isCancelled {
+                do{try await Task.sleep(for:.seconds(1.0/30))}catch{return}
+                guard !Task.isCancelled else{return}
+                let time=Date.timeIntervalSinceReferenceDate
+                phase+=max(0,min(0.1,time-previousTime))*speed
+                previousTime=time
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+
 /// Both handles share the model-capacity scale. The selected handle stays fixed
 /// during a gesture even when moving the window also moves the linked threshold.
 private struct BudgetRangeSlider:View {
@@ -179,7 +225,7 @@ private struct BudgetRangeSlider:View {
     @FocusState private var focused:Bool
     @State private var active=NSApplication.shared.isActive
     @State private var dragging:BudgetThumb?
-    private let diameter:CGFloat=18
+    private let diameter:CGFloat=32
     var body:some View {
         GeometryReader {geometry in
             let travel=max(1,geometry.size.width-diameter)
@@ -191,21 +237,12 @@ private struct BudgetRangeSlider:View {
                     Rectangle().fill(PanelStyle.blue).frame(width:compactX)
                     Rectangle().fill(PanelStyle.headroom.opacity(0.8)).frame(width:max(0,windowX-compactX)).offset(x:compactX)
                     HStack {ForEach(0..<5){_ in Circle().fill(.white.opacity(0.18)).frame(width:3,height:3).frame(maxWidth:.infinity)}}.padding(.horizontal,diameter/2)
-                    TimelineView(.animation(minimumInterval:1.0/24,paused:reduceMotion || !active || !enabled)){timeline in
-                        Canvas {context,size in
-                            guard !reduceMotion else{return}
-                            let time=timeline.date.timeIntervalSinceReferenceDate
-                            for index in 0..<4 {
-                                let phase=(time/7+Double(index)*0.247).truncatingRemainder(dividingBy:1)
-                                let x=phase*max(1,compactX-8)+4
-                                let y=size.height/2+sin(phase*Double.pi*2+Double(index))*3
-                                context.fill(Path(ellipseIn:CGRect(x:x,y:y,width:2,height:2)),with:.color(.white.opacity(sin(phase*Double.pi)*0.45)))
-                            }
-                        }
-                    }.frame(width:compactX).allowsHitTesting(false)
+                    BudgetFlowParticles(intensity:compact/Double(max(1,maximumWindow)),paused:reduceMotion || !active || !enabled,reducedMotion:reduceMotion)
+                        .frame(width:compactX).clipped()
                 }.frame(height:26).clipShape(Capsule())
-                thumb(.compact,color:PanelStyle.blue).offset(x:compactX-diameter/2)
-                thumb(.window,color:.white).offset(x:windowX-diameter/2)
+                    .overlay(Capsule().strokeBorder(LinearGradient(colors:[.white.opacity(0.17),.white.opacity(0.035)],startPoint:.top,endPoint:.bottom),lineWidth:1).frame(height:26))
+                thumb(.compact).offset(x:compactX-diameter/2).zIndex(selection == .compact ? 2:1)
+                thumb(.window).offset(x:windowX-diameter/2).zIndex(selection == .window ? 2:1)
             }
             .frame(height:34).frame(maxHeight:.infinity).contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance:0).onChanged {event in
@@ -239,10 +276,13 @@ private struct BudgetRangeSlider:View {
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didResignActiveNotification)){_ in active=false}
         .onAppear{active=NSApplication.shared.isActive}.onDisappear{active=false}
     }
-    private func thumb(_ target:BudgetThumb,color:Color)->some View {
-        Circle().fill(color).overlay(Circle().strokeBorder(target == .compact ? .white.opacity(0.85):.black.opacity(0.12),lineWidth:1.5))
-            .frame(width:diameter,height:diameter).shadow(color:.black.opacity(0.25),radius:3,y:1)
-            .scaleEffect(dragging==target ? 1.15:1)
+    private func thumb(_ target:BudgetThumb)->some View {
+        Circle().fill(LinearGradient(colors:target == .compact ? [Color(red:0.43,green:0.63,blue:1),PanelStyle.blue]:[.white,Color(white:0.93)],startPoint:.topLeading,endPoint:.bottomTrailing))
+            .overlay(Circle().strokeBorder(LinearGradient(colors:[.white.opacity(0.95),.white.opacity(0.35),.black.opacity(0.18)],startPoint:.topLeading,endPoint:.bottomTrailing),lineWidth:1))
+            .overlay(Circle().strokeBorder(.white.opacity(target == .compact ? 0.35:0.65),lineWidth:0.75).padding(2))
+            .frame(width:diameter,height:diameter)
+            .shadow(color:.black.opacity(dragging==target ? 0.30:0.20),radius:dragging==target ? 6:4,y:2)
+            .scaleEffect(dragging==target ? 1.07:1)
     }
     private func adjust(_ delta:Double){
         if selection == .compact{compact=max(1,min(Double(maximumCompact),compact+delta))}
