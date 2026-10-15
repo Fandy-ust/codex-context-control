@@ -8,15 +8,23 @@ import {fileURLToPath} from 'node:url';
 test('install, reinstall and uninstall preserve unrelated hooks and never create trust',{skip:process.env.CONTEXT_CONTROL_TEST_INSTALL!=='1'||process.platform!=='darwin',timeout:120000},()=>{
   const temp=fs.mkdtempSync('/tmp/ctc-install-');const repo=fileURLToPath(new URL('../',import.meta.url));
   const home=path.join(temp,'codex');fs.mkdirSync(home);
+  // Installation checks need an application layout, not a real model runtime or installed Codex.
+  const contents=path.join(temp,'Fixture Codex.app/Contents');
+  const binary=path.join(contents,'Resources/codex-cli/bin/codex');
+  fs.mkdirSync(path.dirname(binary),{recursive:true});fs.mkdirSync(path.join(contents,'MacOS'));
+  fs.writeFileSync(binary,'#!/bin/sh\nprintf "codex-cli 0.160.0\\n"\n',{mode:0o700});
+  fs.writeFileSync(path.join(contents,'MacOS/FixtureDesktop'),'#!/bin/sh\nexit 0\n',{mode:0o700});
+  fs.writeFileSync(path.join(contents,'Info.plist'),'<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>FixtureDesktop</string><key>CFBundleIdentifier</key><string>io.github.codex-context-control.fixture-desktop</string></dict></plist>');
   const existing={description:'Keep me',hooks:{Stop:[{hooks:[{type:'command',command:'/existing/speed-hook',timeout:15}]},{hooks:[]}],SessionStart:[{hooks:[{type:'command',command:'/existing/start'}]}]}};
   fs.writeFileSync(path.join(home,'hooks.json'),JSON.stringify(existing));fs.writeFileSync(path.join(home,'config.toml'),'model_context_window=1000000\n');
-  const env={...process.env,CONTEXT_CONTROL_HOME:path.join(temp,'control'),CONTEXT_CONTROL_CODEX_HOME:home,CONTEXT_CONTROL_APPLICATIONS:path.join(temp,'Applications')};
+  const env={...process.env,CONTEXT_CONTROL_HOME:path.join(temp,'control'),CONTEXT_CONTROL_CODEX_HOME:home,CONTEXT_CONTROL_APPLICATIONS:path.join(temp,'Applications'),CONTEXT_CONTROL_REAL_CODEX:binary};
   const run=args=>{const p=spawnSync(process.execPath,[path.join(repo,'scripts/install.mjs'),...args],{env,encoding:'utf8'});assert.equal(p.status,0,p.stderr);};
   try{
     run(['--no-auto-start','--use-built-panel']);run(['--no-auto-start','--use-built-panel']);const installed=JSON.parse(fs.readFileSync(path.join(home,'hooks.json'),'utf8'));
     assert.deepEqual(installed.hooks.Stop.slice(0,2),existing.hooks.Stop);assert.deepEqual(installed.hooks.SessionStart,existing.hooks.SessionStart);assert.equal(installed.hooks.Stop.length,3);
     assert.equal(fs.readFileSync(path.join(home,'config.toml'),'utf8'),'model_context_window=1000000\n');
     assert.ok(fs.existsSync(path.join(temp,'Applications/Codex Context Control.app/Contents/MacOS/ContextControl-native')));
+    assert.equal(JSON.parse(fs.readFileSync(path.join(temp,'control/settings.json'),'utf8')).desktopBundleId,'io.github.codex-context-control.fixture-desktop');
     run(['--uninstall']);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home,'hooks.json'),'utf8')),existing);
   }finally{fs.rmSync(temp,{recursive:true,force:true});}
 });
