@@ -139,6 +139,7 @@ private enum PanelStyle {
     static let surface=Color(white:0.16)
     static let border=Color.white.opacity(0.09)
     static let blue=Color(red:0.27,green:0.50,blue:0.99)
+    static let headroom=Color(red:0.64,green:0.53,blue:0.88)
 }
 
 private struct QuietButtonStyle:ButtonStyle {
@@ -163,79 +164,97 @@ private struct ApplyButtonStyle:ButtonStyle {
     }
 }
 
-/// Only this small track redraws for the flowing highlights. Animation pauses
-/// when the panel loses focus and respects the system's Reduce Motion setting.
-private struct FlowSlider:View {
-    let title:String
-    @Binding var value:Double
-    let minimum:Int
-    let maximum:Int
-    var compact=false
+private enum BudgetThumb {case compact,window}
+
+/// Both handles share the model-capacity scale. The selected handle stays fixed
+/// during a gesture even when moving the window also moves the linked threshold.
+private struct BudgetRangeSlider:View {
+    @Binding var window:Double
+    @Binding var compact:Double
+    @Binding var selection:BudgetThumb
+    let maximumWindow:Int
+    let maximumCompact:Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var enabled
     @FocusState private var focused:Bool
     @State private var active=NSApplication.shared.isActive
-    @State private var dragging=false
-    private var diameter:CGFloat {compact ? 24:30}
-    private var trackHeight:CGFloat {compact ? 20:28}
-    private var fraction:Double {max(0,min(1,(value-Double(minimum))/Double(max(1,maximum-minimum))))}
+    @State private var dragging:BudgetThumb?
+    private let diameter:CGFloat=18
     var body:some View {
         GeometryReader {geometry in
             let travel=max(1,geometry.size.width-diameter)
-            let position=diameter/2+travel*fraction
+            let windowX=diameter/2+travel*max(0,min(1,window/Double(max(1,maximumWindow))))
+            let compactX=diameter/2+travel*max(0,min(1,compact/Double(max(1,maximumWindow))))
             ZStack(alignment:.leading){
-                Capsule().fill(Color.white.opacity(0.10)).frame(height:trackHeight)
-                Capsule().fill(LinearGradient(colors:[PanelStyle.blue,Color(red:0.32,green:0.55,blue:1)],startPoint:.leading,endPoint:.trailing))
-                    .frame(width:position+diameter/2,height:trackHeight)
-                HStack {ForEach(0..<5){_ in Circle().fill(.white.opacity(0.22)).frame(width:4,height:4).frame(maxWidth:.infinity)}}
-                    .padding(.horizontal,diameter/2)
-                TimelineView(.animation(minimumInterval:1.0/24,paused:reduceMotion || !active || !enabled)){timeline in
-                    Canvas {context,size in
-                        guard !reduceMotion else{return}
-                        let time=timeline.date.timeIntervalSinceReferenceDate
-                        for index in 0..<4 {
-                            let phase=(time/7+Double(index)*0.247).truncatingRemainder(dividingBy:1)
-                            let x=phase*max(1,position-8)+4
-                            let y=size.height/2+sin(phase*Double.pi*2+Double(index))*size.height*0.17
-                            let opacity=sin(phase*Double.pi)*0.45
-                            context.fill(Path(ellipseIn:CGRect(x:x,y:y,width:index%2==0 ? 2.5:1.5,height:index%2==0 ? 2.5:1.5)),with:.color(.white.opacity(opacity)))
+                ZStack(alignment:.leading){
+                    Rectangle().fill(.white.opacity(0.10))
+                    Rectangle().fill(PanelStyle.blue).frame(width:compactX)
+                    Rectangle().fill(PanelStyle.headroom.opacity(0.8)).frame(width:max(0,windowX-compactX)).offset(x:compactX)
+                    HStack {ForEach(0..<5){_ in Circle().fill(.white.opacity(0.18)).frame(width:3,height:3).frame(maxWidth:.infinity)}}.padding(.horizontal,diameter/2)
+                    TimelineView(.animation(minimumInterval:1.0/24,paused:reduceMotion || !active || !enabled)){timeline in
+                        Canvas {context,size in
+                            guard !reduceMotion else{return}
+                            let time=timeline.date.timeIntervalSinceReferenceDate
+                            for index in 0..<4 {
+                                let phase=(time/7+Double(index)*0.247).truncatingRemainder(dividingBy:1)
+                                let x=phase*max(1,compactX-8)+4
+                                let y=size.height/2+sin(phase*Double.pi*2+Double(index))*3
+                                context.fill(Path(ellipseIn:CGRect(x:x,y:y,width:2,height:2)),with:.color(.white.opacity(sin(phase*Double.pi)*0.45)))
+                            }
                         }
-                    }
-                }.frame(width:position,height:trackHeight).clipShape(Capsule()).allowsHitTesting(false)
-                Circle().fill(.white).overlay(Circle().strokeBorder(.black.opacity(0.06),lineWidth:0.5))
-                    .shadow(color:.black.opacity(dragging ? 0.24:0.12),radius:dragging ? 5:2,y:1)
-                    .frame(width:diameter,height:diameter).scaleEffect(dragging ? 1.06:1)
-                    .offset(x:position-diameter/2)
+                    }.frame(width:compactX).allowsHitTesting(false)
+                }.frame(height:18).clipShape(Capsule())
+                thumb(.compact,color:PanelStyle.blue).offset(x:compactX-diameter/2)
+                thumb(.window,color:.white).offset(x:windowX-diameter/2)
             }
-            .frame(height:diameter).frame(maxHeight:.infinity)
-            .contentShape(Rectangle())
+            .frame(height:28).frame(maxHeight:.infinity).contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance:0).onChanged {event in
-                guard enabled,maximum>minimum else{return}
-                focused=true;dragging=true
-                let progress=max(0,min(1,(event.location.x-diameter/2)/travel))
-                value=(Double(minimum)+progress*Double(maximum-minimum)).rounded()
-            }.onEnded {_ in dragging=false})
-            .animation(reduceMotion || dragging ? nil:.easeOut(duration:0.18),value:value)
+                guard enabled else{return}
+                if dragging==nil {
+                    // In tight ranges, choosing the numeric heading first also
+                    // lets the user select a handle whose hit areas overlap.
+                    let left=abs(event.startLocation.x-compactX),right=abs(event.startLocation.x-windowX)
+                    dragging=abs(left-right)<3 ? selection:(left<right ? .compact:.window)
+                    selection=dragging!;focused=true
+                }
+                let tokens=(max(0,min(1,(event.location.x-diameter/2)/travel))*Double(maximumWindow)).rounded()
+                if dragging == .compact{compact=max(1,min(Double(maximumCompact),tokens))}
+                else{window=max(2,min(Double(maximumWindow),tokens))}
+            }.onEnded {_ in dragging=nil})
+            .animation(reduceMotion || dragging != nil ? nil:.easeOut(duration:0.18),value:window)
+            .animation(reduceMotion || dragging != nil ? nil:.easeOut(duration:0.18),value:compact)
         }
-        .frame(height:36).opacity(enabled ? 1:0.4)
-        .focusable(enabled && maximum>minimum).focused($focused)
-        .overlay(RoundedRectangle(cornerRadius:20).strokeBorder(focused ? PanelStyle.blue.opacity(0.45):.clear,lineWidth:2).padding(-4))
-        .onKeyPress(.leftArrow){guard enabled else{return .ignored};value=max(Double(minimum),value-1);return .handled}
-        .onKeyPress(.rightArrow){guard enabled else{return .ignored};value=min(Double(maximum),value+1);return .handled}
+        .frame(height:38).opacity(enabled ? 1:0.4)
+        .focusable(enabled).focused($focused)
+        .overlay(RoundedRectangle(cornerRadius:20).strokeBorder(focused ? PanelStyle.blue.opacity(0.35):.clear,lineWidth:1).padding(-4))
+        .onKeyPress(.leftArrow){guard enabled else{return .ignored};adjust(-1);return .handled}
+        .onKeyPress(.rightArrow){guard enabled else{return .ignored};adjust(1);return .handled}
+        .onChange(of:selection){_,_ in if enabled{focused=true}}
         .accessibilityRepresentation {
-            Slider(value:$value,in:Double(minimum)...Double(max(minimum+1,maximum)),step:1)
-                .accessibilityLabel(title).accessibilityValue("\(Int(value))K").disabled(!enabled || maximum<=minimum)
+            HStack {
+                Slider(value:$compact,in:1...Double(max(2,maximumCompact)),step:1).accessibilityLabel("压缩触发点").accessibilityValue("\(Int(compact))K").disabled(!enabled || maximumCompact<=1)
+                Slider(value:$window,in:2...Double(max(3,maximumWindow)),step:1).accessibilityLabel("上下文窗口上限").accessibilityValue("\(Int(window))K").disabled(!enabled || maximumWindow<=2)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)){_ in active=true}
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didResignActiveNotification)){_ in active=false}
-        .onAppear{active=NSApplication.shared.isActive}
-        .onDisappear{active=false}
+        .onAppear{active=NSApplication.shared.isActive}.onDisappear{active=false}
+    }
+    private func thumb(_ target:BudgetThumb,color:Color)->some View {
+        Circle().fill(color).overlay(Circle().strokeBorder(target == .compact ? .white.opacity(0.85):.black.opacity(0.12),lineWidth:1.5))
+            .frame(width:diameter,height:diameter).shadow(color:.black.opacity(0.25),radius:3,y:1)
+            .scaleEffect(dragging==target ? 1.15:1)
+    }
+    private func adjust(_ delta:Double){
+        if selection == .compact{compact=max(1,min(Double(maximumCompact),compact+delta))}
+        else{window=max(2,min(Double(maximumWindow),window+delta))}
     }
 }
 
 struct ContentView: View {
     @ObservedObject var model:Controller
     @State private var confirmCompact=false
+    @State private var selectedThumb:BudgetThumb = .window
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         NavigationSplitView {
@@ -292,10 +311,8 @@ struct ContentView: View {
     }
     func budgetEditor()->some View {
         VStack(alignment:.leading,spacing:18){
-            tokenSlider("实际可用窗口",value:Binding(get:{model.windowK},set:{model.setWindowK($0)}),minimum:2,maximum:model.maximumWindowK)
-            tokenSlider("自动压缩阈值",value:Binding(get:{model.compactK},set:{model.setCompactK($0)}),minimum:1,maximum:model.maximumCompactK,compact:true)
-                .frame(maxWidth:480,alignment:.leading)
-            Text("以 1K 微调 · 压缩阈值随窗口按比例联动 · 应用后生效")
+            rangeEditor()
+            Text("将蓝色压缩点往左拉，紫色余量随之增加。每步 1K，应用后生效。")
                 .font(.system(size:11)).foregroundStyle(.secondary)
             if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
             DisclosureGroup("高级设置"){
@@ -313,54 +330,55 @@ struct ContentView: View {
             }.font(.callout).foregroundStyle(.secondary)
         }
     }
-    func tokenSlider(_ title:String,value:Binding<Double>,minimum:Int,maximum:Int,compact:Bool=false)->some View {
-        VStack(spacing:14){
+    private func rangeEditor()->some View {
+        VStack(spacing:16){
             HStack(alignment:.center){
-                Image(systemName:compact ? "arrow.triangle.2.circlepath":"bolt.fill")
-                    .font(.system(size:compact ? 18:22,weight:.medium)).foregroundStyle(PanelStyle.blue).frame(width:40)
-                Spacer(minLength:8)
-                VStack(spacing:4){
-                    Text("\(Int(value.wrappedValue))K").font(.system(size:compact ? 26:32,weight:.medium,design:.rounded)).monospacedDigit()
-                        .foregroundStyle(PanelStyle.blue).contentTransition(.numericText())
-                        .animation(reduceMotion ? nil:.easeOut(duration:0.18),value:value.wrappedValue)
-                    Text(title).font(.system(size:12)).foregroundStyle(.secondary)
-                }
-                Spacer(minLength:8)
-                if compact {
-                    Text("\(percentage(model.compactPercent))%").font(.system(size:11,weight:.medium)).monospacedDigit().foregroundStyle(.secondary).frame(width:48)
-                }else{
-                    Button {model.fill()} label:{Image(systemName:"arrow.counterclockwise").font(.system(size:18))}
-                        .buttonStyle(.plain).foregroundStyle(.secondary).frame(width:40)
-                        .accessibilityLabel("重新载入已保存预算").help("重新载入已保存预算")
-                }
+                rangeValue("压缩触发",value:model.compactK,color:PanelStyle.blue,thumb:.compact)
+                Spacer()
+                VStack(spacing:5){Text("\(Int(max(0,model.windowK-model.compactK)))K").font(.system(size:22,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(PanelStyle.headroom);Text("窗口余量").font(.system(size:11)).foregroundStyle(.secondary)}
+                Spacer()
+                rangeValue("上下文窗口",value:model.windowK,color:.white,thumb:.window)
+                Button {model.fill()} label:{Image(systemName:"arrow.counterclockwise").font(.system(size:14)).frame(width:22,height:26)}
+                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("重新载入已保存预算").help("重新载入已保存预算")
             }
-            HStack(spacing:10){
-                Button {value.wrappedValue-=1} label:{Image(systemName:"minus").frame(width:22,height:28)}
-                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("\(title)减少 1K").disabled(value.wrappedValue<=Double(minimum))
-                FlowSlider(title:title,value:value,minimum:minimum,maximum:maximum,compact:compact)
-                Button {value.wrappedValue+=1} label:{Image(systemName:"plus").frame(width:22,height:28)}
-                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("\(title)增加 1K").disabled(value.wrappedValue>=Double(maximum))
-            }
-            HStack {Text("\(minimum)K");Spacer();Text("\(maximum)K")}.font(.system(size:10)).foregroundStyle(.tertiary).monospacedDigit()
+            BudgetRangeSlider(window:Binding(get:{model.windowK},set:{model.setWindowK($0)}),compact:Binding(get:{model.compactK},set:{model.setCompactK($0)}),selection:$selectedThumb,maximumWindow:model.maximumWindowK,maximumCompact:model.maximumCompactK)
+            HStack {Text("0K");Spacer();Text("模型上限 \(model.maximumWindowK)K")}.font(.system(size:10)).foregroundStyle(.tertiary).monospacedDigit()
+            Divider().overlay(.white.opacity(0.02))
             HStack(spacing:7){
-                Spacer(minLength:0)
-                if compact {
-                    ForEach([80,85,90],id:\.self){ratio in
-                        Button("\(ratio)%"){model.setRatio(ratio)}.buttonStyle(QuietButtonStyle(selected:abs(model.compactPercent-Double(ratio))<0.2))
-                    }
-                    Button("最大"){model.setCompactK(Double(model.maximumCompactK))}.buttonStyle(QuietButtonStyle(selected:Int(model.compactK)==model.maximumCompactK))
-                }else{
-                    ForEach([200,400,800],id:\.self){k in
-                        Button("\(k)K"){model.setWindowK(Double(k))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==k)).disabled(k>model.maximumWindowK)
-                    }
-                    Button("最大"){model.setWindowK(Double(model.maximumWindowK))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==model.maximumWindowK))
-                }
-                Spacer(minLength:0)
+                microAdjust("压缩",value:Binding(get:{model.compactK},set:{model.setCompactK($0)}),minimum:1,maximum:model.maximumCompactK,color:PanelStyle.blue)
+                Text("\(percentage(model.compactPercent))%").font(.system(size:11)).foregroundStyle(.secondary).monospacedDigit().frame(width:44)
+                Spacer(minLength:4)
+                ForEach([80,85,90],id:\.self){ratio in Button("\(ratio)%"){model.setRatio(ratio)}.buttonStyle(QuietButtonStyle(selected:abs(model.compactPercent-Double(ratio))<0.2))}
+                Button("最大"){model.setCompactK(Double(model.maximumCompactK))}.buttonStyle(QuietButtonStyle(selected:Int(model.compactK)==model.maximumCompactK))
+            }
+            HStack(spacing:7){
+                microAdjust("窗口",value:Binding(get:{model.windowK},set:{model.setWindowK($0)}),minimum:2,maximum:model.maximumWindowK,color:.white)
+                Spacer(minLength:4)
+                ForEach([200,400,800],id:\.self){k in Button("\(k)K"){model.setWindowK(Double(k))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==k)).disabled(k>model.maximumWindowK)}
+                Button("最大"){model.setWindowK(Double(model.maximumWindowK))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==model.maximumWindowK))
             }
         }
-        .padding(compact ? 20:24)
-        .background(PanelStyle.surface,in:RoundedRectangle(cornerRadius:compact ? 24:28,style:.continuous))
-        .overlay(RoundedRectangle(cornerRadius:compact ? 24:28,style:.continuous).strokeBorder(PanelStyle.border,lineWidth:1))
+        .padding(24)
+        .background(PanelStyle.surface,in:RoundedRectangle(cornerRadius:26,style:.continuous))
+        .overlay(RoundedRectangle(cornerRadius:26,style:.continuous).strokeBorder(PanelStyle.border,lineWidth:1))
+    }
+    private func rangeValue(_ title:String,value:Double,color:Color,thumb:BudgetThumb)->some View {
+        Button {selectedThumb=thumb} label:{
+            VStack(spacing:5){
+                Text("\(Int(value))K").font(.system(size:28,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(color)
+                    .contentTransition(.numericText()).animation(reduceMotion ? nil:.easeOut(duration:0.18),value:value)
+                HStack(spacing:5){Circle().fill(color).frame(width:5,height:5);Text(title).font(.system(size:12)).foregroundStyle(.secondary)}
+            }.padding(.vertical,4).padding(.horizontal,8).background(selectedThumb==thumb ? .white.opacity(0.035):.clear,in:RoundedRectangle(cornerRadius:10))
+        }.buttonStyle(.plain).accessibilityLabel("选择\(title)滑块，\(Int(value))K").help("选中后，可用轨道上的左右方向键逐 K 调整")
+    }
+    private func microAdjust(_ title:String,value:Binding<Double>,minimum:Int,maximum:Int,color:Color)->some View {
+        HStack(spacing:6){
+            Text(title).font(.system(size:11)).foregroundStyle(color).frame(width:28,alignment:.leading)
+            Button {value.wrappedValue-=1} label:{Image(systemName:"minus").font(.system(size:10,weight:.medium)).frame(width:22,height:22).background(.white.opacity(0.05),in:Circle())}
+                .buttonStyle(.plain).accessibilityLabel("\(title)减少 1K").disabled(value.wrappedValue<=Double(minimum))
+            Button {value.wrappedValue+=1} label:{Image(systemName:"plus").font(.system(size:10,weight:.medium)).frame(width:22,height:22).background(.white.opacity(0.05),in:Circle())}
+                .buttonStyle(.plain).accessibilityLabel("\(title)增加 1K").disabled(value.wrappedValue>=Double(maximum))
+        }.foregroundStyle(.secondary)
     }
     func percentage(_ value:Double)->String {value.formatted(.number.precision(.fractionLength(0...1)))}
     func metric(_ title:String,_ value:String)->some View {VStack(alignment:.leading,spacing:7){Text(title).font(.caption).foregroundStyle(.secondary);Text(value).font(.title2.monospacedDigit().weight(.semibold))}.frame(maxWidth:.infinity,alignment:.leading)}
