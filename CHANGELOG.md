@@ -1,5 +1,11 @@
 # Changes
 
+## Unreleased
+
+- Show the saved window budget, effective percentage and expected capacity together.
+- Label previous runtime readbacks as pending until the new budget is confirmed.
+- Clarify that compaction settings specify a usage threshold rather than window capacity.
+
 ## 0.1.0 — 2026-10-15
 
 - Native macOS control panel and dedicated Codex launcher.

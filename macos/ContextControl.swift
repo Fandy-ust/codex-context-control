@@ -1,15 +1,25 @@
 import SwiftUI
 import AppKit
 
-struct Budget: Decodable { let window:Int;let compact:Int;let reserve:Int;let retainedFloor:Int;let revision:Int }
+struct Budget: Decodable { let window:Int;let compact:Int;let reserve:Int;let retainedFloor:Int;let revision:Int;let enabled:Bool? }
 struct Usage: Decodable { let totalTokens:Int }
 struct Metadata: Decodable { let max_context_window:Int?;let effective_context_window_percent:Int? }
 struct Chat: Identifiable, Decodable {
     let id:String;let name:String?;let model:String?;let cwd:String?;let status:String?
     let connected:Bool;let ambiguous:Bool;let phase:String?;let message:String?
-    let observedWindow:Int?;let expectedWindow:Int?;let lastUsage:Usage?;let freshUsage:Bool?
+    let observedWindow:Int?;let expectedWindow:Int?;let lastUsage:Usage?;let freshUsage:Bool?;let revision:Int?
     let policy:Budget?;let modelMetadata:Metadata?
     var title:String { if let name,!name.isEmpty{return name};if let cwd{return URL(fileURLWithPath:cwd).lastPathComponent};return String(id.prefix(12)) }
+    var targetWindow:Int? {
+        guard let policy,policy.enabled != false,let percent=modelMetadata?.effective_context_window_percent,(1...100).contains(percent) else{return nil}
+        return policy.window*percent/100
+    }
+    var windowConfirmed:Bool {connected && freshUsage==true && phase=="confirmed" && revision==policy?.revision && observedWindow != nil && observedWindow==expectedWindow && observedWindow==targetWindow}
+    var observedWindowTitle:String {
+        if windowConfirmed{return "已确认可用窗口"}
+        if !connected || freshUsage != true{return "上次读回窗口（待更新）"}
+        return phase=="mismatch" ? "运行时读回窗口（与目标不符）":"最近读回窗口"
+    }
 }
 struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat]}
 struct Connection: Decodable {let port:Int;let token:String}
@@ -97,13 +107,21 @@ struct ContentView: View {
                 VStack(alignment:.leading,spacing:22){
                     if let chat=model.selected {
                         VStack(alignment:.leading,spacing:6){Text(chat.title).font(.title2.bold()).lineLimit(2).truncationMode(.tail);Text(chat.model ?? "模型将在接入后识别").foregroundStyle(.secondary)}
-                        HStack(spacing:28){metric(chat.connected ? "实际可用窗口":"上次观测窗口",formatted(chat.observedWindow));metric("最近请求用量",formatted(chat.lastUsage?.totalTokens))}
-                        Text("最近请求用量是当前占用的近似值，不是聊天累计用量。压缩后的最低保留量不能预先保证。").font(.caption).foregroundStyle(.secondary)
+                        VStack(alignment:.leading,spacing:12){
+                            HStack(spacing:28){metric(chat.observedWindowTitle,formatted(chat.observedWindow));metric("最近请求用量",formatted(chat.lastUsage?.totalTokens))}
+                            if let target=chat.targetWindow,let policy=chat.policy,let percent=chat.modelMetadata?.effective_context_window_percent {
+                                Text("已保存预算：\(formatted(policy.window)) × \(percent)% = 预期可用 \(formatted(target))\(chat.windowConfirmed ? "（已确认）":"（待确认）")").font(.callout).textSelection(.enabled)
+                            }
+                            if chat.phase=="awaiting_runtime_confirmation" {
+                                Label("新预算已提交。上方仍是调整前的读回值，下一个正常请求完成后更新。",systemImage:"clock").font(.callout).foregroundStyle(.orange)
+                            }
+                        }
+                        Text("窗口表示容量上限。最近请求用量是当前占用的近似值，不是聊天累计用量。压缩后的最低保留量不能预先保证。").font(.caption).foregroundStyle(.secondary)
                         Divider()
                         HStack {Text("本聊天的独立预算").font(.headline);Button("重新载入",systemImage:"arrow.clockwise"){model.fill()}.labelStyle(.iconOnly).help("重新读取此聊天已保存的设置");Spacer();ForEach([200,400,800],id:\.self){k in Button("\(k)K"){model.window="\(k)K";model.compact="\(k*8/10)K"}}}
                         Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:14){
                             field("窗口预算",text:$model.window,hint:"支持 400K 或 400000")
-                            field("自动压缩阈值",text:$model.compact,hint:"total：按完整上下文计数")
+                            field("自动压缩阈值",text:$model.compact,hint:"按完整上下文计数；触发压缩的用量阈值")
                             field("下一轮预留",text:$model.reserve,hint:"为新输入和工具结果留空间")
                             field("必须保留量",text:$model.floor,hint:"可选的手动下限；0 表示未指定")
                         }
@@ -116,7 +134,7 @@ struct ContentView: View {
                             Button("停止自动应用"){Task{await model.act("clear")}}.foregroundStyle(.secondary)
                         }.disabled(model.working)
                         GroupBox {
-                            VStack(alignment:.leading,spacing:8){Label(phaseName(chat.phase),systemImage:chat.phase=="confirmed" ? "checkmark.circle":"clock").font(.headline);Text(chat.message ?? "接入后，设置会在轮次之间应用。").foregroundStyle(.secondary);if let expected=chat.expectedWindow{Text("预期下一轮可用窗口：\(formatted(expected))").font(.caption)}}.frame(maxWidth:.infinity,alignment:.leading).padding(4)
+                            VStack(alignment:.leading,spacing:8){Label(phaseName(chat.phase),systemImage:chat.phase=="confirmed" ? "checkmark.circle":"clock").font(.headline);Text(chat.message ?? "接入后，设置会在轮次之间应用。").foregroundStyle(.secondary);if let target=chat.targetWindow{Text("目标可用窗口：\(formatted(target))").font(.caption)}}.frame(maxWidth:.infinity,alignment:.leading).padding(4)
                         }
                     }else{
                         ContentUnavailableView("等待聊天接入",systemImage:"bubble.left.and.bubble.right",description:Text("先正常退出当前 Codex，再通过 Codex Context Launcher 启动。这里会列出可调整的聊天。"))
