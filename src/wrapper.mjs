@@ -1,7 +1,7 @@
 import {spawn,spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {Bridge} from './bridge.mjs';
-import {connect} from './ipc.mjs';
+import {connect,request} from './ipc.mjs';
 import {callerRuntime} from './runtime-selection.mjs';
 import {ensureDaemon} from './service.mjs';
 import {runtimeSupported,isStdioServer} from './compatibility.mjs';
@@ -15,7 +15,9 @@ if(!desktop||!isStdioServer(args)||!supported){
 }else{
   const child=spawn(binary,args,{stdio:['pipe','pipe','inherit'],env:process.env});
   let peer,closed=false,bridge;
-  bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{});
+  bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{
+    await ensureDaemon();return request('forkBudget',{id,model});
+  });
   async function attach(){
     if(closed)return;
     try{
