@@ -4,14 +4,14 @@
 
 包含原生控制面板、Codex 连接桥接、Hook stats 状态输出，以及可重复执行的安装/卸载程序。使用原有 Codex 登录和运行时，不需要为本工具配置 API key。
 
-**当前版本：0.1.0，本地预览版。已验证 Codex 0.159.2 和 0.160.0。** 未验证的运行时仅透传，不执行预算调整。
+**当前版本：0.2.0，本地预览版。已验证 Codex 0.159.2 和 0.160.0。** 安装一次后，照常从原来的图标打开 Codex，控制服务按需自动接入。未验证的运行时仅透传，不执行预算调整。
 
 ## 软件形态
 
 | 组成 | 使用方式 |
 | --- | --- |
 | **Codex Context Control.app** | 选择聊天、输入窗口/阈值、预检、提交、查看实际窗口 |
-| **Codex Context Launcher.app** | 通过连接桥接启动原有 Codex/ChatGPT 桌面应用 |
+| 自动接入登记 | 让原来的 Codex 图标启动时自动载入连接桥接，无需另开启动器 |
 | 本地控制服务 | 保存逐聊天预算，在轮次之间安排应用 |
 | Stop hook | 将当前聊天的预算和应用状态显示在原生 Hook stats 中 |
 
@@ -25,24 +25,25 @@
 gh repo clone Fandy-ust/codex-context-control
 cd codex-context-control
 npm run install:local
-open "$HOME/Applications/Codex Context Control.app"
 ```
 
 私有仓库需要先完成 GitHub 登录。也可使用 GitHub 提供的仓库下载方式取得源代码，再执行安装命令。
 
-安装程序编译原生面板，在 `~/Applications` 创建两个应用，将服务代码放到 `~/Library/Application Support/CodexContextControl`，并向现有 `~/.codex/hooks.json` **追加一条自己的 Stop hook**。会先备份该文件，保留其他 hooks，不修改全局窗口配置，也不修改签名的 Codex 应用。
+安装程序编译原生面板，在 `~/Applications` 创建一个设置应用，将服务代码放到 `~/Library/Application Support/CodexContextControl`，登记当前用户的自动接入，并向现有 `~/.codex/hooks.json` **追加一条自己的 Stop hook**。会先备份该文件，保留其他 hooks，不修改全局窗口配置，也不修改签名的 Codex 应用。升级时移除旧的专用 Launcher。
+
+自动接入使用当前用户 GUI 登录会话的 `CODEX_CLI_PATH` 和一条登录登记任务。登记任务执行后退出；控制服务由 Codex 的运行时按需启动。该变量属于用户会话范围，其他读取它的工具也能看见；桥接只对识别到的 Codex 桌面调用启用，其他调用透传已配置的运行时。已有其他自定义值时停止登记，不覆盖；卸载时恢复本项目仍持有的设置。详见 [架构与接入](docs/ARCHITECTURE.md)。
 
 ### 首次接入
 
 1. 完成本轮工作，然后正常退出原有 Codex/ChatGPT 桌面客户端。
-2. 打开 `~/Applications/Codex Context Launcher.app`。
+2. 照常从 Dock、Spotlight 或应用文件夹打开原来的 Codex/ChatGPT。
 3. 在原客户端打开一个已有聊天，进行正常的一轮交互，让工具读取实际窗口与最近请求用量。
-4. 打开 **Codex Context Control**，选择该聊天，预检并提交预算。
+4. 需要调整时打开 **Codex Context Control**，选择该聊天，预检并提交预算。面板可随时关闭，已保存的预算继续有效。
 5. 在正常的下一轮请求后，状态从“等待下一轮确认”变为“窗口已确认”。工具不会为确认设置而额外发送提示词。
 
 需要在 Codex 的 `/hooks` 中审核并信任新增的 **Context Control** hook，才会显示相应 Hook stats 文字。未审核时，原生控制面板及预算控制仍能工作；安装程序不会生成或伪造信任记录。
 
-首次退出/重新启动是为了插入连接桥接。以后调整预算无需重启整个客户端。直接使用原来的应用图标启动，会绕过桥接。
+首次退出/重新启动是为了让新进程取得自动接入配置。以后直接打开原来的 Codex 即可，调整预算无需重启整个客户端，也无需先打开控制面板。
 
 ## 调整例子
 
@@ -59,9 +60,10 @@ open "$HOME/Applications/Codex Context Control.app"
 
 ## 功能边界
 
-| 能力 | 0.1.0 |
+| 能力 | 0.2.0 |
 | --- | --- |
 | 逐聊天窗口、压缩阈值及预算持久保存 | 已实现 |
+| 普通应用图标启动后自动接入 | 已实现；首次安装后正常重开一次 |
 | 生成中的调整排队 | 已实现 |
 | 缩小前容量、预留和手动保留下限检查 | 已实现，基于可观测用量估算 |
 | 同一聊天重新加载、恢复历史与执行设置 | 已验证上述两个运行时版本 |
@@ -83,11 +85,11 @@ npm run doctor
 git pull
 npm run install:local
 
-# 移除两个应用和本工具的 hook；保留本地预算与备份
+# 移除自动接入、设置应用和本工具的 hook；保留本地预算与备份
 npm run uninstall:local
 ```
 
-更新服务代码后，应正常退出客户端和面板，再用接入入口启动，以免旧进程继续运行旧版本代码。卸载后按原来的方式启动 Codex；正在运行的连接在正常退出时结束。
+更新服务代码后，应正常退出客户端和面板，再照常打开 Codex，以免旧进程继续运行旧版本代码。卸载后仍按原来的方式启动 Codex；正在运行的连接在正常退出时结束。
 
 ## 验证
 

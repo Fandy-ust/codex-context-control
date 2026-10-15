@@ -1,13 +1,13 @@
 import {spawn,spawnSync} from 'node:child_process';
 import {Bridge} from './bridge.mjs';
 import {connect} from './ipc.mjs';
-import {realBinary} from './paths.mjs';
+import {callerRuntime} from './runtime-selection.mjs';
 import {ensureDaemon} from './service.mjs';
 import {runtimeSupported,isStdioServer} from './compatibility.mjs';
 
-const args=process.argv.slice(2);const binary=realBinary();
+const args=process.argv.slice(2);const {binary,desktop}=callerRuntime();
 const supported=!isStdioServer(args)||runtimeSupported(spawnSync(binary,['--version'],{encoding:'utf8'}).stdout||'');
-if(!isStdioServer(args)||!supported){
+if(!desktop||!isStdioServer(args)||!supported){
   if(!supported)process.stderr.write('Context Control: 当前运行时版本未经验证，本次仅透传。\n');
   const p=spawn(binary,args,{stdio:'inherit',env:process.env});p.on('exit',(code,signal)=>signal?process.kill(process.pid,signal):process.exit(code??1));
 }else{

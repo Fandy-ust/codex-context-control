@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {root,codexHome,ensureRoot,atomicJSON,readJSON,realBinary} from '../src/paths.mjs';
+import {enableAutomaticStartup,disableAutomaticStartup} from '../src/automatic-startup.mjs';
 
 const repo=fileURLToPath(new URL('../',import.meta.url));
 const applications=process.env.CONTEXT_CONTROL_APPLICATIONS || path.join(os.homedir(),'Applications');
@@ -30,14 +31,18 @@ function editHook(command,remove=false){
 function shellFile(file,body){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'#!/bin/sh\nset -eu\n'+body+'\n',{mode:0o700});fs.chmodSync(file,0o700);}
 ensureRoot();
 if(process.argv.includes('--uninstall')){
+  disableAutomaticStartup();
   const settings=readJSON(path.join(root,'settings.json'),{});if(settings.hookCommand)editHook(settings.hookCommand,true);
   const connection=readJSON(path.join(root,'connection.json'),{});if(connection.pid)try{process.kill(connection.pid,'SIGTERM');}catch{}
   for(const app of [installedApp,launcherApp])fs.rmSync(app,{recursive:true,force:true});
-  console.log('已移除本项目的应用和 hook；保留预算、备份与代码目录。现有运行时将在正常退出时关闭。');
+  console.log('已移除自动接入、应用和本项目的 hook；保留预算、备份与代码目录。现有运行时将在正常退出时关闭。');
 }else{
   if(process.platform!=='darwin')throw new Error('首版安装程序面向 macOS；核心测试可在 Node.js 上运行。');
   const binary=realBinary();if(!fs.existsSync(binary))throw new Error('未找到 Codex 二进制文件');
-  const build=spawnSync(process.execPath,[path.join(repo,'scripts/build-mac.mjs')],{stdio:'inherit'});if(build.status!==0)process.exit(build.status||1);
+  const builtPanel=path.join(repo,'build/Codex Context Control.app');
+  if(!process.argv.includes('--use-built-panel')||!fs.existsSync(path.join(builtPanel,'Contents/MacOS/ContextControl'))){
+    const build=spawnSync(process.execPath,[path.join(repo,'scripts/build-mac.mjs')],{stdio:'inherit'});if(build.status!==0)process.exit(build.status||1);
+  }
   const code=path.join(root,'code');fs.mkdirSync(code,{recursive:true,mode:0o700});
   for(const dir of ['src','scripts'])fs.cpSync(path.join(repo,dir),path.join(code,dir),{recursive:true});
   fs.copyFileSync(path.join(repo,'package.json'),path.join(code,'package.json'));
@@ -58,13 +63,15 @@ if(process.argv.includes('--uninstall')){
     try{fs.symlinkSync(path.join(binDir,name),link);}catch{}
   }
   fs.mkdirSync(applications,{recursive:true});fs.rmSync(installedApp,{recursive:true,force:true});
-  fs.cpSync(path.join(repo,'build/Codex Context Control.app'),installedApp,{recursive:true});
+  fs.cpSync(builtPanel,installedApp,{recursive:true});
   // Panel starts the local service before the native executable.
   const native=path.join(installedApp,'Contents/MacOS/ContextControl');fs.renameSync(native,native+'-native');
   shellFile(native,`${quote(nodeBinary)} ${quote(path.join(code,'src/cli.mjs'))} start >/dev/null\nexec ${quote(native+'-native')} "$@"`);
-  const launcherContents=path.join(launcherApp,'Contents');fs.mkdirSync(path.join(launcherContents,'MacOS'),{recursive:true});
-  shellFile(path.join(launcherContents,'MacOS/launch'),`exec ${quote(nodeBinary)} ${quote(path.join(code,'src/launch-desktop.mjs'))} "$@"`);
-  fs.writeFileSync(path.join(launcherContents,'Info.plist'),`<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.codex-context-control.launcher</string><key>CFBundleExecutable</key><string>launch</string><key>CFBundleName</key><string>Codex Context Launcher</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>0.1.0</string></dict></plist>`);
   editHook(hookCommand);
-  console.log(`已安装：${installedApp}\n接入入口：${launcherApp}\n请在 Codex 的 /hooks 中审核并信任新增 hook；安装程序不会生成信任记录。`);
+  if(!process.argv.includes('--no-auto-start')){
+    enableAutomaticStartup(shim);
+    fs.rmSync(launcherApp,{recursive:true,force:true});
+    fs.rmSync(path.join(code,'src/launch-desktop.mjs'),{force:true});
+  }
+  console.log(`已安装：${installedApp}\n照常从原来的图标打开 Codex，预算控制会随运行时自动接入；首次安装后请正常重开一次客户端。\n请在 Codex 的 /hooks 中审核并信任新增 hook；安装程序不会生成信任记录。`);
 }

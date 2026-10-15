@@ -9,6 +9,8 @@ src/daemon.mjs             本地控制服务、连接路由和认证接口
 src/policy.mjs             输入与容量预检
 src/store.mjs              预算、可观测元数据和模型目录
 src/wrapper.mjs            Codex 启动包装器
+src/automatic-startup.mjs  用户 GUI 登录环境登记、诊断与恢复
+src/runtime-selection.mjs  识别桌面父进程并使用对应包内运行时
 src/cli.mjs                诊断和 hook 入口
 scripts/                   编译、安装和卸载
 test/                      本地模拟服务与真实运行时测试
@@ -40,6 +42,8 @@ npm run build:mac
 集成测试使用隔离 Codex home、固定合成模型目录和回环 SSE 服务。验证：窗口实际读回、其他聊天隔离、完整持久历史、沙盒/模型/审批设置、开发者指令和动态工具保留、生成中排队、压缩阈值的真实内核行为，以及本地接口认证。没有 API key 或外部模型调用。
 
 安装测试在临时目录编译/安装两次再卸载，检查其他 hooks 和 config.toml 没有变化。日常测试默认跳过此较慢测试，需要显式开启。
+
+macOS 自动接入测试使用随机、独立的探测环境变量与登录任务，不修改真实 `CODEX_CLI_PATH`。测试编译一个不请求隐私权限的临时应用，经普通 Launch Services 打开，确认环境继承、应用身份和父进程为 launchd，并验证重复登记、卸载和外部配置保留。完整安装测试通过 `--no-auto-start` 隔离系统登记；`--use-built-panel` 可复用此前编译的原生面板。
 
 ## 发布前工作
 

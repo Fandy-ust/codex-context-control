@@ -19,3 +19,4 @@ jobs:
         with:
           node-version: '22'
       - run: npm run build:mac
+      - run: CONTEXT_CONTROL_TEST_INSTALL=1 npm test

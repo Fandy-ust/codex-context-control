@@ -23,6 +23,7 @@ struct Chat: Identifiable, Decodable {
 }
 struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat]}
 struct Connection: Decodable {let port:Int;let token:String}
+struct DesktopSettings: Decodable {let desktopExecutable:String}
 
 @MainActor final class Controller: ObservableObject {
     @Published var chats:[Chat]=[]
@@ -58,7 +59,7 @@ struct Connection: Decodable {let port:Int;let token:String}
         if refreshing{return};refreshing=true;defer{refreshing=false}
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount
             if selectedID==nil{selectedID=chats.first?.id;fill()}
-            if notice=="正在读取本地状态…"{notice=bridgeCount>0 ? "已接入 Codex。" : "控制服务已启动。通过专用入口启动 Codex 后即可应用预算。"}
+            if notice=="正在读取本地状态…"{notice=bridgeCount>0 ? "已接入 Codex。" : "照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。"}
         }catch{notice="读取失败：\(error.localizedDescription)"}
     }
     func fill(){guard let chat=selected else{return};editingRevision=chat.policy?.revision ?? 0;if let p=chat.policy{window=String(p.window);compact=String(p.compact);reserve=String(p.reserve);floor=String(p.retainedFloor)}else{window="400K";compact="320K";reserve="16K";floor="0"}}
@@ -78,9 +79,12 @@ struct Connection: Decodable {let port:Int;let token:String}
         }catch{notice=error.localizedDescription}
     }
     func launchCodex(){
-        let process=Process();process.executableURL=URL(fileURLWithPath:"/usr/bin/open")
-        process.arguments=[FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Codex Context Launcher.app").path]
-        do{try process.run();notice="若 Codex 已在运行，请先正常退出，再从接入入口启动。"}catch{notice=error.localizedDescription}
+        do {
+            let settings=try JSONDecoder().decode(DesktopSettings.self,from:Data(contentsOf:home.appendingPathComponent("settings.json")))
+            let app=URL(fileURLWithPath:settings.desktopExecutable).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            let process=Process();process.executableURL=URL(fileURLWithPath:"/usr/bin/open");process.arguments=["-a",app.path]
+            try process.run();notice="已请求打开 Codex；预算控制会随运行时自动接入。"
+        }catch{notice=error.localizedDescription}
     }
 }
 
@@ -100,7 +104,7 @@ struct ContentView: View {
                 List(model.chats,selection:$model.selectedID){chat in
                     VStack(alignment:.leading,spacing:5){Text(chat.title).lineLimit(1);Text((chat.connected ? phaseName(chat.phase):"尚未接入")+" · "+String(chat.id.prefix(8))).font(.caption).foregroundStyle(.secondary)}.padding(.vertical,4).tag(chat.id)
                 }.listStyle(.sidebar)
-                Button("启动已接入的 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
+                Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
             }.padding().frame(minWidth:235)
         } detail: {
             ScrollView {
@@ -137,7 +141,7 @@ struct ContentView: View {
                             VStack(alignment:.leading,spacing:8){Label(phaseName(chat.phase),systemImage:chat.phase=="confirmed" ? "checkmark.circle":"clock").font(.headline);Text(chat.message ?? "接入后，设置会在轮次之间应用。").foregroundStyle(.secondary);if let target=chat.targetWindow{Text("目标可用窗口：\(formatted(target))").font(.caption)}}.frame(maxWidth:.infinity,alignment:.leading).padding(4)
                         }
                     }else{
-                        ContentUnavailableView("等待聊天接入",systemImage:"bubble.left.and.bubble.right",description:Text("先正常退出当前 Codex，再通过 Codex Context Launcher 启动。这里会列出可调整的聊天。"))
+                        ContentUnavailableView("等待聊天接入",systemImage:"bubble.left.and.bubble.right",description:Text("照常打开 Codex 并进入聊天，控制连接会随运行时自动启动。首次安装后请正常重开一次客户端。"))
                     }
                     Divider();Text(model.notice).font(.callout).textSelection(.enabled).foregroundStyle(.secondary)
                 }.padding(30).frame(maxWidth:850,alignment:.leading)
