@@ -326,6 +326,7 @@ struct ContentView: View {
                                 Label("新预算已提交。上方仍是调整前的读回值，下一个正常请求完成后更新。",systemImage:"clock").font(.callout).foregroundStyle(.orange)
                             }
                         }
+                        HStack {Spacer();ContextDetailsButton(chatID:chat.id,title:chat.title,model:model).id(chat.id)}
                         Divider()
                         budgetEditor().disabled(!model.canEditBudget)
                         HStack {

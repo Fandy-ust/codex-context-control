@@ -41,6 +41,9 @@ if(process.argv.includes('--uninstall')){
 }else{
   if(process.platform!=='darwin')throw new Error('首版安装程序面向 macOS；核心测试可在 Node.js 上运行。');
   const binary=realBinary();if(!fs.existsSync(binary))throw new Error('未找到 Codex 二进制文件');
+  if(!fs.existsSync(path.join(repo,'node_modules/js-tiktoken/package.json'))){
+    const dependencies=spawnSync('npm',['ci','--omit=dev','--ignore-scripts'],{cwd:repo,stdio:'inherit'});if(dependencies.status!==0)process.exit(dependencies.status||1);
+  }
   const builtPanel=path.join(repo,'build/Codex Context Control.app');
   if(!process.argv.includes('--use-built-panel')||!fs.existsSync(path.join(builtPanel,'Contents/MacOS/ContextControl'))){
     const build=spawnSync(process.execPath,[path.join(repo,'scripts/build-mac.mjs')],{stdio:'inherit'});if(build.status!==0)process.exit(build.status||1);
@@ -48,6 +51,8 @@ if(process.argv.includes('--uninstall')){
   const code=path.join(root,'code');fs.mkdirSync(code,{recursive:true,mode:0o700});
   for(const dir of ['src','scripts'])fs.cpSync(path.join(repo,dir),path.join(code,dir),{recursive:true});
   fs.copyFileSync(path.join(repo,'package.json'),path.join(code,'package.json'));
+  fs.copyFileSync(path.join(repo,'package-lock.json'),path.join(code,'package-lock.json'));
+  fs.cpSync(path.join(repo,'node_modules'),path.join(code,'node_modules'),{recursive:true});
   const shim=path.join(root,'bin/codex-context');
   shellFile(shim,`exec ${quote(nodeBinary)} ${quote(path.join(code,'src/wrapper.mjs'))} "$@"`);
   const hookCommand=`${quote(nodeBinary)} ${quote(path.join(code,'src/cli.mjs'))} hook`;
