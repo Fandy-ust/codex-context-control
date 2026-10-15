@@ -2,37 +2,6 @@ import SwiftUI
 import Charts
 
 private func tokenLabel(_ value:Int?)->String {value.map{$0.formatted()+" tokens"} ?? "未记录"}
-private func chartColor(_ category:String)->Color {
-    switch category {case "tool_calls":return .blue;case "tool_results":return .cyan;case "user":return .green;case "assistant_final":return .blue;case "assistant_commentary":return .gray;case "instructions":return .orange;default:return Color(red:0.48,green:0.43,blue:0.60)}
-}
-struct ContextCategoryChart:View {
-    let statistics:ContextStatistics
-    @State private var selected:String?
-    private struct Bar:Identifiable {let id:String;let title:String;let tokens:Int;let count:Int}
-    private var bars:[Bar] {
-        let short=["tool_calls":"工具调用","tool_results":"工具返回","user":"用户消息","assistant_final":"最终回复","assistant_commentary":"进度说明","instructions":"指令与摘要"]
-        var result=statistics.categories.map{Bar(id:$0.category,title:short[$0.category] ?? $0.label,tokens:$0.tokensEstimate,count:$0.items)}
-        if let tokens=statistics.unclassified.tokensEstimate {result.append(Bar(id:"other",title:"其他／未分项",tokens:tokens,count:statistics.unclassified.opaqueItems))}
-        return result
-    }
-    var body:some View {
-        VStack(alignment:.leading,spacing:10){
-            Text("上下文分类分布").font(.headline)
-            Chart(bars){bar in
-                BarMark(x:.value("分类",bar.title),y:.value("token 占用",bar.tokens))
-                    .foregroundStyle(chartColor(bar.id).opacity(selected==nil || selected==bar.title ? 1:0.4)).cornerRadius(5)
-                    .accessibilityLabel(bar.title).accessibilityValue("约 \(bar.tokens) tokens，\(bar.count) 条")
-            }
-            .chartYAxisLabel("tokens · 估算").chartYAxis{AxisMarks{value in AxisGridLine();AxisValueLabel{if let n=value.as(Int.self){Text(n>=1000 ? "\(n/1000)K":"\(n)")}}}}
-            .chartOverlay{proxy in GeometryReader{geometry in Rectangle().fill(.clear).contentShape(Rectangle()).onContinuousHover{phase in
-                switch phase {case .active(let location):if let frame=proxy.plotFrame {let bounds=geometry[frame];selected=bounds.contains(location) ? proxy.value(atX:location.x-bounds.minX,as:String.self):nil};case .ended:selected=nil}
-            }}}
-            .frame(height:230)
-            Group {if let bar=bars.first(where:{$0.title==selected}){Text("\(bar.title) · 约 \(tokenLabel(bar.tokens)) · \(bar.count) 条\(bar.id=="other" ? "已识别不透明项目":"")")}else{Text("将鼠标移到柱形上查看占用与条目数量")}}.font(.caption).foregroundStyle(.secondary).frame(height:20,alignment:.leading)
-        }
-    }
-}
-
 private func eventColor(_ type:String)->Color {
     switch type {case "final":return .blue;case "user_input","steering":return .green;case "compaction":return .purple;default:return Color(white:0.78)}
 }

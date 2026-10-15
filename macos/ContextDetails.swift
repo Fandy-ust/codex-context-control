@@ -57,7 +57,6 @@ private struct ContextDetailsView:View {
                 if let s=statistics {
                     VStack(alignment:.leading,spacing:16){
                         HStack(spacing:12){metric("请求输入总量",s.inputTokens,approximate:false);metric("可见文本估算",s.visibleTokens);metric("其他／未分项",s.unclassified.tokensEstimate)}
-                        ContextCategoryChart(statistics:s)
                         HStack(spacing:12){metric("缓存命中",s.cachedInputTokens,approximate:false);metric("缓存写入",s.cacheWriteTokens,approximate:false)}
                         ContextResponseChart(responses:s.responses,events:s.timelineEvents)
                         VStack(spacing:0){
