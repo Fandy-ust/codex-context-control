@@ -7,6 +7,7 @@ import {Peer,request} from './ipc.mjs';
 import {root,socketPath,ensureRoot,atomicJSON} from './paths.mjs';
 import {Store} from './store.mjs';
 import {normalizePolicy,preflight} from './policy.mjs';
+import {savedBudget} from './budget.mjs';
 
 export async function startDaemon() {
   ensureRoot();
@@ -28,9 +29,9 @@ export async function startDaemon() {
   store.save();
   const bridges=new Map();const owners=new Map();
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
-  function state(){return {version:'0.2.0',bridgeCount:bridges.size,threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function state(){return {version:'0.3.0',bridgeCount:bridges.size,threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.2.0'};
+    if(op==='ping')return {ok:true,version:'0.3.0'};
     if(op==='state')return state();
     if(op==='registerBridge'){const entry={ids:new Set(),pid:p.pid};bridges.set(peer,entry);peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
     if(op==='updateThread') {
@@ -75,7 +76,7 @@ export async function startDaemon() {
       if(!t)return {};
       const policy=store.data.policies[t.id];const fmt=n=>Number.isSafeInteger(n)?n.toLocaleString('en-US'):'待观测';
       const lines=[`Context Control｜实际窗口 ${fmt(t.observedWindow)}｜最近请求 ${fmt(t.lastUsage?.totalTokens)}（占用估算）`];
-      if(policy)lines.push(`目标 ${fmt(policy.window)}｜压缩阈值 ${fmt(policy.compact)}｜${t.message||t.phase||'等待接入'}`);
+      if(policy){const budget=savedBudget(policy,store.model(t.model));lines.push(`目标可用 ${fmt(budget?.usableWindow)}｜压缩 ${budget?.compactPercent??'待识别'}%（${fmt(budget?.compact)}）｜${t.message||t.phase||'等待接入'}`);}
       else lines.push('未设置该聊天的独立预算。');
       return {systemMessage:lines.join('\n')};
     }

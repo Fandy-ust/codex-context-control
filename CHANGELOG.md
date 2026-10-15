@@ -1,5 +1,13 @@
 # Changes
 
+## 0.3.0 — 2026-10-16
+
+- Enter usable context capacity directly; automatically invert the model's usable percentage.
+- Set compaction as a percentage of usable capacity, with linked previews and 80/85/90% presets.
+- Keep ratio selection when changing window presets; move reserve and retained-floor inputs to advanced settings.
+- Show usable targets and compression ratios in Hook stats; retain legacy raw-policy compatibility.
+- Verify exact runtime readback, native/controller arithmetic parity, integer limits and service reconnection during generation.
+
 ## 0.2.0 — 2026-10-15
 
 - Register automatic desktop attachment so the original Codex icon remains the daily entry point.

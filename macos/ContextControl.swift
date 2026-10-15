@@ -31,7 +31,7 @@ struct DesktopSettings: Decodable {let desktopExecutable:String}
     @Published var bridgeCount=0
     @Published var notice="正在读取本地状态…"
     @Published var window="400K"
-    @Published var compact="320K"
+    @Published var compactPercent=90.0
     @Published var reserve="16K"
     @Published var floor="0"
     @Published var working=false
@@ -62,13 +62,30 @@ struct DesktopSettings: Decodable {let desktopExecutable:String}
             if notice=="正在读取本地状态…"{notice=bridgeCount>0 ? "已接入 Codex。" : "照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。"}
         }catch{notice="读取失败：\(error.localizedDescription)"}
     }
-    func fill(){guard let chat=selected else{return};editingRevision=chat.policy?.revision ?? 0;if let p=chat.policy{window=String(p.window);compact=String(p.compact);reserve=String(p.reserve);floor=String(p.retainedFloor)}else{window="400K";compact="320K";reserve="16K";floor="0"}}
-    var policy:[String:Any] {["window":window,"compact":compact,"reserve":reserve,"retainedFloor":floor,"scope":"total"]}
+    func fill(){
+        guard let chat=selected else{return};editingRevision=chat.policy?.revision ?? 0
+        if let policy=chat.policy,let percent=chat.modelMetadata?.effective_context_window_percent,(1...100).contains(percent){
+            let usable=policy.window*percent/100
+            window=String(usable)
+            let actualCompact=min(policy.compact,policy.window*90/100)
+            compactPercent=min((Double(actualCompact)/Double(max(1,usable))*10000).rounded()/100,maximumRatio)
+            reserve=String(policy.reserve);floor=String(policy.retainedFloor)
+        }else{window="400K";compactPercent=90;reserve="16K";floor="0"}
+    }
+    func calculate(_ ratio:Double?=nil) throws -> BudgetPreview {
+        guard let metadata=selected?.modelMetadata,let percent=metadata.effective_context_window_percent,let maximum=metadata.max_context_window else{throw BudgetInputError(message:"等待当前模型信息后即可设置实际可用窗口")}
+        return try BudgetMath.preview(usableWindow:BudgetMath.tokens(window),compactPercent:ratio ?? compactPercent,effectivePercent:percent,maximumRawWindow:maximum)
+    }
+    var preview:BudgetPreview? {try? calculate()}
+    var previewError:String? {do{_ = try calculate();return nil}catch{return error.localizedDescription}}
+    var maximumRatio:Double {(try? calculate(1).maxCompactPercent) ?? 90}
+    var maximumUsableWindow:Int? {guard let m=selected?.modelMetadata,let p=m.effective_context_window_percent,let w=m.max_context_window else{return nil};return w*p/100}
+    var policy:[String:Any] {get throws {let budget=try calculate();return ["window":budget.rawWindow,"compact":budget.compact,"reserve":reserve,"retainedFloor":floor,"scope":"total"]}}
     func act(_ action:String) async {
         guard let chat=selected else{return};working=true;defer{working=false}
         do {
             var body:[String:Any]=["id":chat.id]
-            if action=="preflight"||action=="policy"{body["policy"]=policy}
+            if action=="preflight"||action=="policy"{body["policy"]=try policy}
             if action=="policy"{body["apply"]=true;body["expectedRevision"]=editingRevision}
             let data=try await api("/\(action)",body:body)
             let object=try JSONSerialization.jsonObject(with:data) as? [String:Any]
@@ -113,8 +130,8 @@ struct ContentView: View {
                         VStack(alignment:.leading,spacing:6){Text(chat.title).font(.title2.bold()).lineLimit(2).truncationMode(.tail);Text(chat.model ?? "模型将在接入后识别").foregroundStyle(.secondary)}
                         VStack(alignment:.leading,spacing:12){
                             HStack(spacing:28){metric(chat.observedWindowTitle,formatted(chat.observedWindow));metric("最近请求用量",formatted(chat.lastUsage?.totalTokens))}
-                            if let target=chat.targetWindow,let policy=chat.policy,let percent=chat.modelMetadata?.effective_context_window_percent {
-                                Text("已保存预算：\(formatted(policy.window)) × \(percent)% = 预期可用 \(formatted(target))\(chat.windowConfirmed ? "（已确认）":"（待确认）")").font(.callout).textSelection(.enabled)
+                            if let target=chat.targetWindow,let policy=chat.policy {
+                                Text("已保存：可用窗口 \(formatted(target)) · 压缩阈值 \(formatted(min(policy.compact,policy.window*90/100)))\(chat.windowConfirmed ? "（窗口已确认）":"（窗口待确认）")").font(.callout).textSelection(.enabled)
                             }
                             if chat.phase=="awaiting_runtime_confirmation" {
                                 Label("新预算已提交。上方仍是调整前的读回值，下一个正常请求完成后更新。",systemImage:"clock").font(.callout).foregroundStyle(.orange)
@@ -122,17 +139,11 @@ struct ContentView: View {
                         }
                         Text("窗口表示容量上限。最近请求用量是当前占用的近似值，不是聊天累计用量。压缩后的最低保留量不能预先保证。").font(.caption).foregroundStyle(.secondary)
                         Divider()
-                        HStack {Text("本聊天的独立预算").font(.headline);Button("重新载入",systemImage:"arrow.clockwise"){model.fill()}.labelStyle(.iconOnly).help("重新读取此聊天已保存的设置");Spacer();ForEach([200,400,800],id:\.self){k in Button("\(k)K"){model.window="\(k)K";model.compact="\(k*8/10)K"}}}
-                        Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:14){
-                            field("窗口预算",text:$model.window,hint:"支持 400K 或 400000")
-                            field("自动压缩阈值",text:$model.compact,hint:"按完整上下文计数；触发压缩的用量阈值")
-                            field("下一轮预留",text:$model.reserve,hint:"为新输入和工具结果留空间")
-                            field("必须保留量",text:$model.floor,hint:"可选的手动下限；0 表示未指定")
-                        }
-                        if let metadata=chat.modelMetadata {Text("目录上限：\(formatted(metadata.max_context_window)) · 可用比例：\(metadata.effective_context_window_percent ?? 0)%").font(.caption).foregroundStyle(.secondary)}
+                        HStack {Text("本聊天的独立预算").font(.headline);Button("重新载入",systemImage:"arrow.clockwise"){model.fill()}.labelStyle(.iconOnly).help("重新读取此聊天已保存的设置");Spacer();ForEach([200,400,800],id:\.self){k in Button("\(k)K"){model.window="\(k)K"}.disabled(k*1000>(model.maximumUsableWindow ?? Int.max))};if let maximum=model.maximumUsableWindow{Button("最大"){model.window=String(maximum)}}}
+                        budgetEditor()
                         HStack {
-                            Button("预检"){Task{await model.act("preflight")}}
-                            Button(chat.connected ? "应用到此聊天":"保存，接入后应用"){Task{await model.act("policy")}}.buttonStyle(.borderedProminent)
+                            Button("预检"){Task{await model.act("preflight")}}.disabled(model.preview==nil)
+                            Button(chat.connected ? "应用到此聊天":"保存，接入后应用"){Task{await model.act("policy")}}.buttonStyle(.borderedProminent).disabled(model.preview==nil)
                             Button("原生压缩…"){confirmCompact=true}.disabled(!chat.connected)
                             Spacer()
                             Button("停止自动应用"){Task{await model.act("clear")}}.foregroundStyle(.secondary)
@@ -152,6 +163,37 @@ struct ContentView: View {
         .task {while !Task.isCancelled{await model.refresh();try? await Task.sleep(for:.seconds(2))}}
         .confirmationDialog("请求 Codex 原生压缩？",isPresented:$confirmCompact,titleVisibility:.visible){Button("请求压缩"){Task{await model.act("compact")}};Button("取消",role:.cancel){}}message:{Text("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。")}
     }
+    func budgetEditor()->some View {
+        VStack(alignment:.leading,spacing:16){
+            Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:14){
+                field("实际可用窗口",text:$model.window,hint:"你输入的数值就是目标可用窗口，例如 700K")
+            }
+            HStack {Text("自动压缩比例");Spacer();ForEach([80.0,85.0,90.0],id:\.self){value in Button("\(Int(value))%"){model.compactPercent=value}};Button("最大 \(percentage(model.maximumRatio))%"){model.compactPercent=model.maximumRatio}}
+            HStack(spacing:12){
+                Slider(value:$model.compactPercent,in:0.01...100,step:0.01).accessibilityLabel("自动压缩比例")
+                TextField("压缩比例",value:$model.compactPercent,format:.number.precision(.fractionLength(0...2))).textFieldStyle(.roundedBorder).frame(width:75)
+                Text("%")
+            }
+            if let budget=model.preview {
+                Text("自动压缩阈值：\(formatted(budget.compact))").font(.headline).monospacedDigit()
+                Text("达到实际可用窗口的 \(percentage(budget.compactPercent))% 时触发压缩；调整窗口后阈值会同比例变化。").font(.caption).foregroundStyle(.secondary)
+            }
+            if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").foregroundStyle(.orange)}
+            if let maximum=model.maximumUsableWindow{Text("当前模型最多可用：\(formatted(maximum))").font(.caption).foregroundStyle(.secondary)}
+            DisclosureGroup("高级设置"){
+                VStack(alignment:.leading,spacing:12){
+                    Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:14){
+                        field("下一轮预留",text:$model.reserve,hint:"为新输入和工具结果留空间")
+                        field("必须保留量",text:$model.floor,hint:"可选的手动下限；0 表示未指定")
+                    }
+                    if let budget=model.preview,let percent=model.selected?.modelMetadata?.effective_context_window_percent{
+                        Text("底层配置已自动换算为 \(formatted(budget.rawWindow))，按 \(percent)% 读回 \(formatted(budget.usableWindow))。压缩按完整上下文计数。").font(.caption).foregroundStyle(.secondary)
+                    }
+                }.padding(.top,10)
+            }
+        }
+    }
+    func percentage(_ value:Double)->String {value.formatted(.number.precision(.fractionLength(0...2)))}
     func metric(_ title:String,_ value:String)->some View {VStack(alignment:.leading,spacing:7){Text(title).font(.caption).foregroundStyle(.secondary);Text(value).font(.title2.monospacedDigit().weight(.semibold))}.frame(maxWidth:.infinity,alignment:.leading)}
     func field(_ label:String,text:Binding<String>,hint:String)->some View {GridRow{Text(label);VStack(alignment:.leading,spacing:4){TextField(label,text:text).textFieldStyle(.roundedBorder).frame(maxWidth:250);Text(hint).font(.caption).foregroundStyle(.secondary)}}}
 }

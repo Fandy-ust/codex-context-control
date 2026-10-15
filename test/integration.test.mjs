@@ -6,6 +6,7 @@ import readline from 'node:readline';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {fixtureServer} from './fixture.mjs';
+import {calculateBudget} from '../src/budget.mjs';
 
 const binary=process.env.CONTEXT_CONTROL_TEST_CODEX||'/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
 const repo=fileURLToPath(new URL('../',import.meta.url));
@@ -64,6 +65,16 @@ test('real runtime through the actual bridge preserves history, tools, permissio
     await request('clearPolicy',{id:a});
     await request('setPolicy',{id:a,policy:{window:'400K',compact:'320K'},apply:true});
     assert.equal(await turn(a,'new input while budget transaction queues'),380000);
+    const usable=calculateBudget({usableWindow:'700K',compactPercent:90},{max_context_window:872000,effective_context_window_percent:95});
+    await request('setPolicy',{id:a,policy:{window:usable.window,compact:usable.compact},apply:true});
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='awaiting_runtime_confirmation'));
+    assert.equal(await turn(a,'usable window matches the number entered'),700000);
+    const hook=await request('hook',{sessionId:a});assert.match(hook.systemMessage,/目标可用 700,000/);assert.match(hook.systemMessage,/压缩 90%（630,000）/);
+    const stillGenerating=turn(a,'HOLD_FIXTURE');await until(()=>fixture.held());
+    const oldService=JSON.parse(fs.readFileSync(path.join(control,'connection.json'),'utf8')).pid;process.kill(oldService,'SIGTERM');
+    await until(async()=>{try{const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json'),'utf8'));return c.pid!==oldService&&(await request('state')).threads.find(t=>t.id===a&&t.connected&&t.status==='active');}catch{return false;}});
+    assert.equal(child.exitCode,null);assert.equal((await call('thread/resume',{threadId:a,excludeTurns:true})).thread.id,a);
+    fixture.release();await stillGenerating;assert.equal(await turn(a,'service update preserves the runtime'),700000);
   }finally{
     fixture.release();child.stdin.end();
     await Promise.race([new Promise(resolve=>child.once('exit',resolve)),sleep(2000)]);if(child.exitCode==null)child.kill('SIGKILL');

@@ -50,14 +50,22 @@ flowchart LR
 当前版本只支持 total scope：
 
 ```
-raw_window = requested_window（不得超过当前目录 max_context_window）
+requested_usable_window = 用户输入的实际可用容量
+raw_window = ceil(requested_usable_window × 100 / effective_context_window_percent)
 usable_window = floor(raw_window × effective_context_window_percent / 100)
-effective_compact = min(requested_compact, floor(raw_window × 0.9))
+requested_compact = floor(usable_window × compression_percent / 100)
+native_compact_maximum = floor(raw_window × 90 / 100)
 ```
+
+底层窗口不得超过模型目录上限，按比例算出的阈值不得超过原生压缩上限；新界面和 `set-usable` 在提交前拒绝超限比例。可用比例在 1–100 的整数范围时，反算后能精确读回用户输入的整数容量。JS 使用整数/BigInt 运算，Swift 使用有界整数运算，并用相同案例对照验证。
+
+控制协议和旧预算文件仍以底层 `window` / 绝对 `compact` 保存，旧 `set` 命令保持兼容。新界面根据这些值显示可用容量与压缩比例；不自动重写旧预算。原生预检仍保留旧调用路径的上限检查和警告。
 
 将必须保留量、下一轮预留、最近请求用量分别与容量及压缩阈值比较。用量或模型元数据未知时，等待观测；不会把未知值当作零。
 
 最近请求用量来自运行时 last usage，不使用累计 usage。它不包含所有可能的内核估算和下一步内容，所以属于保守设计中的一个观测量，不能证明任意后续操作均不会触发压缩。手动保留下限是用户指定的约束，不是对加密压缩状态的测量。
+
+控制服务可以独立更新。集成测试在模型请求仍生成时重新启动控制服务，确认桥接自动重连、原运行时和聊天继续工作，已保存的预算保持。实际更新先确认没有预算重新加载事务，再重启本项目服务，不关闭 Codex。
 
 ## 保存内容
 

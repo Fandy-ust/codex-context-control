@@ -4,9 +4,11 @@
 
 ```
 macos/ContextControl.swift  原生界面
+macos/BudgetMath.swift      原生输入解析、可用窗口反算与压缩比例
 src/bridge.mjs             JSON-RPC 透传、目标聊天队列及重新加载事务
 src/daemon.mjs             本地控制服务、连接路由和认证接口
 src/policy.mjs             输入与容量预检
+src/budget.mjs             可用窗口/比例换算与历史预算展示
 src/store.mjs              预算、可观测元数据和模型目录
 src/wrapper.mjs            Codex 启动包装器
 src/automatic-startup.mjs  用户 GUI 登录环境登记、诊断与恢复
@@ -40,6 +42,8 @@ npm run build:mac
 ```
 
 集成测试使用隔离 Codex home、固定合成模型目录和回环 SSE 服务。验证：窗口实际读回、其他聊天隔离、完整持久历史、沙盒/模型/审批设置、开发者指令和动态工具保留、生成中排队、压缩阈值的真实内核行为，以及本地接口认证。没有 API key 或外部模型调用。
+
+0.3 额外验证：700K 输入反算后真实运行时读回 700K、比例超限拒绝而不夹值、全部 1–100 可用比例下的精确整数反算、Swift 与 JS 换算/验证一致、Hook stats 的可用容量口径，以及生成中更新控制服务后的自动重连。原生换算测试只编译 Foundation 程序，不请求系统隐私权限。
 
 安装测试使用临时模拟桌面应用目录，安装两次再卸载，检查其他 hooks 和 config.toml 没有变化。它不要求测试机预装 Codex，原生面板需要时编译、已编译时复用。日常测试默认跳过此测试，需要显式开启。
 

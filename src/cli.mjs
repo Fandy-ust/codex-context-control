@@ -7,6 +7,7 @@ import {root,realBinary,readJSON} from './paths.mjs';
 import {ensureDaemon} from './service.mjs';
 import {runtimeSupported,verifiedVersions} from './compatibility.mjs';
 import {automaticStartupStatus} from './automatic-startup.mjs';
+import {calculateBudget} from './budget.mjs';
 
 const [command='doctor',...args]=process.argv.slice(2);
 try{
@@ -18,6 +19,12 @@ try{
     await ensureDaemon();process.stdout.write('本地控制服务已启动。\n');
   }else if(command==='list'){
     process.stdout.write(JSON.stringify(await request('state'),null,2)+'\n');
+  }else if(command==='set-usable'){
+    const [id,usableWindow,compactPercent='90']=args;if(!id||!usableWindow)throw new Error('用法：set-usable <聊天ID> <700K> [90]');
+    const thread=(await request('state')).threads.find(t=>t.id===id);if(!thread)throw new Error('未找到聊天');
+    const budget=calculateBudget({usableWindow,compactPercent},thread.modelMetadata);
+    const policy={window:budget.window,compact:budget.compact,reserve:thread.policy?.reserve??16000,retainedFloor:thread.policy?.retainedFloor??0};
+    const answer=await request('setPolicy',{id,policy,apply:true});process.stdout.write(JSON.stringify({budget,...answer},null,2)+'\n');
   }else if(command==='set'){
     const [id,window,compact]=args;if(!id||!window)throw new Error('用法：set <聊天ID> <400K> [320K]');
     const answer=await request('setPolicy',{id,policy:{window,compact},apply:true});process.stdout.write(JSON.stringify(answer,null,2)+'\n');
@@ -26,8 +33,8 @@ try{
     let version='unavailable';try{version=spawnSync(realBinary(),['--version'],{encoding:'utf8'}).stdout.trim();}catch{}
     const state=service?await request('state'):{bridgeCount:0,threads:[]};
     const settings=readJSON(path.join(root,'settings.json'),{});
-    console.log(JSON.stringify({version:'0.2.0',node:process.version,runtime:version,runtimeSupported:runtimeSupported(version),verifiedVersions,service,connectedBridges:state.bridgeCount,automaticStartup:process.platform==='darwin'?automaticStartupStatus():null,
+    console.log(JSON.stringify({version:'0.3.0',node:process.version,runtime:version,runtimeSupported:runtimeSupported(version),verifiedVersions,service,connectedBridges:state.bridgeCount,automaticStartup:process.platform==='darwin'?automaticStartupStatus():null,
       observedChats:state.threads.length,installRoot:root,hookInstalled:!!settings.hookCommand,
       activation:state.bridgeCount?'connected':'照常打开 Codex；首次安装或更新后请正常重开一次客户端。'},null,2));
-  }else throw new Error('支持 doctor、start、list、set、hook');
+  }else throw new Error('支持 doctor、start、list、set-usable、set（底层配置）、hook');
 }catch(error){if(command==='hook'){process.stdout.write('{}\n');}else{process.stderr.write(error.message+'\n');process.exitCode=1;}}

@@ -23,7 +23,7 @@ export function preflight(thread,policy,model) {
   if(!Number.isSafeInteger(maximum)||maximum<1)return {...result,code:'metadata_missing',allowed:false,message:'缺少该模型的目录上限，暂不应用。'};
   if(policy.window>maximum)return {...result,code:'above_catalog_maximum',allowed:false,message:`超过当前模型目录上限 ${maximum.toLocaleString()}；这不代表服务端接受边界。`};
   const usable=Math.floor(policy.window*percent/100);
-  const compact=Math.min(policy.compact,Math.floor(policy.window*.9));
+  const compact=Math.min(policy.compact,Math.floor(policy.window*90/100));
   Object.assign(result,{expectedWindow:usable,effectiveCompact:compact,catalogMaximum:maximum,usablePercent:percent});
   if(compact!==policy.compact)result.notes.push(`total 模式下实际阈值最多为 ${compact.toLocaleString()}。`);
   if(policy.retainedFloor+policy.reserve>=Math.min(usable,compact))return {...result,code:'below_retained_floor',allowed:false,message:'必须保留量加下一轮预留已达到容量或压缩阈值；需要更大的窗口或减少保留量。'};
