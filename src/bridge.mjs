@@ -49,9 +49,11 @@ export class Bridge {
     if(typeof parentId==='string'&&!params.path&&!params.ephemeral){
       const resolved=await this.resolveFork(parentId,params.model);
       const parent=this.records.get(parentId);
-      source=resolved?.policy??parent?.policy;model=resolved?.model??parent?.modelInfo;
+      source=resolved?.policy??parent?.policy;
+      model=resolved?.model??(!params.model||params.model===parent?.model?parent?.modelInfo:null);
     }
     const policy=inheritedForkPolicy(source,parentId);
+    if(policy&&params.model&&!model)throw new Error('无法核对分支模型的窗口上限，请先加载该模型信息再 fork。');
     if(policy&&Number.isSafeInteger(model?.max_context_window)&&policy.window>model.max_context_window)throw new Error('父对话预算超过分支模型上限，请先调整预算再 fork。');
     const prepared={parentId,source:policy?structuredClone(source):null,policy,model};
     this.fromClient(JSON.stringify(policy?{...message,params:forkConfig(params,policy)}:message),prepared);

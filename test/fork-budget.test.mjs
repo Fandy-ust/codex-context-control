@@ -60,6 +60,12 @@ test('fork failure creates no policy and a known smaller model limit is not bypa
     small.bridge.fromClient(JSON.stringify({id:2,method:'thread/fork',params:{threadId:'parent'}}));await until(()=>small.responses.length);
     assert.equal(small.writes.length,0);assert.match(small.responses[0].error.message,/上限/);
   }finally{small.close();}
+  const unknown=fixture(async()=>({policy:source,model:null}));
+  Object.assign(unknown.bridge.record('parent'),{model:'fixture',modelInfo:model,policy:source});
+  try{
+    unknown.bridge.fromClient(JSON.stringify({id:3,method:'thread/fork',params:{threadId:'parent',model:'unknown-target'}}));await until(()=>unknown.responses.length);
+    assert.equal(unknown.writes.length,0);assert.match(unknown.responses[0].error.message,/模型/);
+  }finally{unknown.close();}
 });
 
 test('a nested fork receives an independent snapshot with its own revision sequence',()=>{
