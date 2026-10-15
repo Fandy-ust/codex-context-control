@@ -16,7 +16,7 @@ struct ContextStatistics:Decodable {
     }
     let cost:Cost
     struct Response:Decodable,Identifiable {
-        struct Estimate:Decodable {let usd:Double?;let upperUSD:Double?;let reason:String?;let tier:String?;let contextBand:String?;let breakdown:[CostPart]?}
+        struct Estimate:Decodable {let usd:Double?;let upperUSD:Double?;let reason:String?;let tier:String?;let contextBand:String?;let writeEstimated:Bool?;let breakdown:[CostPart]?}
         let costEstimate:Estimate?
         struct Config:Decodable {let model:String?;let effort:String?;let serviceTier:String?;let contextWindow:Int?;let compactThreshold:Int?}
         let id:String;let index:Int;let position:Int;let eventType:String;let timestamp:String;let turnId:String?;let kind:String
@@ -124,9 +124,6 @@ struct ContextSummaryView:View {
     let statistics:ContextStatistics
     private func amount(_ n:Int?)->String {n.map{ $0>=1000000 ? (Double($0)/1000000).formatted(.number.precision(.fractionLength(0...2)))+"M":$0>=1000 ? (Double($0)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":$0.formatted()} ?? "待观测"}
     private func money(_ n:Double?)->String {n.map{String(format:"$%.2f",$0)} ?? "待估算"}
-    private func range(_ lower:Double?,_ upper:Double?)->String {
-        guard let lower else{return "待估算"};if let upper,upper-lower>=0.005{return money(lower)+" – "+money(upper)};return "≈ "+money(lower)
-    }
     private func tierName(_ tier:String)->String {switch tier{case "fast":return "Fast";case "standard":return "Standard";case "ultrafast":return "Ultrafast";case "flex":return "Flex";default:return tier}}
     var body:some View {
         VStack(alignment:.leading,spacing:12){
@@ -144,34 +141,27 @@ struct ContextSummaryView:View {
         let cost=statistics.cost
         return VStack(alignment:.leading,spacing:9){
             HStack(alignment:.firstTextBaseline){
-                Text("本聊天费用 · 官方 API 折算").font(.callout.weight(.medium));Spacer()
+                Text("本聊天费用 · API 估算").font(.callout.weight(.medium));Spacer()
                 if cost.unpricedRequests>0{Text("可估部分").font(.caption).foregroundStyle(.secondary)}
                 Text((cost.usd != nil ? "≈ ":"")+money(cost.usd)).font(.system(size:23,weight:.medium,design:.rounded)).monospacedDigit()
             }
             HStack {Text("按配置 · 已估 \(cost.pricedRequests)/\(cost.totalRequests) 次 · 非实际账单");Spacer();Text("USD")}.font(.caption2).foregroundStyle(.secondary)
             HStack(spacing:12){ForEach(cost.breakdown){part in
-                VStack(alignment:.leading,spacing:3){Text(part.label).font(.caption2).foregroundStyle(.secondary);Text(cost.pricedRequests>0 ? amount(part.tokens):"—").font(.callout).monospacedDigit();Text(cost.pricedRequests>0 ? money(part.usd)+(part.category=="cache_write" && cost.unverifiedWriteRequests>0 ? " 上游计量":""):"—").font(.caption2).foregroundStyle(.secondary).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading)
+                VStack(alignment:.leading,spacing:3){Text(part.category=="cache_write" ? "缓存写入 · 估算":part.label).font(.caption2).foregroundStyle(.secondary);Text(cost.pricedRequests>0 ? amount(part.tokens):"—").font(.callout).monospacedDigit();Text(cost.pricedRequests>0 ? money(part.usd):"—").font(.caption2).foregroundStyle(.secondary).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading)
             }}.padding(.vertical,3)
-            if cost.unverifiedWriteRequests>0{Text("Codex 实测返回写入计量 0，不代表物理缓存没有增长").font(.caption2).foregroundStyle(.secondary)}
             DisclosureGroup("官方公式与计价明细"){
                 VStack(alignment:.leading,spacing:8){
-                    if cost.unverifiedWriteRequests>0{Text("\(cost.unverifiedWriteRequests) 次日志报告写入为 0。ChatGPT 登录实测原始响应也明确返回 0；官方 Codex credits 不单收写入费。这个计费数字不能当作物理缓存没有增长。")}
+                    Text("新增写入按未命中输入估算，使用官方单价。")
                     Text("普通输入 = 总输入 − 缓存读取 − 缓存写入")
                     Text("费用 =（普通输入 × 输入价 + 缓存读取 × 读取价 + 缓存写入 × 写入价 + 输出 × 输出价）÷ 1,000,000")
                     Link("OpenAI 官方 calculateInputCost",destination:URL(string:"https://developers.openai.com/api/docs/guides/prompt-caching#monitor-cache-performance")!)
-                    Text("四项仅累计已估请求，使用上游返回计量；不把累计缓存读取或其差值替换为写入量。")
+                    Text("四项按官方公式计费。估算写入对应的 token 已从普通输入扣除，不重复收费。")
                     ForEach(cost.groups){group in HStack {Text("\(group.model) · \(tierName(group.tier))");Spacer();Text("\(group.requests) 次 · \(money(group.usd))").monospacedDigit()}}
                     if cost.unpricedRequests>0{Text("未计入：档位未知 \(cost.unknownTier) · 模型价格未知 \(cost.unknownModel) · 用量缺失 \(cost.unknownUsage) · 不支持的费率 \(cost.unsupportedRate)").foregroundStyle(.orange)}
                     if cost.comparisonRequests>0{Text("同批 \(cost.comparisonRequests) 次用量：Standard \(money(cost.standardUSD)) ／ Fast \(money(cost.fastUSD))").monospacedDigit()}
                     Text("价格核对：\(cost.checkedAt)。仅累计本聊天请求，不含父聊天既有费用、税费、工具费或地区加价。缓存读取、写入分别计价，推理已包含在输出中。")
                     Text("\(cost.longContextCount) 次已计价请求超过 272K，按长上下文费率。这里使用配置档位；日志未提供服务器最终结算档位，不能核对降档或实际扣费。")
-                    if cost.maxWriteSurcharge>0 {
-                        DisclosureGroup("写入假设分析（非官方计量）"){
-                            Text("若假设未命中输入中的一部分也按公开 API 写入计价，额外写入最多 \(amount(cost.extraWriteTokens)) tokens，增加费用最多 \(money(cost.maxWriteSurcharge))，对应 \(range(cost.usd,cost.upperUSD))。这是条件假设，未加入主金额；缓存增长不能唯一确定实际写入量。").padding(.top,5)
-                        }
-                    }
                     Link("官方 API 价格",destination:URL(string:cost.source)!)
-                    Link("Codex credits 不单收写入费",destination:URL(string:"https://learn.chatgpt.com/docs/pricing")!)
                 }.font(.caption).foregroundStyle(.secondary).padding(.top,8)
             }.font(.caption).foregroundStyle(.secondary)
         }.padding(14).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))

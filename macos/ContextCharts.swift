@@ -152,9 +152,8 @@ struct ContextResponseChart:View {
             DisclosureGroup("更多信息"){
                 VStack(alignment:.leading,spacing:5){
                     if let parts=r.costEstimate?.breakdown {ForEach(parts){part in HStack {Text(part.label);Spacer();Text("\(part.tokens.formatted()) tokens · \(String(format:"$%.4f",part.usd))").monospacedDigit()}}}
-                    if r.cacheWriteTokens==0 {Text("写入量采用上游计量；Codex 实测零值不能代表物理缓存没有增长。").foregroundStyle(.orange)}
-                    Text("本次官方 API 折算 \(r.costEstimate?.usd.map{String(format:"$%.4f",$0)} ?? "未知") · 按配置档位")
-                    Text("推理 \(tokenLabel(r.reasoningTokens)) · 缓存写入 \(tokenLabel(r.cacheWriteTokens)) · 用时 \(r.durationMs.map{String(format:"%.2f 秒",$0/1000)} ?? "未记录")")
+                    Text("本次 API 估算 \(r.costEstimate?.usd.map{String(format:"$%.4f",$0)} ?? "未知") · 按配置档位")
+                    Text("推理 \(tokenLabel(r.reasoningTokens)) · 缓存写入（估算） \(tokenLabel(r.costEstimate?.breakdown?.first(where:{$0.category=="cache_write"})?.tokens)) · 用时 \(r.durationMs.map{String(format:"%.2f 秒",$0/1000)} ?? "未记录")")
                     Text("压缩阈值 \(tokenLabel(r.config.compactThreshold)) · 轮次 \(r.turnId ?? "未记录")")
                 }.font(.caption2).foregroundStyle(.secondary).textSelection(.enabled).padding(.top,4)
             }.font(.caption2).foregroundStyle(.secondary)
