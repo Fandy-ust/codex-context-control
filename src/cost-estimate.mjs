@@ -25,13 +25,14 @@ export function estimateResponse(row,overrideTier){
   return {usd,reason:null,tier,contextBand:band,breakdown};
 }
 export function estimateConversation(responses){
-  let usd=0,priced=0,unknownTier=0,unknownModel=0,unknownUsage=0,unsupportedRate=0,standardUSD=0,fastUSD=0,comparisonCount=0,longContextCount=0;
+  let usd=0,priced=0,unknownTier=0,unknownModel=0,unknownUsage=0,unsupportedRate=0,standardUSD=0,fastUSD=0,comparisonCount=0,longContextCount=0,unverifiedWriteRequests=0;
   const groups=new Map(),seen=new Set(),breakdown=Object.entries(bucketLabels).map(([category,label])=>({category,label,tokens:0,usd:0}));
   for(const response of responses){
     if(seen.has(response.id))continue;seen.add(response.id);
     const cost=estimateResponse(response);response.costEstimate=cost;
     if(cost.usd!=null){
       for(let i=0;i<breakdown.length;i++){breakdown[i].tokens+=cost.breakdown[i].tokens;breakdown[i].usd+=cost.breakdown[i].usd;}
+      if(response.cacheWriteTokens===0)unverifiedWriteRequests++;
       usd+=cost.usd;priced++;if(cost.contextBand==='long')longContextCount++;
       const key=`${response.config.model}:${cost.tier}`;
       const group=groups.get(key)??{model:response.config.model,tier:cost.tier,requests:0,usd:0};
@@ -45,7 +46,7 @@ export function estimateConversation(responses){
   }
   return {currency:'USD',checkedAt:priceBook.checkedAt,source:priceBook.source,scope:'own_thread',basis:'configured_tier',
     usd:priced>0?usd:null,pricedRequests:priced,totalRequests:seen.size,unpricedRequests:seen.size-priced,
-    unknownTier,unknownModel,unknownUsage,unsupportedRate,longContextCount,
+    unknownTier,unknownModel,unknownUsage,unsupportedRate,longContextCount,unverifiedWriteRequests,
     standardUSD:comparisonCount>0?standardUSD:null,fastUSD:comparisonCount>0?fastUSD:null,comparisonRequests:comparisonCount,
     breakdown,groups:[...groups.values()]};
 }

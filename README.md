@@ -4,7 +4,7 @@
 
 包含原生控制面板、Codex 连接桥接、Hook stats 状态输出，以及可重复执行的安装/卸载程序。使用原有 Codex 登录和运行时，不需要为本工具配置 API key。
 
-**当前版本：0.7.0，本地预览版。已验证 Codex 0.159.2 和 0.160.0。** 窗口与压缩阈值均使用滑条，按 1K 调整；窗口变化时压缩阈值按比例联动。照常打开 Codex 后，菜单栏自动出现 **「上下文」**，点击即可打开设置。未验证的运行时仅透传，不执行预算调整。0.5.2 增加 fork 预算继承，并保留连续调整时下一轮前优先完成最新预算的修复。
+**当前版本：0.7.1，本地预览版。已验证 Codex 0.159.2 和 0.160.0。** 窗口与压缩阈值均使用滑条，按 1K 调整；窗口变化时压缩阈值按比例联动。照常打开 Codex 后，菜单栏自动出现 **「上下文」**，点击即可打开设置。未验证的运行时仅透传，不执行预算调整。0.5.2 增加 fork 预算继承，并保留连续调整时下一轮前优先完成最新预算的修复。
 
 ## 软件形态
 
@@ -68,7 +68,7 @@ npm run install:local
 
 ## 功能边界
 
-| 能力 | 0.7.0 |
+| 能力 | 0.7.1 |
 | --- | --- |
 | 逐聊天窗口、压缩阈值及预算持久保存 | 已实现 |
 | fork 预算继承 | 创建时复制父对话预算；分支与父对话随后独立调整 |
@@ -168,3 +168,11 @@ CONTEXT_CONTROL_TEST_INSTALL=1 node --test test/install.test.mjs
 缓存写入使用运行时明确报告的新增写入 token，不能用命中量差值代替。输出已经包含推理，不能再加一次。输入超过 272,000 tokens 时，整个请求采用对应的长上下文费率，与用户设置的窗口容量无关。缺失计数、缓存计数超过总输入、未知模型/档位都不计入已估金额，界面显示覆盖率及未计入原因，不将未知作为零费用。
 
 「同批用量 Standard / Fast」是同一组可比请求的情景估算，不表示实际切换后的性能或实际账单。所有金额不含工具独立收费、税费、地区/FedRAMP 加价或组织协议折扣。缓存公式依据 [官方缓存文档](https://developers.openai.com/api/docs/guides/prompt-caching)，服务档位依据 [Fast 文档](https://developers.openai.com/api/docs/guides/fast-mode)。
+
+### 缓存写入零值的来源（0.7.1）
+
+核对 Codex 0.160.0 源码发现，原始 API 用量中的 `input_tokens_details.cache_write_tokens` 缺失时，会由 `#[serde(default)]` 转成零，再写入 `TokenUsage.cache_write_input_tokens`。本地 `TokenUsageRecord` 没有保留原始字段是否存在，因此零值不能证明服务端确实报告了零次写入，也不能证明缓存写入免费。源码包含非零写入量的解析测试，说明该版本能够读取非零字段。
+
+[解析和默认值](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/codex-api/src/sse/responses.rs#L128)；[非零值测试](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/codex-api/src/sse/responses.rs#L802)。
+
+费用卡将这类零值标记为未确认，仍可按零写入计算暂估金额，但明确提示可能低估。只有在未来取得原始用量字段的存在性证据后，才能区分真实零值与未报告；本工具没有拦截连接或保存原始响应正文。

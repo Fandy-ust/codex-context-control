@@ -49,3 +49,9 @@ test('chat cost excludes inherited requests and survives compaction without dupl
  const cost=estimateConversation(buildTimeline(events,id).responses);
  assert.equal(cost.totalRequests,2);assert.equal(cost.pricedRequests,2);near(cost.usd,.81);
 });
+
+test('normalized zero cache-write counts remain explicitly unverified',()=>{
+ const cost=estimateConversation([row({cacheWriteTokens:0}),row({id:'b'})]);
+ assert.equal(cost.unverifiedWriteRequests,1);
+ const positive=estimateConversation([row()]);assert.equal(positive.unverifiedWriteRequests,0);
+});

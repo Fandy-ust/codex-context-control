@@ -11,7 +11,7 @@ struct ContextStatistics:Decodable {
         let breakdown:[CostPart]
         struct Group:Decodable,Identifiable {let model:String;let tier:String;let requests:Int;let usd:Double;var id:String{model+":"+tier}}
         let usd:Double?;let pricedRequests:Int;let totalRequests:Int;let unpricedRequests:Int
-        let unknownTier:Int;let unknownModel:Int;let unknownUsage:Int;let unsupportedRate:Int;let longContextCount:Int
+        let unknownTier:Int;let unknownModel:Int;let unknownUsage:Int;let unsupportedRate:Int;let longContextCount:Int;let unverifiedWriteRequests:Int
         let standardUSD:Double?;let fastUSD:Double?;let comparisonRequests:Int;let groups:[Group];let checkedAt:String;let source:String
     }
     let cost:Cost
@@ -147,10 +147,12 @@ struct ContextSummaryView:View {
             }
             HStack {Text("按配置 · 已估 \(cost.pricedRequests)/\(cost.totalRequests) 次 · 非实际账单");Spacer();Text("USD")}.font(.caption2).foregroundStyle(.secondary)
             HStack(spacing:12){ForEach(cost.breakdown){part in
-                VStack(alignment:.leading,spacing:3){Text(part.label).font(.caption2).foregroundStyle(.secondary);Text(cost.pricedRequests>0 ? amount(part.tokens):"—").font(.callout).monospacedDigit();Text(cost.pricedRequests>0 ? money(part.usd):"—").font(.caption2).foregroundStyle(.secondary).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading)
+                VStack(alignment:.leading,spacing:3){Text(part.label).font(.caption2).foregroundStyle(.secondary);Text(part.category=="cache_write" && cost.unverifiedWriteRequests>0 && part.tokens==0 ? "未确认":cost.pricedRequests>0 ? amount(part.tokens):"—").font(.callout).monospacedDigit();Text(cost.pricedRequests>0 ? money(part.usd)+(part.category=="cache_write" && cost.unverifiedWriteRequests>0 ? " 暂计":""):"—").font(.caption2).foregroundStyle(.secondary).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading)
             }}.padding(.vertical,3)
+            if cost.unverifiedWriteRequests>0{Text("写入量未确认 · 暂按零写入估算，可能低估").font(.caption2).foregroundStyle(.orange)}
             DisclosureGroup("计价明细"){
                 VStack(alignment:.leading,spacing:8){
+                    if cost.unverifiedWriteRequests>0{Text("\(cost.unverifiedWriteRequests) 次请求的本地写入量为 0。Codex 会把缺失字段转为 0，现有日志无法区分未返回与真实零值；暂不据此断定实际写入免费。")}
                     Text("四项仅统计已估请求。普通输入 = 输入总量 − 缓存读取 − 缓存写入；缓存写入是运行时报告的新增写入，并非命中量变化。")
                     ForEach(cost.groups){group in HStack {Text("\(group.model) · \(tierName(group.tier))");Spacer();Text("\(group.requests) 次 · \(money(group.usd))").monospacedDigit()}}
                     if cost.unpricedRequests>0{Text("未计入：档位未知 \(cost.unknownTier) · 模型价格未知 \(cost.unknownModel) · 用量缺失 \(cost.unknownUsage) · 不支持的费率 \(cost.unsupportedRate)").foregroundStyle(.orange)}
