@@ -31,8 +31,10 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var selectedID:String?
     @Published var bridgeCount=0
     @Published var notice="正在读取本地状态…"
-    @Published var window="400K"
-    @Published var compactPercent=90.0
+    @Published private(set) var windowK=400.0
+    @Published private(set) var compactK=360.0
+    private var ratioNumerator=90
+    private var ratioDenominator=100
     @Published var reserve="16K"
     @Published var floor="0"
     @Published var working=false
@@ -69,22 +71,39 @@ struct ServiceSettings: Decodable {let node:String}
     func fill(){
         guard let chat=selected else{return};editingRevision=chat.policy?.revision ?? 0;pendingMetadataID=nil
         reserve=String(chat.policy?.reserve ?? 16000);floor=String(chat.policy?.retainedFloor ?? 0)
-        if let policy=chat.policy,let percent=chat.modelMetadata?.effective_context_window_percent,(1...100).contains(percent),chat.modelMetadata?.max_context_window != nil{
+        guard let percent=chat.modelMetadata?.effective_context_window_percent,(1...100).contains(percent),chat.modelMetadata?.max_context_window != nil else{pendingMetadataID=chat.id;return}
+        if let policy=chat.policy{
             let usable=policy.window*percent/100
-            window=String(usable)
             let actualCompact=min(policy.compact,policy.window*90/100)
-            compactPercent=min((Double(actualCompact)/Double(max(1,usable))*10000).rounded()/100,maximumRatio)
-        }else if chat.policy != nil{window="";compactPercent=90;pendingMetadataID=chat.id}
-        else{window="400K";compactPercent=90}
+            windowK=Double(max(2,min(usable/1000,maximumWindowK)))
+            compactK=Double(max(1,min(actualCompact/1000,maximumCompactK)))
+            ratioNumerator=Int(compactK);ratioDenominator=Int(windowK)
+        }else{ratioNumerator=90;ratioDenominator=100;setWindowK(400)}
     }
-    func calculate(_ ratio:Double?=nil) throws -> BudgetPreview {
+    func calculate() throws -> BudgetPreview {
         guard let metadata=selected?.modelMetadata,let percent=metadata.effective_context_window_percent,let maximum=metadata.max_context_window else{throw BudgetInputError(message:"等待当前模型信息后即可设置实际可用窗口")}
-        return try BudgetMath.preview(usableWindow:BudgetMath.tokens(window),compactPercent:ratio ?? compactPercent,effectivePercent:percent,maximumRawWindow:maximum)
+        guard !waitingForModel else{throw BudgetInputError(message:"正在读取此聊天的窗口设置")}
+        return try BudgetMath.sliderPreview(windowK:Int(windowK),compactK:Int(compactK),effectivePercent:percent,maximumRawWindow:maximum)
     }
     var preview:BudgetPreview? {try? calculate()}
     var previewError:String? {do{_ = try calculate();return nil}catch{return error.localizedDescription}}
-    var maximumRatio:Double {(try? calculate(1).maxCompactPercent) ?? 90}
     var maximumUsableWindow:Int? {guard let m=selected?.modelMetadata,let p=m.effective_context_window_percent,let w=m.max_context_window else{return nil};return w*p/100}
+    var maximumWindowK:Int {max(2,(maximumUsableWindow ?? 400000)/1000)}
+    var maximumCompactK:Int {
+        guard let m=selected?.modelMetadata,let p=m.effective_context_window_percent,let w=m.max_context_window else{return 1}
+        return (try? BudgetMath.maximumSliderCompactK(windowK:Int(windowK),effectivePercent:p,maximumRawWindow:w)) ?? 1
+    }
+    var canEditBudget:Bool {!waitingForModel && (maximumUsableWindow ?? 0)>=2000}
+    var compactPercent:Double {compactK/windowK*100}
+    func setWindowK(_ value:Double){
+        windowK=max(2,min(Double(maximumWindowK),value.rounded()))
+        compactK=Double(BudgetMath.linkedSliderCompactK(windowK:Int(windowK),ratioNumerator:ratioNumerator,ratioDenominator:ratioDenominator,maximumK:maximumCompactK))
+    }
+    func setCompactK(_ value:Double){
+        compactK=max(1,min(Double(maximumCompactK),value.rounded()))
+        ratioNumerator=Int(compactK);ratioDenominator=Int(windowK)
+    }
+    func setRatio(_ value:Int){ratioNumerator=value;ratioDenominator=100;setWindowK(windowK)}
     var policy:[String:Any] {get throws {let budget=try calculate();return ["window":budget.rawWindow,"compact":budget.compact,"reserve":reserve,"retainedFloor":floor,"scope":"total"]}}
     func act(_ action:String) async {
         guard let chat=selected else{return};working=true;defer{working=false}
@@ -144,8 +163,8 @@ struct ContentView: View {
                         }
                         Text("窗口表示容量上限。最近请求用量是当前占用的近似值，不是聊天累计用量。压缩后的最低保留量不能预先保证。").font(.caption).foregroundStyle(.secondary)
                         Divider()
-                        HStack {Text("本聊天的独立预算").font(.headline);Button("重新载入",systemImage:"arrow.clockwise"){model.fill()}.labelStyle(.iconOnly).help("重新读取此聊天已保存的设置");Spacer();ForEach([200,400,800],id:\.self){k in Button("\(k)K"){model.window="\(k)K"}.disabled(k*1000>(model.maximumUsableWindow ?? Int.max))};if let maximum=model.maximumUsableWindow{Button("最大"){model.window=String(maximum)}}}
-                        budgetEditor().disabled(model.waitingForModel)
+                        HStack {Text("本聊天的独立预算").font(.headline);Button("重新载入",systemImage:"arrow.clockwise"){model.fill()}.labelStyle(.iconOnly).help("重新读取此聊天已保存的设置");Spacer();ForEach([200,400,800],id:\.self){k in Button("\(k)K"){model.setWindowK(Double(k))}.disabled(!model.canEditBudget || k>model.maximumWindowK)};Button("最大"){model.setWindowK(Double(model.maximumWindowK))}.disabled(!model.canEditBudget)}
+                        budgetEditor().disabled(!model.canEditBudget)
                         HStack {
                             Button("预检"){Task{await model.act("preflight")}}.disabled(model.preview==nil)
                             Button(chat.connected ? "应用到此聊天":"保存，接入后应用"){Task{await model.act("policy")}}.buttonStyle(.borderedProminent).disabled(model.preview==nil)
@@ -169,21 +188,12 @@ struct ContentView: View {
     }
     func budgetEditor()->some View {
         VStack(alignment:.leading,spacing:16){
-            Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:14){
-                field("实际可用窗口",text:$model.window,hint:"你输入的数值就是目标可用窗口，例如 700K")
-            }
-            HStack {Text("自动压缩比例");Spacer();ForEach([80.0,85.0,90.0],id:\.self){value in Button("\(Int(value))%"){model.compactPercent=value}};Button("最大 \(percentage(model.maximumRatio))%"){model.compactPercent=model.maximumRatio}}
-            HStack(spacing:12){
-                Slider(value:$model.compactPercent,in:0.01...100,step:0.01).accessibilityLabel("自动压缩比例")
-                TextField("压缩比例",value:$model.compactPercent,format:.number.precision(.fractionLength(0...2))).textFieldStyle(.roundedBorder).frame(width:75)
-                Text("%")
-            }
-            if let budget=model.preview {
-                Text("自动压缩阈值：\(formatted(budget.compact))").font(.headline).monospacedDigit()
-                Text("达到实际可用窗口的 \(percentage(budget.compactPercent))% 时触发压缩；调整窗口后阈值会同比例变化。").font(.caption).foregroundStyle(.secondary)
-            }
+            tokenSlider("实际可用窗口",value:Binding(get:{model.windowK},set:{model.setWindowK($0)}),minimum:2,maximum:model.maximumWindowK)
+            Text("每格 1K；显示的数值就是目标可用窗口。").font(.caption).foregroundStyle(.secondary)
+            tokenSlider("自动压缩阈值",value:Binding(get:{model.compactK},set:{model.setCompactK($0)}),minimum:1,maximum:model.maximumCompactK)
+            HStack {Text("占窗口 \(percentage(model.compactPercent))%").font(.callout).monospacedDigit();Spacer();ForEach([80,85,90],id:\.self){value in Button("\(value)%"){model.setRatio(value)}};Button("最大"){model.setCompactK(Double(model.maximumCompactK))}}
+            Text("拖动窗口时，压缩阈值按所选比例联动，向下取整到 1K。单独拖动压缩滑条可改变比例；点击应用后生效。").font(.caption).foregroundStyle(.secondary)
             if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").foregroundStyle(.orange)}
-            if let maximum=model.maximumUsableWindow{Text("当前模型最多可用：\(formatted(maximum))").font(.caption).foregroundStyle(.secondary)}
             DisclosureGroup("高级设置"){
                 VStack(alignment:.leading,spacing:12){
                     Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:14){
@@ -197,7 +207,18 @@ struct ContentView: View {
             }
         }
     }
-    func percentage(_ value:Double)->String {value.formatted(.number.precision(.fractionLength(0...2)))}
+    func tokenSlider(_ title:String,value:Binding<Double>,minimum:Int,maximum:Int)->some View {
+        VStack(alignment:.leading,spacing:8){
+            HStack {Text(title).font(.headline);Spacer();Text("\(Int(value.wrappedValue))K").font(.title2.monospacedDigit().weight(.semibold))}
+            HStack(spacing:12){
+                Button {value.wrappedValue-=1} label:{Image(systemName:"minus")}.accessibilityLabel("\(title)减少 1K").disabled(value.wrappedValue<=Double(minimum))
+                Slider(value:value,in:Double(minimum)...Double(max(minimum+1,maximum)),step:1).accessibilityLabel(title).accessibilityValue("\(Int(value.wrappedValue))K").disabled(maximum<=minimum)
+                Button {value.wrappedValue+=1} label:{Image(systemName:"plus")}.accessibilityLabel("\(title)增加 1K").disabled(value.wrappedValue>=Double(maximum))
+            }
+            HStack {Text("\(minimum)K");Spacer();Text("\(maximum)K")}.font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        }
+    }
+    func percentage(_ value:Double)->String {value.formatted(.number.precision(.fractionLength(0...1)))}
     func metric(_ title:String,_ value:String)->some View {VStack(alignment:.leading,spacing:7){Text(title).font(.caption).foregroundStyle(.secondary);Text(value).font(.title2.monospacedDigit().weight(.semibold))}.frame(maxWidth:.infinity,alignment:.leading)}
     func field(_ label:String,text:Binding<String>,hint:String)->some View {GridRow{Text(label);VStack(alignment:.leading,spacing:4){TextField(label,text:text).textFieldStyle(.roundedBorder).frame(maxWidth:250);Text(hint).font(.caption).foregroundStyle(.secondary)}}}
 }

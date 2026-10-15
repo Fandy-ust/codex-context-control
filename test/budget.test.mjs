@@ -9,6 +9,37 @@ import {calculateBudget,effectiveWindow,savedBudget} from '../src/budget.mjs';
 import {normalizePolicy,preflight} from '../src/policy.mjs';
 
 const model={max_context_window:872000,effective_context_window_percent:95};
+test('native K sliders keep exact thresholds, safe limits and a stable linked ratio',{skip:process.platform!=='darwin',timeout:60000},()=>{
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-sliders-'));
+  try{
+    fs.writeFileSync(path.join(temp,'main.swift'),`import Foundation
+func budget(_ window:Int,_ compact:Int,_ percent:Int=95) throws -> BudgetPreview {try BudgetMath.sliderPreview(windowK:window,compactK:compact,effectivePercent:percent,maximumRawWindow:872000)}
+func check(_ condition:Bool){precondition(condition)}
+let p=try budget(700,630)
+precondition(p.usableWindow==700000 && p.rawWindow==736843 && p.compact==630000)
+let legacy=try budget(665,600)
+precondition(legacy.rawWindow==700000 && legacy.compact==600000)
+check(try BudgetMath.maximumSliderCompactK(windowK:828,effectivePercent:95,maximumRawWindow:872000)==784)
+check(try budget(828,784).compact==784000)
+check(try budget(2,1).compact==1000)
+for (window,compact,percent) in [(829,700,95),(700,664,95),(700,631,100),(1,1,95),(2,0,95)] {
+    var rejected=false;do{_ = try budget(window,compact,percent)}catch{rejected=true};precondition(rejected)
+}
+for window in [400,701,665,828,200,665] {
+    let maximum=try BudgetMath.maximumSliderCompactK(windowK:window,effectivePercent:95,maximumRawWindow:872000)
+    let compact=BudgetMath.linkedSliderCompactK(windowK:window,ratioNumerator:600,ratioDenominator:665,maximumK:maximum)
+    precondition(compact==window*600/665)
+    check(try budget(window,compact).compact%1000==0)
+}
+precondition(BudgetMath.linkedSliderCompactK(windowK:701,ratioNumerator:90,ratioDenominator:100,maximumK:664)==630)
+precondition(BudgetMath.linkedSliderCompactK(windowK:700,ratioNumerator:94,ratioDenominator:100,maximumK:630)==630)
+print("K slider math verified")
+`);
+    const binary=path.join(temp,'slider-math');
+    const compiled=spawnSync('/usr/bin/xcrun',['swiftc',fileURLToPath(new URL('../macos/BudgetMath.swift',import.meta.url)),path.join(temp,'main.swift'),'-o',binary],{encoding:'utf8',timeout:30000});assert.equal(compiled.status,0,compiled.stderr);
+    const result=spawnSync(binary,[],{encoding:'utf8',timeout:5000});assert.equal(result.status,0,result.stderr);
+  }finally{fs.rmSync(temp,{recursive:true,force:true});}
+});
 test('700K usable at 90% compression means exactly 700K reported and a 630K threshold',()=>{
   const budget=calculateBudget({usableWindow:'700K',compactPercent:90},model);
   assert.equal(budget.window,736843);assert.equal(budget.usableWindow,700000);assert.equal(budget.compact,630000);

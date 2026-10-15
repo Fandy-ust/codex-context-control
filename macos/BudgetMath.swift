@@ -13,6 +13,24 @@ struct BudgetInputError:LocalizedError {
     var errorDescription:String? {message}
 }
 enum BudgetMath {
+    static func sliderPreview(windowK:Int,compactK:Int,effectivePercent:Int,maximumRawWindow:Int) throws -> BudgetPreview {
+        guard windowK>=2,windowK<Int.max/20_000_000,compactK>=1,compactK<=windowK else{throw BudgetInputError(message:"窗口至少为 2K，压缩阈值至少为 1K")}
+        let base=try preview(usableWindow:windowK*1000,compactPercent:1,effectivePercent:effectivePercent,maximumRawWindow:maximumRawWindow)
+        let compact=compactK*1000
+        guard compact<=base.rawWindow*90/100 else{throw BudgetInputError(message:"压缩阈值超过当前窗口允许的上限")}
+        return BudgetPreview(usableWindow:base.usableWindow,rawWindow:base.rawWindow,compact:compact,compactPercent:Double(compactK)/Double(windowK)*100,maximumUsableWindow:base.maximumUsableWindow,maxCompactPercent:base.maxCompactPercent)
+    }
+    static func maximumSliderCompactK(windowK:Int,effectivePercent:Int,maximumRawWindow:Int) throws -> Int {
+        let base=try sliderPreview(windowK:windowK,compactK:1,effectivePercent:effectivePercent,maximumRawWindow:maximumRawWindow)
+        return min(windowK,base.rawWindow*90/100/1000)
+    }
+    static func linkedSliderCompactK(windowK:Int,ratioNumerator:Int,ratioDenominator:Int,maximumK:Int) -> Int {
+        // Keep the selected rational ratio across repeated drags; rounding the
+        // previous threshold again would accumulate error on a return trip.
+        guard windowK>=2,ratioNumerator>0,ratioDenominator>=ratioNumerator else{return 1}
+        let scaled=ratioDenominator.dividingFullWidth(windowK.multipliedFullWidth(by:ratioNumerator)).quotient
+        return max(1,min(maximumK,scaled))
+    }
     static func tokens(_ text:String) throws -> Int {
         let value=text.trimmingCharacters(in:.whitespacesAndNewlines)
         let pattern=try NSRegularExpression(pattern:"^(\\d+(?:\\.\\d+)?)\\s*([kKmM]?)$")
