@@ -80,6 +80,10 @@ function content(value){
   }
   return {text:texts.join('\n'),images};
 }
+function isInjectedUserMessage(p,text){
+  const kinds=p.internal_chat_message_metadata_passthrough?.content_item_kinds??[];
+  return kinds.includes('compaction.summary')||(kinds.length>0&&kinds.every(k=>!k.startsWith('user.')))||/^\s*<(environment_context|external_codex_apps_open_page)>/.test(text);
+}
 export function summarizeSnapshot(snapshot,id,countTokens=tokens){
   const rows=Object.fromEntries(Object.entries(labels).map(([category,label])=>[category,{category,label,items:0,tokensEstimate:0,images:0,opaqueItems:0}]));
   const toolCalls=new Map();let plaintextSummaryItems=0;
@@ -89,7 +93,7 @@ export function summarizeSnapshot(snapshot,id,countTokens=tokens){
       ({text,images}=content(p.content));const kinds=p.internal_chat_message_metadata_passthrough?.content_item_kinds??[];
       const summary=kinds.includes('compaction.summary')||Boolean(snapshot.summary&&text===snapshot.summary);
       if(summary)plaintextSummaryItems++;
-      const injected=summary||(kinds.length>0&&kinds.every(k=>!k.startsWith('user.')))||/^\s*<(environment_context|external_codex_apps_open_page)>/.test(text);
+      const injected=summary||isInjectedUserMessage(p,text);
       if(summary||['system','developer'].includes(p.role))category='instructions';
       else if(p.role==='user')category=injected?'instructions':'user';
       else if(p.role==='assistant')category=['final','final_answer'].includes(p.phase??p.channel)?'assistant_final':'assistant_commentary';
@@ -116,14 +120,17 @@ export function summarizeSnapshot(snapshot,id,countTokens=tokens){
     notes:['展示最近一次已记录请求开始前的保留历史；新生成的内容会在后续请求快照中出现。','其他／未分项是输入总量减去文本估算，包含推理、图片、工具定义、格式及估算误差，并非实测的思维链大小。','明文压缩摘要并入文本，只计一次；不透明压缩项目已合并到其他。','工具次数按模型可见的外层调用计数；消息数与其附带图片数不能直接相加。']};
 }
 // Only scalar configuration and numeric usage leave the reader; never message bodies.
-export function responseTimeline(events,id){
-  const points=[],seen=new Set(),timings=new Map();let config={},pending=[],window=null,previousCache=null,segment=0;
+export function buildTimeline(events,id,countTokens=tokens){
+  const points=[],timelineEvents=[],seen=new Set(),timings=new Map(),inputIds=new Set(),compactionIds=new Set(),compressionResponses=new Set(),progressedTurns=new Set(),inputTurns=new Set();
+  let config={},pending=[],window=null,previousCache=null,segment=0,position=0,currentTurn=null;
+  const markCompression=point=>{point.eventType='compaction';point.kind='压缩响应';};
   const scalar=(value)=>typeof value==='string'||typeof value==='number'?value:null;
   const number=value=>Number.isSafeInteger(value)&&value>=0?value:null;
   for(const e of events){
     if(e.originThreadId!==id)continue;
     const p=e.payload??{};
     if(e.type==='turn_context'){
+      currentTurn=p.turn_id??currentTurn;
       config={model:scalar(p.model),effort:scalar(p.effort??p.reasoning_effort),serviceTier:config.serviceTier??null,
         contextWindow:window,compactThreshold:null};
     }
@@ -132,15 +139,39 @@ export function responseTimeline(events,id){
       config={...config,model:scalar(settings.model)??config.model,effort:scalar(settings.reasoning_effort)??config.effort,
         serviceTier:scalar(settings.service_tier)??config.serviceTier};
     }
-    if(e.type==='event_msg'&&p.type==='task_started'){window=number(p.model_context_window);config.contextWindow=window;}
+    if(e.type==='event_msg'&&p.type==='task_started'){currentTurn=p.turn_id??currentTurn;window=number(p.model_context_window);config.contextWindow=window;}
     if(e.type==='event_msg'&&p.type==='token_count'){
       window=number(p.info?.model_context_window)??window;config.contextWindow=window;
     }
     if(e.type==='event_msg'&&p.type==='item_completed'&&['Reasoning','AgentMessage'].includes(p.item?.type)){
       if(p.item.id)timings.set(p.item.id,{start:number(p.started_at_ms),end:number(p.completed_at_ms)});
     }
-    if(e.type==='response_item'&&generated(p))pending.push({id:p.id,type:p.type,phase:p.phase??p.channel});
-    if(e.type==='compacted'){pending=[];timings.clear();segment++;}
+    if(e.type==='response_item'&&p.type==='message'&&p.role==='user'){
+      const {text,images}=content(p.content),key=p.id??`user:${e.timestamp}:${position}`;
+      if(!isInjectedUserMessage(p,text)&&!inputIds.has(key)){
+        inputIds.add(key);
+        const turnId=p.internal_chat_message_metadata_passthrough?.turn_id??currentTurn;
+        const steering=turnId!=null&&(inputTurns.has(turnId)||progressedTurns.has(turnId));
+        timelineEvents.push({id:`input:${key}`,position:++position,timestamp:e.timestamp,turnId,
+          eventType:steering?'steering':'user_input',kind:steering?'用户追加输入':'用户输入',
+          tokensEstimate:countTokens(text),images,retainedItems:null,responseId:null});
+        if(turnId)inputTurns.add(turnId);
+      }
+    }
+    if(e.type==='response_item'&&generated(p)){
+      pending.push({id:p.id,type:p.type,phase:p.phase??p.channel});if(currentTurn)progressedTurns.add(currentTurn);
+    }
+    if(e.type==='compacted'){
+      const key=p.window_id??`compaction:${e.timestamp}`;
+      if(!compactionIds.has(key)){
+        compactionIds.add(key);
+        if(p.compaction_response_id){compressionResponses.add(p.compaction_response_id);const response=points.find(x=>x.id===p.compaction_response_id);if(response)markCompression(response);}
+        timelineEvents.push({id:`compact:${key}`,position:++position,timestamp:e.timestamp,turnId:currentTurn,
+          eventType:'compaction',kind:'上下文压缩完成',tokensEstimate:null,images:0,
+          retainedItems:Array.isArray(p.replacement_history)?p.replacement_history.length:null,responseId:p.compaction_response_id??null});
+      }
+      pending=[];timings.clear();segment++;
+    }
     if(e.type!=='token_usage_record')continue;
     const key=p.response_id??`${e.timestamp}:${points.length}`;
     if(seen.has(key))continue;seen.add(key);
@@ -150,19 +181,22 @@ export function responseTimeline(events,id){
     // completed tool call's timestamp cannot stand in for generation start.
     const duration=first?.start!=null&&first.end>=first.start&&Number.isFinite(end)&&end>first.start ? end-first.start:null;
     const rate=duration!=null&&output!=null?output/(duration/1000):null;
-    const point={id:key,index:points.length+1,timestamp:e.timestamp,turnId:p.turn_id??null,
-      kind:pending.some(x=>x.phase==='final'||x.phase==='final_answer')?'最终回复':pending.length?'中间响应':'压缩或未关联响应',
+    const final=pending.some(x=>x.phase==='final'||x.phase==='final_answer');
+    const point={id:key,index:points.length+1,position:++position,eventType:final?'final':'intermediate',timestamp:e.timestamp,turnId:p.turn_id??null,
+      kind:final?'最终回复':pending.length?'中间响应':'未关联响应',
       inputTokens:input,outputTokens:output,reasoningTokens:number(usage.reasoning_output_tokens),
       cachedInputTokens:cached,cacheWriteTokens:number(usage.cache_write_input_tokens),
       cacheDelta:cached!=null&&previousCache!=null?cached-previousCache:null,
       cacheHitRate:input>0&&cached!=null?cached/input:null,
       durationMs:duration,tokensPerSecond:rate,timingKind:rate!=null?'observed_generation':'unavailable',
       segment,config:{...config,contextWindow:window}};
-    points.push(point);previousCache=cached;pending=[];timings.clear();if(rate==null)segment++;
+    if(compressionResponses.has(key))markCompression(point);
+    points.push(point);if(p.turn_id)progressedTurns.add(p.turn_id);previousCache=cached;pending=[];timings.clear();if(rate==null)segment++;
   }
-  return points;
+  return {responses:points,timelineEvents};
 }
+export function responseTimeline(events,id){return buildTimeline(events,id).responses;}
 export function analyzeContext(home,id){
   const events=readHistory(home,id);
-  return {...summarizeSnapshot(selectRequestSnapshot(events,id),id),responses:responseTimeline(events,id)};
+  return {...summarizeSnapshot(selectRequestSnapshot(events,id),id),...buildTimeline(events,id)};
 }

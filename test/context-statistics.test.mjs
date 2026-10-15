@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {readHistory,selectRequestSnapshot,summarizeSnapshot,responseTimeline,analyzeContext} from '../src/context-statistics.mjs';
+import {readHistory,selectRequestSnapshot,summarizeSnapshot,responseTimeline,buildTimeline,analyzeContext} from '../src/context-statistics.mjs';
 import {createContextStatisticsService} from '../src/context-statistics-service.mjs';
 const id='11111111-1111-1111-1111-111111111111',parent='22222222-2222-2222-2222-222222222222';
 const e=(type,payload,ms=0,originThreadId=id)=>({type,payload,timestamp:new Date(1700000000000+ms).toISOString(),originThreadId});
@@ -51,4 +51,36 @@ test('offline tokenizer and worker return aggregates; cache is per chat and refr
   const service=createContextStatisticsService(f.home),first=await service(id);fs.appendFileSync(file,JSON.stringify(e('compacted',{message:'summary',replacement_history:[msg('user','summary')]}))+'\n');
   assert.deepEqual(await service(id),first);assert.equal((await service(id,true)).snapshotKind,'local_history');await assert.rejects(service(parent),/尚无本地历史/);
  }finally{f.close();}
+});
+
+test('timeline preserves user steers separately from tool outputs and colors only confirmed compaction responses',()=>{
+ const user=(text,mid,turn='turn-a',kind='user.text')=>msg('user',text,{id:mid,internal_chat_message_metadata_passthrough:{turn_id:turn,content_item_kinds:[kind]}});
+ const events=[e('turn_context',{turn_id:'turn-a',model:'model-a'}),
+  e('response_item',user('PRIVATE_FIRST_INPUT','u1')),
+  e('event_msg',{type:'item_completed',item:{type:'UserMessage',id:'ui-u1'}}),
+  e('response_item',{type:'custom_tool_call',id:'call',name:'exec'}),
+  e('token_usage_record',{response_id:'response-a',turn_id:'turn-a',usage:{input_tokens:100,output_tokens:15}},10),
+  e('response_item',{type:'custom_tool_call_output',output:'PRIVATE_TOOL_RESULT'},11),
+  e('response_item',user('PRIVATE_STEER','u2'),12),
+  e('response_item',user('PRIVATE_STEER','u2'),12),
+  e('response_item',user('environment','env','turn-a','environments.environment_context'),13),
+  e('response_item',user('summary','summary','turn-a','compaction.summary'),13),
+  e('token_usage_record',{response_id:'unlinked',usage:{input_tokens:110,output_tokens:4}},14),
+  e('token_usage_record',{response_id:'compression-response',usage:{input_tokens:120,output_tokens:10}},15),
+  e('compacted',{window_id:'window2',compaction_response_id:'compression-response',replacement_history:[user('summary','retained','turn-a','compaction.summary')]},16),
+  e('event_msg',{type:'item_completed',item:{type:'ContextCompaction'}},16),
+  e('response_item',msg('assistant','done',{id:'final',phase:'final'}),18),
+  e('token_usage_record',{response_id:'response-final',turn_id:'turn-a',usage:{input_tokens:50,output_tokens:5}},19),
+  e('turn_context',{turn_id:'turn-b',model:'model-b'},20),
+  e('response_item',user('next user input','u3','turn-b'),21)];
+ const out=buildTimeline(events,id,t=>t.length);
+ assert.deepEqual(out.timelineEvents.map(x=>x.eventType),['user_input','steering','compaction','user_input']);
+ assert.deepEqual(out.responses.map(x=>x.eventType),['intermediate','intermediate','compaction','final']);
+ assert.equal(out.timelineEvents[1].tokensEstimate,'PRIVATE_STEER'.length);
+ assert.equal(out.timelineEvents[2].retainedItems,1);
+ assert.ok(out.responses[0].position<out.timelineEvents[1].position);
+ assert.ok(out.timelineEvents[1].position<out.responses.at(-1).position);
+ assert.equal(new Set([...out.responses,...out.timelineEvents].map(x=>x.position)).size,8);
+ assert.ok(!JSON.stringify(out).includes('PRIVATE_'));
+ assert.equal(out.responses.find(x=>x.id==='unlinked').kind,'未关联响应');
 });

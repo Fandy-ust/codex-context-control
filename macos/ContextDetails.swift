@@ -8,10 +8,15 @@ struct ContextStatistics:Decodable {
     let threadId:String;let snapshotAt:String?;let snapshotKind:String;let model:String?
     struct Response:Decodable,Identifiable {
         struct Config:Decodable {let model:String?;let effort:String?;let serviceTier:String?;let contextWindow:Int?;let compactThreshold:Int?}
-        let id:String;let index:Int;let timestamp:String;let turnId:String?;let kind:String
+        let id:String;let index:Int;let position:Int;let eventType:String;let timestamp:String;let turnId:String?;let kind:String
         let inputTokens:Int?;let outputTokens:Int?;let reasoningTokens:Int?;let cachedInputTokens:Int?;let cacheWriteTokens:Int?;let cacheDelta:Int?;let cacheHitRate:Double?
         let durationMs:Double?;let tokensPerSecond:Double?;let timingKind:String;let segment:Int;let config:Config
     }
+    struct TimelineEvent:Decodable,Identifiable {
+        let id:String;let position:Int;let timestamp:String;let turnId:String?;let eventType:String;let kind:String
+        let tokensEstimate:Int?;let images:Int;let retainedItems:Int?;let responseId:String?
+    }
+    let timelineEvents:[TimelineEvent]
     let responses:[Response];let cachedInputTokens:Int?;let cacheWriteTokens:Int?
     let inputTokens:Int?;let visibleTokens:Int;let unclassified:Unclassified
     let categories:[Category];let toolCalls:[Tool];let reasoningGenerated:Int;let sampledResponses:Int
@@ -55,7 +60,7 @@ private struct ContextDetailsView:View {
                         ContextCategoryChart(statistics:s)
                         HStack(spacing:12){metric("缓存命中（输入中的一部分）",s.cachedInputTokens,approximate:false);metric("缓存写入（运行时记录）",s.cacheWriteTokens,approximate:false)}
                         Text("缓存命中不额外占一份上下文。这里保留运行时的缓存统计，不改变 Codex 的缓存策略。").font(.caption).foregroundStyle(.secondary)
-                        ContextResponseChart(responses:s.responses)
+                        ContextResponseChart(responses:s.responses,events:s.timelineEvents)
                         Text("分类来自这次请求开始前的保留历史。推理、图片等无法单独计量的部分合并到“其他／未分项”，差额包含估算误差。").font(.caption).foregroundStyle(.secondary)
                         VStack(spacing:0){
                             HStack {Text("分类");Spacer();Text("条目").frame(width:65,alignment:.trailing);Text("占用（估算）").frame(width:115,alignment:.trailing)}.font(.caption).foregroundStyle(.secondary).padding(.bottom,8)
@@ -102,7 +107,7 @@ private struct ContextDetailsView:View {
         VStack(alignment:.leading,spacing:8){Text(title).font(.caption).foregroundStyle(.secondary);Text(value.map{(approximate ? "≈ ":"")+amount($0)} ?? "待观测").font(.system(size:25,weight:.medium,design:.rounded)).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(.white.opacity(0.05),in:RoundedRectangle(cornerRadius:14))
     }
     private func amount(_ n:Int)->String {n>=1000 ? (Double(n)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":n.formatted()}
-    private func color(_ category:String)->Color {switch category{case "tool_calls":return .blue;case "tool_results":return .cyan;case "user":return .green;case "assistant_final":return .purple;case "assistant_commentary":return .gray;case "instructions":return .orange;default:return Color(red:0.48,green:0.43,blue:0.60)}}
+    private func color(_ category:String)->Color {switch category{case "tool_calls":return .blue;case "tool_results":return .cyan;case "user":return .green;case "assistant_final":return .blue;case "assistant_commentary":return .gray;case "instructions":return .orange;default:return Color(red:0.48,green:0.43,blue:0.60)}}
     private func timestamp(_ text:String?)->String {
         guard let text else{return "待观测"};let formatter=ISO8601DateFormatter();formatter.formatOptions=[.withInternetDateTime,.withFractionalSeconds]
         guard let date=formatter.date(from:text) else{return text}
