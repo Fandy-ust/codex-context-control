@@ -134,24 +134,131 @@ func phaseName(_ value:String?) -> String {
     switch value {case "confirmed":return "窗口已确认";case "awaiting_runtime_confirmation":return "等待下一轮确认";case "reloading":return "正在应用";case "waiting_for_idle","queued":return "等待轮次结束";case "needs_compaction":return "需要先压缩";case "needs_observation":return "等待用量记录";case "error","mismatch":return "需要处理";case "saved":return "已保存";default:return "尚未接入"}
 }
 
+private enum PanelStyle {
+    static let background=Color(white:0.095)
+    static let surface=Color(white:0.16)
+    static let border=Color.white.opacity(0.09)
+    static let blue=Color(red:0.27,green:0.50,blue:0.99)
+}
+
+private struct QuietButtonStyle:ButtonStyle {
+    var selected=false
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration:Configuration)->some View {
+        configuration.label.font(.system(size:12,weight:.medium))
+            .padding(.horizontal,12).padding(.vertical,7)
+            .foregroundStyle(selected ? PanelStyle.blue:Color.secondary)
+            .background(selected ? PanelStyle.blue.opacity(0.13):Color.white.opacity(configuration.isPressed ? 0.10:0.04),in:Capsule())
+            .overlay(Capsule().strokeBorder(selected ? PanelStyle.blue.opacity(0.25):Color.clear,lineWidth:1))
+            .scaleEffect(configuration.isPressed ? 0.97:1)
+            .opacity(enabled ? 1:0.35)
+    }
+}
+
+private struct ApplyButtonStyle:ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration:Configuration)->some View {
+        configuration.label.font(.system(size:12,weight:.medium)).padding(.horizontal,16).padding(.vertical,9)
+            .foregroundStyle(.white).background(PanelStyle.blue.opacity(enabled ? (configuration.isPressed ? 0.8:1):0.35),in:Capsule())
+    }
+}
+
+/// Only this small track redraws for the flowing highlights. Animation pauses
+/// when the panel loses focus and respects the system's Reduce Motion setting.
+private struct FlowSlider:View {
+    let title:String
+    @Binding var value:Double
+    let minimum:Int
+    let maximum:Int
+    var compact=false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var enabled
+    @FocusState private var focused:Bool
+    @State private var active=NSApplication.shared.isActive
+    @State private var dragging=false
+    private var diameter:CGFloat {compact ? 24:30}
+    private var trackHeight:CGFloat {compact ? 20:28}
+    private var fraction:Double {max(0,min(1,(value-Double(minimum))/Double(max(1,maximum-minimum))))}
+    var body:some View {
+        GeometryReader {geometry in
+            let travel=max(1,geometry.size.width-diameter)
+            let position=diameter/2+travel*fraction
+            ZStack(alignment:.leading){
+                Capsule().fill(Color.white.opacity(0.10)).frame(height:trackHeight)
+                Capsule().fill(LinearGradient(colors:[PanelStyle.blue,Color(red:0.32,green:0.55,blue:1)],startPoint:.leading,endPoint:.trailing))
+                    .frame(width:position+diameter/2,height:trackHeight)
+                HStack {ForEach(0..<5){_ in Circle().fill(.white.opacity(0.22)).frame(width:4,height:4).frame(maxWidth:.infinity)}}
+                    .padding(.horizontal,diameter/2)
+                TimelineView(.animation(minimumInterval:1.0/24,paused:reduceMotion || !active || !enabled)){timeline in
+                    Canvas {context,size in
+                        guard !reduceMotion else{return}
+                        let time=timeline.date.timeIntervalSinceReferenceDate
+                        for index in 0..<4 {
+                            let phase=(time/7+Double(index)*0.247).truncatingRemainder(dividingBy:1)
+                            let x=phase*max(1,position-8)+4
+                            let y=size.height/2+sin(phase*Double.pi*2+Double(index))*size.height*0.17
+                            let opacity=sin(phase*Double.pi)*0.45
+                            context.fill(Path(ellipseIn:CGRect(x:x,y:y,width:index%2==0 ? 2.5:1.5,height:index%2==0 ? 2.5:1.5)),with:.color(.white.opacity(opacity)))
+                        }
+                    }
+                }.frame(width:position,height:trackHeight).clipShape(Capsule()).allowsHitTesting(false)
+                Circle().fill(.white).overlay(Circle().strokeBorder(.black.opacity(0.06),lineWidth:0.5))
+                    .shadow(color:.black.opacity(dragging ? 0.24:0.12),radius:dragging ? 5:2,y:1)
+                    .frame(width:diameter,height:diameter).scaleEffect(dragging ? 1.06:1)
+                    .offset(x:position-diameter/2)
+            }
+            .frame(height:diameter).frame(maxHeight:.infinity)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance:0).onChanged {event in
+                guard enabled,maximum>minimum else{return}
+                focused=true;dragging=true
+                let progress=max(0,min(1,(event.location.x-diameter/2)/travel))
+                value=(Double(minimum)+progress*Double(maximum-minimum)).rounded()
+            }.onEnded {_ in dragging=false})
+            .animation(reduceMotion || dragging ? nil:.easeOut(duration:0.18),value:value)
+        }
+        .frame(height:36).opacity(enabled ? 1:0.4)
+        .focusable(enabled && maximum>minimum).focused($focused)
+        .overlay(RoundedRectangle(cornerRadius:20).strokeBorder(focused ? PanelStyle.blue.opacity(0.45):.clear,lineWidth:2).padding(-4))
+        .onKeyPress(.leftArrow){guard enabled else{return .ignored};value=max(Double(minimum),value-1);return .handled}
+        .onKeyPress(.rightArrow){guard enabled else{return .ignored};value=min(Double(maximum),value+1);return .handled}
+        .accessibilityRepresentation {
+            Slider(value:$value,in:Double(minimum)...Double(max(minimum+1,maximum)),step:1)
+                .accessibilityLabel(title).accessibilityValue("\(Int(value))K").disabled(!enabled || maximum<=minimum)
+        }
+        .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)){_ in active=true}
+        .onReceive(NotificationCenter.default.publisher(for:NSApplication.didResignActiveNotification)){_ in active=false}
+        .onAppear{active=NSApplication.shared.isActive}
+        .onDisappear{active=false}
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var model:Controller
     @State private var confirmCompact=false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         NavigationSplitView {
             VStack(alignment:.leading,spacing:14){
-                Text("聊天预算").font(.title2.bold())
-                Label("已接入 \(model.bridgeCount) 个运行时",systemImage:model.bridgeCount>0 ? "checkmark.circle.fill":"circle.dashed").font(.caption).foregroundStyle(model.bridgeCount>0 ? .green:.secondary)
-                List(model.chats,selection:$model.selectedID){chat in
-                    VStack(alignment:.leading,spacing:5){Text(chat.title).lineLimit(1);Text((chat.connected ? phaseName(chat.phase):"尚未接入")+" · "+String(chat.id.prefix(8))).font(.caption).foregroundStyle(.secondary)}.padding(.vertical,4).tag(chat.id)
-                }.listStyle(.sidebar)
+                Text("上下文").font(.system(size:19,weight:.semibold)).frame(maxWidth:.infinity,alignment:.leading)
+                Label(model.bridgeCount>0 ? "已连接 Codex":"等待连接",systemImage:model.bridgeCount>0 ? "circle.fill":"circle.dashed").font(.system(size:11)).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
+                ScrollView {
+                    LazyVStack(spacing:4){ForEach(model.chats){chat in
+                        Button {model.selectedID=chat.id} label:{
+                            VStack(alignment:.leading,spacing:5){Text(chat.title).font(.system(size:13,weight:.medium)).lineLimit(1);Text(chat.connected ? phaseName(chat.phase):"尚未接入").font(.system(size:11)).foregroundStyle(.secondary)}
+                                .frame(maxWidth:.infinity,alignment:.leading).padding(12)
+                                .background(model.selectedID==chat.id ? Color.white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:12))
+                                .contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
+                    }}
+                }.frame(maxHeight:.infinity)
                 Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
-            }.padding().frame(minWidth:235)
+            }.padding().frame(minWidth:235).background(PanelStyle.background)
         } detail: {
             ScrollView {
-                VStack(alignment:.leading,spacing:22){
+                VStack(alignment:.leading,spacing:24){
                     if let chat=model.selected {
-                        VStack(alignment:.leading,spacing:6){Text(chat.title).font(.title2.bold()).lineLimit(2).truncationMode(.tail);Text(chat.model ?? "模型将在接入后识别").foregroundStyle(.secondary)}
+                        VStack(alignment:.leading,spacing:7){Text(chat.title).font(.system(size:20,weight:.medium)).lineLimit(2).truncationMode(.tail);Text(chat.model ?? "模型将在接入后识别").font(.callout).foregroundStyle(.secondary)}
                         VStack(alignment:.leading,spacing:12){
                             HStack(spacing:28){metric(chat.observedWindowTitle,formatted(chat.observedWindow));metric("最近请求用量",formatted(chat.lastUsage?.totalTokens))}
                             if let target=chat.targetWindow,let policy=chat.policy {
@@ -161,62 +268,99 @@ struct ContentView: View {
                                 Label("新预算已提交。上方仍是调整前的读回值，下一个正常请求完成后更新。",systemImage:"clock").font(.callout).foregroundStyle(.orange)
                             }
                         }
-                        Text("窗口表示容量上限。最近请求用量是当前占用的近似值，不是聊天累计用量。压缩后的最低保留量不能预先保证。").font(.caption).foregroundStyle(.secondary)
                         Divider()
-                        HStack {Text("本聊天的独立预算").font(.headline);Button("重新载入",systemImage:"arrow.clockwise"){model.fill()}.labelStyle(.iconOnly).help("重新读取此聊天已保存的设置");Spacer();ForEach([200,400,800],id:\.self){k in Button("\(k)K"){model.setWindowK(Double(k))}.disabled(!model.canEditBudget || k>model.maximumWindowK)};Button("最大"){model.setWindowK(Double(model.maximumWindowK))}.disabled(!model.canEditBudget)}
                         budgetEditor().disabled(!model.canEditBudget)
                         HStack {
-                            Button("预检"){Task{await model.act("preflight")}}.disabled(model.preview==nil)
-                            Button(chat.connected ? "应用到此聊天":"保存，接入后应用"){Task{await model.act("policy")}}.buttonStyle(.borderedProminent).disabled(model.preview==nil)
-                            Button("原生压缩…"){confirmCompact=true}.disabled(!chat.connected)
+                            Button("预检"){Task{await model.act("preflight")}}.buttonStyle(QuietButtonStyle()).disabled(model.preview==nil)
+                            Button(chat.connected ? "应用到此聊天":"保存，接入后应用"){Task{await model.act("policy")}}.buttonStyle(ApplyButtonStyle()).disabled(model.preview==nil)
+                            Button("原生压缩…"){confirmCompact=true}.buttonStyle(QuietButtonStyle()).disabled(!chat.connected)
                             Spacer()
-                            Button("停止自动应用"){Task{await model.act("clear")}}.foregroundStyle(.secondary)
+                            Button("停止自动应用"){Task{await model.act("clear")}}.buttonStyle(QuietButtonStyle())
                         }.disabled(model.working)
-                        GroupBox {
-                            VStack(alignment:.leading,spacing:8){Label(phaseName(chat.phase),systemImage:chat.phase=="confirmed" ? "checkmark.circle":"clock").font(.headline);Text(chat.message ?? "接入后，设置会在轮次之间应用。").foregroundStyle(.secondary);if let target=chat.targetWindow{Text("目标可用窗口：\(formatted(target))").font(.caption)}}.frame(maxWidth:.infinity,alignment:.leading).padding(4)
-                        }
+                        VStack(alignment:.leading,spacing:7){Label(phaseName(chat.phase),systemImage:chat.phase=="confirmed" ? "checkmark.circle":"clock").font(.callout.weight(.medium));Text(chat.message ?? "接入后，设置会在轮次之间应用。").font(.caption).foregroundStyle(.secondary)}.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:16))
                     }else{
                         ContentUnavailableView("等待聊天接入",systemImage:"bubble.left.and.bubble.right",description:Text("照常打开 Codex 并进入聊天，控制连接会随运行时自动启动。首次安装后请正常重开一次客户端。"))
                     }
                     Divider();Text(model.notice).font(.callout).textSelection(.enabled).foregroundStyle(.secondary)
-                }.padding(30).frame(maxWidth:850,alignment:.leading)
-            }.frame(minWidth:650)
+                }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity)
+            }.frame(minWidth:650).background(PanelStyle.background)
         }
         .frame(minWidth:960,minHeight:670)
+        .preferredColorScheme(.dark).tint(PanelStyle.blue)
         .onChange(of:model.selectedID){_,_ in model.fill()}
         .confirmationDialog("请求 Codex 原生压缩？",isPresented:$confirmCompact,titleVisibility:.visible){Button("请求压缩"){Task{await model.act("compact")}};Button("取消",role:.cancel){}}message:{Text("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。")}
     }
     func budgetEditor()->some View {
-        VStack(alignment:.leading,spacing:16){
+        VStack(alignment:.leading,spacing:18){
             tokenSlider("实际可用窗口",value:Binding(get:{model.windowK},set:{model.setWindowK($0)}),minimum:2,maximum:model.maximumWindowK)
-            Text("每格 1K；显示的数值就是目标可用窗口。").font(.caption).foregroundStyle(.secondary)
-            tokenSlider("自动压缩阈值",value:Binding(get:{model.compactK},set:{model.setCompactK($0)}),minimum:1,maximum:model.maximumCompactK)
-            HStack {Text("占窗口 \(percentage(model.compactPercent))%").font(.callout).monospacedDigit();Spacer();ForEach([80,85,90],id:\.self){value in Button("\(value)%"){model.setRatio(value)}};Button("最大"){model.setCompactK(Double(model.maximumCompactK))}}
-            Text("拖动窗口时，压缩阈值按所选比例联动，向下取整到 1K。单独拖动压缩滑条可改变比例；点击应用后生效。").font(.caption).foregroundStyle(.secondary)
-            if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").foregroundStyle(.orange)}
+            tokenSlider("自动压缩阈值",value:Binding(get:{model.compactK},set:{model.setCompactK($0)}),minimum:1,maximum:model.maximumCompactK,compact:true)
+                .frame(maxWidth:480,alignment:.leading)
+            Text("以 1K 微调 · 压缩阈值随窗口按比例联动 · 应用后生效")
+                .font(.system(size:11)).foregroundStyle(.secondary)
+            if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
             DisclosureGroup("高级设置"){
                 VStack(alignment:.leading,spacing:12){
                     Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:14){
                         field("下一轮预留",text:$model.reserve,hint:"为新输入和工具结果留空间")
                         field("必须保留量",text:$model.floor,hint:"可选的手动下限；0 表示未指定")
                     }
+                    Text("窗口是容量上限。最近请求用量是当前占用的近似值；压缩后保留多少无法预先保证。联动阈值向下取整到 1K。")
+                        .font(.caption).foregroundStyle(.secondary)
                     if let budget=model.preview,let percent=model.selected?.modelMetadata?.effective_context_window_percent{
                         Text("底层配置已自动换算为 \(formatted(budget.rawWindow))，按 \(percent)% 读回 \(formatted(budget.usableWindow))。压缩按完整上下文计数。").font(.caption).foregroundStyle(.secondary)
                     }
-                }.padding(.top,10)
-            }
+                }.padding(.top,12)
+            }.font(.callout).foregroundStyle(.secondary)
         }
     }
-    func tokenSlider(_ title:String,value:Binding<Double>,minimum:Int,maximum:Int)->some View {
-        VStack(alignment:.leading,spacing:8){
-            HStack {Text(title).font(.headline);Spacer();Text("\(Int(value.wrappedValue))K").font(.title2.monospacedDigit().weight(.semibold))}
-            HStack(spacing:12){
-                Button {value.wrappedValue-=1} label:{Image(systemName:"minus")}.accessibilityLabel("\(title)减少 1K").disabled(value.wrappedValue<=Double(minimum))
-                Slider(value:value,in:Double(minimum)...Double(max(minimum+1,maximum)),step:1).accessibilityLabel(title).accessibilityValue("\(Int(value.wrappedValue))K").disabled(maximum<=minimum)
-                Button {value.wrappedValue+=1} label:{Image(systemName:"plus")}.accessibilityLabel("\(title)增加 1K").disabled(value.wrappedValue>=Double(maximum))
+    func tokenSlider(_ title:String,value:Binding<Double>,minimum:Int,maximum:Int,compact:Bool=false)->some View {
+        VStack(spacing:14){
+            HStack(alignment:.center){
+                Image(systemName:compact ? "arrow.triangle.2.circlepath":"bolt.fill")
+                    .font(.system(size:compact ? 18:22,weight:.medium)).foregroundStyle(PanelStyle.blue).frame(width:40)
+                Spacer(minLength:8)
+                VStack(spacing:4){
+                    Text("\(Int(value.wrappedValue))K").font(.system(size:compact ? 26:32,weight:.medium,design:.rounded)).monospacedDigit()
+                        .foregroundStyle(PanelStyle.blue).contentTransition(.numericText())
+                        .animation(reduceMotion ? nil:.easeOut(duration:0.18),value:value.wrappedValue)
+                    Text(title).font(.system(size:12)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength:8)
+                if compact {
+                    Text("\(percentage(model.compactPercent))%").font(.system(size:11,weight:.medium)).monospacedDigit().foregroundStyle(.secondary).frame(width:48)
+                }else{
+                    Button {model.fill()} label:{Image(systemName:"arrow.counterclockwise").font(.system(size:18))}
+                        .buttonStyle(.plain).foregroundStyle(.secondary).frame(width:40)
+                        .accessibilityLabel("重新载入已保存预算").help("重新载入已保存预算")
+                }
             }
-            HStack {Text("\(minimum)K");Spacer();Text("\(maximum)K")}.font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            HStack(spacing:10){
+                Button {value.wrappedValue-=1} label:{Image(systemName:"minus").frame(width:22,height:28)}
+                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("\(title)减少 1K").disabled(value.wrappedValue<=Double(minimum))
+                FlowSlider(title:title,value:value,minimum:minimum,maximum:maximum,compact:compact)
+                Button {value.wrappedValue+=1} label:{Image(systemName:"plus").frame(width:22,height:28)}
+                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("\(title)增加 1K").disabled(value.wrappedValue>=Double(maximum))
+            }
+            HStack {Text("\(minimum)K");Spacer();Text("\(maximum)K")}.font(.system(size:10)).foregroundStyle(.tertiary).monospacedDigit()
+            HStack(spacing:7){
+                Spacer(minLength:0)
+                if compact {
+                    ForEach([80,85,90],id:\.self){ratio in
+                        Button("\(ratio)%"){model.setRatio(ratio)}.buttonStyle(QuietButtonStyle(selected:abs(model.compactPercent-Double(ratio))<0.2))
+                    }
+                    Button("最大"){model.setCompactK(Double(model.maximumCompactK))}.buttonStyle(QuietButtonStyle(selected:Int(model.compactK)==model.maximumCompactK))
+                }else{
+                    ForEach([200,400,800],id:\.self){k in
+                        Button("\(k)K"){model.setWindowK(Double(k))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==k)).disabled(k>model.maximumWindowK)
+                    }
+                    Button("最大"){model.setWindowK(Double(model.maximumWindowK))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==model.maximumWindowK))
+                }
+                Spacer(minLength:0)
+            }
         }
+        .padding(compact ? 20:24)
+        .background(PanelStyle.surface,in:RoundedRectangle(cornerRadius:compact ? 24:28,style:.continuous))
+        .overlay(RoundedRectangle(cornerRadius:compact ? 24:28,style:.continuous).strokeBorder(PanelStyle.border,lineWidth:1))
     }
     func percentage(_ value:Double)->String {value.formatted(.number.precision(.fractionLength(0...1)))}
     func metric(_ title:String,_ value:String)->some View {VStack(alignment:.leading,spacing:7){Text(title).font(.caption).foregroundStyle(.secondary);Text(value).font(.title2.monospacedDigit().weight(.semibold))}.frame(maxWidth:.infinity,alignment:.leading)}
@@ -291,6 +435,8 @@ struct ContentView: View {
         if settingsWindow==nil{
             let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:760),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
             window.title="Codex Context Control";window.minSize=NSSize(width:960,height:700)
+            window.appearance=NSAppearance(named:.darkAqua)
+            window.backgroundColor=NSColor(white:0.095,alpha:1)
             window.contentView=NSHostingView(rootView:ContentView(model:model))
             window.isReleasedWhenClosed=false;window.delegate=self;window.center();window.setFrameAutosaveName("ContextControlSettings")
             settingsWindow=window
