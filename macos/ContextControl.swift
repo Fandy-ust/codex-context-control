@@ -37,7 +37,9 @@ struct DesktopSettings: Decodable {let desktopExecutable:String}
     @Published var working=false
     private var editingRevision=0
     private var refreshing=false
+    private var pendingMetadataID:String?
     var selected:Chat? {chats.first{$0.id==selectedID}}
+    var waitingForModel:Bool {pendingMetadataID != nil && pendingMetadataID==selectedID}
     var home:URL {
         if let custom=ProcessInfo.processInfo.environment["CONTEXT_CONTROL_HOME"] {return URL(fileURLWithPath:custom)}
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/CodexContextControl")
@@ -59,18 +61,20 @@ struct DesktopSettings: Decodable {let desktopExecutable:String}
         if refreshing{return};refreshing=true;defer{refreshing=false}
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount
             if selectedID==nil{selectedID=chats.first?.id;fill()}
+            else if waitingForModel,let metadata=selected?.modelMetadata,metadata.effective_context_window_percent != nil,metadata.max_context_window != nil{fill()}
             if notice=="正在读取本地状态…"{notice=bridgeCount>0 ? "已接入 Codex。" : "照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。"}
         }catch{notice="读取失败：\(error.localizedDescription)"}
     }
     func fill(){
-        guard let chat=selected else{return};editingRevision=chat.policy?.revision ?? 0
-        if let policy=chat.policy,let percent=chat.modelMetadata?.effective_context_window_percent,(1...100).contains(percent){
+        guard let chat=selected else{return};editingRevision=chat.policy?.revision ?? 0;pendingMetadataID=nil
+        reserve=String(chat.policy?.reserve ?? 16000);floor=String(chat.policy?.retainedFloor ?? 0)
+        if let policy=chat.policy,let percent=chat.modelMetadata?.effective_context_window_percent,(1...100).contains(percent),chat.modelMetadata?.max_context_window != nil{
             let usable=policy.window*percent/100
             window=String(usable)
             let actualCompact=min(policy.compact,policy.window*90/100)
             compactPercent=min((Double(actualCompact)/Double(max(1,usable))*10000).rounded()/100,maximumRatio)
-            reserve=String(policy.reserve);floor=String(policy.retainedFloor)
-        }else{window="400K";compactPercent=90;reserve="16K";floor="0"}
+        }else if chat.policy != nil{window="";compactPercent=90;pendingMetadataID=chat.id}
+        else{window="400K";compactPercent=90}
     }
     func calculate(_ ratio:Double?=nil) throws -> BudgetPreview {
         guard let metadata=selected?.modelMetadata,let percent=metadata.effective_context_window_percent,let maximum=metadata.max_context_window else{throw BudgetInputError(message:"等待当前模型信息后即可设置实际可用窗口")}
@@ -140,7 +144,7 @@ struct ContentView: View {
                         Text("窗口表示容量上限。最近请求用量是当前占用的近似值，不是聊天累计用量。压缩后的最低保留量不能预先保证。").font(.caption).foregroundStyle(.secondary)
                         Divider()
                         HStack {Text("本聊天的独立预算").font(.headline);Button("重新载入",systemImage:"arrow.clockwise"){model.fill()}.labelStyle(.iconOnly).help("重新读取此聊天已保存的设置");Spacer();ForEach([200,400,800],id:\.self){k in Button("\(k)K"){model.window="\(k)K"}.disabled(k*1000>(model.maximumUsableWindow ?? Int.max))};if let maximum=model.maximumUsableWindow{Button("最大"){model.window=String(maximum)}}}
-                        budgetEditor()
+                        budgetEditor().disabled(model.waitingForModel)
                         HStack {
                             Button("预检"){Task{await model.act("preflight")}}.disabled(model.preview==nil)
                             Button(chat.connected ? "应用到此聊天":"保存，接入后应用"){Task{await model.act("policy")}}.buttonStyle(.borderedProminent).disabled(model.preview==nil)
