@@ -29,10 +29,10 @@ private enum TimelinePlotKind {case speed,cache,events}
     static var selectedID:String?{selection?.selectedID}
 }
 #endif
-struct ContextResponseChart:View,Equatable {
+@MainActor struct ContextResponseChart:View,Equatable {
     let responses:[ContextStatistics.Response]
     let events:[ContextStatistics.TimelineEvent]
-    let revision:String
+    nonisolated let revision:String
     private let entries:[TimelineEntry]
     private let measured:[ContextStatistics.Response]
     @State private var selection=TimelineSelection()
@@ -43,7 +43,7 @@ struct ContextResponseChart:View,Equatable {
         let input=events.map{TimelineEntry(id:$0.id,position:$0.position,kind:$0.kind,eventType:$0.eventType,response:nil,event:$0)}
         entries=(output+input).sorted{$0.position<$1.position}
     }
-    static func ==(lhs:Self,rhs:Self)->Bool{lhs.revision==rhs.revision}
+    nonisolated static func ==(lhs:Self,rhs:Self)->Bool{lhs.revision==rhs.revision}
     private var upperBound:Int {max(2,(entries.last?.position ?? 0)+1)}
     var body:some View {
 #if DEBUG
@@ -114,12 +114,12 @@ struct ContextResponseChart:View,Equatable {
         TimelineOverlay(proxy:proxy,kind:kind,entries:entries,selection:selection)
     }
 }
-private struct TimelineSpeedLabel:View {
+@MainActor private struct TimelineSpeedLabel:View {
     let entries:[TimelineEntry]
     @ObservedObject var selection:TimelineSelection
     var body:some View {Text(chosenEntry(entries,selection)?.response?.tokensPerSecond.map{String(format:"%.1f tokens/s",$0)} ?? "tokens/s").font(.caption).monospacedDigit().foregroundStyle(.secondary)}
 }
-private struct TimelineOverlay:View {
+@MainActor private struct TimelineOverlay:View {
     let proxy:ChartProxy;let kind:TimelinePlotKind;let entries:[TimelineEntry]
     @ObservedObject var selection:TimelineSelection
     private var focus:TimelineEntry? {entries.first{$0.position==selection.hovered} ?? entries.first{$0.id==selection.selectedID}}
@@ -151,7 +151,7 @@ private struct TimelineOverlay:View {
         return position-Double(entries[low-1].position)<=Double(entries[low].position)-position ? entries[low-1]:entries[low]
     }
 }
-private struct TimelineDetails:View {
+@MainActor private struct TimelineDetails:View {
     let entries:[TimelineEntry]
     @ObservedObject var selection:TimelineSelection
     private var selected:TimelineEntry? {chosenEntry(entries,selection)}

@@ -36,14 +36,13 @@ test('bounded fork cache preserves inheritance boundaries while parent continues
  }finally{f.close();}
 });
 test('worker reuses tokenizer, avoids rereads, appends only new bytes, and serves distinct chats concurrently',async()=>{
- const f=fixture(),get=createContextStatisticsService(f.home,{cacheMs:0,idleMs:60});try{
+ const f=fixture(),get=createContextStatisticsService(f.home,{cacheMs:0,idleMs:60000});try{
   const [first,same,b,c]=await Promise.all([get(ids[0]),get(ids[0]),get(ids[1]),get(ids[2])]);assert.deepEqual(first,same);assert.equal(b.threadId,ids[1]);assert.equal(c.threadId,ids[2]);assert.equal(get.diagnostics().workerStarts,2);
   await get(ids[2]);const before=get.diagnostics().last;assert.equal(before.resultCacheHit,true);
   await get(ids[2]);assert.equal(get.diagnostics().last.history.bytesRead,before.history.bytesRead);
   const append=encode([event('response_item',message('user','fresh increment')),event('response_item',message('assistant','later')),event('token_usage_record',{response_id:'new',usage:{input_tokens:120,cached_input_tokens:100,cache_write_input_tokens:0,output_tokens:1}})]);
   fs.appendFileSync(f.files[2],append);const changed=await get(ids[2]);const after=get.diagnostics().last;assert.equal(after.history.bytesRead-before.history.bytesRead,Buffer.byteLength(append));assert.ok(after.tokens.misses-before.tokens.misses<=3);assert.deepEqual(stable(changed),stable(analyzeContext(f.home,ids[2])));
   const misses=after.tokens.misses;const refreshed=await get(ids[2],true);assert.equal(get.diagnostics().last.tokens.misses,misses);assert.equal(refreshed.generatedAt,changed.generatedAt);
-  await new Promise(r=>setTimeout(r,150));assert.equal(get.diagnostics().workers,0);
  }finally{get.close();f.close();}
 });
 test('failed analysis recovers and closing the service cancels pending work',async()=>{
@@ -52,4 +51,10 @@ test('failed analysis recovers and closing the service cancels pending work',asy
   fs.writeFileSync(f.files[0],encode(initial('recovered')));assert.equal((await get(ids[0])).threadId,ids[0]);
   const pending=get(ids[1]);get.close();await assert.rejects(pending,/已关闭/);await assert.rejects(get(ids[2]),/已关闭/);
  }finally{get.close();f.close();}
+});
+
+test('idle workers release their memory after the configured idle interval',async()=>{
+ const f=fixture(),get=createContextStatisticsService(f.home,{cacheMs:0,idleMs:20});
+ try{await get(ids[0]);await new Promise(r=>setTimeout(r,150));assert.equal(get.diagnostics().workers,0);}
+ finally{get.close();f.close();}
 });
