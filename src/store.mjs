@@ -7,13 +7,21 @@ export class Store {
   save(){atomicJSON(this.file,this.data);}
   model(slug){
     const file=process.env.CONTEXT_CONTROL_CATALOG_PATH||path.join(codexHome,'models_cache.json');
-    try {return readJSON(file,{}).models?.find(row=>row.slug===slug)||null;}catch{return null;}
+    try {
+      const stat=fs.statSync(file),stamp=`${file}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+      if(this.catalogStamp!==stamp){
+        this.catalogStamp=stamp;this.catalog=new Map();
+        const data=readJSON(file,{});for(const model of data.models??[])this.catalog.set(model.slug,model);
+      }
+      return this.catalog?.get(slug)||null;
+    }catch {this.catalogStamp=null;this.catalog=new Map();return null;}
   }
   publicThread(id,owners=new Map()) {
     this.refreshMetadata();
     const t=this.data.threads[id]||{id};const ownersForThread=owners.get(id)||[];
+    const model=this.model(t.model);
     return {...t,...this.metadata.get(id),connected:ownersForThread.length===1,ambiguous:ownersForThread.length>1,policy:this.data.policies[id]||null,
-      modelMetadata:this.model(t.model)?Object.fromEntries(['context_window','max_context_window','effective_context_window_percent'].map(k=>[k,this.model(t.model)[k]])):null};
+      modelMetadata:model?Object.fromEntries(['context_window','max_context_window','effective_context_window_percent'].map(k=>[k,model[k]])):null};
   }
   // Optional metadata index. Never read prompts, messages, or encrypted reasoning.
   async seedRecentMetadata(){

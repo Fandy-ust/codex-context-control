@@ -1,29 +1,29 @@
 import SwiftUI
 import Charts
 
-struct ContextStatistics:Decodable {
-    struct Category:Decodable,Identifiable {let category:String;let label:String;let items:Int;let tokensEstimate:Int;let images:Int;var id:String{category}}
-    struct Tool:Decodable,Identifiable {let name:String;let count:Int;var id:String{name}}
-    struct Unclassified:Decodable {let tokensEstimate:Int?;let status:String;let opaqueItems:Int;let images:Int;let reasoningItems:Int;let compactionItems:Int}
-    let threadId:String;let snapshotAt:String?;let snapshotKind:String;let model:String?
-    struct CostPart:Decodable,Identifiable {let category:String;let label:String;let tokens:Int;let usd:Double;var id:String{category}}
-    struct Cost:Decodable {
+struct ContextStatistics:Decodable,Sendable {
+    struct Category:Decodable,Sendable,Identifiable {let category:String;let label:String;let items:Int;let tokensEstimate:Int;let images:Int;var id:String{category}}
+    struct Tool:Decodable,Sendable,Identifiable {let name:String;let count:Int;var id:String{name}}
+    struct Unclassified:Decodable,Sendable {let tokensEstimate:Int?;let status:String;let opaqueItems:Int;let images:Int;let reasoningItems:Int;let compactionItems:Int}
+    let threadId:String;let generatedAt:String;let snapshotAt:String?;let snapshotKind:String;let model:String?
+    struct CostPart:Decodable,Sendable,Identifiable {let category:String;let label:String;let tokens:Int;let usd:Double;var id:String{category}}
+    struct Cost:Decodable,Sendable {
         let breakdown:[CostPart]
-        struct Group:Decodable,Identifiable {let model:String;let tier:String;let requests:Int;let usd:Double;var id:String{model+":"+tier}}
+        struct Group:Decodable,Sendable,Identifiable {let model:String;let tier:String;let requests:Int;let usd:Double;var id:String{model+":"+tier}}
         let usd:Double?;let upperUSD:Double?;let maxWriteSurcharge:Double;let extraWriteTokens:Int;let pricedRequests:Int;let totalRequests:Int;let unpricedRequests:Int
         let unknownTier:Int;let unknownModel:Int;let unknownUsage:Int;let unsupportedRate:Int;let longContextCount:Int;let unverifiedWriteRequests:Int
         let standardUSD:Double?;let fastUSD:Double?;let standardUpperUSD:Double?;let fastUpperUSD:Double?;let comparisonRequests:Int;let groups:[Group];let checkedAt:String;let source:String
     }
     let cost:Cost
-    struct Response:Decodable,Identifiable {
-        struct Estimate:Decodable {let usd:Double?;let upperUSD:Double?;let reason:String?;let tier:String?;let contextBand:String?;let writeEstimated:Bool?;let breakdown:[CostPart]?}
+    struct Response:Decodable,Sendable,Identifiable {
+        struct Estimate:Decodable,Sendable {let usd:Double?;let upperUSD:Double?;let reason:String?;let tier:String?;let contextBand:String?;let writeEstimated:Bool?;let breakdown:[CostPart]?}
         let costEstimate:Estimate?
-        struct Config:Decodable {let model:String?;let effort:String?;let serviceTier:String?;let contextWindow:Int?;let compactThreshold:Int?}
+        struct Config:Decodable,Sendable {let model:String?;let effort:String?;let serviceTier:String?;let contextWindow:Int?;let compactThreshold:Int?}
         let id:String;let index:Int;let position:Int;let eventType:String;let timestamp:String;let turnId:String?;let kind:String
         let inputTokens:Int?;let outputTokens:Int?;let reasoningTokens:Int?;let cachedInputTokens:Int?;let cacheWriteTokens:Int?;let cacheDelta:Int?;let cacheHitRate:Double?
         let durationMs:Double?;let preGenerationGapMs:Double?;let recordToCompletionMs:Double?;let cacheStatus:String;let cacheSegment:Int;let inputSegment:Int;let tokensPerSecond:Double?;let timingKind:String;let segment:Int;let config:Config
     }
-    struct TimelineEvent:Decodable,Identifiable {
+    struct TimelineEvent:Decodable,Sendable,Identifiable {
         let id:String;let position:Int;let timestamp:String;let turnId:String?;let eventType:String;let kind:String
         let tokensEstimate:Int?;let images:Int;let retainedItems:Int?;let responseId:String?
     }
@@ -47,12 +47,13 @@ struct ContextDetailsButton:View {
 
 private struct ContextDetailsView:View {
     let chatID:String;let title:String
-    @ObservedObject var model:Controller
+    let model:Controller
     @Environment(\.dismiss) private var dismiss
     @State private var statistics:ContextStatistics?
     @State private var loading=false
     @State private var error:String?
     @State private var autoRefresh=true
+    @State private var lastPayload:Data?
     var body:some View {
         VStack(alignment:.leading,spacing:16){
             HStack(alignment:.top){
@@ -68,7 +69,7 @@ private struct ContextDetailsView:View {
                 if let s=statistics {
                     VStack(alignment:.leading,spacing:16){
                         ContextSummaryView(statistics:s)
-                        ContextResponseChart(responses:s.responses,events:s.timelineEvents)
+                        ContextResponseChart(responses:s.responses,events:s.timelineEvents,revision:s.threadId+":"+s.generatedAt).equatable()
                         VStack(spacing:0){
                             HStack {Text("分类");Spacer();Text("条目").frame(width:65,alignment:.trailing);Text("占用（估算）").frame(width:115,alignment:.trailing)}.font(.caption).foregroundStyle(.secondary).padding(.bottom,8)
                             ForEach(s.categories){row in
@@ -97,7 +98,7 @@ private struct ContextDetailsView:View {
         }
         .padding(26).frame(width:920,height:720).background(Color(white:0.095)).preferredColorScheme(.dark)
         .task(id:chatID){
-            await reload(force:true)
+            await reload(force:false)
             while !Task.isCancelled {do{try await Task.sleep(for:.seconds(10))}catch{break};if autoRefresh{await reload(force:false)}}
         }
     }
@@ -105,9 +106,10 @@ private struct ContextDetailsView:View {
         if loading{return};loading=true;defer{loading=false}
         do {
             let data=try await model.api("/context-stats",body:["id":chatID,"refresh":force])
-            let decoded=try JSONDecoder().decode(ContextStatistics.self,from:data)
+            if data==lastPayload{error=nil;return}
+            let decoded=try await Task.detached(priority:.utility){try JSONDecoder().decode(ContextStatistics.self,from:data)}.value
             guard !Task.isCancelled,decoded.threadId==chatID else{return}
-            statistics=decoded;error=nil
+            statistics=decoded;lastPayload=data;error=nil
         }catch {if !Task.isCancelled{self.error=error.localizedDescription}}
     }
     private func amount(_ n:Int)->String {n>=1000 ? (Double(n)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":n.formatted()}

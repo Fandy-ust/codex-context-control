@@ -1,44 +1,23 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import {DatabaseSync} from 'node:sqlite';
+import {createHash} from 'node:crypto';
+import {readHistory} from './context-history.mjs';
+export {readHistory,createHistoryCache} from './context-history.mjs';
 import {Tiktoken} from 'js-tiktoken/lite';
 import ranks from 'js-tiktoken/ranks/o200k_base';
 import {estimateConversation} from './cost-estimate.mjs';
 
 const labels={tool_calls:'工具调用（参数／代码）',tool_results:'工具返回',user:'用户消息',assistant_final:'Agent 最终回复',assistant_commentary:'Agent 进度说明',instructions:'指令、环境与文本摘要',reasoning:'推理项目',compaction:'不透明压缩项目',other:'其他不透明项目'};
 let encoder;
-const tokens=text=>text?(encoder??=new Tiktoken(ranks)).encode(text,[],[]).length:0;
+const tokenCounts=new Map(),tokenMetrics={hits:0,misses:0};
+export const tokenCacheStats=()=>({...tokenMetrics,entries:tokenCounts.size});
+const tokens=text=>{
+  if(!text)return 0;
+  const key=createHash('sha256').update(text).digest('hex');
+  if(tokenCounts.has(key)){tokenMetrics.hits++;return tokenCounts.get(key);}
+  const count=(encoder??=new Tiktoken(ranks)).encode(text,[],[]).length;
+  tokenMetrics.misses++;tokenCounts.set(key,count);if(tokenCounts.size>20000)tokenCounts.delete(tokenCounts.keys().next().value);
+  return count;
+};
 const generated=p=>p.type==='reasoning'||['function_call','custom_tool_call'].includes(p.type)||(p.type==='message'&&p.role==='assistant');
-
-export function readHistory(home,id){
-  if(!/^[a-f\d-]{36}$/i.test(id))throw new Error('聊天 ID 无效');
-  const databases=fs.readdirSync(home).filter(n=>/^state_\d+\.sqlite$/.test(n)).sort((a,b)=>Number(b.match(/\d+/)[0])-Number(a.match(/\d+/)[0]));
-  if(!databases.length)throw new Error('尚未找到本地聊天记录');
-  const db=new DatabaseSync(path.join(home,databases[0]),{readOnly:true});let bytes=0;
-  const root=fs.realpathSync(home)+path.sep;
-  function load(threadId,limit=null,seen=[]){
-    if(seen.includes(threadId)||seen.length>16)throw new Error('分支继承历史异常');
-    const row=db.prepare('SELECT rollout_path FROM threads WHERE id=?').get(threadId);
-    if(!row?.rollout_path)throw new Error('这个聊天尚无本地历史，正常交互后再刷新');
-    const file=fs.realpathSync(row.rollout_path);
-    if(!file.startsWith(root)||!file.endsWith('.jsonl'))throw new Error('聊天记录不在本地 Codex 目录内');
-    const size=fs.statSync(file).size,n=limit??size;
-    if(!Number.isSafeInteger(n)||n<0||n>size||n>128*1024*1024||(bytes+=n)>256*1024*1024)throw new Error('历史大小或分支边界无法安全读取');
-    const fd=fs.openSync(file,'r');const buffer=Buffer.alloc(n);
-    try{let read=0;while(read<n){const count=fs.readSync(fd,buffer,read,n-read,read);if(!count)throw new Error('历史在读取期间改变，请刷新');read+=count;}}finally{fs.closeSync(fd);}
-    const text=buffer.toString('utf8'),lines=text.split('\n');if(lines.at(-1)==='')lines.pop();else if(limit==null)lines.pop();else throw new Error('继承边界不是完整记录');
-    let local;try{local=lines.filter(Boolean).map(line=>({...JSON.parse(line),originThreadId:threadId}));}catch{throw new Error('本地历史记录解析失败');}
-    if(local[0]?.type!=='session_meta')throw new Error('聊天元数据缺失');
-    const base=local[0].payload.history_base;let inherited=[];
-    if(base){
-      if(!Number.isSafeInteger(base.end_byte_offset)||!Number.isSafeInteger(base.end_ordinal_exclusive))throw new Error('继承边界缺失');
-      inherited=load(base.thread_id,base.end_byte_offset,[...seen,threadId]);
-      if(inherited.length!==base.end_ordinal_exclusive)throw new Error('继承历史的字节与条目边界不一致');
-    }
-    return [...inherited,...local];
-  }
-  try{return load(id);}finally{db.close();}
-}
 
 // Each usage record closes a model response. Preserve the history BEFORE its
 // first generated item, excluding that response and subsequent tool results.
@@ -208,8 +187,9 @@ export function buildTimeline(events,id,countTokens=tokens){
   return {responses:points,timelineEvents};
 }
 export function responseTimeline(events,id){return buildTimeline(events,id).responses;}
-export function analyzeContext(home,id){
-  const events=readHistory(home,id);
+export function analyzeEvents(events,id){
   const timeline=buildTimeline(events,id),cost=estimateConversation(timeline.responses);
   return {...summarizeSnapshot(selectRequestSnapshot(events,id),id),...timeline,cost};
 }
+
+export function analyzeContext(home,id){return analyzeEvents(readHistory(home,id),id);}

@@ -1,22 +1,47 @@
 import {Worker} from 'node:worker_threads';
 import {codexHome} from './paths.mjs';
 
-export function createContextStatisticsService(home=codexHome){
-  const cache=new Map(),pending=new Map();
-  return async(id,refresh=false)=>{
+export function createContextStatisticsService(home=codexHome,{idleMs=60000,cacheMs=1000,maxWorkers=2,timeoutMs=25000}={}){
+  const cache=new Map(),pending=new Map(),queue=[],slots=[];
+  const workerLimit=Number.isInteger(maxWorkers)?Math.max(1,Math.min(2,maxWorkers)):2;
+  let sequence=0,closed=false,workerStarts=0,lastDiagnostics=null;
+  const retire=slot=>{clearTimeout(slot.idleTimer);clearTimeout(slot.timer);const i=slots.indexOf(slot);if(i>=0)slots.splice(i,1);void slot.worker.terminate();};
+  const complete=(slot,error,result)=>{
+    const job=slot.job;if(!job)return;slot.job=null;clearTimeout(slot.timer);
+    if(error){retire(slot);job.reject(error);}
+    else {job.resolve(result);slot.worker.unref();slot.idleTimer=setTimeout(()=>retire(slot),idleMs);slot.idleTimer.unref();}
+    dispatch();
+  };
+  function makeSlot(){
+    const worker=new Worker(new URL('./context-statistics-worker.mjs',import.meta.url),{workerData:{home},resourceLimits:{maxOldGenerationSizeMb:384},execArgv:[]});
+    const slot={worker,job:null,lastId:null};slots.push(slot);workerStarts++;
+    worker.on('message',message=>{if(message.taskId!==slot.job?.taskId)return;lastDiagnostics=message.diagnostics??null;complete(slot,message.error?new Error(message.error):null,message.result);});
+    worker.on('error',()=>complete(slot,new Error('统计进程无法完成，请刷新重试')));
+    worker.on('exit',()=>{clearTimeout(slot.idleTimer);if(slot.job)complete(slot,new Error('统计进程已退出，请重试'));else {const i=slots.indexOf(slot);if(i>=0)slots.splice(i,1);}});
+    return slot;
+  }
+  function dispatch(){
+    if(closed)return;
+    while(queue.length){
+      const next=queue[0];let slot=slots.find(s=>!s.job&&s.lastId===next.id)??slots.find(s=>!s.job);
+      if(!slot){if(slots.length>=workerLimit)return;try{slot=makeSlot();}catch{queue.shift().reject(new Error('无法启动统计进程'));continue;}}
+      const job=queue.shift();clearTimeout(slot.idleTimer);slot.job=job;slot.lastId=job.id;slot.worker.ref();
+      slot.timer=setTimeout(()=>complete(slot,new Error('统计耗时过长，请稍后刷新')),timeoutMs);
+      slot.worker.postMessage({taskId:job.taskId,id:job.id,refresh:job.refresh});
+    }
+  }
+  const get=async(id,refresh=false)=>{
+    if(closed)throw new Error('统计服务已关闭');
     if(!/^[a-f\d-]{36}$/i.test(id))throw new Error('聊天 ID 无效');
-    const found=cache.get(id);if(!refresh&&found&&Date.now()-found.at<10000)return found.data;
     if(pending.has(id))return pending.get(id);
-    if(pending.size>=2)throw new Error('正在统计其他聊天，请稍后刷新');
-    const task=new Promise((resolve,reject)=>{
-      const worker=new Worker(new URL('./context-statistics-worker.mjs',import.meta.url),{workerData:{id,home},resourceLimits:{maxOldGenerationSizeMb:384},execArgv:[]});
-      let finished=false;
-      const done=(error,result)=>{if(finished)return;finished=true;clearTimeout(timer);void worker.terminate();error?reject(error):resolve(result);};
-      const timer=setTimeout(()=>done(new Error('统计耗时过长，请稍后刷新')),25000);
-      worker.once('message',message=>done(message.error?new Error(message.error):null,message.result));
-      worker.once('error',()=>done(new Error('统计进程无法完成，请刷新重试')));
-      worker.once('exit',()=>{if(!finished)done(new Error('统计进程已退出，请重试'));});
-    }).then(data=>{cache.delete(id);cache.set(id,{data,at:Date.now()});if(cache.size>12)cache.delete(cache.keys().next().value);return data;}).finally(()=>pending.delete(id));
+    const found=cache.get(id);if(!refresh&&found&&Date.now()-found.at<cacheMs)return found.data;
+    if(pending.size>=8)throw new Error('正在统计其他聊天，请稍后刷新');
+    const task=new Promise((resolve,reject)=>{queue.push({id,refresh,taskId:++sequence,resolve,reject});dispatch();})
+      .then(data=>{cache.delete(id);cache.set(id,{data,at:Date.now()});if(cache.size>12)cache.delete(cache.keys().next().value);return data;})
+      .finally(()=>pending.delete(id));
     pending.set(id,task);return task;
   };
+  get.diagnostics=()=>({workerStarts,workers:slots.length,pending:pending.size,queued:queue.length,last:lastDiagnostics});
+  get.close=()=>{closed=true;for(const job of queue.splice(0))job.reject(new Error('统计服务已关闭'));for(const slot of [...slots]){const job=slot.job;slot.job=null;retire(slot);job?.reject(new Error('统计服务已关闭'));}cache.clear();};
+  return get;
 }

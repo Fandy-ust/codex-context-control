@@ -22,3 +22,5 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build:mac
       - run: CONTEXT_CONTROL_TEST_INSTALL=1 CONTEXT_CONTROL_TEST_UI=1 npm test
+      - run: node scripts/chart-fixture.mjs
+      - run: node scripts/check-chart-interaction.mjs
