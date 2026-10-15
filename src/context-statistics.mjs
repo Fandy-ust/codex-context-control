@@ -3,6 +3,7 @@ import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {Tiktoken} from 'js-tiktoken/lite';
 import ranks from 'js-tiktoken/ranks/o200k_base';
+import {estimateConversation} from './cost-estimate.mjs';
 
 const labels={tool_calls:'工具调用（参数／代码）',tool_results:'工具返回',user:'用户消息',assistant_final:'Agent 最终回复',assistant_commentary:'Agent 进度说明',instructions:'指令、环境与文本摘要',reasoning:'推理项目',compaction:'不透明压缩项目',other:'其他不透明项目'};
 let encoder;
@@ -122,7 +123,7 @@ export function summarizeSnapshot(snapshot,id,countTokens=tokens){
 // Only scalar configuration and numeric usage leave the reader; never message bodies.
 export function buildTimeline(events,id,countTokens=tokens){
   const points=[],timelineEvents=[],seen=new Set(),timings=new Map(),inputIds=new Set(),compactionIds=new Set(),compressionResponses=new Set(),progressedTurns=new Set(),inputTurns=new Set();
-  let config={},pending=[],window=null,previousCache=null,segment=0,position=0,currentTurn=null;
+  let config={},pending=[],pendingConfig=null,window=null,previousCache=null,segment=0,position=0,currentTurn=null;
   const markCompression=point=>{point.eventType='compaction';point.kind='压缩响应';};
   const scalar=(value)=>typeof value==='string'||typeof value==='number'?value:null;
   const number=value=>Number.isSafeInteger(value)&&value>=0?value:null;
@@ -131,13 +132,13 @@ export function buildTimeline(events,id,countTokens=tokens){
     const p=e.payload??{};
     if(e.type==='turn_context'){
       currentTurn=p.turn_id??currentTurn;
-      config={model:scalar(p.model),effort:scalar(p.effort??p.reasoning_effort),serviceTier:config.serviceTier??null,
+      config={model:scalar(p.model),effort:scalar(p.effort??p.reasoning_effort),serviceTier:Object.hasOwn(p,'service_tier')?scalar(p.service_tier):config.serviceTier??null,
         contextWindow:window,compactThreshold:null};
     }
     if(e.type==='event_msg'&&p.type==='thread_settings_applied'){
       const settings=p.thread_settings??{};
       config={...config,model:scalar(settings.model)??config.model,effort:scalar(settings.reasoning_effort)??config.effort,
-        serviceTier:scalar(settings.service_tier)??config.serviceTier};
+        serviceTier:Object.hasOwn(settings,'service_tier')?scalar(settings.service_tier):config.serviceTier};
     }
     if(e.type==='event_msg'&&p.type==='task_started'){currentTurn=p.turn_id??currentTurn;window=number(p.model_context_window);config.contextWindow=window;}
     if(e.type==='event_msg'&&p.type==='token_count'){
@@ -159,6 +160,7 @@ export function buildTimeline(events,id,countTokens=tokens){
       }
     }
     if(e.type==='response_item'&&generated(p)){
+      if(!pending.length)pendingConfig={...config,contextWindow:window};
       pending.push({id:p.id,type:p.type,phase:p.phase??p.channel});if(currentTurn)progressedTurns.add(currentTurn);
     }
     if(e.type==='compacted'){
@@ -170,7 +172,7 @@ export function buildTimeline(events,id,countTokens=tokens){
           eventType:'compaction',kind:'上下文压缩完成',tokensEstimate:null,images:0,
           retainedItems:Array.isArray(p.replacement_history)?p.replacement_history.length:null,responseId:p.compaction_response_id??null});
       }
-      pending=[];timings.clear();segment++;
+      pending=[];pendingConfig=null;timings.clear();segment++;
     }
     if(e.type!=='token_usage_record')continue;
     const key=p.response_id??`${e.timestamp}:${points.length}`;
@@ -189,14 +191,15 @@ export function buildTimeline(events,id,countTokens=tokens){
       cacheDelta:cached!=null&&previousCache!=null?cached-previousCache:null,
       cacheHitRate:input>0&&cached!=null?cached/input:null,
       durationMs:duration,tokensPerSecond:rate,timingKind:rate!=null?'observed_generation':'unavailable',
-      segment,config:{...config,contextWindow:window}};
+      segment,config:pendingConfig??{...config,contextWindow:window}};
     if(compressionResponses.has(key))markCompression(point);
-    points.push(point);if(p.turn_id)progressedTurns.add(p.turn_id);previousCache=cached;pending=[];timings.clear();if(rate==null)segment++;
+    points.push(point);if(p.turn_id)progressedTurns.add(p.turn_id);previousCache=cached;pending=[];pendingConfig=null;timings.clear();if(rate==null)segment++;
   }
   return {responses:points,timelineEvents};
 }
 export function responseTimeline(events,id){return buildTimeline(events,id).responses;}
 export function analyzeContext(home,id){
   const events=readHistory(home,id);
-  return {...summarizeSnapshot(selectRequestSnapshot(events,id),id),...buildTimeline(events,id)};
+  const timeline=buildTimeline(events,id),cost=estimateConversation(timeline.responses);
+  return {...summarizeSnapshot(selectRequestSnapshot(events,id),id),...timeline,cost};
 }

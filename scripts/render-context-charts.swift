@@ -11,7 +11,7 @@ import SwiftUI
         guard arguments.count==3 else{fatalError("Usage: chart-smoke aggregate.json output.png")}
         let stats=try JSONDecoder().decode(ContextStatistics.self,from:Data(contentsOf:URL(fileURLWithPath:arguments[1])))
         let app=NSApplication.shared;app.setActivationPolicy(.prohibited)
-        let view=NSHostingView(rootView:VStack(alignment:.leading,spacing:24){ContextResponseChart(responses:stats.responses,events:stats.timelineEvents)}.padding(24).frame(width:900).background(Color(white:0.095)).preferredColorScheme(.dark))
+        let view=NSHostingView(rootView:VStack(alignment:.leading,spacing:16){ContextSummaryView(statistics:stats);ContextResponseChart(responses:stats.responses,events:stats.timelineEvents)}.padding(24).frame(width:900).background(Color(white:0.095)).preferredColorScheme(.dark))
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:1220),styleMask:[.borderless],backing:.buffered,defer:false)
         window.contentView=view;window.display()
         DispatchQueue.main.asyncAfter(deadline:.now()+2){

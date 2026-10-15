@@ -6,7 +6,18 @@ struct ContextStatistics:Decodable {
     struct Tool:Decodable,Identifiable {let name:String;let count:Int;var id:String{name}}
     struct Unclassified:Decodable {let tokensEstimate:Int?;let status:String;let opaqueItems:Int;let images:Int;let reasoningItems:Int;let compactionItems:Int}
     let threadId:String;let snapshotAt:String?;let snapshotKind:String;let model:String?
+    struct CostPart:Decodable,Identifiable {let category:String;let label:String;let tokens:Int;let usd:Double;var id:String{category}}
+    struct Cost:Decodable {
+        let breakdown:[CostPart]
+        struct Group:Decodable,Identifiable {let model:String;let tier:String;let requests:Int;let usd:Double;var id:String{model+":"+tier}}
+        let usd:Double?;let pricedRequests:Int;let totalRequests:Int;let unpricedRequests:Int
+        let unknownTier:Int;let unknownModel:Int;let unknownUsage:Int;let unsupportedRate:Int;let longContextCount:Int
+        let standardUSD:Double?;let fastUSD:Double?;let comparisonRequests:Int;let groups:[Group];let checkedAt:String;let source:String
+    }
+    let cost:Cost
     struct Response:Decodable,Identifiable {
+        struct Estimate:Decodable {let usd:Double?;let reason:String?;let tier:String?;let contextBand:String?;let breakdown:[CostPart]?}
+        let costEstimate:Estimate?
         struct Config:Decodable {let model:String?;let effort:String?;let serviceTier:String?;let contextWindow:Int?;let compactThreshold:Int?}
         let id:String;let index:Int;let position:Int;let eventType:String;let timestamp:String;let turnId:String?;let kind:String
         let inputTokens:Int?;let outputTokens:Int?;let reasoningTokens:Int?;let cachedInputTokens:Int?;let cacheWriteTokens:Int?;let cacheDelta:Int?;let cacheHitRate:Double?
@@ -56,8 +67,7 @@ private struct ContextDetailsView:View {
             ScrollView {
                 if let s=statistics {
                     VStack(alignment:.leading,spacing:16){
-                        HStack(spacing:12){metric("请求输入总量",s.inputTokens,approximate:false);metric("可见文本估算",s.visibleTokens);metric("其他／未分项",s.unclassified.tokensEstimate)}
-                        HStack(spacing:12){metric("缓存命中",s.cachedInputTokens,approximate:false);metric("缓存写入",s.cacheWriteTokens,approximate:false)}
+                        ContextSummaryView(statistics:s)
                         ContextResponseChart(responses:s.responses,events:s.timelineEvents)
                         VStack(spacing:0){
                             HStack {Text("分类");Spacer();Text("条目").frame(width:65,alignment:.trailing);Text("占用（估算）").frame(width:115,alignment:.trailing)}.font(.caption).foregroundStyle(.secondary).padding(.bottom,8)
@@ -100,14 +110,56 @@ private struct ContextDetailsView:View {
             statistics=decoded;error=nil
         }catch {if !Task.isCancelled{self.error=error.localizedDescription}}
     }
-    private func metric(_ title:String,_ value:Int?,approximate:Bool=true)->some View {
-        VStack(alignment:.leading,spacing:8){Text(title).font(.caption).foregroundStyle(.secondary);Text(value.map{(approximate ? "≈ ":"")+amount($0)} ?? "待观测").font(.system(size:25,weight:.medium,design:.rounded)).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(.white.opacity(0.05),in:RoundedRectangle(cornerRadius:14))
-    }
     private func amount(_ n:Int)->String {n>=1000 ? (Double(n)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":n.formatted()}
     private func color(_ category:String)->Color {switch category{case "tool_calls":return .blue;case "tool_results":return .cyan;case "user":return .green;case "assistant_final":return .blue;case "assistant_commentary":return .gray;case "instructions":return .orange;default:return Color(red:0.48,green:0.43,blue:0.60)}}
     private func timestamp(_ text:String?)->String {
         guard let text else{return "待观测"};let formatter=ISO8601DateFormatter();formatter.formatOptions=[.withInternetDateTime,.withFractionalSeconds]
         guard let date=formatter.date(from:text) else{return text}
         return date.formatted(date:.abbreviated,time:.standard)
+    }
+}
+
+
+struct ContextSummaryView:View {
+    let statistics:ContextStatistics
+    private func amount(_ n:Int?)->String {n.map{ $0>=1000000 ? (Double($0)/1000000).formatted(.number.precision(.fractionLength(0...2)))+"M":$0>=1000 ? (Double($0)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":$0.formatted()} ?? "待观测"}
+    private func money(_ n:Double?)->String {n.map{String(format:"$%.2f",$0)} ?? "待估算"}
+    private func tierName(_ tier:String)->String {switch tier{case "fast":return "Fast";case "standard":return "Standard";case "ultrafast":return "Ultrafast";case "flex":return "Flex";default:return tier}}
+    var body:some View {
+        VStack(alignment:.leading,spacing:12){
+            HStack(spacing:12){
+                metric("活跃上下文",statistics.inputTokens).help("最近一次请求的输入总量，包含缓存命中部分；不是窗口容量上限")
+                metric("缓存命中",statistics.cachedInputTokens).help("最近请求复用的输入 token，已包含在活跃上下文内")
+            }
+            costCard
+        }
+    }
+    private func metric(_ title:String,_ value:Int?)->some View {
+        VStack(alignment:.leading,spacing:8){Text(title).font(.caption).foregroundStyle(.secondary);Text(amount(value)).font(.system(size:25,weight:.medium,design:.rounded)).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(.white.opacity(0.05),in:RoundedRectangle(cornerRadius:14))
+    }
+    private var costCard:some View {
+        let cost=statistics.cost
+        return VStack(alignment:.leading,spacing:9){
+            HStack(alignment:.firstTextBaseline){
+                Text("本聊天费用 · API 估算").font(.callout.weight(.medium));Spacer()
+                if cost.unpricedRequests>0{Text("可估部分").font(.caption).foregroundStyle(.secondary)}
+                Text((cost.usd != nil ? "≈ ":"")+money(cost.usd)).font(.system(size:23,weight:.medium,design:.rounded)).monospacedDigit()
+            }
+            HStack {Text("按配置 · 已估 \(cost.pricedRequests)/\(cost.totalRequests) 次 · 非实际账单");Spacer();Text("USD")}.font(.caption2).foregroundStyle(.secondary)
+            HStack(spacing:12){ForEach(cost.breakdown){part in
+                VStack(alignment:.leading,spacing:3){Text(part.label).font(.caption2).foregroundStyle(.secondary);Text(cost.pricedRequests>0 ? amount(part.tokens):"—").font(.callout).monospacedDigit();Text(cost.pricedRequests>0 ? money(part.usd):"—").font(.caption2).foregroundStyle(.secondary).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading)
+            }}.padding(.vertical,3)
+            DisclosureGroup("计价明细"){
+                VStack(alignment:.leading,spacing:8){
+                    Text("四项仅统计已估请求。普通输入 = 输入总量 − 缓存读取 − 缓存写入；缓存写入是运行时报告的新增写入，并非命中量变化。")
+                    ForEach(cost.groups){group in HStack {Text("\(group.model) · \(tierName(group.tier))");Spacer();Text("\(group.requests) 次 · \(money(group.usd))").monospacedDigit()}}
+                    if cost.unpricedRequests>0{Text("未计入：档位未知 \(cost.unknownTier) · 模型价格未知 \(cost.unknownModel) · 用量缺失 \(cost.unknownUsage) · 不支持的费率 \(cost.unsupportedRate)").foregroundStyle(.orange)}
+                    if cost.comparisonRequests>0{Text("同批 \(cost.comparisonRequests) 次用量：Standard \(money(cost.standardUSD)) ／ Fast \(money(cost.fastUSD))").monospacedDigit()}
+                    Text("价格核对：\(cost.checkedAt)。仅累计本聊天请求，不含父聊天既有费用、税费、工具费或地区加价。缓存读取、写入分别计价，推理已包含在输出中。")
+                    Text("\(cost.longContextCount) 次已计价请求超过 272K，按长上下文费率。这里使用配置档位；日志未提供服务器最终结算档位，不能核对降档或实际扣费。")
+                    Link("官方 API 价格",destination:URL(string:cost.source)!)
+                }.font(.caption).foregroundStyle(.secondary).padding(.top,8)
+            }.font(.caption).foregroundStyle(.secondary)
+        }.padding(14).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
     }
 }
