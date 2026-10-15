@@ -1,4 +1,5 @@
 import {spawn,spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {Bridge} from './bridge.mjs';
 import {connect} from './ipc.mjs';
 import {callerRuntime} from './runtime-selection.mjs';
@@ -6,6 +7,7 @@ import {ensureDaemon} from './service.mjs';
 import {runtimeSupported,isStdioServer} from './compatibility.mjs';
 
 const args=process.argv.slice(2);const {binary,desktop}=callerRuntime();
+const bridgeVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 const supported=!isStdioServer(args)||runtimeSupported(spawnSync(binary,['--version'],{encoding:'utf8'}).stdout||'');
 if(!desktop||!isStdioServer(args)||!supported){
   if(!supported)process.stderr.write('Context Control: 当前运行时版本未经验证，本次仅透传。\n');
@@ -19,11 +21,11 @@ if(!desktop||!isStdioServer(args)||!supported){
     try{
       await ensureDaemon();peer=await connect(async(op,p)=>{
         if(op==='setPolicy')return bridge.setPolicy(p.id,p.policy,p.model);
-        if(op==='clearPolicy')return bridge.clearPolicy(p.id);
+        if(op==='clearPolicy')return bridge.clearPolicy(p.id,p.revision);
         if(op==='compact')return bridge.compact(p.id);
         throw new Error('不支持的运行时操作');
       });
-      await peer.call('registerBridge',{pid:process.pid});
+      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion});
       for(const record of bridge.records.values())bridge.notify(record);
       peer.socket.once('close',()=>{peer=null;if(!closed)setTimeout(attach,1000).unref();});
     }catch{if(!closed)setTimeout(attach,1500).unref();}

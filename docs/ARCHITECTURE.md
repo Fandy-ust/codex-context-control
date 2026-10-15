@@ -84,3 +84,11 @@ native_compact_maximum = floor(raw_window × 90 / 100)
 - [0.160.0 的会话设置](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/session/step_settings.rs)
 - [0.160.0 的运行中聊天恢复逻辑](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server/src/request_processors/thread_processor.rs)
 - [0.160.0 的窗口与阈值计算](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/protocol/src/openai_models.rs)
+
+## 连续预算更新（0.5.1）
+
+预算修订号单调递增，旧通知的回包不能覆盖已接收的新预算，重复投递不会重置应用状态。关闭自动应用也会推进修订号，避免晚到的旧回包重新启用策略。
+
+`usageFresh` 标识最近用量是否仍能用于容量预检；`freshUsage` 继续用于窗口读回确认。仅重新加载相同历史会清除窗口确认，不清除仍有效的用量。新的输入、轮次开始、模型变化或请求压缩会使原用量失效。兼容旧桥接时，从旧的 `freshUsage` 推导用量有效性。
+
+一次重载期间到达的新预算在释放输入队列前继续处理；空闲时接收的新预算也不需要通过额外模型请求重新取得相同历史的用量。新的 turn/start 先检查待应用预算。所有版本仍逐次通过容量与预留预检；需要压缩的设置保持阻止状态。

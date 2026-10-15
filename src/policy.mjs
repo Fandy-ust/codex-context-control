@@ -29,7 +29,9 @@ export function preflight(thread,policy,model) {
   if(policy.retainedFloor+policy.reserve>=Math.min(usable,compact))return {...result,code:'below_retained_floor',allowed:false,message:'必须保留量加下一轮预留已达到容量或压缩阈值；需要更大的窗口或减少保留量。'};
   if(thread?.status==='active'||thread?.status==='inProgress')return {...result,code:'waiting_for_idle',allowed:false,message:'本轮仍在运行，已排队等待轮次结束。'};
   if(thread?.ephemeral||thread?.canAcceptDirectInput===false)return {...result,code:'unsupported_thread',allowed:false,message:'临时会话或由父代理管理的会话暂不支持重新加载。'};
-  const usage=thread?.freshUsage?thread?.lastUsage?.totalTokens:null;
+  // Reloading identical history invalidates window confirmation, not its last
+  // measured usage. Older bridges only provide freshUsage.
+  const usage=(thread?.usageFresh??thread?.freshUsage)?thread?.lastUsage?.totalTokens:null;
   if(!Number.isSafeInteger(usage))return {...result,code:'needs_observation',allowed:false,message:'等待本轮请求的用量记录，再判断能否安全调整。'};
   result.estimatedUsage=usage;
   if(usage+policy.reserve>=Math.min(usable,compact))return {...result,code:'needs_compaction',allowed:false,message:'最近请求用量加预留已达到新阈值；请先在 Codex 压缩，再重新测量。'};

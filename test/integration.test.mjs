@@ -70,6 +70,16 @@ test('real runtime through the actual bridge preserves history, tools, permissio
     await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='awaiting_runtime_confirmation'));
     assert.equal(await turn(a,'usable window matches the number entered'),700000);
     const hook=await request('hook',{sessionId:a});assert.match(hook.systemMessage,/目标可用 700,000/);assert.match(hook.systemMessage,/压缩 90%（630,000）/);
+    const intermediate=await request('setPolicy',{id:a,policy:{window:447369,compact:382000},apply:true});
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.revision===intermediate.policy.revision&&t.phase==='awaiting_runtime_confirmation'));
+    const requestCount=fixture.requests.length;
+    const latest=await request('setPolicy',{id:a,policy:{window:382106,compact:326000},apply:true});
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.revision===latest.policy.revision&&t.expectedWindow===363000&&t.phase==='awaiting_runtime_confirmation'));
+    assert.equal(fixture.requests.length,requestCount,'a newer budget must not need an extra model request');
+    assert.equal(await turn(a,'first request after multiple budgets uses the latest'),363000);
+    const restoredUsable=await request('setPolicy',{id:a,policy:{window:usable.window,compact:usable.compact},apply:true});
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.revision===restoredUsable.policy.revision&&t.phase==='awaiting_runtime_confirmation'));
+    assert.equal(await turn(a,'restore 700K fixture budget'),700000);
     const stillGenerating=turn(a,'HOLD_FIXTURE');await until(()=>fixture.held());
     const oldService=JSON.parse(fs.readFileSync(path.join(control,'connection.json'),'utf8')).pid;process.kill(oldService,'SIGTERM');
     await until(async()=>{try{const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json'),'utf8'));return c.pid!==oldService&&(await request('state')).threads.find(t=>t.id===a&&t.connected&&t.status==='active');}catch{return false;}});
