@@ -139,7 +139,7 @@ private enum PanelStyle {
     static let surface=Color(white:0.16)
     static let border=Color.white.opacity(0.09)
     static let blue=Color(red:0.27,green:0.50,blue:0.99)
-    static let headroom=Color(red:0.64,green:0.53,blue:0.88)
+    static let headroom=Color(white:0.55)
 }
 
 private struct QuietButtonStyle:ButtonStyle {
@@ -203,11 +203,11 @@ private struct BudgetRangeSlider:View {
                             }
                         }
                     }.frame(width:compactX).allowsHitTesting(false)
-                }.frame(height:18).clipShape(Capsule())
+                }.frame(height:26).clipShape(Capsule())
                 thumb(.compact,color:PanelStyle.blue).offset(x:compactX-diameter/2)
                 thumb(.window,color:.white).offset(x:windowX-diameter/2)
             }
-            .frame(height:28).frame(maxHeight:.infinity).contentShape(Rectangle())
+            .frame(height:34).frame(maxHeight:.infinity).contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance:0).onChanged {event in
                 guard enabled else{return}
                 if dragging==nil {
@@ -224,9 +224,8 @@ private struct BudgetRangeSlider:View {
             .animation(reduceMotion || dragging != nil ? nil:.easeOut(duration:0.18),value:window)
             .animation(reduceMotion || dragging != nil ? nil:.easeOut(duration:0.18),value:compact)
         }
-        .frame(height:38).opacity(enabled ? 1:0.4)
-        .focusable(enabled).focused($focused)
-        .overlay(RoundedRectangle(cornerRadius:20).strokeBorder(focused ? PanelStyle.blue.opacity(0.35):.clear,lineWidth:1).padding(-4))
+        .frame(height:46).opacity(enabled ? 1:0.4)
+        .focusable(enabled).focusEffectDisabled().focused($focused)
         .onKeyPress(.leftArrow){guard enabled else{return .ignored};adjust(-1);return .handled}
         .onKeyPress(.rightArrow){guard enabled else{return .ignored};adjust(1);return .handled}
         .onChange(of:selection){_,_ in if enabled{focused=true}}
@@ -312,7 +311,7 @@ struct ContentView: View {
     func budgetEditor()->some View {
         VStack(alignment:.leading,spacing:18){
             rangeEditor()
-            Text("将蓝色压缩点往左拉，紫色余量随之增加。每步 1K，应用后生效。")
+            Text("将蓝色压缩点往左拉，灰色压缩窗口余量随之增加。每步 1K，应用后生效。")
                 .font(.system(size:11)).foregroundStyle(.secondary)
             if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
             DisclosureGroup("高级设置"){
@@ -335,7 +334,7 @@ struct ContentView: View {
             HStack(alignment:.center){
                 rangeValue("压缩触发",value:model.compactK,color:PanelStyle.blue,thumb:.compact)
                 Spacer()
-                VStack(spacing:5){Text("\(Int(max(0,model.windowK-model.compactK)))K").font(.system(size:22,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(PanelStyle.headroom);Text("窗口余量").font(.system(size:11)).foregroundStyle(.secondary)}
+                VStack(spacing:5){Text("\(Int(max(0,model.windowK-model.compactK)))K").font(.system(size:22,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(PanelStyle.headroom);Text("压缩窗口余量").font(.system(size:11)).foregroundStyle(.secondary)}
                 Spacer()
                 rangeValue("上下文窗口",value:model.windowK,color:.white,thumb:.window)
                 Button {model.fill()} label:{Image(systemName:"arrow.counterclockwise").font(.system(size:14)).frame(width:22,height:26)}
