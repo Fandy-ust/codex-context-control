@@ -1,5 +1,13 @@
 # Changes
 
+## 0.4.0 — 2026-10-16
+
+- Automatically show a menu-bar entry when Codex connects, with connection status and a settings shortcut.
+- Keep the entry available after closing the settings window; background attachment does not open or focus a window.
+- Detect an existing entry by its canonical executable path and avoid reopening it on reconnect.
+- Recover window confirmation when a model switch clears the bridge expectation but a fresh matching report is available.
+- Add an isolated native UI test for automatic appearance and reconnect behavior.
+
 ## 0.3.0 — 2026-10-16
 
 - Enter usable context capacity directly; automatically invert the model's usable percentage.

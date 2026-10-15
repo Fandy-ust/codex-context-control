@@ -8,6 +8,8 @@ import {root,socketPath,ensureRoot,atomicJSON} from './paths.mjs';
 import {Store} from './store.mjs';
 import {normalizePolicy,preflight} from './policy.mjs';
 import {savedBudget} from './budget.mjs';
+import {ensureMenuBarEntry} from './menu-bar.mjs';
+import {reconcileWindowConfirmation} from './confirmation.mjs';
 
 export async function startDaemon() {
   ensureRoot();
@@ -29,11 +31,11 @@ export async function startDaemon() {
   store.save();
   const bridges=new Map();const owners=new Map();
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
-  function state(){return {version:'0.3.0',bridgeCount:bridges.size,threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function state(){return {version:'0.4.0',bridgeCount:bridges.size,threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.3.0'};
+    if(op==='ping')return {ok:true,version:'0.4.0'};
     if(op==='state')return state();
-    if(op==='registerBridge'){const entry={ids:new Set(),pid:p.pid};bridges.set(peer,entry);peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
+    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180)throw new Error('聊天 ID 无效');
@@ -41,7 +43,8 @@ export async function startDaemon() {
       const allowed=['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','phase','message','turnId','revision','observedAt'];
       const clean=Object.fromEntries(allowed.filter(k=>Object.hasOwn(p,k)).map(k=>[k,p[k]]));
       if(typeof clean.name==='string'&&(clean.name.length>120||/[\r\n]/.test(clean.name)))clean.name=null;
-      store.data.threads[p.id]={...store.data.threads[p.id],...clean,observedAt:Date.now()};store.save();
+      store.data.threads[p.id]={...store.data.threads[p.id],...clean,observedAt:Date.now()};
+      Object.assign(store.data.threads[p.id],reconcileWindowConfirmation(store.data.threads[p.id],store.data.policies[p.id],store.model(store.data.threads[p.id].model)));store.save();
       return {policy:store.data.policies[p.id]||null,model:store.model(clean.model||store.data.threads[p.id].model)};
     }
     if(op==='preflight') {

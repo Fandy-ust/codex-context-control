@@ -62,7 +62,7 @@ struct DesktopSettings: Decodable {let desktopExecutable:String}
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount
             if selectedID==nil{selectedID=chats.first?.id;fill()}
             else if waitingForModel,let metadata=selected?.modelMetadata,metadata.effective_context_window_percent != nil,metadata.max_context_window != nil{fill()}
-            if notice=="正在读取本地状态…"{notice=bridgeCount>0 ? "已接入 Codex。" : "照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。"}
+            if notice=="正在读取本地状态…"||notice.hasPrefix("读取失败："){notice=bridgeCount>0 ? "已接入 Codex。" : "照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。"}
         }catch{notice="读取失败：\(error.localizedDescription)"}
     }
     func fill(){
@@ -115,7 +115,7 @@ func phaseName(_ value:String?) -> String {
 }
 
 struct ContentView: View {
-    @StateObject private var model=Controller()
+    @ObservedObject var model:Controller
     @State private var confirmCompact=false
     var body: some View {
         NavigationSplitView {
@@ -164,7 +164,6 @@ struct ContentView: View {
         }
         .frame(minWidth:960,minHeight:670)
         .onChange(of:model.selectedID){_,_ in model.fill()}
-        .task {while !Task.isCancelled{await model.refresh();try? await Task.sleep(for:.seconds(2))}}
         .confirmationDialog("请求 Codex 原生压缩？",isPresented:$confirmCompact,titleVisibility:.visible){Button("请求压缩"){Task{await model.act("compact")}};Button("取消",role:.cancel){}}message:{Text("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。")}
     }
     func budgetEditor()->some View {
@@ -202,6 +201,80 @@ struct ContentView: View {
     func field(_ label:String,text:Binding<String>,hint:String)->some View {GridRow{Text(label);VStack(alignment:.leading,spacing:4){TextField(label,text:text).textFieldStyle(.roundedBorder).frame(maxWidth:250);Text(hint).font(.caption).foregroundStyle(.secondary)}}}
 }
 
-@main struct ContextControlApp: App {
-    var body: some Scene {WindowGroup {ContentView()}.windowStyle(.titleBar).defaultSize(width:1040,height:720)}
+@main @MainActor final class ContextControlApp:NSObject,NSApplicationDelegate,NSWindowDelegate {
+    private let model=Controller()
+    private var statusItem:NSStatusItem?
+    private var settingsWindow:NSWindow?
+    private var refreshTask:Task<Void,Never>?
+    private let connectionItem=NSMenuItem(title:"正在连接 Codex…",action:nil,keyEquivalent:"")
+    private let usageItem=NSMenuItem(title:"窗口待观测",action:nil,keyEquivalent:"")
+    private let background=CommandLine.arguments.contains("--background")
+    private var lastStatus:Data?
+
+    static func main(){
+        let app=NSApplication.shared
+        let delegate=ContextControlApp();app.delegate=delegate
+        app.setActivationPolicy(.accessory);app.run()
+        withExtendedLifetime(delegate){}
+    }
+    func applicationDidFinishLaunching(_ notification:Notification){
+        installMainMenu()
+        let item=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength)
+        item.button?.title=" 上下文"
+        item.button?.image=NSImage(systemSymbolName:"slider.horizontal.3",accessibilityDescription:"Codex 上下文设置")
+        item.button?.image?.isTemplate=true
+        item.button?.imagePosition = .imageLeading
+        item.button?.toolTip="Codex 上下文设置"
+        let menu=NSMenu();connectionItem.isEnabled=false;usageItem.isEnabled=false
+        menu.addItem(connectionItem);menu.addItem(usageItem);menu.addItem(.separator())
+        let open=NSMenuItem(title:"打开上下文设置…",action:#selector(showSettings),keyEquivalent:"");open.target=self;menu.addItem(open)
+        let codex=NSMenuItem(title:"打开 Codex",action:#selector(openCodex),keyEquivalent:"");codex.target=self;menu.addItem(codex)
+        menu.addItem(.separator())
+        let note=NSMenuItem(title:"关闭设置窗口后，预算继续生效",action:nil,keyEquivalent:"");note.isEnabled=false;menu.addItem(note)
+        let quit=NSMenuItem(title:"退出菜单栏入口",action:#selector(quitEntry),keyEquivalent:"");quit.target=self;quit.toolTip="预算控制继续运行，下次启动 Codex 时入口会再出现。";menu.addItem(quit)
+        item.menu=menu;statusItem=item
+        if !background{showSettings()}
+        publishStatus()
+        refreshTask=Task {while !Task.isCancelled{
+            await model.refresh()
+            connectionItem.title=model.bridgeCount>0 ? "Codex 已连接":"等待 Codex 接入"
+            usageItem.title="最近读回窗口：\(formatted(model.selected?.observedWindow))"
+            publishStatus()
+            try? await Task.sleep(for:.seconds(2))
+        }}
+    }
+    private func installMainMenu(){
+        let bar=NSMenu(),appItem=NSMenuItem(),appMenu=NSMenu()
+        appMenu.addItem(withTitle:"退出上下文设置",action:#selector(quitEntry),keyEquivalent:"q").target=self
+        appItem.submenu=appMenu;bar.addItem(appItem)
+        let editItem=NSMenuItem(title:"编辑",action:nil,keyEquivalent:""),edit=NSMenu(title:"编辑")
+        for (title,action,key) in [("撤销","undo:","z"),("重做","redo:","Z"),("剪切","cut:","x"),("复制","copy:","c"),("粘贴","paste:","v"),("全选","selectAll:","a")]{edit.addItem(withTitle:title,action:Selector(action),keyEquivalent:key)}
+        editItem.submenu=edit;bar.addItem(editItem);NSApplication.shared.mainMenu=bar
+    }
+    @objc private func showSettings(){
+        if settingsWindow==nil{
+            let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:760),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
+            window.title="Codex Context Control";window.minSize=NSSize(width:960,height:700)
+            window.contentView=NSHostingView(rootView:ContentView(model:model))
+            window.isReleasedWhenClosed=false;window.delegate=self;window.center();window.setFrameAutosaveName("ContextControlSettings")
+            settingsWindow=window
+        }
+        settingsWindow?.deminiaturize(nil);settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps:true);publishStatus()
+    }
+    @objc private func openCodex(){model.launchCodex()}
+    @objc private func quitEntry(){NSApplication.shared.terminate(nil)}
+    func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows:Bool)->Bool{showSettings();return false}
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool{false}
+    func windowWillClose(_ notification:Notification){publishStatus(windowVisible:false)}
+    private func publishStatus(windowVisible:Bool?=nil){
+        let state:[String:Any]=["pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background]
+        guard let data=try? JSONSerialization.data(withJSONObject:state,options:.sortedKeys),data != lastStatus else{return}
+        do {
+            try FileManager.default.createDirectory(at:model.home,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+            let url=model.home.appendingPathComponent("ui-status.json");try data.write(to:url,options:.atomic)
+            try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:url.path);lastStatus=data
+        }catch{}
+    }
+    func applicationWillTerminate(_ notification:Notification){refreshTask?.cancel();try? FileManager.default.removeItem(at:model.home.appendingPathComponent("ui-status.json"))}
 }
