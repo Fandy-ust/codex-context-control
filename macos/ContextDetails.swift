@@ -55,13 +55,11 @@ private struct ContextDetailsView:View {
             if let error{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
             ScrollView {
                 if let s=statistics {
-                    VStack(alignment:.leading,spacing:22){
+                    VStack(alignment:.leading,spacing:16){
                         HStack(spacing:12){metric("请求输入总量",s.inputTokens,approximate:false);metric("可见文本估算",s.visibleTokens);metric("其他／未分项",s.unclassified.tokensEstimate)}
                         ContextCategoryChart(statistics:s)
-                        HStack(spacing:12){metric("缓存命中（输入中的一部分）",s.cachedInputTokens,approximate:false);metric("缓存写入（运行时记录）",s.cacheWriteTokens,approximate:false)}
-                        Text("缓存命中不额外占一份上下文。这里保留运行时的缓存统计，不改变 Codex 的缓存策略。").font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing:12){metric("缓存命中",s.cachedInputTokens,approximate:false);metric("缓存写入",s.cacheWriteTokens,approximate:false)}
                         ContextResponseChart(responses:s.responses,events:s.timelineEvents)
-                        Text("分类来自这次请求开始前的保留历史。推理、图片等无法单独计量的部分合并到“其他／未分项”，差额包含估算误差。").font(.caption).foregroundStyle(.secondary)
                         VStack(spacing:0){
                             HStack {Text("分类");Spacer();Text("条目").frame(width:65,alignment:.trailing);Text("占用（估算）").frame(width:115,alignment:.trailing)}.font(.caption).foregroundStyle(.secondary).padding(.bottom,8)
                             ForEach(s.categories){row in
@@ -70,7 +68,7 @@ private struct ContextDetailsView:View {
                             }
                             HStack {Circle().fill(color("other")).frame(width:7,height:7);Text("其他／未分项");Spacer();Text("\(s.unclassified.opaqueItems) 项*").frame(width:65,alignment:.trailing);Text(s.unclassified.tokensEstimate.map{"≈ \(amount($0))"} ?? "无法对齐").frame(width:115,alignment:.trailing)}.font(.callout).monospacedDigit().padding(.vertical,10)
                         }
-                        Text("* 已识别 \(s.unclassified.reasoningItems) 个推理项目、\(s.unclassified.compactionItems) 个不透明压缩项目；另有 \(s.unclassified.images) 张图片。工具定义与消息格式没有单独的条目数，不能把图片数与消息数相加。").font(.caption).foregroundStyle(.secondary)
+                        Text("* 已识别 \(s.unclassified.reasoningItems) 个推理项目、\(s.unclassified.compactionItems) 个不透明压缩项目；另有 \(s.unclassified.images) 张图片（已包含在消息内）。").font(.caption).foregroundStyle(.secondary)
                         if s.unclassified.status=="estimate_exceeds_input"{Text("文本估算超过请求输入量，暂不显示差额；不会将它当作零占用。").font(.caption).foregroundStyle(.orange)}
                         DisclosureGroup("各工具调用次数"){
                             VStack(spacing:9){ForEach(s.toolCalls){tool in HStack{Text(tool.name).font(.system(.caption,design:.monospaced));Spacer();Text("\(tool.count) 次").monospacedDigit()}}}.padding(.top,12)
