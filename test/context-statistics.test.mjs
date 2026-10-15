@@ -84,3 +84,16 @@ test('timeline preserves user steers separately from tool outputs and colors onl
  assert.ok(!JSON.stringify(out).includes('PRIVATE_'));
  assert.equal(out.responses.find(x=>x.id==='unlinked').kind,'未关联响应');
 });
+
+test('missing cache stays unknown and breaks chart series; logged zero stays distinguishable',()=>{
+ const events=[e('token_usage_record',{response_id:'a',usage:{input_tokens:100,cached_input_tokens:80}},1),e('token_usage_record',{response_id:'b',usage:{input_tokens:100}},2),e('token_usage_record',{response_id:'c',usage:{input_tokens:100,cached_input_tokens:0}},3),e('token_usage_record',{response_id:'d',usage:{input_tokens:100,cached_input_tokens:101}},4)];
+ const rows=buildTimeline(events,id).responses;
+ assert.equal(rows[1].cachedInputTokens,null);assert.equal(rows[1].cacheStatus,'missing');
+ assert.notEqual(rows[0].cacheSegment,rows[2].cacheSegment);assert.equal(rows[2].cacheDelta,null);
+ assert.equal(rows[2].cachedInputTokens,0);assert.equal(rows[2].cacheStatus,'zero_in_log');assert.equal(rows[3].cachedInputTokens,null);assert.equal(rows[3].cacheStatus,'invalid');
+});
+test('generation rate excludes the separately identified pre-generation gap; reversed timing is rejected',()=>{
+ const events=[e('response_item',{type:'custom_tool_call_output',output:'ready'},1000),e('event_msg',{type:'item_completed',item:{id:'r',type:'Reasoning'},started_at_ms:1700000009000,completed_at_ms:1700000010000},10000),e('response_item',{type:'reasoning',id:'r'},10000),e('token_usage_record',{response_id:'a',usage:{input_tokens:100,cached_input_tokens:0,output_tokens:500}},14000)];
+ const r=buildTimeline(events,id).responses[0];assert.equal(r.durationMs,5000);assert.equal(r.preGenerationGapMs,8000);assert.equal(r.recordToCompletionMs,13000);assert.equal(r.tokensPerSecond,100);
+ const invalid=[...events.slice(0,3),e('token_usage_record',{response_id:'a',usage:{output_tokens:500}},9500)];assert.equal(buildTimeline(invalid,id).responses[0].tokensPerSecond,null);
+});

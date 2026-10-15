@@ -1,0 +1,102 @@
+{
+  "mode": "controlled-loopback",
+  "samples": [
+    {
+      "sourceMethod": "rawResponse/completed",
+      "rawUsagePresent": true,
+      "rawUsageKeys": [
+        "input_tokens",
+        "output_tokens",
+        "output_tokens_details",
+        "total_tokens"
+      ],
+      "rawInputDetailsKeys": [],
+      "cacheReadFieldPresent": false,
+      "normalizedCached": 0,
+      "cacheWriteFieldPresent": false,
+      "rawCacheWrite": null,
+      "rawCached": null,
+      "rawInput": 100,
+      "rawOutput": 2,
+      "normalizedCacheWrite": 0
+    },
+    {
+      "sourceMethod": "rawResponse/completed",
+      "rawUsagePresent": true,
+      "rawUsageKeys": [
+        "input_tokens",
+        "input_tokens_details",
+        "output_tokens",
+        "output_tokens_details",
+        "total_tokens"
+      ],
+      "rawInputDetailsKeys": [
+        "cached_tokens"
+      ],
+      "cacheReadFieldPresent": true,
+      "normalizedCached": 0,
+      "cacheWriteFieldPresent": false,
+      "rawCacheWrite": null,
+      "rawCached": 0,
+      "rawInput": 100,
+      "rawOutput": 2,
+      "normalizedCacheWrite": 0
+    },
+    {
+      "sourceMethod": "rawResponse/completed",
+      "rawUsagePresent": true,
+      "rawUsageKeys": [
+        "input_tokens",
+        "input_tokens_details",
+        "output_tokens",
+        "output_tokens_details",
+        "total_tokens"
+      ],
+      "rawInputDetailsKeys": [
+        "cached_tokens"
+      ],
+      "cacheReadFieldPresent": true,
+      "normalizedCached": 40,
+      "cacheWriteFieldPresent": false,
+      "rawCacheWrite": null,
+      "rawCached": 40,
+      "rawInput": 100,
+      "rawOutput": 2,
+      "normalizedCacheWrite": 0
+    }
+  ],
+  "errors": [],
+  "model": "context-fixture",
+  "provider": "fixture",
+  "persisted": [
+    {
+      "responseId": "resp_probe_0",
+      "cacheWrite": 0,
+      "cached": 0
+    },
+    {
+      "responseId": "resp_probe_1",
+      "cacheWrite": 0,
+      "cached": 0
+    },
+    {
+      "responseId": "resp_probe_2",
+      "cacheWrite": 0,
+      "cached": 40
+    }
+  ],
+  "methods": [
+    [
+      "rawResponseItem/completed",
+      7
+    ],
+    [
+      "rawResponse/completed",
+      3
+    ],
+    [
+      "thread/tokenUsage/updated",
+      3
+    ]
+  ]
+}

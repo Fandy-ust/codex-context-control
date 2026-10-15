@@ -123,7 +123,7 @@ export function summarizeSnapshot(snapshot,id,countTokens=tokens){
 // Only scalar configuration and numeric usage leave the reader; never message bodies.
 export function buildTimeline(events,id,countTokens=tokens){
   const points=[],timelineEvents=[],seen=new Set(),timings=new Map(),inputIds=new Set(),compactionIds=new Set(),compressionResponses=new Set(),progressedTurns=new Set(),inputTurns=new Set();
-  let config={},pending=[],pendingConfig=null,window=null,previousCache=null,segment=0,position=0,currentTurn=null;
+  let config={},pending=[],pendingConfig=null,window=null,previousCache=null,segment=0,position=0,currentTurn=null,inputBoundaries=[],cacheSegment=0,inputSegment=0;
   const markCompression=point=>{point.eventType='compaction';point.kind='压缩响应';};
   const scalar=(value)=>typeof value==='string'||typeof value==='number'?value:null;
   const number=value=>Number.isSafeInteger(value)&&value>=0?value:null;
@@ -159,6 +159,9 @@ export function buildTimeline(events,id,countTokens=tokens){
         if(turnId)inputTurns.add(turnId);
       }
     }
+    if(e.type==='response_item'&&!generated(p)){
+      const at=Date.parse(e.timestamp);if(Number.isFinite(at))inputBoundaries.push(at);
+    }
     if(e.type==='response_item'&&generated(p)){
       if(!pending.length)pendingConfig={...config,contextWindow:window};
       pending.push({id:p.id,type:p.type,phase:p.phase??p.channel});if(currentTurn)progressedTurns.add(currentTurn);
@@ -172,28 +175,35 @@ export function buildTimeline(events,id,countTokens=tokens){
           eventType:'compaction',kind:'上下文压缩完成',tokensEstimate:null,images:0,
           retainedItems:Array.isArray(p.replacement_history)?p.replacement_history.length:null,responseId:p.compaction_response_id??null});
       }
-      pending=[];pendingConfig=null;timings.clear();segment++;
+      pending=[];pendingConfig=null;inputBoundaries=[];timings.clear();segment++;
     }
     if(e.type!=='token_usage_record')continue;
     const key=p.response_id??`${e.timestamp}:${points.length}`;
     if(seen.has(key))continue;seen.add(key);
-    const usage=p.usage??{},input=number(usage.input_tokens),output=number(usage.output_tokens),cached=number(usage.cached_input_tokens);
+    const usage=p.usage??{},input=number(usage.input_tokens),output=number(usage.output_tokens),reportedCache=number(usage.cached_input_tokens);
+    const invalidCache=input!=null&&reportedCache!=null&&reportedCache>input;
+    const cached=invalidCache?null:reportedCache;
+    const cacheStatus=invalidCache?'invalid':cached==null?'missing':cached===0?'zero_in_log':'recorded';
+    if(cached==null)cacheSegment++;if(input==null)inputSegment++;
     const first=timings.get(pending[0]?.id),end=Date.parse(e.timestamp);
     // The first generated item must have its own runtime start timestamp. A
     // completed tool call's timestamp cannot stand in for generation start.
-    const duration=first?.start!=null&&first.end>=first.start&&Number.isFinite(end)&&end>first.start ? end-first.start:null;
+    const duration=first?.start!=null&&first.end>=first.start&&Number.isFinite(end)&&first.end<=end&&end>first.start ? end-first.start:null;
     const rate=duration!=null&&output!=null?output/(duration/1000):null;
+    const inputBoundary=duration!=null?inputBoundaries.filter(at=>at<=first.start).at(-1):null;
+    const preGenerationGapMs=inputBoundary!=null?first.start-inputBoundary:null;
+    const recordToCompletionMs=inputBoundary!=null?end-inputBoundary:null;
     const final=pending.some(x=>x.phase==='final'||x.phase==='final_answer');
     const point={id:key,index:points.length+1,position:++position,eventType:final?'final':'intermediate',timestamp:e.timestamp,turnId:p.turn_id??null,
       kind:final?'最终回复':pending.length?'中间响应':'未关联响应',
       inputTokens:input,outputTokens:output,reasoningTokens:number(usage.reasoning_output_tokens),
-      cachedInputTokens:cached,cacheWriteTokens:number(usage.cache_write_input_tokens),
+      cachedInputTokens:cached,cacheStatus,cacheSegment,inputSegment,cacheWriteTokens:number(usage.cache_write_input_tokens),
       cacheDelta:cached!=null&&previousCache!=null?cached-previousCache:null,
       cacheHitRate:input>0&&cached!=null?cached/input:null,
-      durationMs:duration,tokensPerSecond:rate,timingKind:rate!=null?'observed_generation':'unavailable',
+      durationMs:duration,preGenerationGapMs,recordToCompletionMs,tokensPerSecond:rate,timingKind:rate!=null?'observed_generation':'unavailable',
       segment,config:pendingConfig??{...config,contextWindow:window}};
     if(compressionResponses.has(key))markCompression(point);
-    points.push(point);if(p.turn_id)progressedTurns.add(p.turn_id);previousCache=cached;pending=[];pendingConfig=null;timings.clear();if(rate==null)segment++;
+    points.push(point);if(p.turn_id)progressedTurns.add(p.turn_id);previousCache=cached;pending=[];pendingConfig=null;inputBoundaries=[];timings.clear();if(rate==null)segment++;
   }
   return {responses:points,timelineEvents};
 }

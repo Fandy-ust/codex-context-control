@@ -27,7 +27,7 @@ struct ContextResponseChart:View {
         VStack(alignment:.leading,spacing:10){
             HStack {Text("对话趋势").font(.headline);Spacer();Text("\(measured.count)/\(responses.count) 次响应有计时").font(.caption).foregroundStyle(.secondary)}
             VStack(alignment:.leading,spacing:6){
-                HStack {Text("输出速度").font(.caption.weight(.medium));Spacer();Text(selected?.response?.tokensPerSecond.map{String(format:"%.1f tokens/s",$0)} ?? "tokens/s").font(.caption).monospacedDigit().foregroundStyle(.secondary)}
+                HStack {Text("生成速度").font(.caption.weight(.medium));Spacer();Text(selected?.response?.tokensPerSecond.map{String(format:"%.1f tokens/s",$0)} ?? "tokens/s").font(.caption).monospacedDigit().foregroundStyle(.secondary)}
                 if measured.isEmpty {Text("暂无完整计时").font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,minHeight:100)}
                 else {speedChart}
                 HStack(spacing:12){Text("输入与缓存").font(.caption.weight(.medium));Spacer();HStack(spacing:4){Circle().fill(.gray).frame(width:5,height:5);Text("输入")};HStack(spacing:4){Circle().fill(.cyan).frame(width:5,height:5);Text("缓存命中")}}.font(.caption2).foregroundStyle(.secondary)
@@ -49,7 +49,7 @@ struct ContextResponseChart:View {
                 }.padding(10).background(.white.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
             }
             DisclosureGroup("统计说明"){
-                Text("横轴按记录顺序；悬停联动，点击固定。速度为观测平均值；缓存命中属于输入量。输入、压缩不计速度。图表用于对照变化，不单独判断因果。")
+                Text("横轴按记录顺序；悬停联动，点击固定。生成速度不含开始前的等待；空缺断线，橙色空心点为未经原始响应核实的日志零值。输入、压缩不计速度。图表用于对照变化，不单独判断因果。")
                     .font(.caption).foregroundStyle(.secondary).padding(.top,5)
             }.font(.caption).foregroundStyle(.secondary)
         }.padding(14).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:14))
@@ -88,8 +88,11 @@ struct ContextResponseChart:View {
     private var cacheChart:some View {
         Chart {
                 ForEach(responses){r in
-                    if let input=r.inputTokens{LineMark(x:.value("记录顺序",r.position),y:.value("tokens",input),series:.value("类型","input")).foregroundStyle(.gray.opacity(0.6))}
-                    if let cache=r.cachedInputTokens{LineMark(x:.value("记录顺序",r.position),y:.value("tokens",cache),series:.value("类型","cache")).foregroundStyle(.cyan)}
+                    if let input=r.inputTokens{LineMark(x:.value("记录顺序",r.position),y:.value("tokens",input),series:.value("类型","input-\(r.inputSegment)")).foregroundStyle(.gray.opacity(0.6))}
+                    if let cache=r.cachedInputTokens{LineMark(x:.value("记录顺序",r.position),y:.value("tokens",cache),series:.value("类型","cache-\(r.cacheSegment)")).foregroundStyle(.cyan)}
+                }
+                ForEach(responses.filter{$0.cacheStatus=="zero_in_log"}){r in
+                    PointMark(x:.value("记录顺序",r.position),y:.value("tokens",0)).symbol{Circle().strokeBorder(.orange,lineWidth:1.5).frame(width:7,height:7)}
                 }
                 ForEach(events.filter{$0.eventType=="compaction"}){e in RuleMark(x:.value("记录顺序",e.position)).foregroundStyle(.purple.opacity(0.5)).lineStyle(StrokeStyle(lineWidth:1,dash:[3,3]))}
                 if let hovered=focusPosition {RuleMark(x:.value("记录顺序",hovered)).foregroundStyle(.white.opacity(0.3))}
@@ -137,7 +140,7 @@ struct ContextResponseChart:View {
     private func responseDetails(_ r:ContextStatistics.Response)->some View {
         VStack(alignment:.leading,spacing:8){
             HStack(spacing:10){
-                field("速度 · tokens/s",r.tokensPerSecond.map{String(format:"%.1f",$0)} ?? "—")
+                field("生成 · tokens/s",r.tokensPerSecond.map{String(format:"%.1f",$0)} ?? "—")
                 field("输出 tokens",compactTokens(r.outputTokens))
                 field("输入 tokens",compactTokens(r.inputTokens))
                 field("缓存命中",compactTokens(r.cachedInputTokens))
@@ -151,6 +154,10 @@ struct ContextResponseChart:View {
             }.font(.caption).foregroundStyle(.secondary).lineLimit(1)
             DisclosureGroup("更多信息"){
                 VStack(alignment:.leading,spacing:5){
+                    if r.cacheStatus=="zero_in_log"{Text("缓存日志值为 0；这次原始响应未保存，无法区分未命中与缺失详情。").foregroundStyle(.orange)}
+                    else if r.cacheStatus=="missing" || r.cacheStatus=="invalid"{Text("缓存数据未记录或无效，不按零计算。").foregroundStyle(.secondary)}
+                    Text("生成用时 \(r.durationMs.map{String(format:"%.2f 秒",$0/1000)} ?? "未记录") · 生成前间隔 \(r.preGenerationGapMs.map{String(format:"≈ %.2f 秒",$0/1000)} ?? "未记录")")
+                    Text("生成前间隔来自最近输入记录到首个生成项目，含客户端等待等开销，不是精确的服务器首 token 延迟。").foregroundStyle(.secondary)
                     if let parts=r.costEstimate?.breakdown {ForEach(parts){part in HStack {Text(part.label);Spacer();Text("\(part.tokens.formatted()) tokens · \(String(format:"$%.4f",part.usd))").monospacedDigit()}}}
                     Text("本次 API 估算 \(r.costEstimate?.usd.map{String(format:"$%.4f",$0)} ?? "未知") · 按配置档位")
                     Text("推理 \(tokenLabel(r.reasoningTokens)) · 缓存写入（估算） \(tokenLabel(r.costEstimate?.breakdown?.first(where:{$0.category=="cache_write"})?.tokens)) · 用时 \(r.durationMs.map{String(format:"%.2f 秒",$0/1000)} ?? "未记录")")

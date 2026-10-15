@@ -21,7 +21,7 @@ struct ContextStatistics:Decodable {
         struct Config:Decodable {let model:String?;let effort:String?;let serviceTier:String?;let contextWindow:Int?;let compactThreshold:Int?}
         let id:String;let index:Int;let position:Int;let eventType:String;let timestamp:String;let turnId:String?;let kind:String
         let inputTokens:Int?;let outputTokens:Int?;let reasoningTokens:Int?;let cachedInputTokens:Int?;let cacheWriteTokens:Int?;let cacheDelta:Int?;let cacheHitRate:Double?
-        let durationMs:Double?;let tokensPerSecond:Double?;let timingKind:String;let segment:Int;let config:Config
+        let durationMs:Double?;let preGenerationGapMs:Double?;let recordToCompletionMs:Double?;let cacheStatus:String;let cacheSegment:Int;let inputSegment:Int;let tokensPerSecond:Double?;let timingKind:String;let segment:Int;let config:Config
     }
     struct TimelineEvent:Decodable,Identifiable {
         let id:String;let position:Int;let timestamp:String;let turnId:String?;let eventType:String;let kind:String
