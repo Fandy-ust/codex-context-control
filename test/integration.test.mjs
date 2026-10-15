@@ -1,0 +1,74 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import readline from 'node:readline';
+import {spawn} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {fixtureServer} from './fixture.mjs';
+
+const binary=process.env.CONTEXT_CONTROL_TEST_CODEX||'/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
+const repo=fileURLToPath(new URL('../',import.meta.url));
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function until(predicate){for(let n=0;n<300;n++){const value=await predicate();if(value)return value;await sleep(30);}throw new Error('condition timed out');}
+
+test('real runtime through the actual bridge preserves history, tools, permissions and instructions',{skip:!fs.existsSync(binary),timeout:60000},async()=>{
+  const temp=fs.mkdtempSync('/tmp/ctc-');const home=path.join(temp,'codex');fs.mkdirSync(home);const control=path.join(temp,'control');
+  process.env.CONTEXT_CONTROL_HOME=control;process.env.CONTEXT_CONTROL_CODEX_HOME=home;
+  const {request}=await import('../src/ipc.mjs');
+  const fixture=await fixtureServer();
+  const catalog=path.join(repo,'test/fixtures/models.json');
+  fs.copyFileSync(catalog,path.join(home,'models_cache.json'));
+  fs.writeFileSync(path.join(home,'config.toml'),`model="context-fixture"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(catalog)}\nmodel_context_window=500000\nmodel_auto_compact_token_limit=450000\ncli_auth_credentials_store="file"\n[analytics]\nenabled=false\n[feedback]\nenabled=false\n[model_providers.fixture]\nname="Loopback fixture"\nbase_url="http://127.0.0.1:${fixture.port}/v1"\nwire_api="responses"\nrequires_openai_auth=false\nsupports_websockets=false\n`);
+  const env={PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:temp,CODEX_HOME:home,CONTEXT_CONTROL_CODEX_HOME:home,CONTEXT_CONTROL_HOME:control,CONTEXT_CONTROL_REAL_CODEX:binary,CONTEXT_CONTROL_CATALOG_PATH:catalog};
+  const child=spawn(process.execPath,[path.join(repo,'src/wrapper.mjs'),'app-server','--listen','stdio://'],{env,cwd:temp,stdio:['pipe','pipe','pipe']});
+  const events=[];const pending=new Map();let sequence=0;let errors='';child.stderr.on('data',d=>errors+=d.toString());
+  readline.createInterface({input:child.stdout}).on('line',line=>{const m=JSON.parse(line);events.push(m);if(!m.method&&pending.has(m.id)){const p=pending.get(m.id);pending.delete(m.id);clearTimeout(p.timer);m.error?p.reject(new Error(JSON.stringify(m.error))):p.resolve(m.result);}});
+  function call(method,params){const id=++sequence;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);reject(new Error(`${method} timeout; ${errors.slice(-500)}`));},15000);pending.set(id,{resolve,reject,timer});child.stdin.write(JSON.stringify({id,method,params})+'\n');});}
+  async function turn(id,text){const offset=events.length;await call('turn/start',{threadId:id,input:[{type:'text',text}]});await until(()=>events.slice(offset).find(e=>e.method==='turn/completed'&&e.params.threadId===id));return events.slice(offset).filter(e=>e.method==='thread/tokenUsage/updated'&&e.params.threadId===id).at(-1)?.params.tokenUsage.modelContextWindow;}
+  try{
+    await call('initialize',{clientInfo:{name:'context_control_integration',title:'Fixture',version:'1'},capabilities:{experimentalApi:true}});child.stdin.write(JSON.stringify({method:'initialized'})+'\n');
+    const a=(await call('thread/start',{model:'context-fixture',cwd:temp,sandbox:'read-only',approvalPolicy:'never',baseInstructions:'FIXTURE_KEEP_BASE',developerInstructions:'FIXTURE_KEEP_DEVELOPER',dynamicTools:[{name:'fixture_echo',description:'Fixture tool',inputSchema:{type:'object',properties:{}}}],config:{model_context_window:500000}})).thread.id;
+    const b=(await call('thread/start',{model:'context-fixture',cwd:temp,sandbox:'read-only',approvalPolicy:'never',config:{model_context_window:272000}})).thread.id;
+    assert.equal(await turn(a,'A initial'),475000);assert.equal(await turn(b,'B initial'),258400);
+    const firstA=fixture.requests[0];assert.ok(JSON.stringify(firstA).includes('FIXTURE_KEEP_BASE'));assert.ok(JSON.stringify(firstA).includes('FIXTURE_KEEP_DEVELOPER'));assert.ok(JSON.stringify(firstA).includes('fixture_echo'));
+    await until(async()=>{try{return (await request('state')).threads.find(t=>t.id===a&&t.freshUsage&&t.connected);}catch{return false;}});
+    const connection=JSON.parse(fs.readFileSync(path.join(control,'connection.json'),'utf8'));
+    assert.equal((await fetch(`http://127.0.0.1:${connection.port}/state`)).status,403);
+    assert.equal((await fetch(`http://127.0.0.1:${connection.port}/state`,{headers:{Authorization:`Bearer ${connection.token}`,Origin:'https://example.invalid'}})).status,403);
+    const before=await call('thread/resume',{threadId:a,excludeTurns:true});
+    const history=await call('thread/turns/list',{threadId:a,itemsView:'full'});
+    await request('setPolicy',{id:a,policy:{window:'400K',compact:'320K'},apply:true});
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='awaiting_runtime_confirmation'));
+    const restored=await call('thread/turns/list',{threadId:a,itemsView:'full'});assert.deepEqual(restored.data,history.data);
+    const after=await call('thread/resume',{threadId:a,excludeTurns:true});assert.deepEqual(after.sandbox,before.sandbox);assert.equal(after.model,before.model);assert.equal(after.approvalPolicy,before.approvalPolicy);
+    assert.equal(await turn(a,'A changed'),380000);
+    const changed=fixture.requests.at(-1);assert.ok(JSON.stringify(changed).includes('FIXTURE_KEEP_BASE'));assert.ok(JSON.stringify(changed).includes('FIXTURE_KEEP_DEVELOPER'));assert.ok(JSON.stringify(changed).includes('fixture_echo'));
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='confirmed'));
+    assert.equal(await turn(b,'B unchanged'),258400);
+    await assert.rejects(request('setPolicy',{id:a,policy:{window:'1M',compact:'800K'}}),/目录上限/);
+    await request('setPolicy',{id:a,policy:{window:'400K',compact:50,reserve:1},apply:true});
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='needs_compaction'));
+    const held=turn(a,'HOLD_FIXTURE');await until(()=>fixture.held());
+    await request('setPolicy',{id:a,policy:{window:'500K',compact:'400K'},apply:true});
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='waiting_for_idle'));
+    fixture.release();await held;
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='awaiting_runtime_confirmation'));
+    assert.equal(await turn(a,'A after queued change'),475000);assert.equal(await turn(b,'B still unchanged'),258400);
+    await request('setPolicy',{id:a,policy:{window:'500K',compact:1000,reserve:1},apply:true});
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='awaiting_runtime_confirmation'));
+    await turn(a,'REPORT_HIGH_USAGE');const offset=events.length;await turn(a,'measure native compaction');
+    assert.ok(events.slice(offset).some(e=>e.method==='item/completed'&&e.params.item?.type==='contextCompaction'));
+    const stored=fs.readFileSync(path.join(control,'state.json'),'utf8');
+    assert.ok(!stored.includes('FIXTURE_KEEP_DEVELOPER')&&!stored.includes('HOLD_FIXTURE'));
+    await request('clearPolicy',{id:a});
+    await request('setPolicy',{id:a,policy:{window:'400K',compact:'320K'},apply:true});
+    assert.equal(await turn(a,'new input while budget transaction queues'),380000);
+  }finally{
+    fixture.release();child.stdin.end();
+    await Promise.race([new Promise(resolve=>child.once('exit',resolve)),sleep(2000)]);if(child.exitCode==null)child.kill('SIGKILL');
+    try{const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json'),'utf8'));process.kill(c.pid,'SIGTERM');}catch{}
+    fixture.server.close();for(const p of pending.values())clearTimeout(p.timer);
+    await sleep(100);fs.rmSync(temp,{recursive:true,force:true});
+  }
+});

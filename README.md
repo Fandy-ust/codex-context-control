@@ -1,0 +1,108 @@
+# Codex Context Control
+
+在 macOS 上，为每个 Codex 聊天单独设置上下文窗口和自动压缩阈值。
+
+包含原生控制面板、Codex 连接桥接、Hook stats 状态输出，以及可重复执行的安装/卸载程序。使用原有 Codex 登录和运行时，不需要为本工具配置 API key。
+
+**当前版本：0.1.0，本地预览版。已验证 Codex 0.159.2 和 0.160.0。** 未验证的运行时仅透传，不执行预算调整。
+
+## 软件形态
+
+| 组成 | 使用方式 |
+| --- | --- |
+| **Codex Context Control.app** | 选择聊天、输入窗口/阈值、预检、提交、查看实际窗口 |
+| **Codex Context Launcher.app** | 通过连接桥接启动原有 Codex/ChatGPT 桌面应用 |
+| 本地控制服务 | 保存逐聊天预算，在轮次之间安排应用 |
+| Stop hook | 将当前聊天的预算和应用状态显示在原生 Hook stats 中 |
+
+窗口切换会暂时卸载并恢复**同一个聊天**，保留聊天 ID 和历史；不会重启整个 Codex 应用。正在生成的请求继续使用旧设置，调整在轮次之间执行。
+
+## 快速部署
+
+需要 macOS 14+、已安装的 Codex/ChatGPT 桌面应用、Node.js 22.13+，以及 Apple Command Line Tools（提供 Swift 编译器）。本项目没有第三方 npm 依赖。
+
+```sh
+gh repo clone Fandy-ust/codex-context-control
+cd codex-context-control
+npm run install:local
+open "$HOME/Applications/Codex Context Control.app"
+```
+
+私有仓库需要先完成 GitHub 登录。也可使用 GitHub 提供的仓库下载方式取得源代码，再执行安装命令。
+
+安装程序编译原生面板，在 `~/Applications` 创建两个应用，将服务代码放到 `~/Library/Application Support/CodexContextControl`，并向现有 `~/.codex/hooks.json` **追加一条自己的 Stop hook**。会先备份该文件，保留其他 hooks，不修改全局窗口配置，也不修改签名的 Codex 应用。
+
+### 首次接入
+
+1. 完成本轮工作，然后正常退出原有 Codex/ChatGPT 桌面客户端。
+2. 打开 `~/Applications/Codex Context Launcher.app`。
+3. 在原客户端打开一个已有聊天，进行正常的一轮交互，让工具读取实际窗口与最近请求用量。
+4. 打开 **Codex Context Control**，选择该聊天，预检并提交预算。
+5. 在正常的下一轮请求后，状态从“等待下一轮确认”变为“窗口已确认”。工具不会为确认设置而额外发送提示词。
+
+需要在 Codex 的 `/hooks` 中审核并信任新增的 **Context Control** hook，才会显示相应 Hook stats 文字。未审核时，原生控制面板及预算控制仍能工作；安装程序不会生成或伪造信任记录。
+
+首次退出/重新启动是为了插入连接桥接。以后调整预算无需重启整个客户端。直接使用原来的应用图标启动，会绕过桥接。
+
+## 调整例子
+
+设置窗口 `400K`、压缩阈值 `320K`、下一轮预留 `16K`。如果模型目录中的可用比例是 95%，下一轮读回的可用窗口通常为 `380,000`，与输入的配置窗口不同。
+
+工具分别展示：
+
+- 请求的配置窗口；
+- 根据模型目录计算的预期可用窗口；
+- 运行时真正上报的可用窗口；
+- 最近请求用量（当前占用的近似值）。
+
+“已保存”“已重新加载”“下一轮窗口已确认”是不同状态。接口返回成功，不代表窗口已改变。
+
+## 功能边界
+
+| 能力 | 0.1.0 |
+| --- | --- |
+| 逐聊天窗口、压缩阈值及预算持久保存 | 已实现 |
+| 生成中的调整排队 | 已实现 |
+| 缩小前容量、预留和手动保留下限检查 | 已实现，基于可观测用量估算 |
+| 同一聊天重新加载、恢复历史与执行设置 | 已验证上述两个运行时版本 |
+| Hook stats 状态展示 | 已实现；需用户审核 hook |
+| Hook stats 内嵌滑块/输入框 | 原生界面没有该扩展接口；使用独立原生面板 |
+| 精确预测压缩后剩余 token 数 | 无法保证，必须压缩后重新测量 |
+| 调整 95% 可用比例或突破 total 的 90% 规则 | 未实现，不改这些规则 |
+| 修改服务端真实最大上下文 | 不支持 |
+| 其他宿主、云端会话、父代理管理的子会话、临时会话 | 不支持 |
+
+本工具不通过删除聊天记录缩减上下文，不把全局累计 token 当作上下文占用。最近请求用量也不等于内核的全部上下文估算，因此预检不能保证后续原生压缩绝不触发。
+
+## 检查、更新、卸载
+
+```sh
+npm run doctor
+
+# 取得代码更新后重新安装
+git pull
+npm run install:local
+
+# 移除两个应用和本工具的 hook；保留本地预算与备份
+npm run uninstall:local
+```
+
+更新服务代码后，应正常退出客户端和面板，再用接入入口启动，以免旧进程继续运行旧版本代码。卸载后按原来的方式启动 Codex；正在运行的连接在正常退出时结束。
+
+## 验证
+
+```sh
+npm test
+
+# 指定另一个本机运行时
+CONTEXT_CONTROL_TEST_CODEX=/path/to/codex npm run test:integration
+
+# 隔离测试完整安装、重复安装和卸载（会编译面板）
+CONTEXT_CONTROL_TEST_INSTALL=1 node --test test/install.test.mjs
+```
+
+集成测试运行真实 Codex 内核，所有模型返回均来自本地模拟服务，不调用真实模型。验证历史、沙盒、模型、开发者指令、动态工具、阈值行为、排队与实际窗口确认；不验证真实服务端的接受边界或真实压缩质量。
+
+进一步阅读：[架构与接入](docs/ARCHITECTURE.md) · [使用说明](docs/USAGE.md) · [开发和发布](docs/DEVELOPMENT.md) · [本机验证](docs/VALIDATION.md) · [隐私与本地接口](docs/PRIVACY.md) · [后续路线](docs/ROADMAP.md)
+
+这是独立的实验性本地工具，与 OpenAI 无隶属关系。仓库当前为私有，未授予开源使用许可。

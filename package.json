@@ -1,0 +1,17 @@
+{
+  "name": "codex-context-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local per-chat context budgets for Codex Desktop",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:integration": "node --test test/integration.test.mjs",
+    "build:mac": "node scripts/build-mac.mjs",
+    "install:local": "node scripts/install.mjs",
+    "uninstall:local": "node scripts/install.mjs --uninstall",
+    "doctor": "node src/cli.mjs doctor",
+    "start": "node src/cli.mjs start"
+  }
+}
