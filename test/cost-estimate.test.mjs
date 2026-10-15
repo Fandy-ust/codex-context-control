@@ -55,3 +55,26 @@ test('normalized zero cache-write counts remain explicitly unverified',()=>{
  assert.equal(cost.unverifiedWriteRequests,1);
  const positive=estimateConversation([row()]);assert.equal(positive.unverifiedWriteRequests,0);
 });
+
+test('unknown physical writes give finite API-equivalent bounds without double charging input',()=>{
+ const zero=estimateResponse(row({cacheWriteTokens:0}));near(zero.usd,.38);near(zero.upperUSD,.43);assert.equal(zero.extraWriteTokens,20000);
+ const known=estimateResponse(row());near(known.usd,known.upperUSD);assert.equal(known.maxWriteSurcharge,0);
+ const cached=estimateResponse(row({inputTokens:80000,cacheWriteTokens:0}));near(cached.usd,cached.upperUSD);
+ const long=estimateResponse(row({inputTokens:300000,cachedInputTokens:200000,cacheWriteTokens:0}));near(long.maxWriteSurcharge,.5);
+ const total=estimateConversation([row({cacheWriteTokens:0}),row({id:'b'})]);near(total.upperUSD,.835);near(total.maxWriteSurcharge,.05);
+ near(total.fastUpperUSD,1.67);
+});
+
+test('cumulative cache reads grow with reuse without creating new-write charges',()=>{
+ const responses=Array.from({length:10},(_,i)=>row({id:`read-${i}`,inputTokens:10000,cachedInputTokens:10000,cacheWriteTokens:0,outputTokens:0}));
+ const cost=estimateConversation(responses);
+ assert.equal(cost.breakdown.find(x=>x.category==='cache_read').tokens,100000);
+ assert.equal(cost.extraWriteTokens,0);near(cost.usd,.1);near(cost.upperUSD,.1);
+});
+
+test('official input partition formula charges a written token once, not input plus full write price',()=>{
+ const allWritten=estimateResponse(row({inputTokens:12000,cachedInputTokens:0,cacheWriteTokens:12000,outputTokens:0}));
+ near(allWritten.usd,.15);assert.equal(allWritten.breakdown[0].tokens,0);
+ const reused=estimateResponse(row({inputTokens:15000,cachedInputTokens:12000,cacheWriteTokens:3000,outputTokens:0}));
+ near(reused.usd,.0495);assert.equal(reused.breakdown[0].tokens,0);
+});

@@ -22,10 +22,14 @@ export function estimateResponse(row,overrideTier){
   const counts=[input-cached-written,cached,written,output];
   const breakdown=Object.entries(bucketLabels).map(([category,label],i)=>({category,label,tokens:counts[i],usd:counts[i]*rates[i]/priceBook.unitTokens}));
   const usd=breakdown.reduce((sum,part)=>sum+part.usd,0);
-  return {usd,reason:null,tier,contextBand:band,breakdown};
+  // Zero in Codex usage does not measure physical cache growth. For API
+  // equivalence, bound possible writes by the uncached input, never by Δcache.
+  const extraWriteTokens=written===0?input-cached:0;
+  const maxWriteSurcharge=extraWriteTokens*Math.max(0,rates[2]-rates[0])/priceBook.unitTokens;
+  return {usd,upperUSD:usd+maxWriteSurcharge,maxWriteSurcharge,extraWriteTokens,reason:null,tier,contextBand:band,breakdown};
 }
 export function estimateConversation(responses){
-  let usd=0,priced=0,unknownTier=0,unknownModel=0,unknownUsage=0,unsupportedRate=0,standardUSD=0,fastUSD=0,comparisonCount=0,longContextCount=0,unverifiedWriteRequests=0;
+  let usd=0,upperUSD=0,maxWriteSurcharge=0,extraWriteTokens=0,standardUpperUSD=0,fastUpperUSD=0,priced=0,unknownTier=0,unknownModel=0,unknownUsage=0,unsupportedRate=0,standardUSD=0,fastUSD=0,comparisonCount=0,longContextCount=0,unverifiedWriteRequests=0;
   const groups=new Map(),seen=new Set(),breakdown=Object.entries(bucketLabels).map(([category,label])=>({category,label,tokens:0,usd:0}));
   for(const response of responses){
     if(seen.has(response.id))continue;seen.add(response.id);
@@ -33,7 +37,7 @@ export function estimateConversation(responses){
     if(cost.usd!=null){
       for(let i=0;i<breakdown.length;i++){breakdown[i].tokens+=cost.breakdown[i].tokens;breakdown[i].usd+=cost.breakdown[i].usd;}
       if(response.cacheWriteTokens===0)unverifiedWriteRequests++;
-      usd+=cost.usd;priced++;if(cost.contextBand==='long')longContextCount++;
+      usd+=cost.usd;upperUSD+=cost.upperUSD;maxWriteSurcharge+=cost.maxWriteSurcharge;extraWriteTokens+=cost.extraWriteTokens;priced++;if(cost.contextBand==='long')longContextCount++;
       const key=`${response.config.model}:${cost.tier}`;
       const group=groups.get(key)??{model:response.config.model,tier:cost.tier,requests:0,usd:0};
       group.requests++;group.usd+=cost.usd;groups.set(key,group);
@@ -42,11 +46,11 @@ export function estimateConversation(responses){
     else if(cost.reason==='unknown_usage')unknownUsage++;
     else unsupportedRate++;
     const standard=estimateResponse(response,'standard'),fast=estimateResponse(response,'fast');
-    if(standard.usd!=null&&fast.usd!=null){standardUSD+=standard.usd;fastUSD+=fast.usd;comparisonCount++;}
+    if(standard.usd!=null&&fast.usd!=null){standardUSD+=standard.usd;fastUSD+=fast.usd;standardUpperUSD+=standard.upperUSD;fastUpperUSD+=fast.upperUSD;comparisonCount++;}
   }
   return {currency:'USD',checkedAt:priceBook.checkedAt,source:priceBook.source,scope:'own_thread',basis:'configured_tier',
-    usd:priced>0?usd:null,pricedRequests:priced,totalRequests:seen.size,unpricedRequests:seen.size-priced,
+    usd:priced>0?usd:null,upperUSD:priced>0?upperUSD:null,maxWriteSurcharge,extraWriteTokens,rangeBasis:'zero_to_all_uncached_input',pricedRequests:priced,totalRequests:seen.size,unpricedRequests:seen.size-priced,
     unknownTier,unknownModel,unknownUsage,unsupportedRate,longContextCount,unverifiedWriteRequests,
-    standardUSD:comparisonCount>0?standardUSD:null,fastUSD:comparisonCount>0?fastUSD:null,comparisonRequests:comparisonCount,
+    standardUSD:comparisonCount>0?standardUSD:null,fastUSD:comparisonCount>0?fastUSD:null,standardUpperUSD:comparisonCount>0?standardUpperUSD:null,fastUpperUSD:comparisonCount>0?fastUpperUSD:null,comparisonRequests:comparisonCount,
     breakdown,groups:[...groups.values()]};
 }

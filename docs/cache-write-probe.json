@@ -1,0 +1,239 @@
+{
+  "testedAt": "2026-10-16",
+  "runtime": "0.160.0",
+  "source": "rawResponse/completed.usageMetadata.metadata",
+  "privacy": "Only usage numbers and field names; no credentials, prompts or response text.",
+  "controlled": {
+    "mode": "controlled-loopback",
+    "samples": [
+      {
+        "sourceMethod": "rawResponse/completed",
+        "rawUsagePresent": true,
+        "rawInputDetailsKeys": [
+          "cached_tokens"
+        ],
+        "cacheWriteFieldPresent": false,
+        "rawCacheWrite": null,
+        "rawCached": 40,
+        "rawInput": 100,
+        "rawOutput": 2,
+        "normalizedCacheWrite": 0
+      },
+      {
+        "sourceMethod": "rawResponse/completed",
+        "rawUsagePresent": true,
+        "rawInputDetailsKeys": [
+          "cached_tokens",
+          "cache_write_tokens"
+        ],
+        "cacheWriteFieldPresent": true,
+        "rawCacheWrite": 0,
+        "rawCached": 40,
+        "rawInput": 100,
+        "rawOutput": 2,
+        "normalizedCacheWrite": 0
+      },
+      {
+        "sourceMethod": "rawResponse/completed",
+        "rawUsagePresent": true,
+        "rawInputDetailsKeys": [
+          "cached_tokens",
+          "cache_write_tokens"
+        ],
+        "cacheWriteFieldPresent": true,
+        "rawCacheWrite": 60,
+        "rawCached": 40,
+        "rawInput": 100,
+        "rawOutput": 2,
+        "normalizedCacheWrite": 60
+      }
+    ],
+    "errors": [],
+    "model": "context-fixture",
+    "provider": "fixture",
+    "persisted": [
+      {
+        "responseId": "resp_probe_0",
+        "cacheWrite": 0
+      },
+      {
+        "responseId": "resp_probe_1",
+        "cacheWrite": 0
+      },
+      {
+        "responseId": "resp_probe_2",
+        "cacheWrite": 60
+      }
+    ],
+    "methods": [
+      [
+        "rawResponseItem/completed",
+        7
+      ],
+      [
+        "rawResponse/completed",
+        3
+      ],
+      [
+        "thread/tokenUsage/updated",
+        3
+      ]
+    ]
+  },
+  "chatgptLive": [
+    {
+      "mode": "chatgpt-live",
+      "samples": [
+        {
+          "sourceMethod": "rawResponse/completed",
+          "rawUsagePresent": true,
+          "rawInputDetailsKeys": [
+            "cached_tokens",
+            "cache_write_tokens"
+          ],
+          "cacheWriteFieldPresent": true,
+          "rawCacheWrite": 0,
+          "rawCached": 8960,
+          "rawInput": 20266,
+          "rawOutput": 5,
+          "normalizedCacheWrite": 0
+        },
+        {
+          "sourceMethod": "rawResponse/completed",
+          "rawUsagePresent": true,
+          "rawInputDetailsKeys": [
+            "cached_tokens",
+            "cache_write_tokens"
+          ],
+          "cacheWriteFieldPresent": true,
+          "rawCacheWrite": 0,
+          "rawCached": 20096,
+          "rawInput": 21758,
+          "rawOutput": 5,
+          "normalizedCacheWrite": 0
+        },
+        {
+          "sourceMethod": "rawResponse/completed",
+          "rawUsagePresent": true,
+          "rawInputDetailsKeys": [
+            "cached_tokens",
+            "cache_write_tokens"
+          ],
+          "cacheWriteFieldPresent": true,
+          "rawCacheWrite": 0,
+          "rawCached": 21632,
+          "rawInput": 21778,
+          "rawOutput": 5,
+          "normalizedCacheWrite": 0
+        }
+      ],
+      "errors": [],
+      "accountType": "chatgpt",
+      "model": "gpt-6.1-sol",
+      "provider": "custom",
+      "methods": [
+        [
+          "rawResponseItem/completed",
+          11
+        ],
+        [
+          "rawResponse/completed",
+          3
+        ],
+        [
+          "thread/tokenUsage/updated",
+          3
+        ]
+      ]
+    },
+    {
+      "mode": "chatgpt-live",
+      "samples": [
+        {
+          "sourceMethod": "rawResponse/completed",
+          "rawUsagePresent": true,
+          "rawUsageKeys": [
+            "input_tokens",
+            "input_tokens_details",
+            "output_tokens",
+            "output_tokens_details",
+            "total_tokens",
+            "attribution"
+          ],
+          "rawInputDetailsKeys": [
+            "cached_tokens",
+            "cache_write_tokens"
+          ],
+          "cacheWriteFieldPresent": true,
+          "rawCacheWrite": 0,
+          "rawCached": 8960,
+          "rawInput": 20270,
+          "rawOutput": 5,
+          "normalizedCacheWrite": 0
+        },
+        {
+          "sourceMethod": "rawResponse/completed",
+          "rawUsagePresent": true,
+          "rawUsageKeys": [
+            "input_tokens",
+            "input_tokens_details",
+            "output_tokens",
+            "output_tokens_details",
+            "total_tokens",
+            "attribution"
+          ],
+          "rawInputDetailsKeys": [
+            "cached_tokens",
+            "cache_write_tokens"
+          ],
+          "cacheWriteFieldPresent": true,
+          "rawCacheWrite": 0,
+          "rawCached": 20096,
+          "rawInput": 21762,
+          "rawOutput": 5,
+          "normalizedCacheWrite": 0
+        },
+        {
+          "sourceMethod": "rawResponse/completed",
+          "rawUsagePresent": true,
+          "rawUsageKeys": [
+            "input_tokens",
+            "input_tokens_details",
+            "output_tokens",
+            "output_tokens_details",
+            "total_tokens",
+            "attribution"
+          ],
+          "rawInputDetailsKeys": [
+            "cached_tokens",
+            "cache_write_tokens"
+          ],
+          "cacheWriteFieldPresent": true,
+          "rawCacheWrite": 0,
+          "rawCached": 21632,
+          "rawInput": 21782,
+          "rawOutput": 5,
+          "normalizedCacheWrite": 0
+        }
+      ],
+      "errors": [],
+      "accountType": "chatgpt",
+      "model": "gpt-6-astra",
+      "provider": "custom",
+      "methods": [
+        [
+          "rawResponseItem/completed",
+          11
+        ],
+        [
+          "rawResponse/completed",
+          3
+        ],
+        [
+          "thread/tokenUsage/updated",
+          3
+        ]
+      ]
+    }
+  ]
+}
