@@ -303,7 +303,7 @@ struct ContentView: View {
                 ScrollView {
                     LazyVStack(spacing:4){ForEach(model.chats){chat in
                         Button {model.selectedID=chat.id} label:{
-                            VStack(alignment:.leading,spacing:5){Text(chat.title).font(.system(size:13,weight:.medium)).lineLimit(1);Text(chat.connected ? phaseName(chat.phase):"尚未接入").font(.system(size:11)).foregroundStyle(.secondary)}
+                            VStack(alignment:.leading,spacing:5){Text(chat.title).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle);Text(chat.connected ? phaseName(chat.phase):"尚未接入").font(.system(size:11)).foregroundStyle(.secondary)}
                                 .frame(maxWidth:.infinity,alignment:.leading).padding(12)
                                 .background(model.selectedID==chat.id ? Color.white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:12))
                                 .contentShape(Rectangle())
