@@ -24,6 +24,7 @@ struct Chat: Identifiable, Decodable {
 struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat]}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
+struct ServiceSettings: Decodable {let node:String}
 
 @MainActor final class Controller: ObservableObject {
     @Published var chats:[Chat]=[]
@@ -206,6 +207,7 @@ struct ContentView: View {
     private var statusItem:NSStatusItem?
     private var settingsWindow:NSWindow?
     private var refreshTask:Task<Void,Never>?
+    private var serviceStarter:Process?
     private let connectionItem=NSMenuItem(title:"正在连接 Codex…",action:nil,keyEquivalent:"")
     private let usageItem=NSMenuItem(title:"窗口待观测",action:nil,keyEquivalent:"")
     private let background=CommandLine.arguments.contains("--background")
@@ -218,6 +220,7 @@ struct ContentView: View {
         withExtendedLifetime(delegate){}
     }
     func applicationDidFinishLaunching(_ notification:Notification){
+        startLocalService()
         installMainMenu()
         let item=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength)
         item.button?.title=" 上下文"
@@ -225,6 +228,7 @@ struct ContentView: View {
         item.button?.image?.isTemplate=true
         item.button?.imagePosition = .imageLeading
         item.button?.toolTip="Codex 上下文设置"
+        item.button?.setAccessibilityLabel("Codex 上下文设置")
         let menu=NSMenu();connectionItem.isEnabled=false;usageItem.isEnabled=false
         menu.addItem(connectionItem);menu.addItem(usageItem);menu.addItem(.separator())
         let open=NSMenuItem(title:"打开上下文设置…",action:#selector(showSettings),keyEquivalent:"");open.target=self;menu.addItem(open)
@@ -242,6 +246,17 @@ struct ContentView: View {
             publishStatus()
             try? await Task.sleep(for:.seconds(2))
         }}
+    }
+    private func startLocalService(){
+        // The app itself stays the native CFBundleExecutable. Starting Node
+        // from a shell entrypoint prevents reliable Launch Services attribution.
+        guard let data=try? Data(contentsOf:model.home.appendingPathComponent("settings.json")),
+              let settings=try? JSONDecoder().decode(ServiceSettings.self,from:data) else{return}
+        let cli=model.home.appendingPathComponent("code/src/cli.mjs")
+        guard FileManager.default.fileExists(atPath:cli.path) else{return}
+        let process=Process();process.executableURL=URL(fileURLWithPath:settings.node)
+        process.arguments=[cli.path,"start"];process.standardOutput=FileHandle.nullDevice;process.standardError=FileHandle.nullDevice
+        do{try process.run();serviceStarter=process}catch{model.notice="无法启动本地服务：\(error.localizedDescription)"}
     }
     private func installMainMenu(){
         let bar=NSMenu(),appItem=NSMenuItem(),appMenu=NSMenu()
@@ -268,7 +283,10 @@ struct ContentView: View {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool{false}
     func windowWillClose(_ notification:Notification){publishStatus(windowVisible:false)}
     private func publishStatus(windowVisible:Bool?=nil){
-        let state:[String:Any]=["pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background]
+        let menuWindow=statusItem?.button?.window
+        let frame=menuWindow?.frame ?? .zero
+        let onScreen=frame.width>0 && frame.height>0 && NSScreen.screens.contains{$0.frame.intersects(frame)}
+        let state:[String:Any]=["pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"menuWindowVisible":menuWindow?.isVisible==true,"menuOnScreen":onScreen,"menuFrame":["x":frame.origin.x,"y":frame.origin.y,"width":frame.width,"height":frame.height],"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background]
         guard let data=try? JSONSerialization.data(withJSONObject:state,options:.sortedKeys),data != lastStatus else{return}
         do {
             try FileManager.default.createDirectory(at:model.home,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])

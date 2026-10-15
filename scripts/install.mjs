@@ -33,7 +33,7 @@ function shellFile(file,body){fs.mkdirSync(path.dirname(file),{recursive:true});
 ensureRoot();
 if(process.argv.includes('--uninstall')){
   disableAutomaticStartup();
-  stopMenuBarEntry(installedApp);
+  await stopMenuBarEntry(installedApp);
   const settings=readJSON(path.join(root,'settings.json'),{});if(settings.hookCommand)editHook(settings.hookCommand,true);
   const connection=readJSON(path.join(root,'connection.json'),{});if(connection.pid)try{process.kill(connection.pid,'SIGTERM');}catch{}
   for(const app of [installedApp,launcherApp])fs.rmSync(app,{recursive:true,force:true});
@@ -64,18 +64,18 @@ if(process.argv.includes('--uninstall')){
     if(name==='codex')continue;const link=path.join(root,'bin',name);try{fs.unlinkSync(link);}catch{}
     try{fs.symlinkSync(path.join(binDir,name),link);}catch{}
   }
-  stopMenuBarEntry(installedApp);
+  await stopMenuBarEntry(installedApp);
   fs.mkdirSync(applications,{recursive:true});fs.rmSync(installedApp,{recursive:true,force:true});
   fs.cpSync(builtPanel,installedApp,{recursive:true});
-  // Panel starts the local service before the native executable.
-  const native=path.join(installedApp,'Contents/MacOS/ContextControl');fs.renameSync(native,native+'-native');
-  shellFile(native,`${quote(nodeBinary)} ${quote(path.join(code,'src/cli.mjs'))} start >/dev/null\nexec ${quote(native+'-native')} "$@"`);
+  // Preserve the signed native bundle: CFBundleExecutable must name the real
+  // application process so macOS can attribute its menu-bar entry correctly.
   editHook(hookCommand);
   if(!process.argv.includes('--no-auto-start')){
     enableAutomaticStartup(shim);
     fs.rmSync(launcherApp,{recursive:true,force:true});
     fs.rmSync(path.join(code,'src/launch-desktop.mjs'),{force:true});
-    ensureMenuBarEntry(installedApp);
+    const entry=ensureMenuBarEntry(installedApp);
+    if(entry.error)throw new Error(entry.error);
   }
   console.log(`已安装：${installedApp}\n菜单栏“上下文”提供设置入口。照常打开原来的 Codex，预算控制会自动接入；首次安装后请正常重开一次客户端。\n请在 Codex 的 /hooks 中审核并信任新增 hook；安装程序不会生成信任记录。`);
 }

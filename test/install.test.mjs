@@ -23,7 +23,11 @@ test('install, reinstall and uninstall preserve unrelated hooks and never create
     run(['--no-auto-start','--use-built-panel']);run(['--no-auto-start','--use-built-panel']);const installed=JSON.parse(fs.readFileSync(path.join(home,'hooks.json'),'utf8'));
     assert.deepEqual(installed.hooks.Stop.slice(0,2),existing.hooks.Stop);assert.deepEqual(installed.hooks.SessionStart,existing.hooks.SessionStart);assert.equal(installed.hooks.Stop.length,3);
     assert.equal(fs.readFileSync(path.join(home,'config.toml'),'utf8'),'model_context_window=1000000\n');
-    assert.ok(fs.existsSync(path.join(temp,'Applications/Codex Context Control.app/Contents/MacOS/ContextControl-native')));
+    const app=path.join(temp,'Applications/Codex Context Control.app');
+    const executable=path.join(app,'Contents/MacOS/ContextControl');
+    assert.ok(fs.existsSync(executable));assert.equal(fs.existsSync(executable+'-native'),false);
+    assert.match(spawnSync('/usr/bin/file',[executable],{encoding:'utf8'}).stdout,/Mach-O/);
+    const verified=spawnSync('/usr/bin/codesign',['--verify','--strict',app],{encoding:'utf8'});assert.equal(verified.status,0,verified.stderr);
     assert.equal(JSON.parse(fs.readFileSync(path.join(temp,'control/settings.json'),'utf8')).desktopBundleId,'io.github.codex-context-control.fixture-desktop');
     run(['--uninstall']);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home,'hooks.json'),'utf8')),existing);
   }finally{fs.rmSync(temp,{recursive:true,force:true});}

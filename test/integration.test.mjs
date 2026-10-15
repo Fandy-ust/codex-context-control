@@ -80,6 +80,6 @@ test('real runtime through the actual bridge preserves history, tools, permissio
     await Promise.race([new Promise(resolve=>child.once('exit',resolve)),sleep(2000)]);if(child.exitCode==null)child.kill('SIGKILL');
     try{const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json'),'utf8'));process.kill(c.pid,'SIGTERM');}catch{}
     fixture.server.close();for(const p of pending.values())clearTimeout(p.timer);
-    await sleep(100);fs.rmSync(temp,{recursive:true,force:true});
+    await sleep(100);fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});
   }
 });
