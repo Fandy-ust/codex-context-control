@@ -1,10 +1,10 @@
 import SwiftUI
 import AppKit
 
-struct Budget: Decodable { let window:Int;let compact:Int;let reserve:Int;let retainedFloor:Int;let revision:Int;let enabled:Bool? }
-struct Usage: Decodable { let totalTokens:Int }
-struct Metadata: Decodable { let max_context_window:Int?;let effective_context_window_percent:Int?;let context_ceiling:Int?;let context_compact_ceiling:Int?;let context_catalog_ready:Bool? }
-struct Chat: Identifiable, Decodable {
+struct Budget: Decodable,Equatable { let window:Int;let compact:Int;let reserve:Int;let retainedFloor:Int;let revision:Int;let enabled:Bool? }
+struct Usage: Decodable,Equatable { let totalTokens:Int }
+struct Metadata: Decodable,Equatable { let max_context_window:Int?;let effective_context_window_percent:Int?;let context_ceiling:Int?;let context_compact_ceiling:Int?;let context_catalog_ready:Bool? }
+struct Chat: Identifiable, Decodable,Equatable {
     let id:String;let name:String?;let model:String?;let cwd:String?;let status:String?
     let connected:Bool;let ambiguous:Bool;let phase:String?;let message:String?
     let ephemeral:Bool?;let canAcceptDirectInput:Bool?
@@ -22,7 +22,7 @@ struct Chat: Identifiable, Decodable {
         return phase=="mismatch" ? "运行时读回窗口（与目标不符）":"最近读回窗口"
     }
 }
-struct RuntimeFixState:Decodable {let enabled:Bool;let available:Bool;let compatible:Bool;let baseVersion:String;let originalVersion:String?;let activeCount:Int;let pending:Bool;let message:String}
+struct RuntimeFixState:Decodable,Equatable {let enabled:Bool;let available:Bool;let compatible:Bool;let baseVersion:String;let originalVersion:String?;let activeCount:Int;let pending:Bool;let message:String}
 struct NewChatDefaultsState:Decodable,Equatable {let usableWindow:Int;let compact:Int;let revision:Int}
 struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?}
 struct Connection: Decodable {let port:Int;let token:String}
@@ -50,6 +50,7 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var working=false
     private var editingRevision=0
     private var budgetEdited=false
+    var menuDragInProgress=false
     private var refreshing=false
     private var pendingMetadataID:String?
     var selected:Chat? {chats.first{$0.id==selectedID}}
@@ -72,8 +73,16 @@ struct ServiceSettings: Decodable {let node:String}
         return data
     }
     func refresh() async {
-        if refreshing{return};refreshing=true;defer{refreshing=false}
-        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount;runtimeFix=state.runtimeFix;contextCeilingPending=state.contextCeilingPending ?? false;newChatDefaults=state.newChatDefaults;newChatDefaultsPending=state.newChatDefaultsPending ?? false;serviceAvailable=true
+        if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
+        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"))
+            guard !menuDragInProgress else{return}
+            if chats != state.threads{chats=state.threads}
+            if bridgeCount != state.bridgeCount{bridgeCount=state.bridgeCount}
+            if runtimeFix != state.runtimeFix{runtimeFix=state.runtimeFix}
+            if contextCeilingPending != (state.contextCeilingPending ?? false){contextCeilingPending=state.contextCeilingPending ?? false}
+            if newChatDefaults != state.newChatDefaults{newChatDefaults=state.newChatDefaults}
+            if newChatDefaultsPending != (state.newChatDefaultsPending ?? false){newChatDefaultsPending=state.newChatDefaultsPending ?? false}
+            if !serviceAvailable{serviceAvailable=true}
             if selectedID==nil{selectedID=chats.first?.id;fill()}
             else if waitingForModel,let metadata=selected?.modelMetadata,metadata.effective_context_window_percent != nil,metadata.max_context_window != nil{fill()}
             else if !budgetEdited,editingRevision != (selected?.policy?.revision ?? 0){fill()}
@@ -195,13 +204,27 @@ enum BudgetThumb {case compact,window}
 
 /// Integrate motion locally so changing the budget changes speed without
 /// teleporting particles. Additional short streams make the right side denser.
-private struct BudgetFlowParticles:View {
+@MainActor private final class BudgetParticleClock {
+    private var anchor=Date.timeIntervalSinceReferenceDate
+    private var offset=0.0
+    private var speed=0.055
+    private var paused=false
+    func phase(at time:Double)->Double {offset+(paused ? 0:max(0,time-anchor)*speed)}
+    func update(intensity:Double,paused:Bool){
+        let now=Date.timeIntervalSinceReferenceDate
+        offset=phase(at:now);anchor=now
+        speed=0.055+0.18*max(0,min(1,intensity));self.paused=paused
+    }
+}
+
+@MainActor private struct BudgetFlowParticles:View {
     let intensity:Double
     let paused:Bool
     let reducedMotion:Bool
-    @State private var phase=0.0
-    @State private var speed=0.055
+    @State private var clock=BudgetParticleClock()
     var body:some View {
+        TimelineView(.animation(minimumInterval:1.0/30,paused:paused || reducedMotion)){timeline in
+            let phase=clock.phase(at:timeline.date.timeIntervalSinceReferenceDate)
         Canvas {context,size in
                 guard !reducedMotion else{return}
                 let level=max(0,min(1,intensity))
@@ -222,18 +245,10 @@ private struct BudgetFlowParticles:View {
                     context.fill(Path(ellipseIn:CGRect(x:x-diameter/2,y:y-diameter/2,width:diameter,height:diameter)),with:.color(.white.opacity(opacity)))
                 }
             }
-        .onChange(of:intensity,initial:true){_,level in speed=0.055+0.18*max(0,min(1,level))}
-        .task(id:paused){
-            guard !paused else{return}
-            var previousTime=Date.timeIntervalSinceReferenceDate
-            while !Task.isCancelled {
-                do{try await Task.sleep(for:.seconds(1.0/30))}catch{return}
-                guard !Task.isCancelled else{return}
-                let time=Date.timeIntervalSinceReferenceDate
-                phase+=max(0,min(0.1,time-previousTime))*speed
-                previousTime=time
-            }
         }
+        .onChange(of:intensity,initial:true){_,value in clock.update(intensity:value,paused:paused || reducedMotion)}
+        .onChange(of:paused){_,value in clock.update(intensity:intensity,paused:value || reducedMotion)}
+        .onChange(of:reducedMotion){_,value in clock.update(intensity:intensity,paused:paused || value)}
         .allowsHitTesting(false)
     }
 }
@@ -241,7 +256,7 @@ private struct BudgetFlowParticles:View {
 
 /// Both handles share the model-capacity scale. The selected handle stays fixed
 /// during a gesture even when moving the window also moves the linked threshold.
-struct BudgetRangeSlider:View {
+@MainActor struct BudgetRangeSlider:View {
     @Binding var window:Double
     @Binding var compact:Double
     @Binding var selection:BudgetThumb
@@ -254,6 +269,7 @@ struct BudgetRangeSlider:View {
     @FocusState private var focused:Bool
     @State private var active=NSApplication.shared.isActive
     @State private var dragging:BudgetThumb?
+    @State private var dragUpdates=MenuDragUpdates()
     private var diameter:CGFloat {compactStyle ? 22:32}
     private var trackHeight:CGFloat {compactStyle ? 16:26}
     var body:some View {
@@ -278,7 +294,7 @@ struct BudgetRangeSlider:View {
             .gesture(DragGesture(minimumDistance:0).onChanged {event in
                 guard enabled else{return}
                 if dragging==nil {
-                    onEditingChanged(true)
+                    dragUpdates.reset();onEditingChanged(true)
                     // In tight ranges, choosing the numeric heading first also
                     // lets the user select a handle whose hit areas overlap.
                     let left=abs(event.startLocation.x-compactX),right=abs(event.startLocation.x-windowX)
@@ -288,9 +304,14 @@ struct BudgetRangeSlider:View {
                     selection=dragging!;focused=true
                 }
                 let tokens=(max(0,min(1,(event.location.x-diameter/2)/travel))*Double(maximumWindow)).rounded()
-                if dragging == .compact{compact=max(1,min(Double(maximumCompact),tokens))}
-                else{window=max(2,min(Double(maximumWindow),tokens))}
-            }.onEnded {_ in dragging=nil;onEditingChanged(false)})
+                let target=dragging ?? selection
+                if compactStyle{dragUpdates.submit{setDragValue(tokens,target:target)}}
+                else{setDragValue(tokens,target:target)}
+            }.onEnded {event in
+                let tokens=(max(0,min(1,(event.location.x-diameter/2)/travel))*Double(maximumWindow)).rounded()
+                dragUpdates.finish{setDragValue(tokens,target:dragging ?? selection)}
+                dragging=nil;onEditingChanged(false)
+            })
             .animation(reduceMotion || dragging != nil ? nil:.easeOut(duration:0.18),value:window)
             .animation(reduceMotion || dragging != nil ? nil:.easeOut(duration:0.18),value:compact)
         }
@@ -307,7 +328,11 @@ struct BudgetRangeSlider:View {
         }
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)){_ in active=true}
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didResignActiveNotification)){_ in active=false}
-        .onAppear{active=NSApplication.shared.isActive}.onDisappear{active=false}
+        .onAppear{active=NSApplication.shared.isActive}.onDisappear{active=false;dragUpdates.cancel()}
+    }
+    private func setDragValue(_ value:Double,target:BudgetThumb){
+        if target == .compact{compact=max(1,min(Double(maximumCompact),value))}
+        else{window=max(2,min(Double(maximumWindow),value))}
     }
     private func thumb(_ target:BudgetThumb)->some View {
         Circle().fill(LinearGradient(colors:target == .compact ? (maximumWindow==920 && Int(window)==920 ? [Color(red:0.78,green:0.59,blue:1),.purple]:[Color(red:0.43,green:0.63,blue:1),PanelStyle.blue]):[.white,Color(white:0.93)],startPoint:.topLeading,endPoint:.bottomTrailing))
@@ -531,7 +556,7 @@ struct ContentView: View {
         refreshTask=Task {while !Task.isCancelled{
             await model.refresh()
             updateStatusIcon()
-            if menuPanel?.isVisible==true,NSEvent.pressedMouseButtons==0{positionContextMenu()}
+            if menuPanel?.isVisible==true,!model.menuDragInProgress,NSEvent.pressedMouseButtons==0{positionContextMenu()}
             publishStatus()
             try? await Task.sleep(for:.seconds(2))
         }}
@@ -563,6 +588,7 @@ struct ContentView: View {
         let host=NSHostingView(rootView:ContextMenuView(model:model,openChat:{[weak self] id in
             guard let self else{return};self.model.selectedID=id;self.model.fill();self.showSettings()
         },openSettings:{[weak self] in self?.showSettings()},quit:{[weak self] in self?.quitEntry()}))
+        host.sizingOptions=[]
         host.translatesAutoresizingMaskIntoConstraints=false;backdrop.addSubview(host)
         NSLayoutConstraint.activate([host.leadingAnchor.constraint(equalTo:backdrop.leadingAnchor),host.trailingAnchor.constraint(equalTo:backdrop.trailingAnchor),host.topAnchor.constraint(equalTo:backdrop.topAnchor),host.bottomAnchor.constraint(equalTo:backdrop.bottomAnchor)])
         menuPanel?.contentView=backdrop;positionContextMenu();menuPanel?.orderFrontRegardless();menuPanel?.makeKey()
@@ -582,11 +608,13 @@ struct ContentView: View {
     private func positionContextMenu(){
         guard let button=statusItem?.button,let window=button.window,let screen=window.screen ?? NSScreen.main else{return}
         let anchor=window.convertToScreen(button.convert(button.bounds,to:nil))
-        model.menuHeightLimit=max(1,min(560,min(anchor.minY-4,screen.visibleFrame.maxY-8)-screen.visibleFrame.minY-8))
+        let heightLimit=max(1,min(560,min(anchor.minY-4,screen.visibleFrame.maxY-8)-screen.visibleFrame.minY-8))
+        if model.menuHeightLimit != heightLimit{model.menuHeightLimit=heightLimit}
         let frame=ContextMenuPlacement.frame(anchor:anchor,size:NSSize(width:400,height:model.contextMenuHeight),screen:screen.visibleFrame)
-        menuPanel?.setFrame(frame,display:true)
+        if menuPanel?.frame != frame{menuPanel?.setFrame(frame,display:true)}
     }
     private func closeContextMenu(){
+        model.menuDragInProgress=false
         menuPanel?.orderOut(nil);menuPanel?.contentView=nil
         statusHighlight?.refresh()
         if let localMenuMonitor{NSEvent.removeMonitor(localMenuMonitor);self.localMenuMonitor=nil}

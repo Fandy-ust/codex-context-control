@@ -102,7 +102,7 @@ struct ContextUsageRing:View {
         HStack{Text(title);Spacer();Text("\(count)").monospacedDigit()}.font(.system(size:10,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,10).padding(.vertical,4)
     }
     private func chatRow(_ chat:Chat)->some View {
-        MenuChatRow(model:model,chat:chat,canBegin:editingChatID==nil || editingChatID==chat.id,openChat:openChat,beginEditing:{
+        MenuChatRow(model:model,serviceAvailable:model.serviceAvailable,chat:chat,canBegin:editingChatID==nil || editingChatID==chat.id,openChat:openChat,beginEditing:{
             if editingChatID==nil{heldRunning=model.runningChats.map(\.id);heldRecent=model.recentChats.map(\.id)}
             editingChatID=chat.id
         },endEditing:{if editingChatID==chat.id{editingChatID=nil}})
@@ -110,17 +110,17 @@ struct ContextUsageRing:View {
 }
 
 @MainActor private struct MenuChatRow:View {
-    @ObservedObject var model:Controller
+    let model:Controller
+    let serviceAvailable:Bool
     let chat:Chat;let canBegin:Bool;let openChat:(String)->Void;let beginEditing:()->Void;let endEditing:()->Void
     @State private var draft:MenuBudgetDraft?
     @State private var selection:BudgetThumb = .window
     @State private var hovering=false
     @State private var dragging=false
-    @State private var touched=false
     @State private var saving=false
     @State private var feedback:String?
     @State private var failed=false
-    private var stale:Bool {!model.serviceAvailable || !chat.connected || chat.freshUsage != true}
+    private var stale:Bool {!serviceAvailable || !chat.connected || chat.freshUsage != true}
     var body:some View {
         ZStack {
             if let draft {
@@ -132,7 +132,9 @@ struct ContextUsageRing:View {
             .background(.primary.opacity(hovering || draft != nil ? 0.06:0),in:RoundedRectangle(cornerRadius:5))
             .onHover{inside in hovering=inside;if inside{begin()}else{finishIfClean()}}
             .onChange(of:canBegin){_,allowed in if allowed && hovering{begin()}}
+            .onChange(of:saving){_,busy in if !busy && hovering{begin()}}
             .accessibilityAction(named:"调节预算"){begin()}
+            .onDisappear{if dragging{model.menuDragInProgress=false}}
     }
     private var information:some View {
         Button{openChat(chat.id)} label:{
@@ -157,19 +159,19 @@ struct ContextUsageRing:View {
                 }
                 Spacer(minLength:2)
                 if saving{ProgressView().controlSize(.mini).frame(width:28)}
-                else{Button{Task{await apply()}}label:{Text("应用").frame(width:32,height:20).contentShape(Rectangle())}.foregroundStyle(.blue).disabled(!value.changed || !model.serviceAvailable)}
+                else{Button{Task{await apply()}}label:{Text("应用").font(.system(size:11,weight:.semibold)).foregroundStyle(.white).frame(width:42,height:22).background(Color.accentColor.opacity(value.changed && serviceAvailable ? 1:0.35),in:RoundedRectangle(cornerRadius:5)).contentShape(Rectangle())}.foregroundStyle(.blue).disabled(!value.changed || !serviceAvailable)}
                 Button{cancel()}label:{Image(systemName:"xmark").frame(width:20,height:20).contentShape(Rectangle())}.disabled(saving).help("取消未提交的修改")
             }.buttonStyle(.plain).font(.system(size:11,weight:.medium)).monospacedDigit().frame(height:20)
-            BudgetRangeSlider(window:Binding(get:{draft?.windowK ?? value.windowK},set:{draft?.setWindow($0);touched=true;feedback=nil}),compact:Binding(get:{draft?.compactK ?? value.compactK},set:{draft?.setCompact($0);touched=true;feedback=nil}),selection:$selection,maximumWindow:value.maximumWindowK,maximumCompact:value.maximumCompactK,compactStyle:true,onEditingChanged:{active in dragging=active;if !active{finishIfClean()}})
-                .disabled(saving || !model.serviceAvailable)
+            BudgetRangeSlider(window:Binding(get:{draft?.windowK ?? value.windowK},set:{if draft?.windowK != $0{draft?.setWindow($0);feedback=nil}}),compact:Binding(get:{draft?.compactK ?? value.compactK},set:{if draft?.compactK != $0{draft?.setCompact($0);feedback=nil}}),selection:$selection,maximumWindow:value.maximumWindowK,maximumCompact:value.maximumCompactK,compactStyle:true,onEditingChanged:{active in dragging=active;model.menuDragInProgress=active;if !active{finishIfClean()}})
+                .disabled(saving || !serviceAvailable)
         }.padding(.horizontal,10).help(feedback ?? chat.title)
     }
     private func begin(){
-        guard draft==nil,canBegin,model.serviceAvailable,let value=try? MenuBudgetDraft(chat:chat) else{return}
-        draft=value;touched=false;feedback=nil;failed=false;beginEditing()
+        guard draft==nil,!saving,canBegin,serviceAvailable,let value=try? MenuBudgetDraft(chat:chat) else{return}
+        draft=value;feedback=nil;failed=false;beginEditing()
     }
-    private func finishIfClean(){if !hovering && !dragging && !saving && !touched{cancel()}}
-    private func cancel(){draft=nil;touched=false;feedback=nil;failed=false;endEditing()}
+    private func finishIfClean(){if !hovering && !dragging{cancel()}}
+    private func cancel(){draft=nil;feedback=nil;failed=false;endEditing()}
     private func apply() async {
         guard let value=draft,!saving else{return};saving=true;failed=false
         do {
@@ -185,10 +187,9 @@ struct ContextUsageRing:View {
             case "needs_observation":feedback="已保存 · 等待用量读回"
             default:feedback="已提交 · 等待读回确认"
             }
-            touched=false
             if let raw=result?["thread"],let data=try? JSONSerialization.data(withJSONObject:raw),let updated=try? JSONDecoder().decode(Chat.self,from:data){
                 draft=try? MenuBudgetDraft(chat:updated)
-                if let index=model.chats.firstIndex(where:{$0.id==updated.id}){model.chats[index]=updated}
+                if !model.menuDragInProgress,let index=model.chats.firstIndex(where:{$0.id==updated.id}),model.chats[index] != updated{model.chats[index]=updated}
                 if !updated.connected{feedback="已保存 · 接入后自动应用"}
             }
             await model.refresh()
