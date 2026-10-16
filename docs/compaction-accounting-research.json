@@ -1,0 +1,202 @@
+{
+  "date": "2026-10-16",
+  "runtime": "codex-cli 0.160.0",
+  "scope": "Local source audit and isolated synthetic SSE reproduction; no remote inference or credentials.",
+  "findings": {
+    "sourceMechanism": "Old reasoning is estimated again unless server_reasoning_included is true. The boolean is set from x-reasoning-included, independently of reasoning.context=all_turns.",
+    "websocketSource": "The marker is read from the WebSocket handshake headers, retained on the connection, and emitted as ServerReasoningIncluded(true) before processing each response.",
+    "displayPath": "TokenCount notifications use token_info; the extra estimate from get_total_token_usage is not written into the UI notification.",
+    "reproduced": "With identical usage and all_turns in both request and synthetic response, missing the header increases the second local count and changes the threshold decision. UI counts are unchanged.",
+    "historicalLimit": "Historical handshake headers and effective response reasoning.context were not retained. The actual source of the absent effective marker and whether server usage already included each reasoning item cannot be proven from this trace."
+  },
+  "historical": {
+    "request": {
+      "input": 492053,
+      "output": 197,
+      "total": 492250
+    },
+    "compactionRequest": {
+      "input": 495769,
+      "output": 5770,
+      "total": 501539
+    },
+    "localCheck": {
+      "oldReasoningEstimate": 209980,
+      "newToolEstimate": 3227,
+      "total": 705457,
+      "threshold": 646000,
+      "window": 720000,
+      "reason": "ContextLimit",
+      "phase": "MidTurn"
+    }
+  },
+  "sources": [
+    {
+      "path": "codex-rs/core/src/context_manager/history.rs",
+      "line": 904,
+      "url": "https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/context_manager/history.rs#L904"
+    },
+    {
+      "path": "codex-rs/core/src/client.rs",
+      "line": 864,
+      "url": "https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/client.rs#L864"
+    },
+    {
+      "path": "codex-rs/codex-api/src/sse/responses.rs",
+      "line": 54,
+      "url": "https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/codex-api/src/sse/responses.rs#L54"
+    },
+    {
+      "path": "codex-rs/codex-api/src/endpoint/responses_websocket.rs",
+      "line": 527,
+      "url": "https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L527"
+    },
+    {
+      "path": "codex-rs/core/src/session/mod.rs",
+      "line": 4925,
+      "url": "https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/session/mod.rs#L4925"
+    }
+  ],
+  "reproduction": {
+    "runtime": "codex-cli 0.160.0",
+    "mode": "controlled-loopback-sse",
+    "cases": [
+      {
+        "headerIncluded": false,
+        "threshold": 80000,
+        "requests": [
+          {
+            "context": "all_turns",
+            "reasoningItems": 0,
+            "isCompaction": false
+          },
+          {
+            "context": "all_turns",
+            "reasoningItems": 1,
+            "isCompaction": false
+          }
+        ],
+        "serverUsage": {
+          "input": 10000,
+          "output": 10,
+          "total": 10010
+        },
+        "uiNotifications": [
+          10010,
+          10010
+        ],
+        "localCompactionCounts": [
+          10010,
+          12848
+        ],
+        "thresholdReached": [
+          false,
+          false
+        ],
+        "syntheticOldReasoningEstimate": 2838
+      },
+      {
+        "headerIncluded": true,
+        "threshold": 80000,
+        "requests": [
+          {
+            "context": "all_turns",
+            "reasoningItems": 0,
+            "isCompaction": false
+          },
+          {
+            "context": "all_turns",
+            "reasoningItems": 1,
+            "isCompaction": false
+          }
+        ],
+        "serverUsage": {
+          "input": 10000,
+          "output": 10,
+          "total": 10010
+        },
+        "uiNotifications": [
+          10010,
+          10010
+        ],
+        "localCompactionCounts": [
+          10010,
+          10010
+        ],
+        "thresholdReached": [
+          false,
+          false
+        ],
+        "syntheticOldReasoningEstimate": 2838
+      },
+      {
+        "headerIncluded": false,
+        "threshold": 11000,
+        "requests": [
+          {
+            "context": "all_turns",
+            "reasoningItems": 0,
+            "isCompaction": false
+          },
+          {
+            "context": "all_turns",
+            "reasoningItems": 1,
+            "isCompaction": false
+          }
+        ],
+        "serverUsage": {
+          "input": 10000,
+          "output": 10,
+          "total": 10010
+        },
+        "uiNotifications": [
+          10010,
+          10010
+        ],
+        "localCompactionCounts": [
+          10010,
+          12848
+        ],
+        "thresholdReached": [
+          false,
+          true
+        ],
+        "syntheticOldReasoningEstimate": 2838
+      },
+      {
+        "headerIncluded": true,
+        "threshold": 11000,
+        "requests": [
+          {
+            "context": "all_turns",
+            "reasoningItems": 0,
+            "isCompaction": false
+          },
+          {
+            "context": "all_turns",
+            "reasoningItems": 1,
+            "isCompaction": false
+          }
+        ],
+        "serverUsage": {
+          "input": 10000,
+          "output": 10,
+          "total": 10010
+        },
+        "uiNotifications": [
+          10010,
+          10010
+        ],
+        "localCompactionCounts": [
+          10010,
+          10010
+        ],
+        "thresholdReached": [
+          false,
+          false
+        ],
+        "syntheticOldReasoningEstimate": 2838
+      }
+    ]
+  }
+}
