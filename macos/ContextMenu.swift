@@ -120,7 +120,6 @@ struct ContextUsageRing:View {
     @State private var saving=false
     @State private var feedback:String?
     @State private var failed=false
-    private var maxMode:Bool {chat.modelMetadata?.context_ceiling==920000 && (draft.map{Int($0.windowK)==920} ?? (chat.observedWindow==920000))}
     private var stale:Bool {!model.serviceAvailable || !chat.connected || chat.freshUsage != true}
     var body:some View {
         ZStack {
@@ -130,7 +129,7 @@ struct ContextUsageRing:View {
                 editor(draft)
             }else{information}
         }.frame(height:50).contentShape(Rectangle())
-            .background {if maxMode {MaxContextFlow().clipShape(RoundedRectangle(cornerRadius:5))}else{RoundedRectangle(cornerRadius:5).fill(.primary.opacity(hovering || draft != nil ? 0.06:0))}}
+            .background(.primary.opacity(hovering || draft != nil ? 0.06:0),in:RoundedRectangle(cornerRadius:5))
             .onHover{inside in hovering=inside;if inside{begin()}else{finishIfClean()}}
             .onChange(of:canBegin){_,allowed in if allowed && hovering{begin()}}
             .accessibilityAction(named:"调节预算"){begin()}

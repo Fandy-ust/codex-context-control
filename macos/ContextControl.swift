@@ -372,7 +372,7 @@ struct ContentView: View {
                 if model.contextCeilingPending {Label("920K 扩展已安装，重开 Codex 后接入",systemImage:"arrow.clockwise").font(.caption).foregroundStyle(.orange)}
                 RuntimeFixControl(model:model)
                 Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
-            }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(maxMode ? Color.clear:PanelStyle.background)
+            }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
                     if let chat=model.selected {
@@ -402,17 +402,17 @@ struct ContentView: View {
                     }
                     Divider();Text(model.notice).font(.callout).textSelection(.enabled).foregroundStyle(.secondary)
                 }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity)
-            }.frame(minWidth:650).background(maxMode ? Color.clear:PanelStyle.background)
+            }.frame(minWidth:650).background(PanelStyle.background)
         }
         .frame(minWidth:960,minHeight:670)
-        .background {if maxMode {MaxContextFlow()}else{PanelStyle.background}}
-        .preferredColorScheme(.dark).tint(maxMode ? .purple:PanelStyle.blue)
+        .background(PanelStyle.background)
+        .preferredColorScheme(.dark).tint(PanelStyle.blue)
         .onChange(of:model.selectedID){_,_ in model.fill()}
         .confirmationDialog("请求 Codex 原生压缩？",isPresented:$confirmCompact,titleVisibility:.visible){Button("请求压缩"){Task{await model.act("compact")}};Button("取消",role:.cancel){}}message:{Text("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。")}
     }
     func budgetEditor()->some View {
         VStack(alignment:.leading,spacing:18){
-            if maxMode {Label("MAX CONTEXT · 920K",systemImage:"bolt.fill").font(.callout.weight(.semibold)).foregroundStyle(Color(red:0.72,green:0.49,blue:1))}
+            if maxMode {Label("MAX CONTEXT · 920K",systemImage:"bolt.fill").font(.callout.weight(.semibold)).foregroundStyle(.secondary)}
             rangeEditor()
             Text(model.selected?.modelMetadata?.context_ceiling != nil ? "920K 硬上限 · 最晚 904K 压缩 · 预留至少 16K" : "将蓝色压缩点往左拉，灰色压缩窗口余量随之增加。每步 1K，应用后生效。")
                 .font(.system(size:11)).foregroundStyle(.secondary)
@@ -435,7 +435,7 @@ struct ContentView: View {
     private func rangeEditor()->some View {
         VStack(spacing:16){
             HStack(alignment:.center){
-                rangeValue("压缩触发",value:model.compactK,color:maxMode ? .purple:PanelStyle.blue,thumb:.compact)
+                rangeValue("压缩触发",value:model.compactK,color:PanelStyle.blue,thumb:.compact)
                 Spacer()
                 VStack(spacing:5){Text("\(Int(max(0,model.windowK-model.compactK)))K").font(.system(size:22,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(PanelStyle.headroom);Text("压缩窗口余量").font(.system(size:11)).foregroundStyle(.secondary)}
                 Spacer()
