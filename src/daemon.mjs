@@ -36,7 +36,7 @@ export async function startDaemon() {
   const contextStatistics=createContextStatisticsService();
   const runtimeFix=createRuntimeFixManager();
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
-  function state(){return {version:'0.10.0',bridgeCount:bridges.size,runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).filter(t=>!t.archived).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function state(){return {version:'0.10.0',bridgeCount:bridges.size,runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version:'0.10.0'};
     if(op==='state')return state();
