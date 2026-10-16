@@ -15,6 +15,7 @@ import SwiftUI
             try? await Task.sleep(for:.milliseconds(150))
             let readyMs=(CFAbsoluteTimeGetCurrent()-started)*1000
             precondition(ChartInteractionProbe.bucketCount<=120,"Unbounded chart marks")
+            precondition(ChartInteractionProbe.period==0,"Smoothing must start disabled")
             let before=ChartInteractionProbe.chartBuilds
             let positions=stats.responses.suffix(100).map(\.position)
             var latencies:[Double]=[]

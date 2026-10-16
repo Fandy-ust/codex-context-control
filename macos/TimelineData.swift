@@ -11,7 +11,7 @@ struct TimelineBucket:Identifiable,Sendable {
     let id:Int;let entryRange:Range<Int>;let startPosition:Int;let endPosition:Int
     var position:Double{Double(startPosition+endPosition)/2}
     let firstResponse:Int?;let lastResponse:Int?;let responses:Int;let measured:Int
-    let inputMean:Double?;let cacheMean:Double?;let cacheMinimum:Int?;let speed:Double?
+    let inputSamples:Int;let cacheSamples:Int;let inputMean:Double?;let cacheMean:Double?;let cacheMinimum:Int?;let speed:Double?
     let outputTokens:Int;let outputSamples:Int;let finals:Int;let users:Int;let compactions:Int;let zeroCaches:Int
     let models:[String]
     var title:String {
@@ -27,26 +27,24 @@ private struct TimelineAccumulator {
     var finals=0;var users=0;var compactions=0;var zeros=0;var models=Set<String>()
 }
 private struct TimelineMetric {
-    struct Bin {var sum=0.0;var count=0;var first:Int?;var last:Int?}
-    var bins:[Bin];var state:Double?;var run=0;var source:Int?
-    mutating func reset(){state=nil;source=nil;run+=1}
+    struct Bin {var sum=0.0;var count=0;}
+    var bins:[Bin];var state:Double?;var source:Int?
+    mutating func reset(){state=nil;source=nil}
     mutating func add(_ value:Double?,source next:Int,bucket:Int,period:Int){
         guard let value,value.isFinite else{reset();return}
         if let source,source != next{reset()};source=next
         let alpha=period<=1 ? 1:2/Double(period+1)
         let smoothed=state.map{$0+alpha*(value-$0)} ?? value;state=smoothed
-        if bins[bucket].first==nil{bins[bucket].first=run};bins[bucket].last=run
         bins[bucket].sum+=smoothed;bins[bucket].count+=1
     }
     func points(_ buckets:[TimelineBucket],raw:(TimelineBucket)->Double?,period:Int)->[TimelinePlotPoint]{
-        var result:[TimelinePlotPoint]=[],series=0,previousRun:Int?
+        var result:[TimelinePlotPoint]=[],series=0
         for (index,bin) in bins.enumerated(){
-            guard bin.count>0 else{previousRun=nil;series+=1;continue}
-            let mixed=bin.first != bin.last
-            if previousRun != bin.first || mixed{series+=1}
+            // EMA resets and missing individual samples do not invalidate a
+            // measured interval mean. Break only across an entirely empty bin.
+            guard bin.count>0 else{series+=1;continue}
             let value=period<=1 ? raw(buckets[index]):bin.sum/Double(bin.count)
-            if let value{result.append(TimelinePlotPoint(id:index,position:buckets[index].position,value:value,series:series))}
-            previousRun=mixed ? nil:bin.last
+            if let value{result.append(TimelinePlotPoint(id:index,position:buckets[index].position,value:value,series:series))}else{series+=1}
         }
         return result
     }
@@ -72,7 +70,7 @@ struct TimelineData:Sendable {
         let range=buckets[bucket].entryRange,start=min(range.upperBound,range.lowerBound+max(0,page)*max(1,size))
         return entries[start..<min(range.upperBound,start+max(1,size))]
     }
-    init(responses:[ContextStatistics.Response],events:[ContextStatistics.TimelineEvent],revision:String,period:Int=12,limit:Int=120) throws {
+    init(responses:[ContextStatistics.Response],events:[ContextStatistics.TimelineEvent],revision:String,period:Int=0,limit:Int=120) throws {
         self.revision=revision;self.period=max(0,period);responseCount=responses.count
         measuredCount=responses.reduce(0){$0+($1.tokensPerSecond == nil ? 0:1)}
         let output=responses.map{TimelineEntry(id:$0.id,position:$0.position,kind:"响应 #\($0.index) · \($0.kind)",eventType:$0.eventType,response:$0,event:nil)}
@@ -108,7 +106,7 @@ struct TimelineData:Sendable {
             input.add(r.inputTokens.map(Double.init),source:r.inputSegment,bucket:bucket,period:self.period)
             cache.add(r.cachedInputTokens.map(Double.init),source:r.cacheSegment,bucket:bucket,period:self.period)
         }
-        let result=bins.enumerated().map{index,b in TimelineBucket(id:index,entryRange:b.start..<b.end,startPosition:entries[b.start].position,endPosition:entries[b.end-1].position,firstResponse:b.firstResponse,lastResponse:b.lastResponse,responses:b.responses,measured:b.measured,inputMean:b.inputCount>0 ? b.inputSum/Double(b.inputCount):nil,cacheMean:b.cacheCount>0 ? b.cacheSum/Double(b.cacheCount):nil,cacheMinimum:b.cacheMinimum,speed:b.duration>0 ? b.generatedTokens/(b.duration/1000):nil,outputTokens:b.output,outputSamples:b.outputSamples,finals:b.finals,users:b.users,compactions:b.compactions,zeroCaches:b.zeros,models:b.models.sorted())}
+        let result=bins.enumerated().map{index,b in TimelineBucket(id:index,entryRange:b.start..<b.end,startPosition:entries[b.start].position,endPosition:entries[b.end-1].position,firstResponse:b.firstResponse,lastResponse:b.lastResponse,responses:b.responses,measured:b.measured,inputSamples:b.inputCount,cacheSamples:b.cacheCount,inputMean:b.inputCount>0 ? b.inputSum/Double(b.inputCount):nil,cacheMean:b.cacheCount>0 ? b.cacheSum/Double(b.cacheCount):nil,cacheMinimum:b.cacheMinimum,speed:b.duration>0 ? b.generatedTokens/(b.duration/1000):nil,outputTokens:b.output,outputSamples:b.outputSamples,finals:b.finals,users:b.users,compactions:b.compactions,zeroCaches:b.zeros,models:b.models.sorted())}
         buckets=result;byID=lookup;entryBuckets=mapping
         self.speed=speed.points(result,raw:{$0.speed},period:self.period);self.input=input.points(result,raw:{$0.inputMean},period:self.period);self.cache=cache.points(result,raw:{$0.cacheMean},period:self.period)
     }

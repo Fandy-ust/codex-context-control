@@ -33,7 +33,7 @@ private enum TimelinePlotKind {case speed,cache,events}
 @MainActor struct ContextResponseChart:View,Equatable {
     let responses:[ContextStatistics.Response];let events:[ContextStatistics.TimelineEvent]
     nonisolated let revision:String
-    @State private var smoothing=12.0
+    @State private var smoothing=0.0
     @State private var prepared:TimelineData?
     @State private var preparing=false
     private var key:String{revision+":"+String(Int(smoothing))}
@@ -85,7 +85,7 @@ private enum TimelinePlotKind {case speed,cache,events}
             eventTrack
             if !data.buckets.isEmpty{TimelineBucketDetails(data:data,selection:selection)}
             DisclosureGroup("统计说明"){
-                Text("总览最多 120 个区间。平滑只改变趋势线；区间速度按输出量÷生成时间计算，输入和缓存取均值，输出取合计。缺失、模型变化和压缩处断开平滑；缓存零值保留事件标记和区间最小值。展开区间可逐条查看原始记录，点击可固定。").font(.caption).foregroundStyle(.secondary).padding(.top,5)
+                Text("总览最多 120 个区间。平滑只改变趋势线；区间速度按输出量÷生成时间计算，输入和缓存取均值，输出取合计。区间有有效样本就连线，整段缺数据才断线；模型变化和压缩只重置 EMA，紫色标记表示压缩。缓存零值保留事件标记和区间最小值。展开区间可逐条查看原始记录，点击可固定。").font(.caption).foregroundStyle(.secondary).padding(.top,5)
             }.font(.caption).foregroundStyle(.secondary)
         }.onHover{inside in if !inside{selection.hover(nil)}}
         .onChange(of:data.revision){_,_ in selection.hover(nil)}
@@ -94,7 +94,7 @@ private enum TimelinePlotKind {case speed,cache,events}
     private var speedChart:some View {
         Chart {
             ForEach(data.speed){point in
-                LineMark(x:.value("记录顺序",point.position),y:.value("tokens/s",point.value),series:.value("片段",point.series)).interpolationMethod(.monotone).foregroundStyle(.white.opacity(0.8)).lineStyle(StrokeStyle(lineWidth:1.8))
+                LineMark(x:.value("记录顺序",point.position),y:.value("tokens/s",point.value),series:.value("片段",point.series)).interpolationMethod(data.period<2 ? .linear:.monotone).foregroundStyle(.white.opacity(0.8)).lineStyle(StrokeStyle(lineWidth:1.8))
                 PointMark(x:.value("记录顺序",point.position),y:.value("tokens/s",point.value)).foregroundStyle(.white.opacity(0.35)).symbolSize(5)
             }
             ForEach(data.buckets.filter{$0.compactions>0}){b in RuleMark(x:.value("记录顺序",b.position)).foregroundStyle(.purple.opacity(0.35)).lineStyle(StrokeStyle(lineWidth:1,dash:[3,3]))}
@@ -106,11 +106,11 @@ private enum TimelinePlotKind {case speed,cache,events}
     private var cacheChart:some View {
         Chart {
             ForEach(data.input){p in
-                LineMark(x:.value("记录顺序",p.position),y:.value("tokens",p.value),series:.value("片段","input-\(p.series)")).interpolationMethod(.monotone).foregroundStyle(.gray.opacity(0.6))
+                LineMark(x:.value("记录顺序",p.position),y:.value("tokens",p.value),series:.value("片段","input-\(p.series)")).interpolationMethod(data.period<2 ? .linear:.monotone).foregroundStyle(.gray.opacity(0.6))
                 PointMark(x:.value("记录顺序",p.position),y:.value("tokens",p.value)).foregroundStyle(.gray.opacity(0.4)).symbolSize(3)
             }
             ForEach(data.cache){p in
-                LineMark(x:.value("记录顺序",p.position),y:.value("tokens",p.value),series:.value("片段","cache-\(p.series)")).interpolationMethod(.monotone).foregroundStyle(.cyan)
+                LineMark(x:.value("记录顺序",p.position),y:.value("tokens",p.value),series:.value("片段","cache-\(p.series)")).interpolationMethod(data.period<2 ? .linear:.monotone).foregroundStyle(.cyan)
                 PointMark(x:.value("记录顺序",p.position),y:.value("tokens",p.value)).foregroundStyle(.cyan.opacity(0.4)).symbolSize(3)
             }
             ForEach(data.buckets.filter{$0.compactions>0}){b in RuleMark(x:.value("记录顺序",b.position)).foregroundStyle(.purple.opacity(0.5)).lineStyle(StrokeStyle(lineWidth:1,dash:[3,3]))}
@@ -174,6 +174,9 @@ private enum TimelinePlotKind {case speed,cache,events}
             HStack(spacing:12){metric("区间均速",b.speed.map{String(format:"%.1f t/s",$0)} ?? "—");metric("输入均量",amount(b.inputMean));metric("缓存均量",amount(b.cacheMean));metric("输出合计",b.outputSamples>0 ? amount(Double(b.outputTokens)):"—")}
             Text("最终 \(b.finals) · 用户输入 \(b.users) · 压缩 \(b.compactions) · 缓存零值 \(b.zeroCaches)").font(.caption).foregroundStyle(.secondary)
             if !b.models.isEmpty {Text(b.models.map{modelDisplayName($0)}.joined(separator:" · ")).font(.caption2).foregroundStyle(.secondary).lineLimit(1)}
+            if b.measured<b.responses || b.inputSamples<b.responses || b.cacheSamples<b.responses {
+                Text("缺少记录：计时 \(b.responses-b.measured) · 输入 \(b.responses-b.inputSamples) · 缓存 \(b.responses-b.cacheSamples)").font(.caption2).foregroundStyle(.secondary)
+            }
             if b.zeroCaches>0{Text("区间最低缓存：\(b.cacheMinimum.map{$0.formatted()} ?? "—") tokens").font(.caption2).foregroundStyle(.orange)}
             DisclosureGroup("原始记录（\(b.entryRange.count) 条）"){
                 VStack(alignment:.leading,spacing:6){
