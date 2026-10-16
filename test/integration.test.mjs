@@ -20,7 +20,7 @@ test('real runtime through the actual bridge preserves history, tools, permissio
   const fixture=await fixtureServer();
   const catalog=path.join(repo,'test/fixtures/models.json');
   fs.copyFileSync(catalog,path.join(home,'models_cache.json'));
-  fs.writeFileSync(path.join(home,'config.toml'),`model="context-fixture"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(catalog)}\nmodel_context_window=500000\nmodel_auto_compact_token_limit=450000\ncli_auth_credentials_store="file"\n[analytics]\nenabled=false\n[feedback]\nenabled=false\n[model_providers.fixture]\nname="Loopback fixture"\nbase_url="http://127.0.0.1:${fixture.port}/v1"\nwire_api="responses"\nrequires_openai_auth=false\nsupports_websockets=false\n`);
+  fs.writeFileSync(path.join(home,'config.toml'),`model="context-fixture"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(catalog)}\nmodel_context_window=500000\nmodel_auto_compact_token_limit=450000\ncli_auth_credentials_store="file"\n[features]\nplugins=false\n[analytics]\nenabled=false\n[feedback]\nenabled=false\n[model_providers.fixture]\nname="Loopback fixture"\nbase_url="http://127.0.0.1:${fixture.port}/v1"\nwire_api="responses"\nrequires_openai_auth=false\nsupports_websockets=false\n`);
   const env={PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:temp,CODEX_HOME:home,CONTEXT_CONTROL_CODEX_HOME:home,CONTEXT_CONTROL_HOME:control,CONTEXT_CONTROL_REAL_CODEX:binary,CONTEXT_CONTROL_CATALOG_PATH:catalog};
   const child=spawn(process.execPath,[path.join(repo,'src/wrapper.mjs'),'app-server','--listen','stdio://'],{env,cwd:temp,stdio:['pipe','pipe','pipe']});
   const events=[];const pending=new Map();let sequence=0;let errors='';child.stderr.on('data',d=>errors+=d.toString());

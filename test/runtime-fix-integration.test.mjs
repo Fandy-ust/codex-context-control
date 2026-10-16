@@ -18,11 +18,14 @@ test('actual wrapper selects the installed fix only after opt-in and rolls back 
 },async()=>{
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-fix-live-')),control=path.join(temp,'control'),home=path.join(temp,'codex');
   fs.mkdirSync(home);fs.mkdirSync(control);
-  fs.writeFileSync(path.join(home,'config.toml'),'[analytics]\nenabled=false\n[feedback]\nenabled=false\n');
+  fs.writeFileSync(path.join(home,'config.toml'),'[features]\nplugins=false\n[analytics]\nenabled=false\n[feedback]\nenabled=false\n');
   fs.mkdirSync(path.join(control,'runtimes'),{recursive:true});
   fs.cpSync(pack,path.join(control,'runtimes',runtimeFixPin.id),{recursive:true});
   process.env.CONTEXT_CONTROL_HOME=control;process.env.CONTEXT_CONTROL_CODEX_HOME=home;
   const {validateRuntimePackage}=await import('../src/runtime-fix.mjs');validateRuntimePackage(pack);
+  const {installRuntimeHelpers,useDesktopRuntimeLayout}=await import('../src/runtime-helpers.mjs');
+  installRuntimeHelpers(path.join(control,'runtimes',runtimeFixPin.id),original,runtimeFixPin.baseVersion);
+  useDesktopRuntimeLayout(path.join(control,'runtimes',runtimeFixPin.id));
   const {request}=await import('../src/ipc.mjs');
   const children=[];
   async function start(){

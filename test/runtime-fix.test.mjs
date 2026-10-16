@@ -4,14 +4,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {runtimeFixPin,createRuntimeFixManager,fileSHA256,validateRuntimePackage} from '../src/runtime-fix.mjs';
+import {installRuntimeHelpers,validateRuntimeHelpers} from '../src/runtime-helpers.mjs';
 
 function fixture(){
   const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-fix-'));
   const directory=path.join(home,'runtimes',runtimeFixPin.id),original=path.join(home,'original');
   fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(original,'original');
-  const binary=path.join(directory,'codex');fs.writeFileSync(binary,'synthetic runtime',{mode:0o755});
-  const manifest={...runtimeFixPin,platform:'darwin',arch:'arm64',validated:true,binarySHA256:fileSHA256(binary)};
+  fs.mkdirSync(path.join(directory,'bin'));const binary=path.join(directory,'bin/codex');fs.writeFileSync(binary,'synthetic runtime',{mode:0o755});
+  const manifest={...runtimeFixPin,entrypoint:'bin/codex',platform:'darwin',arch:'arm64',validated:true,binarySHA256:fileSHA256(binary)};
   fs.writeFileSync(path.join(directory,'runtime.json'),JSON.stringify(manifest));
+  fs.mkdirSync(path.join(directory,'codex-resources'));fs.mkdirSync(path.join(directory,'codex-path'));
+  for(const name of ['bin/codex-code-mode-host','codex-path/rg'])fs.writeFileSync(path.join(directory,name),'helper',{mode:0o755});
+  fs.writeFileSync(path.join(directory,'codex-package.json'),'{}');
+  fs.writeFileSync(path.join(directory,'helpers.json'),JSON.stringify({baseVersion:runtimeFixPin.baseVersion,files:Object.fromEntries(['bin/codex-code-mode-host','codex-path/rg','codex-package.json'].map(name=>[name,fileSHA256(path.join(directory,name))]))}));
   let originalVersion='0.160.0';
   const manager=createRuntimeFixManager({home,platform:'darwin',arch:'arm64',versionOf:file=>file===original?originalVersion:'0.160.0'});
   return {home,directory,binary,original,manifest,manager,upgrade:()=>{originalVersion='0.162.1';},close:()=>fs.rmSync(home,{recursive:true,force:true})};
@@ -86,5 +91,36 @@ test('a nested desktop executable update invalidates version checks even when it
     fs.writeFileSync(actual,"#!/bin/sh\nprintf 'codex-cli 0.162.1\\n'\n");
     assert.equal(manager.status(launcher).originalVersion,'0.162.1');
     assert.equal(manager.status(launcher).compatible,false);
+  }finally{fs.rmSync(home,{recursive:true,force:true});}
+});
+
+test('helper changes invalidate a cached ready package and select the original',()=>{
+  const f=fixture();try{
+    f.manager.setEnabled(true,f.original);
+    assert.equal(f.manager.select(f.original).binary,f.binary);
+    fs.writeFileSync(path.join(f.directory,'bin/codex-code-mode-host'),'changed helper');
+    assert.equal(f.manager.status(f.original).available,false);
+    assert.equal(f.manager.select(f.original).binary,f.original);
+  }finally{f.close();}
+});
+
+test('desktop helpers are copied independently, version checked and verified',{skip:process.platform==='win32'},()=>{
+  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-helpers-'));
+  try{
+    const source=path.join(home,'desktop'),out=path.join(home,'installed');
+    for(const d of ['bin','codex-path','codex-resources/voice'])fs.mkdirSync(path.join(source,d),{recursive:true});
+    fs.mkdirSync(out);
+    fs.writeFileSync(path.join(source,'codex-package.json'),'{}');
+    const original=path.join(source,'bin/codex');
+    fs.writeFileSync(original,"#!/bin/sh\nprintf 'codex-cli 0.160.0\\n'\n",{mode:0o755});
+    for(const name of ['bin/codex-code-mode-host','codex-path/rg'])fs.writeFileSync(path.join(source,name),'helper',{mode:0o755});
+    fs.writeFileSync(path.join(source,'codex-resources/voice/data'),'original resource');
+    installRuntimeHelpers(out,original,'0.160.0');validateRuntimeHelpers(out,'0.160.0');
+    fs.writeFileSync(path.join(source,'codex-resources/voice/data'),'updated resource');
+    assert.equal(fs.readFileSync(path.join(out,'codex-resources/voice/data'),'utf8'),'original resource');
+    fs.writeFileSync(original,"#!/bin/sh\nprintf 'codex-cli 0.162.1\\n'\n");
+    assert.throws(()=>installRuntimeHelpers(out,original,'0.160.0'),/版本/);
+    fs.writeFileSync(path.join(out,'codex-path/rg'),'corrupt');
+    assert.throws(()=>validateRuntimeHelpers(out,'0.160.0'),/校验/);
   }finally{fs.rmSync(home,{recursive:true,force:true});}
 });

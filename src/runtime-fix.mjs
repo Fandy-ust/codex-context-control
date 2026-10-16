@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {root,atomicJSON,readJSON,realBinary} from './paths.mjs';
+import {runtimeHelpersFingerprint,validateRuntimeHelpers} from './runtime-helpers.mjs';
 
 export const runtimeFixPin=JSON.parse(fs.readFileSync(new URL('../runtime-patches/manifest.json',import.meta.url),'utf8'));
 const fingerprint=file=>{try{const s=fs.statSync(file);return `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;}catch{return 'missing';}};
@@ -16,7 +17,8 @@ export function validateRuntimePackage(directory,{platform=process.platform,arch
   const pin=runtimeFixPin;
   if(!manifest||manifest.id!==pin.id||manifest.baseVersion!==pin.baseVersion||manifest.sourceCommit!==pin.sourceCommit||manifest.patchSHA256!==pin.patchSHA256||manifest.validated!==true)throw Error('修复包来源或验证记录不匹配');
   if(manifest.platform!==platform||manifest.arch!==arch)throw Error('修复包与这台电脑不兼容');
-  const binary=path.join(directory,'codex'),stat=fs.lstatSync(binary);
+  if(!['codex','bin/codex'].includes(manifest.entrypoint??'codex'))throw Error('运行时入口无效');
+  const binary=path.join(directory,manifest.entrypoint??'codex'),stat=fs.lstatSync(binary);
   if(!stat.isFile()||stat.isSymbolicLink()||!(stat.mode&0o111))throw Error('修复版运行时文件无效');
   if(!/^[a-f0-9]{64}$/.test(manifest.binarySHA256)||fileSHA256(binary)!==manifest.binarySHA256)throw Error('修复版运行时校验失败');
   return {manifest,binary};
@@ -38,9 +40,11 @@ export function createRuntimeFixManager({home=root,platform=process.platform,arc
   const file=path.join(home,'runtime-fix.json'),directory=path.join(home,'runtimes',runtimeFixPin.id);
   let cachedPackage;
   function packageStatus(){
-    const key=fingerprint(path.join(directory,'runtime.json'))+':'+fingerprint(path.join(directory,'codex'));
+    const key=fingerprint(path.join(directory,'runtime.json'))+':'+fingerprint(path.join(directory,'codex'))+':'+fingerprint(path.join(directory,'bin/codex'))+':'+runtimeHelpersFingerprint(directory);
     if(cachedPackage?.key===key)return cachedPackage;
     try{const result=validateRuntimePackage(directory,{platform,arch});
+      if(result.manifest.entrypoint!=='bin/codex')throw Error('修复包尚未完成桌面安装');
+      validateRuntimeHelpers(directory,runtimeFixPin.baseVersion);
       if(version(result.binary)!==runtimeFixPin.baseVersion)throw Error('修复版运行时版本不符');
       cachedPackage={key,available:true,...result};
     }catch(error){cachedPackage={key,available:false,message:key.includes('missing')?'修复包尚未安装':error.message};}

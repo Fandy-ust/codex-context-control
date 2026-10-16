@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 const repo=fileURLToPath(new URL('../',import.meta.url));
 const binary=process.env.CONTEXT_CONTROL_TEST_CODEX||'/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
 const expectedFixed=process.env.CONTEXT_CONTROL_EXPECT_FIXED==='1';
+const resumeBetweenTurns=process.argv.includes('--resume');
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(predicate){for(let n=0;n<300;n++){if(predicate())return;await delay(50);}throw Error('Probe timed out');}
 
@@ -39,7 +40,7 @@ async function runCase(headerIncluded,threshold=80000){
   try{
     await new Promise(r=>server.listen(0,'127.0.0.1',r));
     const catalog=path.join(repo,'test/fixtures/models.json');
-    fs.writeFileSync(path.join(home,'config.toml'),`model="context-fixture"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(catalog)}\nmodel_context_window=100000\nmodel_auto_compact_token_limit=${threshold}\nmodel_auto_compact_token_limit_scope="total"\n[analytics]\nenabled=false\n[feedback]\nenabled=false\n[model_providers.fixture]\nname="Local accounting probe"\nbase_url="http://127.0.0.1:${server.address().port}/v1"\nwire_api="responses"\nrequires_openai_auth=false\nsupports_websockets=false\n`);
+    fs.writeFileSync(path.join(home,'config.toml'),`model="context-fixture"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(catalog)}\nmodel_context_window=100000\nmodel_auto_compact_token_limit=${threshold}\nmodel_auto_compact_token_limit_scope="total"\n[features]\nplugins=false\n[analytics]\nenabled=false\n[feedback]\nenabled=false\n[model_providers.fixture]\nname="Local accounting probe"\nbase_url="http://127.0.0.1:${server.address().port}/v1"\nwire_api="responses"\nrequires_openai_auth=false\nsupports_websockets=false\n`);
     child=spawn(binary,['app-server','--listen','stdio://'],{cwd:temp,env:{PATH:process.env.PATH,HOME:os.homedir(),TMPDIR:temp,CODEX_HOME:home,RUST_LOG:'codex_core::session::turn=trace'},stdio:['pipe','pipe','pipe']});
     child.stderr.on('data',d=>{stderr+=d.toString();});
     readline.createInterface({input:child.stdout}).on('line',line=>{
@@ -57,11 +58,15 @@ async function runCase(headerIncluded,threshold=80000){
     });
     await call('initialize',{clientInfo:{name:'compaction_accounting_probe',version:'1'},capabilities:{experimentalApi:true}});
     child.stdin.write(JSON.stringify({method:'initialized'})+'\n');
-    const started=await call('thread/start',{model:'context-fixture',cwd:temp,ephemeral:true,approvalPolicy:'never',sandbox:'read-only',baseInstructions:'Reply OK. Never call tools.',developerInstructions:'Local synthetic accounting test.'});
+    const started=await call('thread/start',{model:'context-fixture',cwd:temp,ephemeral:!resumeBetweenTurns,approvalPolicy:'never',sandbox:'read-only',baseInstructions:'Reply OK. Never call tools.',developerInstructions:'Local synthetic accounting test.'});
     const turnCount=expectedFixed?3:2;
     for(let n=0;n<turnCount;n++){
       const t=await call('turn/start',{threadId:started.thread.id,input:[{type:'text',text:`Synthetic user turn ${n}.`}],effort:'low'});
       await until(()=>completed.has(t.turn.id));
+      if(resumeBetweenTurns&&n===0){
+        await call('thread/unsubscribe',{threadId:started.thread.id});
+        await call('thread/resume',{threadId:started.thread.id,excludeTurns:true});
+      }
     }
     await until(()=>stderr.includes('post sampling token usage'));
     const clean=stderr.replace(/\x1b\[[0-9;]*m/g,'');
@@ -84,7 +89,7 @@ async function runCase(headerIncluded,threshold=80000){
   }
 }
 
-const report={runtime:spawnSync(binary,['--version'],{encoding:'utf8'}).stdout.trim(),mode:'controlled-loopback-sse',expectedFixed,cases:[]};
+const report={runtime:spawnSync(binary,['--version'],{encoding:'utf8'}).stdout.trim(),mode:'controlled-loopback-sse',expectedFixed,resumeBetweenTurns,cases:[]};
 for(const threshold of [80000,11000])for(const included of [false,true])report.cases.push(await runCase(included,threshold));
 fs.mkdirSync(path.join(repo,'build'),{recursive:true});
 fs.writeFileSync(path.join(repo,'build/compaction-accounting-probe.json'),JSON.stringify(report,null,2)+'\n');

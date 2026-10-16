@@ -24,6 +24,8 @@ node scripts/install-patched-runtime.mjs build/patched-runtime
 
 也可以在本私有仓库运行 `patched-runtime` GitHub Actions 工作流，下载它生成的 macOS artifact 后安装。下载 artifact 后须恢复 `codex` 文件的执行权限（`chmod +x`）。工作流编译固定版本的上游源码，并执行本机模拟计数测试及桥接兼容性测试；不使用账户凭据，也不调用远程模型。它不自动发布、安装或启用修复。常规安装／重新安装保留用户的开关选择。
 
+安装时会从同版本的现有桌面 App 复制代码执行宿主、搜索、语音／shell 等辅助文件到独立目录，并校验文件。保留原生 `bin`、`codex-path`、`codex-resources` 布局，避免移动核心程序后找不到工具；无需再次下载这些辅助文件。
+
 修复包保存在 `~/Library/Application Support/CodexContextControl/runtimes/`，开关保存在同目录的 `runtime-fix.json`。文件签名、SHA-256、源码版本和补丁标识在安装时校验；运行时选择会再次校验文件并检查宿主 Codex 版本。
 
 ## 软件形态
