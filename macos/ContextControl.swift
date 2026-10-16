@@ -245,8 +245,8 @@ struct BudgetRangeSlider:View {
     @FocusState private var focused:Bool
     @State private var active=NSApplication.shared.isActive
     @State private var dragging:BudgetThumb?
-    private var diameter:CGFloat {compactStyle ? 16:32}
-    private var trackHeight:CGFloat {compactStyle ? 8:26}
+    private var diameter:CGFloat {compactStyle ? 22:32}
+    private var trackHeight:CGFloat {compactStyle ? 16:26}
     var body:some View {
         GeometryReader {geometry in
             let travel=max(1,geometry.size.width-diameter)
@@ -258,14 +258,14 @@ struct BudgetRangeSlider:View {
                     Rectangle().fill(PanelStyle.blue).frame(width:compactX)
                     Rectangle().fill(PanelStyle.headroom.opacity(0.8)).frame(width:max(0,windowX-compactX)).offset(x:compactX)
                     HStack {ForEach(0..<5){_ in Circle().fill(.white.opacity(0.18)).frame(width:3,height:3).frame(maxWidth:.infinity)}}.padding(.horizontal,diameter/2)
-                    if !compactStyle {BudgetFlowParticles(intensity:compact/Double(max(1,maximumWindow)),paused:reduceMotion || !active || !enabled,reducedMotion:reduceMotion)
-                        .frame(width:compactX).clipped()}
+                    BudgetFlowParticles(intensity:compact/Double(max(1,maximumWindow)),paused:reduceMotion || (!compactStyle && !active) || !enabled,reducedMotion:reduceMotion)
+                        .frame(width:compactX).clipped()
                 }.frame(height:trackHeight).clipShape(Capsule())
                     .overlay(Capsule().strokeBorder(LinearGradient(colors:[.white.opacity(0.17),.white.opacity(0.035)],startPoint:.top,endPoint:.bottom),lineWidth:1).frame(height:trackHeight))
                 thumb(.compact).offset(x:compactX-diameter/2).zIndex(selection == .compact ? 2:1)
                 thumb(.window).offset(x:windowX-diameter/2).zIndex(selection == .window ? 2:1)
             }
-            .frame(height:compactStyle ? 20:34).frame(maxHeight:.infinity).contentShape(Rectangle())
+            .frame(height:compactStyle ? 24:34).frame(maxHeight:.infinity).contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance:0).onChanged {event in
                 guard enabled else{return}
                 if dragging==nil {
@@ -283,7 +283,7 @@ struct BudgetRangeSlider:View {
             .animation(reduceMotion || dragging != nil ? nil:.easeOut(duration:0.18),value:window)
             .animation(reduceMotion || dragging != nil ? nil:.easeOut(duration:0.18),value:compact)
         }
-        .frame(height:compactStyle ? 24:46).opacity(enabled ? 1:0.4)
+        .frame(height:compactStyle ? 28:46).opacity(enabled ? 1:0.4)
         .focusable(enabled).focusEffectDisabled().focused($focused)
         .onKeyPress(.leftArrow){guard enabled else{return .ignored};adjust(-1);return .handled}
         .onKeyPress(.rightArrow){guard enabled else{return .ignored};adjust(1);return .handled}
