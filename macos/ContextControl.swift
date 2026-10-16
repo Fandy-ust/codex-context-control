@@ -263,6 +263,7 @@ enum BudgetThumb {case compact,window}
     let maximumWindow:Int
     let maximumCompact:Int
     var compactStyle=false
+    var windowOnly=false
     var onEditingChanged:(Bool)->Void={_ in}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var enabled
@@ -277,17 +278,18 @@ enum BudgetThumb {case compact,window}
             let travel=max(1,geometry.size.width-diameter)
             let windowX=diameter/2+travel*max(0,min(1,window/Double(max(1,maximumWindow))))
             let compactX=diameter/2+travel*max(0,min(1,compact/Double(max(1,maximumWindow))))
+            let fillX=windowOnly ? windowX:compactX
             ZStack(alignment:.leading){
                 ZStack(alignment:.leading){
                     Rectangle().fill(.white.opacity(0.10))
-                    if maximumWindow==920 && Int(window)==920 {MaxContextFlow(vivid:true).frame(width:compactX)}else{Rectangle().fill(PanelStyle.blue).frame(width:compactX)}
-                    Rectangle().fill(PanelStyle.headroom.opacity(0.8)).frame(width:max(0,windowX-compactX)).offset(x:compactX)
+                    if maximumWindow==920 && Int(window)==920 {MaxContextFlow(vivid:true).frame(width:fillX)}else{Rectangle().fill(PanelStyle.blue).frame(width:fillX)}
+                    if !windowOnly{Rectangle().fill(PanelStyle.headroom.opacity(0.8)).frame(width:max(0,windowX-compactX)).offset(x:compactX)}
                     HStack {ForEach(0..<5){_ in Circle().fill(.white.opacity(0.18)).frame(width:3,height:3).frame(maxWidth:.infinity)}}.padding(.horizontal,diameter/2)
-                    if !(maximumWindow==920 && Int(window)==920) {BudgetFlowParticles(intensity:compact/Double(max(1,maximumWindow)),paused:reduceMotion || (!compactStyle && !active) || !enabled,reducedMotion:reduceMotion)
-                        .frame(width:compactX).clipped()}
+                    if !(maximumWindow==920 && Int(window)==920) {BudgetFlowParticles(intensity:(windowOnly ? window:compact)/Double(max(1,maximumWindow)),paused:reduceMotion || (!compactStyle && !active) || !enabled,reducedMotion:reduceMotion)
+                        .frame(width:fillX).clipped()}
                 }.frame(height:trackHeight).clipShape(Capsule())
                     .overlay(Capsule().strokeBorder(LinearGradient(colors:[.white.opacity(0.17),.white.opacity(0.035)],startPoint:.top,endPoint:.bottom),lineWidth:1).frame(height:trackHeight))
-                thumb(.compact).offset(x:compactX-diameter/2).zIndex(selection == .compact ? 2:1)
+                if !windowOnly{thumb(.compact).offset(x:compactX-diameter/2).zIndex(selection == .compact ? 2:1)}
                 thumb(.window).offset(x:windowX-diameter/2).zIndex(selection == .window ? 2:1)
             }
             .frame(height:compactStyle ? 24:34).frame(maxHeight:.infinity).contentShape(Rectangle())
@@ -298,7 +300,8 @@ enum BudgetThumb {case compact,window}
                     // In tight ranges, choosing the numeric heading first also
                     // lets the user select a handle whose hit areas overlap.
                     let left=abs(event.startLocation.x-compactX),right=abs(event.startLocation.x-windowX)
-                    if compactStyle && abs(compactX-windowX)<diameter {
+                    if windowOnly{dragging = .window}
+                    else if compactStyle && abs(compactX-windowX)<diameter {
                         dragging=event.startLocation.x<(compactX+windowX)/2 ? .compact:.window
                     }else{dragging=abs(left-right)<3 ? selection:(left<right ? .compact:.window)}
                     selection=dragging!;focused=true
@@ -322,7 +325,7 @@ enum BudgetThumb {case compact,window}
         .onChange(of:selection){_,_ in if enabled{focused=true}}
         .accessibilityRepresentation {
             HStack {
-                Slider(value:$compact,in:1...Double(max(2,maximumCompact)),step:1).accessibilityLabel("压缩触发点").accessibilityValue("\(Int(compact))K").disabled(!enabled || maximumCompact<=1)
+                if !windowOnly{Slider(value:$compact,in:1...Double(max(2,maximumCompact)),step:1).accessibilityLabel("压缩触发点").accessibilityValue("\(Int(compact))K").disabled(!enabled || maximumCompact<=1)}
                 Slider(value:$window,in:2...Double(max(3,maximumWindow)),step:1).accessibilityLabel("上下文窗口上限").accessibilityValue("\(Int(window))K").disabled(!enabled || maximumWindow<=2)
             }
         }
@@ -331,7 +334,7 @@ enum BudgetThumb {case compact,window}
         .onAppear{active=NSApplication.shared.isActive}.onDisappear{active=false;dragUpdates.cancel()}
     }
     private func setDragValue(_ value:Double,target:BudgetThumb){
-        if target == .compact{compact=max(1,min(Double(maximumCompact),value))}
+        if !windowOnly && target == .compact{compact=max(1,min(Double(maximumCompact),value))}
         else{window=max(2,min(Double(maximumWindow),value))}
     }
     private func thumb(_ target:BudgetThumb)->some View {
@@ -343,7 +346,7 @@ enum BudgetThumb {case compact,window}
             .scaleEffect(dragging==target ? 1.07:1)
     }
     private func adjust(_ delta:Double){
-        if selection == .compact{compact=max(1,min(Double(maximumCompact),compact+delta))}
+        if !windowOnly && selection == .compact{compact=max(1,min(Double(maximumCompact),compact+delta))}
         else{window=max(2,min(Double(maximumWindow),window+delta))}
     }
 }

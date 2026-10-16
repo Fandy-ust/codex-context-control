@@ -185,15 +185,14 @@ private struct MenuRowFrames:PreferenceKey {
             HStack(spacing:8){
                 if let feedback {Text(feedback).font(.system(size:10)).foregroundStyle(failed ? .orange:.secondary).lineLimit(1).help(feedback).allowsHitTesting(false)}
                 else {
-                    Text("压缩 \(Int(value.compactK))K").foregroundStyle(.blue).allowsHitTesting(false)
-                    Text(value.maximumWindowK==920 && Int(value.windowK)==920 ? "MAX · 920K" : "窗口 \(Int(value.windowK))K").allowsHitTesting(false)
+                    Text(Int(value.windowK)==value.maximumWindowK ? "MAX" : "上下文 \(Int(value.windowK))K").allowsHitTesting(false)
                 }
                 Spacer(minLength:2)
                 if saving{ProgressView().controlSize(.mini).frame(width:28)}
                 else{Button{Task{await apply()}}label:{Text("应用").font(.system(size:11,weight:.semibold)).foregroundStyle(.white).frame(width:42,height:22).background(Color.accentColor.opacity(value.changed && serviceAvailable ? 1:0.35),in:RoundedRectangle(cornerRadius:5)).contentShape(Rectangle())}.foregroundStyle(.blue).disabled(!value.changed || !serviceAvailable)}
                 Button{cancel()}label:{Image(systemName:"xmark").frame(width:20,height:20).contentShape(Rectangle())}.disabled(saving).help("取消未提交的修改")
             }.buttonStyle(.plain).font(.system(size:11,weight:.medium)).monospacedDigit().frame(height:20)
-            BudgetRangeSlider(window:Binding(get:{draft?.windowK ?? value.windowK},set:{if draft?.windowK != $0{draft?.setWindow($0);feedback=nil}}),compact:Binding(get:{draft?.compactK ?? value.compactK},set:{if draft?.compactK != $0{draft?.setCompact($0);feedback=nil}}),selection:$selection,maximumWindow:value.maximumWindowK,maximumCompact:value.maximumCompactK,compactStyle:true,onEditingChanged:{active in dragging=active;dragChanged(active)})
+            BudgetRangeSlider(window:Binding(get:{draft?.windowK ?? value.windowK},set:{if draft?.windowK != $0{draft?.setWindow($0);feedback=nil}}),compact:.constant(value.compactK),selection:$selection,maximumWindow:value.maximumWindowK,maximumCompact:value.maximumCompactK,compactStyle:true,windowOnly:true,onEditingChanged:{active in dragging=active;dragChanged(active)})
                 .disabled(saving || !serviceAvailable)
         }.padding(.horizontal,10).help(feedback ?? chat.title)
     }
