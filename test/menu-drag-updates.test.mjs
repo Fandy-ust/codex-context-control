@@ -16,10 +16,10 @@ import Foundation
  static func main() async throws {
   var now=0.0,values:[Int]=[]
   let updates=MenuDragUpdates(clock:{now})
-  for n in 0..<100{updates.submit{values.append(n)}}
+  for n in 0..<10000{updates.submit{values.append(n)}}
   precondition(values==[0])
   try await Task.sleep(for:.milliseconds(60))
-  precondition(values==[0,99])
+  precondition(values==[0,9999])
   now=1;updates.submit{values.append(100)}
   now=1.001;updates.submit{values.append(101)}
   updates.finish{values.append(102)}

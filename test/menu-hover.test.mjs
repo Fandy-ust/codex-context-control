@@ -7,6 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 test('native menu switches all five hover editors, resets drafts and locks only during drag',{skip:process.platform!=='darwin',timeout:90000},()=>{
+ const rounds=Math.min(30,Math.max(1,Number(process.env.CONTEXT_CONTROL_STRESS_UI_ROUNDS)||6));
  const root=fileURLToPath(new URL('../',import.meta.url));
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-menu-hover-'));
  try {
@@ -60,7 +61,7 @@ import AppKit
    func settle() async {try? await Task.sleep(for:.milliseconds(25))}
    try? await Task.sleep(for:.milliseconds(250))
    precondition(HoverProbe.frames.count==5 && HoverProbe.move != nil)
-   for _ in 0..<6 {
+   for _ in 0..<${rounds} {
     for id in ids+ids.reversed(){
      HoverProbe.enter(id);await settle();HoverProbe.check(id)
      precondition(HoverProbe.values[id]?()==720)
@@ -85,7 +86,17 @@ import AppKit
    model.chats[0]=try! JSONDecoder().decode(Chat.self,from:Data(json.utf8))
    await settle();HoverProbe.check("a")
    precondition(model.chats.allSatisfy{$0.policy?.window==757895})
-   print("Five-row sweeps, rapid crossing, draft reset, drag lock and late metadata passed")
+   // Untouched drafts track new saved budgets; manual edits survive until bounds change.
+   raw=try! JSONSerialization.jsonObject(with:Data(json.utf8)) as! [String:Any]
+   var budget=raw["policy"] as! [String:Any];budget["window"]=736843;budget["revision"]=4;raw["policy"]=budget
+   model.chats[0]=try! JSONDecoder().decode(Chat.self,from:JSONSerialization.data(withJSONObject:raw));await settle()
+   precondition(HoverProbe.values["a"]?()==700,"Untouched draft must follow restored budget")
+   HoverProbe.edits["a"]?(600);await settle();budget["window"]=757895;budget["revision"]=5;raw["policy"]=budget
+   model.chats[0]=try! JSONDecoder().decode(Chat.self,from:JSONSerialization.data(withJSONObject:raw));await settle();precondition(HoverProbe.values["a"]?()==600)
+   raw["modelMetadata"]=["max_context_window":1022223,"effective_context_window_percent":90,"context_ceiling":920000,"context_catalog_ready":true]
+   budget["window"]=1022223;budget["compact"]=904000;raw["policy"]=budget
+   model.chats[0]=try! JSONDecoder().decode(Chat.self,from:JSONSerialization.data(withJSONObject:raw));await settle();precondition(HoverProbe.values["a"]?()==920,"Mode changes must replace stale bounds and draft")
+   print("${rounds*10} row visits, draft edits/exits, rapid crossing, drag lock, late metadata and budget restoration passed")
    app.terminate(nil)
   };app.run()
  }
@@ -95,7 +106,7 @@ import AppKit
   const binary=path.join(temp,'probe');
   const build=spawnSync('xcrun',['swiftc','-parse-as-library','-target',`${process.arch==='arm64'?'arm64':'x86_64'}-apple-macos14.0`,...sources,path.join(temp,'Control.swift'),path.join(temp,'Menu.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:65000});
   assert.equal(build.status,0,build.stderr);
-  const run=spawnSync(binary,[],{encoding:'utf8',timeout:15000});
+  const run=spawnSync(binary,[],{encoding:'utf8',timeout:Math.max(15000,rounds*1000+5000)});
   assert.equal(run.status,0,run.stderr);
  }finally{fs.rmSync(temp,{recursive:true,force:true});}
 });

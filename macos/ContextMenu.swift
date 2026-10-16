@@ -162,7 +162,8 @@ private struct MenuRowFrames:PreferenceKey {
             .background(.primary.opacity(isEditing || draft != nil ? 0.06:0),in:RoundedRectangle(cornerRadius:5))
             .onChange(of:isEditing,initial:true){_,active in if active{begin()}else{finishIfOutside()}}
             .onChange(of:serviceAvailable){_,_ in if isEditing{begin()}}
-            .onChange(of:chat.modelMetadata){_,_ in if isEditing{begin()}}
+            .onChange(of:chat.modelMetadata){_,_ in cancel();if isEditing{begin()}}
+            .onChange(of:chat.policy){_,_ in if isEditing && !dragging && !saving && draft?.edited != true{draft=try? MenuBudgetDraft(chat:chat)}}
             .onChange(of:saving){_,busy in if !busy && isEditing{begin()}}
             .accessibilityAction(named:"调节预算"){begin()}
             .onDisappear{if dragging{dragChanged(false)}}
@@ -185,7 +186,7 @@ private struct MenuRowFrames:PreferenceKey {
             HStack(spacing:8){
                 if let feedback {Text(feedback).font(.system(size:10)).foregroundStyle(failed ? .orange:.secondary).lineLimit(1).help(feedback).allowsHitTesting(false)}
                 else {
-                    Text(Int(value.windowK)==value.maximumWindowK ? "MAX" : "上下文 \(Int(value.windowK))K").allowsHitTesting(false)
+                    if let actual=chat.observedWindow,actual/1000 != Int(value.windowK){Text("目标 \(Int(value.windowK))K · \(stale ? "上次":"实际") \(actual/1000)K").allowsHitTesting(false)}else{Text(Int(value.windowK)==value.maximumWindowK ? "MAX" : "上下文 \(Int(value.windowK))K").allowsHitTesting(false)}
                 }
                 Spacer(minLength:2)
                 if saving{ProgressView().controlSize(.mini).frame(width:28)}

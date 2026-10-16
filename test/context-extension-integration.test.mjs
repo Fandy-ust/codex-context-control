@@ -18,6 +18,7 @@ test('real runtime toggles between extended and native limits; defaults and fork
  async function toggle(enabled){const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json')));const r=await fetch(`http://127.0.0.1:${c.port}/context-extension`,{method:'POST',headers:{authorization:`Bearer ${c.token}`},body:JSON.stringify({enabled})});assert.equal(r.status,200);return r.json();}
  try{
   session=await start();const a=(await session.call('thread/start',{model:'context-fixture',cwd:temp,approvalPolicy:'never',sandbox:'read-only'})).thread.id;assert.equal(await session.turn(a),920000);
+  const edited=(await session.call('thread/start',{model:'context-fixture',cwd:temp,approvalPolicy:'never',sandbox:'read-only'})).thread.id;assert.equal(await session.turn(edited),920000);
   assert.equal((await request('state')).contextExtension.effective,true);
   const count=fixture.requests.length;const off=await toggle(false);assert.equal(off.enabled,false);assert.equal(off.effective,false);assert.equal(off.pending,true);assert.equal(fixture.requests.length,count);
   let state=await request('state'),row=state.threads.find(t=>t.id===a);assert.equal(row.modelMetadata.max_context_window,872000);assert.equal(row.modelMetadata.effective_context_window_percent,95);assert.equal(row.modelMetadata.context_catalog_ready,false);assert.equal(state.newChatDefaultsLimits.maximumUsableWindow,828000);assert.equal(state.newChatDefaults.usableWindow,828000);
@@ -27,9 +28,11 @@ test('real runtime toggles between extended and native limits; defaults and fork
   const fork=(await session.call('thread/fork',{threadId:a,excludeTurns:true})).thread.id;assert.equal(await session.turn(fork),828400);
   const b=(await session.call('thread/start',{model:'context-fixture',cwd:temp,approvalPolicy:'never',sandbox:'read-only'})).thread.id;assert.equal(await session.turn(b),828000);
   state=await request('state');row=state.threads.find(t=>t.id===b);assert.equal(row.modelMetadata.context_catalog_ready,true);assert.equal(row.policy.effectivePercent,95);assert.equal(row.policy.contextCeilingVersion,undefined);
-  await toggle(true);assert.equal((await request('state')).contextExtension.pending,true);await session.close();
+  await session.call('thread/resume',{threadId:edited,excludeTurns:true});await session.turn(edited);
+  await request('setPolicy',{id:edited,policy:{window:526316,compact:450000,reserve:16000},apply:true});await until(async()=>(await request('state')).threads.find(t=>t.id===edited).expectedWindow===500000);assert.equal(await session.turn(edited),500000);
+  await toggle(true);state=await request('state');assert.equal(state.contextExtension.pending,true);assert.equal(state.newChatDefaults.usableWindow,920000);assert.equal(Math.floor(state.threads.find(t=>t.id===a).policy.window*.9),920000);assert.equal(Math.floor(state.threads.find(t=>t.id===edited).policy.window*.9),500000);await session.close();
   state=await request('state');assert.equal(state.contextExtension.effective,false);assert.match(state.contextExtension.message,/等待 Codex 启动/);
-  session=await start();await request('setNewChatDefaults',{usableWindow:920000,compact:904000,expectedRevision:(await request('state')).newChatDefaults.revision});
+  session=await start();await session.call('thread/resume',{threadId:a,excludeTurns:true});assert.equal(await session.turn(a),920000);await session.call('thread/resume',{threadId:edited,excludeTurns:true});assert.equal(await session.turn(edited),500000);await request('setNewChatDefaults',{usableWindow:920000,compact:904000,expectedRevision:(await request('state')).newChatDefaults.revision});
   const c=(await session.call('thread/start',{model:'context-fixture',cwd:temp,approvalPolicy:'never',sandbox:'read-only'})).thread.id;assert.equal(await session.turn(c),920000);state=await request('state');assert.equal(state.contextExtension.effective,true);assert.equal(state.runtimeFix.enabled,false);
  }finally{if(session)await session.close().catch(()=>{});try{const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json')));process.kill(c.pid,'SIGTERM');}catch{}fixture.server.closeAllConnections();await new Promise(r=>fixture.server.close(r));await sleep(150);fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
 });

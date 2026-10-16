@@ -12,7 +12,7 @@ const stickyFields=['model','effort','summary','serviceTier','cwd','sandboxPolic
 const pick=(value,keys)=>Object.fromEntries(keys.filter(k=>Object.hasOwn(value,k)).map(k=>[k,value[k]]));
 const key=id=>JSON.stringify(id);
 let inputEncoder;
-function incomingTokens(input=[]){inputEncoder??=getEncoding('o200k_base');return input.reduce((n,item)=>n+(item.type==='text'?inputEncoder.encode(item.text??'').length:16000),0);}
+function incomingTokens(input=[]){if(!Array.isArray(input)||input.some(item=>!item||typeof item!=='object'||typeof item.type!=='string'||(item.type==='text'&&typeof item.text!=='string')))return null;inputEncoder??=getEncoding('o200k_base');return input.reduce((n,item)=>n+(item.type==='text'?inputEncoder.encode(item.text??'').length:16000),0);}
 
 export class Bridge {
   constructor(child,input,output,publish=async()=>({}),resolveFork=async()=>null,options={}) {
@@ -26,6 +26,7 @@ export class Bridge {
   writeFrontend(line){if(!this.output.write(line+'\n')){this.child.stdout.pause();this.output.once('drain',()=>this.child.stdout.resume());}}
   fromClient(line,preparedFork=null,guarded=false) {
     let m;try{m=JSON.parse(line);}catch{this.writeBackend(line);return;}
+    if(!m||typeof m!=='object'||Array.isArray(m)){this.writeBackend(line);return;}
     if(this.resolveNewChatBudget&&m.method==='thread/start'&&m.id!=null&&isNewUserChat(m.params)&&!preparedFork?.newChat){this.prepareNewChat(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if((this.contextCeiling||this.nativeBudgetSupport)&&m.method==='thread/resume'&&m.id!=null&&m.params?.threadId&&!m.params?.path&&!m.params?.ephemeral&&!preparedFork?.resume){this.prepareResume(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if(this.contextCeiling&&['thread/start','thread/resume'].includes(m.method)&&!m.params?.ephemeral){m.params={...m.params,config:ceilingConfig(m.params?.config)};line=JSON.stringify(m);}
@@ -43,8 +44,8 @@ export class Bridge {
       const cap=Math.min(record.expectedWindow??record.observedWindow??MAX_CONTEXT_INPUT,MAX_CONTEXT_INPUT),reserve=Math.max(record.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);
       const incoming=incomingTokens(m.params.input),used=record.lastUsage?.totalTokens??0;
       const threshold=Math.min(record.policy?.compact??MAX_CONTEXT_COMPACT,MAX_CONTEXT_COMPACT,cap-reserve);
-      if(incoming+reserve>=cap){this.rejectTurn(m,'新输入本身已接近上下文上限，请拆分输入。');return;}
-      if(used+incoming+reserve>=Math.min(cap,threshold+reserve)){
+      if(incoming!=null&&incoming+reserve>=cap){this.rejectTurn(m,'新输入本身已接近上下文上限，请拆分输入。');return;}
+      if(incoming!=null&&used+incoming+reserve>=Math.min(cap,threshold+reserve)){
         if(record.status!=='idle'){this.rejectTurn(m,'上下文已接近上限；请等待当前轮次结束并压缩后再追加输入。');return;}
         this.guardTurn(record,m,line,incoming,reserve,cap).catch(()=>{});return;
       }
@@ -101,6 +102,7 @@ export class Bridge {
   }
   fromServer(line) {
     let m;try{m=JSON.parse(line);}catch{this.writeFrontend(line);return;}
+    if(!m||typeof m!=='object'||Array.isArray(m)){this.writeFrontend(line);return;}
     if(!m.method&&this.internal.has(key(m.id))){const item=this.internal.get(key(m.id));this.internal.delete(key(m.id));clearTimeout(item.timer);m.error?item.reject(new Error(m.error.message)):item.resolve(m.result);return;}
     if(!m.method&&m.id!=null){
       const pending=this.external.get(key(m.id));this.external.delete(key(m.id));

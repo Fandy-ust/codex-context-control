@@ -1,5 +1,12 @@
 # Changes
 
+## 0.14.1 — 2026-10-16
+
+- Fix extension off/on permanently shrinking 920K budgets to 828.4K. Restore pre-disable values unless explicitly edited while native mode was active.
+- Refresh untouched menu drafts after restored policies arrive; distinguish draft targets from actual/last observed windows.
+- Preserve legacy native-budget percentages on first extension activation and tolerate malformed RPC/input shapes without crashing the bridge.
+- Add offline load, mode-fuzz, backpressure, recovery, native UI and chart interaction stress coverage.
+
 ## 0.14.0 — 2026-10-16
 
 - Add an independent context-extension toggle with off, waiting-for-Codex, pending-restart and active states, plus in-app explanation and repository documentation.

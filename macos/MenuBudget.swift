@@ -34,7 +34,8 @@ struct MenuBudgetDraft {
     }
     var maximumWindowK:Int {maximumRawWindow*effectivePercent/100/1000}
     var maximumCompactK:Int {min(safeCompactLimitK,(try? BudgetMath.maximumSliderCompactK(windowK:Int(windowK),effectivePercent:effectivePercent,maximumRawWindow:maximumRawWindow)) ?? 1)}
-    var changed:Bool {Int(windowK) != originalWindow || Int(compactK) != originalCompact || !wasEnabled}
+    var edited:Bool {Int(windowK) != originalWindow || Int(compactK) != originalCompact}
+    var changed:Bool {edited || !wasEnabled}
     mutating func setWindow(_ value:Double){
         windowK=max(2,min(Double(maximumWindowK),value.rounded()))
         compactK=Double(BudgetMath.linkedSliderCompactK(windowK:Int(windowK),ratioNumerator:ratioNumerator,ratioDenominator:ratioDenominator,maximumK:maximumCompactK))

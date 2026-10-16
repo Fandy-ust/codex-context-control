@@ -14,7 +14,7 @@ export const MAX_CONTEXT_COMPACT=MAX_CONTEXT_INPUT-MIN_CONTEXT_RESERVE;
 export function ceilingModel(model){
  if(!model)return null;
  const oldPercent=model.effective_context_window_percent??95;
- return {...model,context_window:Math.min(CEILING_RAW_WINDOW,Math.ceil((model.context_window??model.max_context_window??272000)*oldPercent/CEILING_PERCENT)),max_context_window:CEILING_RAW_WINDOW,effective_context_window_percent:CEILING_PERCENT,context_ceiling:MAX_CONTEXT_INPUT,context_compact_ceiling:MAX_CONTEXT_COMPACT};
+ return {...model,context_window:Math.min(CEILING_RAW_WINDOW,Math.ceil((model.context_window??model.max_context_window??272000)*oldPercent/CEILING_PERCENT)),max_context_window:CEILING_RAW_WINDOW,effective_context_window_percent:CEILING_PERCENT,native_effective_context_window_percent:model.native_effective_context_window_percent??oldPercent,context_ceiling:MAX_CONTEXT_INPUT,context_compact_ceiling:MAX_CONTEXT_COMPACT};
 }
 export function contextExtensionEnabled(control){try{return JSON.parse(fs.readFileSync(path.join(control,'context-extension.json'))).enabled===true;}catch{return false;}}
 export function prepareContextCatalog({home=process.env.CONTEXT_CONTROL_CODEX_HOME||process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),control=process.env.CONTEXT_CONTROL_HOME||path.join(os.homedir(),'Library/Application Support/CodexContextControl'),enabled=process.env.CONTEXT_CONTROL_CONTEXT_CEILING==='1'||(process.env.CONTEXT_CONTROL_CONTEXT_CEILING!=='0'&&!process.env.CONTEXT_CONTROL_CATALOG_PATH&&contextExtensionEnabled(control))}={}){
@@ -22,7 +22,7 @@ export function prepareContextCatalog({home=process.env.CONTEXT_CONTROL_CODEX_HO
  const source=process.env.CONTEXT_CONTROL_CATALOG_PATH||path.join(home,'models_cache.json');
  try{
   const data=JSON.parse(fs.readFileSync(source));if(!Array.isArray(data.models)||!data.models.length)return null;
-  const models=data.models.map(model=>{const extended=ceilingModel(model);delete extended.context_ceiling;delete extended.context_compact_ceiling;return extended;});
+  const models=data.models.map(model=>{const extended=ceilingModel(model);delete extended.context_ceiling;delete extended.context_compact_ceiling;delete extended.native_effective_context_window_percent;return extended;});
   const catalog={models},hash=crypto.createHash('sha256').update(JSON.stringify(catalog)).digest('hex').slice(0,20);
   const file=path.join(control,'catalogs',`context-920k-${hash}.json`);
   if(!fs.existsSync(file))atomicJSON(file,catalog);
@@ -64,7 +64,7 @@ export function policyForModel(policy,model,{revise=true}={}){
  if(!policy||!model)return policy;
  const percent=model.effective_context_window_percent,maximum=model.max_context_window;
  if(!Number.isInteger(percent)||percent<1||!Number.isSafeInteger(maximum))return policy;
- const previousPercent=policy.effectivePercent??(policy.contextCeilingVersion?CEILING_PERCENT:percent);
+ const previousPercent=policy.effectivePercent??(policy.contextCeilingVersion?CEILING_PERCENT:model.native_effective_context_window_percent??percent);
  const usable=Math.min(Math.floor(policy.window*previousPercent/100),Math.floor(maximum*percent/100));
  const window=Math.min(maximum,Math.ceil(usable*100/percent));
  const compact=Math.min(policy.compact,Math.floor(window*.9),model.context_ceiling?MAX_CONTEXT_INPUT-Math.max(policy.reserve??16000,16000):Number.MAX_SAFE_INTEGER);

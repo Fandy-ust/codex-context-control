@@ -13,12 +13,12 @@ import SwiftUI
             try? await Task.sleep(for:.seconds(1))
             let before=ChartInteractionProbe.chartBuilds
             let positions=stats.responses.suffix(100).map(\.position)
-            for position in positions{ChartInteractionProbe.hover(position);try? await Task.sleep(for:.milliseconds(2))}
+            for _ in 0..<5{for position in positions{ChartInteractionProbe.hover(position);try? await Task.sleep(for:.milliseconds(2))}}
             if let first=stats.responses.first {ChartInteractionProbe.pin(first.id);precondition(ChartInteractionProbe.selectedID==first.id)}
             try? await Task.sleep(for:.milliseconds(100))
             let after=ChartInteractionProbe.chartBuilds
             precondition(before>0&&after==before,"Hover rebuilt the chart body: \(before) -> \(after)")
-            print("\(positions.count) hover selections and pin passed; chart body builds stayed at \(after).")
+            print("\(positions.count*5) hover selections and pin passed; chart body builds stayed at \(after).")
             app.terminate(nil)
         }
         app.run()

@@ -11,6 +11,7 @@ import {savedBudget} from './budget.mjs';
 import {ensureMenuBarEntry} from './menu-bar.mjs';
 import {reconcileWindowConfirmation} from './confirmation.mjs';
 import {inheritedForkPolicy} from './fork-budget.mjs';
+import {transitionExtensionBudgets} from './extension-transition.mjs';
 import {createContextExtensionManager} from './context-extension.mjs';
 import {createRuntimeFixManager} from './runtime-fix.mjs';
 import {ceilingModel,policyForModel,CONTEXT_CEILING_VERSION} from './context-ceiling.mjs';
@@ -48,31 +49,33 @@ export async function startDaemon() {
   function extensionState(fix=runtimeFix.status()){return extension.status([...bridges.values()],{compatible:fix.originalVersion==='0.160.0',available:!!nativeDefaultModel()});}
   function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:'extension_pending',message:(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
   function newChatDefaults(){return clampNewChatDefaults(store.data.newChatDefaults||(extension.enabled()?initialNewChatDefaults:nativeNewChatDefaults),defaultModel());}
-  function state(){const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version:'0.14.0',bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function state(){const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version:'0.14.1',bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.14.0'};
+    if(op==='ping')return {ok:true,version:'0.14.1'};
     if(op==='state')return state();
     if(op==='newChatBudget'){const m=runtimeModel(null,p.model,p.contextCeiling??true);if(!m)throw Error('等待当前模型的原生窗口信息');return {policy:policyForNewChat(newChatDefaults(),m)};}
     if(op==='setNewChatDefaults'){
       const current=newChatDefaults();if(p.expectedRevision!=null&&p.expectedRevision!==current.revision)throw Error('全局默认已被修改，请重新打开设置后保存。');
-      store.data.newChatDefaults={...normalizeNewChatDefaults(p,defaultModel()),revision:current.revision+1,updatedAt:Date.now()};store.save();return newChatDefaults();
+      store.data.newChatDefaults={...normalizeNewChatDefaults(p,defaultModel()),revision:current.revision+1,updatedAt:Date.now()};if(!extension.enabled()&&store.data.extensionRestore)delete store.data.extensionRestore.defaults;store.save();return newChatDefaults();
     }
     if(op==='forkBudget'){const m=runtimeModel(p.id,p.model,p.contextCeiling);return {policy:policyForModel(store.data.policies[p.id],runtimeModel(p.id,null,p.contextCeiling)),model:m};}
     if(op==='setContextExtension'){
       if(typeof p.enabled!=='boolean')throw Error('开关值无效');
       const previous=extension.enabled(),status=extensionState();if(p.enabled&&(!status.available||!status.compatible))throw Error('当前模型目录或 Codex 版本不支持拓展');
-      const oldPolicies=structuredClone(store.data.policies),oldDefaults=store.data.newChatDefaults;const before=newChatDefaults();
+      if(previous===p.enabled){extension.setEnabled(p.enabled);return extensionState();}
+      const oldPolicies=structuredClone(store.data.policies),oldDefaults=store.data.newChatDefaults,oldRestore=store.data.extensionRestore;const before=newChatDefaults();
       try{extension.setEnabled(p.enabled);
-        for(const [id,policy] of Object.entries(store.data.policies)){const m=modelFor(id);if(m)store.data.policies[id]=policyForModel(policy,m);}
-        const next=clampNewChatDefaults(before,defaultModel());if(next.usableWindow!==before.usableWindow||next.compact!==before.compact)store.data.newChatDefaults={...next,revision:before.revision+1,updatedAt:Date.now()};
+        const next=transitionExtensionBudgets({policies:oldPolicies,defaults:before,restore:oldRestore},p.enabled,id=>modelFor(id),defaultModel());
+        store.data.policies=next.policies;store.data.newChatDefaults=next.defaults;
+        if(next.restore)store.data.extensionRestore=next.restore;else delete store.data.extensionRestore;
         store.save();
-      }catch(error){store.data.policies=oldPolicies;store.data.newChatDefaults=oldDefaults;extension.setEnabled(previous);throw error;}
+      }catch(error){store.data.policies=oldPolicies;store.data.newChatDefaults=oldDefaults;store.data.extensionRestore=oldRestore;extension.setEnabled(previous);throw error;}
       return extensionState();
     }
     if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
-      if(typeof p.id!=='string'||p.id.length>180)throw new Error('聊天 ID 无效');
+      if(typeof p.id!=='string'||p.id.length>180||['__proto__','constructor','prototype'].includes(p.id))throw new Error('聊天 ID 无效');
       b.ids.add(p.id);rebuildOwners();
       const allowed=['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId'];
       const clean=Object.fromEntries(allowed.filter(k=>Object.hasOwn(p,k)).map(k=>[k,p[k]]));
@@ -97,7 +100,7 @@ export async function startDaemon() {
       return preflight(t,policy,modelFor(p.id,t?.model));
     }
     if(op==='setPolicy') {
-      const t=store.data.threads[p.id];if(!t)throw new Error('未找到聊天');
+      const t=Object.hasOwn(store.data.threads,p.id)?store.data.threads[p.id]:null;if(!t)throw new Error('未找到聊天');
       const peers=owners.get(p.id)||[];if(peers.some(peer=>!bridgeReady(bridges.get(peer))))throw Error('当前 Codex 连接尚未加载修正后的模型目录，请完整退出并重新打开 Codex。');
       const policy=normalizePolicy(p.policy);const plan=preflight(t,policy,modelFor(t.id,t.model));
       if(['above_catalog_maximum','above_safe_compact','below_retained_floor','unsupported_thread'].includes(plan.code))throw new Error(plan.message);
@@ -106,6 +109,7 @@ export async function startDaemon() {
       const meta=modelFor(t.id,t.model);
       const saved={...policy,...(meta?{effectivePercent:meta.effective_context_window_percent}:{}),...(meta?.context_ceiling?{contextCeilingVersion:CONTEXT_CEILING_VERSION,effectivePercent:meta.effective_context_window_percent}:{}),revision:(previous?.revision||0)+1,enabled:p.apply!==false,updatedAt:Date.now()};
       store.data.policies[p.id]=saved;
+      if(!extension.enabled()&&store.data.extensionRestore?.policies)delete store.data.extensionRestore.policies[p.id];
       const candidates=owners.get(p.id)||[];
       Object.assign(t,{phase:p.apply===false?'saved':candidates.length===1?'queued':'waiting_bridge',message:p.apply===false?'已保存；尚未请求应用。':candidates.length>1?'多个运行时加载了此聊天，请先关闭其中一个。':'等待接入 Codex 的连接。'});
       store.save();
@@ -113,6 +117,8 @@ export async function startDaemon() {
       return {policy:saved,plan,thread:publicThread(p.id)};
     }
     if(op==='clearPolicy'){
+      if(!Object.hasOwn(store.data.threads,p.id))throw new Error('未找到聊天');
+      if(!extension.enabled()&&store.data.extensionRestore?.policies)delete store.data.extensionRestore.policies[p.id];
       const previous=store.data.policies[p.id];if(previous)store.data.policies[p.id]={...previous,enabled:false,revision:previous.revision+1};store.save();
       const candidates=owners.get(p.id)||[];for(const candidate of candidates)await candidate.call('clearPolicy',{id:p.id,revision:store.data.policies[p.id]?.revision});
       return {ok:true,message:'已停止后续自动应用；当前运行时窗口保持现值。'};
