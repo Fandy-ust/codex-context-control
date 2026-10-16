@@ -38,10 +38,11 @@ struct ServiceSettings: Decodable {let node:String}
     @Published private(set) var compactK=360.0
     private var ratioNumerator=90
     private var ratioDenominator=100
-    @Published var reserve="16K"
-    @Published var floor="0"
+    @Published var reserve="16K" {didSet{budgetEdited=true}}
+    @Published var floor="0" {didSet{budgetEdited=true}}
     @Published var working=false
     private var editingRevision=0
+    private var budgetEdited=false
     private var refreshing=false
     private var pendingMetadataID:String?
     var selected:Chat? {chats.first{$0.id==selectedID}}
@@ -68,10 +69,12 @@ struct ServiceSettings: Decodable {let node:String}
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount;runtimeFix=state.runtimeFix
             if selectedID==nil{selectedID=chats.first?.id;fill()}
             else if waitingForModel,let metadata=selected?.modelMetadata,metadata.effective_context_window_percent != nil,metadata.max_context_window != nil{fill()}
+            else if !budgetEdited,editingRevision != (selected?.policy?.revision ?? 0){fill()}
             if notice=="正在读取本地状态…"||notice.hasPrefix("读取失败："){notice=bridgeCount>0 ? "已接入 Codex。" : "照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。"}
         }catch{notice="读取失败：\(error.localizedDescription)"}
     }
     func fill(){
+        defer{budgetEdited=false}
         guard let chat=selected else{return};editingRevision=chat.policy?.revision ?? 0;pendingMetadataID=nil
         reserve=String(chat.policy?.reserve ?? 16000);floor=String(chat.policy?.retainedFloor ?? 0)
         guard let percent=chat.modelMetadata?.effective_context_window_percent,(1...100).contains(percent),chat.modelMetadata?.max_context_window != nil else{pendingMetadataID=chat.id;return}
@@ -99,10 +102,12 @@ struct ServiceSettings: Decodable {let node:String}
     var canEditBudget:Bool {!waitingForModel && (maximumUsableWindow ?? 0)>=2000}
     var compactPercent:Double {compactK/windowK*100}
     func setWindowK(_ value:Double){
+        budgetEdited=true
         windowK=max(2,min(Double(maximumWindowK),value.rounded()))
         compactK=Double(BudgetMath.linkedSliderCompactK(windowK:Int(windowK),ratioNumerator:ratioNumerator,ratioDenominator:ratioDenominator,maximumK:maximumCompactK))
     }
     func setCompactK(_ value:Double){
+        budgetEdited=true
         compactK=max(1,min(Double(maximumCompactK),value.rounded()))
         ratioNumerator=Int(compactK);ratioDenominator=Int(windowK)
     }
@@ -117,7 +122,7 @@ struct ServiceSettings: Decodable {let node:String}
             let data=try await api("/\(action)",body:body)
             let object=try JSONSerialization.jsonObject(with:data) as? [String:Any]
             if action=="preflight"{notice=(object?["message"] as? String ?? "预检完成")+((object?["notes"] as? [String])?.map{"\n"+$0}.joined() ?? "")}
-            else if action=="policy"{editingRevision=(object?["policy"] as? [String:Any])?["revision"] as? Int ?? editingRevision;notice="预算已保存。请查看下方应用状态；实际值将在正常下一轮请求后确认。"}
+            else if action=="policy"{editingRevision=(object?["policy"] as? [String:Any])?["revision"] as? Int ?? editingRevision;budgetEdited=false;notice="预算已保存。请查看下方应用状态；实际值将在正常下一轮请求后确认。"}
             else{notice=object?["message"] as? String ?? "操作已提交。"}
             await refresh()
         }catch{notice=error.localizedDescription}
@@ -327,10 +332,18 @@ struct ContentView: View {
     @State private var selectedThumb:BudgetThumb = .window
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        NavigationSplitView {
+        // Keep content below the native title bar; NavigationSplitView installs
+        // an automatic toolbar/sidebar chrome inside this AppKit-hosted window.
+        HSplitView {
             VStack(alignment:.leading,spacing:14){
-                Text("上下文").font(.system(size:19,weight:.semibold)).frame(maxWidth:.infinity,alignment:.leading)
-                Label(model.bridgeCount>0 ? "已连接 Codex":"等待连接",systemImage:model.bridgeCount>0 ? "circle.fill":"circle.dashed").font(.system(size:11)).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
+                HStack(spacing:7){
+                    Circle().fill(model.bridgeCount>0 ? Color.green:Color.gray).frame(width:7,height:7)
+                    Text("Codex").font(.system(size:11)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth:.infinity,alignment:.leading)
+                .accessibilityElement(children:.ignore)
+                .accessibilityLabel(model.bridgeCount>0 ? "已连接 Codex":"等待 Codex 连接")
+                .help(model.bridgeCount>0 ? "已连接 Codex":"等待 Codex 连接")
                 ScrollView {
                     LazyVStack(spacing:4){ForEach(model.chats){chat in
                         Button {model.selectedID=chat.id} label:{
@@ -343,8 +356,7 @@ struct ContentView: View {
                 }.frame(maxHeight:.infinity)
                 RuntimeFixControl(model:model)
                 Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
-            }.padding().frame(minWidth:235).background(PanelStyle.background)
-        } detail: {
+            }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
                     if let chat=model.selected {
@@ -377,6 +389,7 @@ struct ContentView: View {
             }.frame(minWidth:650).background(PanelStyle.background)
         }
         .frame(minWidth:960,minHeight:670)
+        .background(PanelStyle.background)
         .preferredColorScheme(.dark).tint(PanelStyle.blue)
         .onChange(of:model.selectedID){_,_ in model.fill()}
         .confirmationDialog("请求 Codex 原生压缩？",isPresented:$confirmCompact,titleVisibility:.visible){Button("请求压缩"){Task{await model.act("compact")}};Button("取消",role:.cancel){}}message:{Text("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。")}
@@ -525,6 +538,7 @@ struct ContentView: View {
         if settingsWindow==nil{
             let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:760),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
             window.title="Codex Context Control";window.minSize=NSSize(width:960,height:700)
+            window.titleVisibility = .visible;window.titlebarAppearsTransparent=false
             window.appearance=NSAppearance(named:.darkAqua)
             window.backgroundColor=NSColor(white:0.095,alpha:1)
             window.contentView=NSHostingView(rootView:ContentView(model:model))

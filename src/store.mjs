@@ -1,10 +1,30 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import {root,codexHome,readJSON,atomicJSON} from './paths.mjs';
+import {readForkParent} from './fork-metadata.mjs';
+import {inheritedForkPolicy} from './fork-budget.mjs';
 
 export class Store {
   constructor(){this.file=path.join(root,'state.json');this.data=readJSON(this.file,{version:2,policies:{},threads:{}});const legacy=this.data.version<2;for(const t of Object.values(this.data.threads)){if(legacy||(t.name&&(t.name.length>120||/[\r\n]/.test(t.name))))t.name=null;}this.data.version=2;this.metadata=new Map();this.metadataCheckedAt=0;}
   save(){atomicJSON(this.file,this.data);}
+  inheritDiscoveredForks(){
+    let changed=false;
+    const inherit=(id,seen=new Set())=>{
+      if(Object.hasOwn(this.data.policies,id)||seen.has(id)||seen.size>=16)return;
+      const thread=this.data.threads[id],parent=thread?.forkedFromId;
+      if(!parent||parent===id||thread.ephemeral||thread.canAcceptDirectInput===false||thread.archived)return;
+      seen.add(id);inherit(parent,seen);
+      try{
+        const policy=inheritedForkPolicy(this.data.policies[parent],parent);
+        if(policy){
+          this.data.policies[id]={...policy,updatedAt:Date.now()};changed=true;
+          thread.phase='waiting_bridge';thread.message='已继承父聊天预算；接入后将在轮次之间自动应用。';
+        }
+      }catch{/* An invalid parent policy must not prevent other chats loading. */}
+    };
+    for(const id of Object.keys(this.data.threads))inherit(id);
+    return changed;
+  }
   model(slug){
     const file=process.env.CONTEXT_CONTROL_CATALOG_PATH||path.join(codexHome,'models_cache.json');
     try {
@@ -23,7 +43,7 @@ export class Store {
     return {...t,...this.metadata.get(id),connected:ownersForThread.length===1,ambiguous:ownersForThread.length>1,policy:this.data.policies[id]||null,
       modelMetadata:model?Object.fromEntries(['context_window','max_context_window','effective_context_window_percent'].map(k=>[k,model[k]])):null};
   }
-  // Optional metadata index. Never read prompts, messages, or encrypted reasoning.
+  // Optional metadata index and bounded session header; no conversation scan.
   async seedRecentMetadata(){
     try{this.DatabaseSync=(await import('node:sqlite')).DatabaseSync;this.refreshMetadata(true);}catch{/* Metadata discovery is optional. */}
   }
@@ -38,7 +58,7 @@ export class Store {
         const cols=new Set(db.prepare('PRAGMA table_info(threads)').all().map(r=>r.name));
         if(!cols.has('id'))return;
         // Use the explicit native name, never the legacy title/first prompt.
-        const selected=['id','name','cwd','updated_at','archived'].filter(c=>cols.has(c));
+        const selected=['id','name','cwd','updated_at','archived','rollout_path'].filter(c=>cols.has(c));
         const order=cols.has('updated_at')?' ORDER BY updated_at DESC':'';
         const where=cols.has('archived')?' WHERE archived=0':'';
         const recent=db.prepare(`SELECT ${selected.join(',')} FROM threads${where}${order} LIMIT 30`).all();
@@ -49,10 +69,13 @@ export class Store {
           for(const row of db.prepare(`SELECT ${selected.join(',')} FROM threads WHERE id IN (${batch.map(()=>'?').join(',')})`).all(...batch))rows.set(row.id,row);
         }
         const metadata=new Map();
+        this.forkHeaderCache??=new Map();
         for(const row of rows.values()) {
           const current={};
           if(cols.has('name'))current.name=typeof row.name==='string'&&row.name.length<=120&&!/[\r\n]/.test(row.name)?row.name:null;
           if(cols.has('archived'))current.archived=row.archived===1;
+          const parent=readForkParent(codexHome,row.id,row.rollout_path,this.forkHeaderCache);
+          if(parent)current.forkedFromId=parent;
           metadata.set(row.id,current);
           if(!this.data.threads[row.id]&&!current.archived)this.data.threads[row.id]={id:row.id,name:null,cwd:row.cwd||null,status:'notLoaded',freshUsage:false};
           if(this.data.threads[row.id])Object.assign(this.data.threads[row.id],current);
@@ -60,6 +83,7 @@ export class Store {
         // Keep native names authoritative even when an older bridge continues
         // publishing the title it captured before Codex renamed the fork.
         this.metadata=metadata;
+        if(this.inheritDiscoveredForks())this.save();
       }finally{db.close();}
     }catch{/* Keep the last known metadata if the native index is unavailable. */}
   }

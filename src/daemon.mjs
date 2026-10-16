@@ -36,9 +36,9 @@ export async function startDaemon() {
   const contextStatistics=createContextStatisticsService();
   const runtimeFix=createRuntimeFixManager();
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
-  function state(){return {version:'0.9.0',bridgeCount:bridges.size,runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).filter(t=>!t.archived).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function state(){return {version:'0.9.1',bridgeCount:bridges.size,runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).filter(t=>!t.archived).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.9.0'};
+    if(op==='ping')return {ok:true,version:'0.9.1'};
     if(op==='state')return state();
     if(op==='forkBudget')return {policy:store.data.policies[p.id]||null,model:store.model(p.model||store.data.threads[p.id]?.model)};
     if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
@@ -55,6 +55,9 @@ export async function startDaemon() {
         if(inherited)store.data.policies[p.id]={...inherited,updatedAt:Date.now()};
       }
       store.data.threads[p.id]={...store.data.threads[p.id],...clean,observedAt:Date.now()};
+      // Desktop-created forks may bypass this bridge's thread/fork RPC. Resolve
+      // their native parent metadata before replying with the auto-apply policy.
+      store.refreshMetadata();store.inheritDiscoveredForks();
       Object.assign(store.data.threads[p.id],reconcileWindowConfirmation(store.data.threads[p.id],store.data.policies[p.id],store.model(store.data.threads[p.id].model)));store.save();
       return {policy:store.data.policies[p.id]||null,model:store.model(clean.model||store.data.threads[p.id].model)};
     }

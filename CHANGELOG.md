@@ -1,5 +1,12 @@
 # Changes
 
+## 0.9.1 — 2026-10-16
+
+- Recover saved parent budgets for native desktop forks that bypass the bridge fork RPC; queue application automatically at a safe turn boundary.
+- Preserve explicit child settings and disabled policies; use the actual fork parent, not the history-storage ancestor.
+- Keep native window controls clear of sidebar chrome; replace the sidebar heading with a compact connection light.
+- Refresh untouched slider drafts when an inherited policy arrives.
+
 ## 0.9.0 — 2026-10-16
 
 - Add an optional, disabled-by-default early-compaction fix switch in the native sidebar.
