@@ -51,7 +51,7 @@ import AppKit
   selection.move(to:nil);precondition(selection.activeID==nil)
   let app=NSApplication.shared;app.setActivationPolicy(.prohibited)
   let model=Controller();model.serviceAvailable=true
-  let json=#"{"id":"a","name":"Hover fixture","model":"fixture","status":"idle","connected":true,"ambiguous":false,"observedWindow":720000,"policy":{"window":757895,"compact":646000,"reserve":16000,"retainedFloor":0,"revision":1,"enabled":true},"modelMetadata":{"max_context_window":872000,"effective_context_window_percent":95}}"#
+  let json=#"{"id":"a","lastActivityAt":1700000000000,"name":"Hover fixture","model":"fixture","status":"idle","connected":true,"ambiguous":false,"observedWindow":720000,"policy":{"window":757895,"compact":646000,"reserve":16000,"retainedFloor":0,"revision":1,"enabled":true},"modelMetadata":{"max_context_window":872000,"effective_context_window_percent":95}}"#
   let ids=["a","b","c","d","e"]
   model.chats=try ids.map{id in try JSONDecoder().decode(Chat.self,from:Data(json.replacingOccurrences(of:"\"id\":\"a\"",with:"\"id\":\"\(id)\"").utf8))}
   let host=NSHostingView(rootView:ContextMenuView(model:model,openChat:{_ in},openSettings:{},quit:{}));host.sizingOptions=[]

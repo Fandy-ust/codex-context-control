@@ -1,5 +1,12 @@
 # Changes
 
+## 0.15.1 — 2026-10-16
+
+- Sort chats by real activity rather than the time a bridge snapshot was received; running chats lead, then recent starts/completions.
+- Backfill activity from native recency and turn timestamps without reading message bodies; record lifecycle timestamps on new bridge connections.
+- Keep recently completed user chats in the menu after unload or disconnect, while excluding temporary and managed sessions.
+- Preserve stable tie ordering and existing hover/drag row freezing.
+
 ## 0.15.0 — 2026-10-16
 
 - Schedule UI refreshes according to visibility and activity, with immediate wake-up when opened and bounded service-recovery attempts.

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import {root,codexHome,readJSON,atomicJSON} from './paths.mjs';
+import {activityTime,timestampMs,readNativeTurnActivity} from './thread-activity.mjs';
 import {readForkParent} from './fork-metadata.mjs';
 import {inheritedForkPolicy} from './fork-budget.mjs';
 
@@ -43,7 +44,8 @@ export class Store {
     this.refreshMetadata();
     const t=this.data.threads[id]||{id};const ownersForThread=owners.get(id)||[];
     const model=this.model(t.model);
-    return {...t,...this.metadata.get(id),connected:ownersForThread.length===1,ambiguous:ownersForThread.length>1,policy:this.data.policies[id]||null,
+    const merged={...t,...this.metadata.get(id)};
+    return {...merged,lastActivityAt:activityTime(merged),connected:ownersForThread.length===1,ambiguous:ownersForThread.length>1,policy:this.data.policies[id]||null,
       modelMetadata:model?Object.fromEntries(['context_window','max_context_window','effective_context_window_percent'].map(k=>[k,model[k]])):null};
   }
   // Optional metadata index and bounded session header; no conversation scan.
@@ -61,8 +63,11 @@ export class Store {
         const cols=new Set(db.prepare('PRAGMA table_info(threads)').all().map(r=>r.name));
         if(!cols.has('id'))return;
         // Use the explicit native name, never the legacy title/first prompt.
-        const selected=['id','name','cwd','updated_at','archived','rollout_path'].filter(c=>cols.has(c));
-        const order=cols.has('updated_at')?' ORDER BY updated_at DESC':'';
+        const selected=['id','name','cwd','updated_at','updated_at_ms','recency_at','recency_at_ms','created_at','created_at_ms','thread_source','archived','rollout_path'].filter(c=>cols.has(c));
+        const hasRecencyColumn=cols.has('recency_at_ms')||cols.has('recency_at');
+        const candidates=['recency_at_ms','recency_at','created_at_ms','created_at',...(!hasRecencyColumn?['updated_at_ms','updated_at']:[])].filter(c=>cols.has(c));
+        const expressions=candidates.map(c=>`NULLIF(${c},0)${c.endsWith('_ms')?'':'*1000'}`);
+        const order=expressions.length?` ORDER BY COALESCE(${expressions.join(',')},0) DESC`:'';
         const where=cols.has('archived')?' WHERE archived=0':'';
         const recent=db.prepare(`SELECT ${selected.join(',')} FROM threads${where}${order} LIMIT 30`).all();
         const rows=new Map(recent.map(row=>[row.id,row]));
@@ -71,10 +76,16 @@ export class Store {
           const batch=ids.slice(offset,offset+200);
           for(const row of db.prepare(`SELECT ${selected.join(',')} FROM threads WHERE id IN (${batch.map(()=>'?').join(',')})`).all(...batch))rows.set(row.id,row);
         }
+        const turnActivity=readNativeTurnActivity(codexHome,[...rows.keys()],this.DatabaseSync);
         const metadata=new Map();
         this.forkHeaderCache??=new Map();
         for(const row of rows.values()) {
-          const current={};
+          const current={...turnActivity.get(row.id)};
+          if(cols.has('thread_source'))current.threadSource=row.thread_source;
+          current.createdAt=timestampMs(row.created_at_ms)??timestampMs(row.created_at);
+          const hasRecency=cols.has('recency_at_ms')||cols.has('recency_at');
+          current.nativeActivityAt=timestampMs(row.recency_at_ms)??timestampMs(row.recency_at)??current.createdAt??(!hasRecency?(timestampMs(row.updated_at_ms)??timestampMs(row.updated_at)):null);
+
           if(cols.has('name'))current.name=typeof row.name==='string'&&row.name.length<=120&&!/[\r\n]/.test(row.name)?row.name:null;
           if(cols.has('archived'))current.archived=row.archived===1;
           const parent=readForkParent(codexHome,row.id,row.rollout_path,this.forkHeaderCache);

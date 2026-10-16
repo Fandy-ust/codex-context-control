@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 extension Chat {
-    var menuEligible:Bool {connected && ephemeral != true && canAcceptDirectInput != false}
+    var menuEligible:Bool {ephemeral != true && canAcceptDirectInput != false && (threadSource==nil || threadSource=="user") && (connected || (lastActivityAt ?? 0)>0)}
     var isRunning:Bool {menuEligible && connected && ["active","inProgress"].contains(status ?? "")}
     // Use the runtime's observed capacity, never an unapplied slider draft.
     var contextFraction:Double? {
@@ -14,7 +14,7 @@ extension Chat {
 
 extension Controller {
     var runningChats:[Chat] {serviceAvailable ? chats.filter(\.isRunning):[]}
-    var recentChats:[Chat] {Array(chats.filter{$0.menuEligible && (!serviceAvailable || !$0.isRunning)}.prefix(5))}
+    var recentChats:[Chat] {Array(chats.filter{$0.menuEligible && ($0.lastActivityAt ?? 0)>0 && (!serviceAvailable || !$0.isRunning)}.prefix(5))}
     var busiestContext:Chat? {runningChats.filter{$0.freshUsage==true && $0.contextFraction != nil}.max{($0.contextFraction ?? 0)<($1.contextFraction ?? 0)}}
     var contextMenuHeight:CGFloat {min(menuHeightLimit,max(210,CGFloat(runningChats.count+recentChats.count)*52+175))}
 }

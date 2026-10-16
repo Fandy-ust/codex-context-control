@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {getEncoding} from 'js-tiktoken';
 import {ceilingConfig,ceilingModel,migrateCeilingPolicy,policyForModel,MAX_CONTEXT_INPUT,MAX_CONTEXT_COMPACT,MIN_CONTEXT_RESERVE} from './context-ceiling.mjs';
 import {isNewUserChat} from './new-chat-defaults.mjs';
+import {timestampMs} from './thread-activity.mjs';
 import {preflight} from './policy.mjs';
 import {inheritedForkPolicy,forkConfig} from './fork-budget.mjs';
 
@@ -110,7 +111,7 @@ export class Bridge {
         const t=m.result?.thread;
         if(t?.id&&['thread/start','thread/resume','thread/fork'].includes(pending.method)) {
           const record=this.record(t.id);record.seed={...record.seed,...pending.seed,config:{...record.seed.config,...pending.seed.config}};
-          Object.assign(record,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput']));
+          Object.assign(record,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput','threadSource']));
           record.model=m.result.model||record.model;record.status=t.status?.type||'idle';record.snapshot=m.result;
           if(pending.method==='thread/start'&&pending.fork?.newChatPolicy&&!t.ephemeral&&t.canAcceptDirectInput!==false&&!t.forkedFromId){const policy=pending.fork.newChatPolicy;Object.assign(record,{newChatPolicy:policy,policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已沿用新对话默认设置，等待首次窗口读回。'});}
           if(pending.fork?.resumePolicy){const policy=pending.fork.resumePolicy;Object.assign(record,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已保留原聊天预算，等待下一轮窗口读回。'});}
@@ -143,9 +144,9 @@ export class Bridge {
           this.notify(record);
         }
         if(m.method==='thread/status/changed'){record.status=p.status.type;this.notify(record);if(record.status==='idle')this.schedule(record);}
-        if(m.method==='turn/started'){record.status='active';record.turnId=p.turn.id;record.usageFresh=false;this.notify(record);}
+        if(m.method==='turn/started'){record.lastStartedAt=timestampMs(p.turn?.startedAt)??Date.now();record.status='active';record.turnId=p.turn.id;record.usageFresh=false;this.notify(record);}
         if(m.method==='error'&&record.compactionWait)record.compactionWait.reject(new Error(p.error?.message||'原生压缩失败'));
-        if(m.method==='turn/completed'){if(record.compactionWait){p.turn?.error?record.compactionWait.reject(new Error(p.turn.error.message||'原生压缩失败')):record.compactionWait.resolve();}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.schedule(record);}
+        if(m.method==='turn/completed'){record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error?record.compactionWait.reject(new Error(p.turn.error.message||'原生压缩失败')):record.compactionWait.resolve();}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.schedule(record);}
         if(m.method==='thread/name/updated'){record.name=p.name;this.notify(record);}
       }
     }
@@ -168,7 +169,7 @@ export class Bridge {
     if(ready)this.fromClient(line,null,true);
     const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
   }
-  publicRecord(record){return pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy']);}
+  publicRecord(record){return pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt']);}
   notify(record){
     return Promise.resolve(this.publish(this.publicRecord(record))).then(reply=>{
       if(reply?.model?.slug===record.model)record.modelInfo=reply.model;

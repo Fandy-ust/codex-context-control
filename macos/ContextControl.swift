@@ -7,7 +7,7 @@ struct Metadata: Decodable,Equatable { let max_context_window:Int?;let effective
 struct Chat: Identifiable, Decodable,Equatable {
     let id:String;let name:String?;let model:String?;let cwd:String?;let status:String?
     let connected:Bool;let ambiguous:Bool;let phase:String?;let message:String?
-    let ephemeral:Bool?;let canAcceptDirectInput:Bool?
+    let ephemeral:Bool?;let canAcceptDirectInput:Bool?;let threadSource:String?;let lastActivityAt:Int?;let lastStartedAt:Int?;let lastCompletedAt:Int?
     let observedWindow:Int?;let expectedWindow:Int?;let lastUsage:Usage?;let freshUsage:Bool?;let revision:Int?
     let policy:Budget?;let modelMetadata:Metadata?
     var title:String { if let name,!name.isEmpty{return name};if let cwd{return URL(fileURLWithPath:cwd).lastPathComponent};return String(id.prefix(12)) }

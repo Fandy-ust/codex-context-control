@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {Peer,request} from './ipc.mjs';
 import {root,socketPath,ensureRoot,atomicJSON} from './paths.mjs';
+import {compareThreadActivity,mergeActivity} from './thread-activity.mjs';
 import {Store} from './store.mjs';
 import {normalizePolicy,preflight} from './policy.mjs';
 import {savedBudget} from './budget.mjs';
@@ -49,9 +50,9 @@ export async function startDaemon() {
   function extensionState(fix=runtimeFix.status()){return extension.status([...bridges.values()],{compatible:fix.originalVersion==='0.160.0',available:!!nativeDefaultModel()});}
   function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:'extension_pending',message:(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
   function newChatDefaults(){return clampNewChatDefaults(store.data.newChatDefaults||(extension.enabled()?initialNewChatDefaults:nativeNewChatDefaults),defaultModel());}
-  function state(){const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version:'0.15.0',bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function state(){store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version:'0.15.1',bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity)};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.15.0'};
+    if(op==='ping')return {ok:true,version:'0.15.1'};
     if(op==='state')return state();
     if(op==='newChatBudget'){const m=runtimeModel(null,p.model,p.contextCeiling??true);if(!m)throw Error('等待当前模型的原生窗口信息');return {policy:policyForNewChat(newChatDefaults(),m)};}
     if(op==='setNewChatDefaults'){
@@ -77,16 +78,19 @@ export async function startDaemon() {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180||['__proto__','constructor','prototype'].includes(p.id))throw new Error('聊天 ID 无效');
       const previousPolicy=JSON.stringify(store.data.policies[p.id]??null);
+      const hadOwner=b.ids.has(p.id);
       b.ids.add(p.id);rebuildOwners();
-      const allowed=['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId'];
+      const allowed=['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource'];
       const clean=Object.fromEntries(allowed.filter(k=>Object.hasOwn(p,k)).map(k=>[k,p[k]]));
       if(!Object.hasOwn(clean,'usageFresh'))clean.usageFresh=clean.freshUsage===true;
+      if(clean.threadSource!=null&&typeof clean.threadSource!=='string')delete clean.threadSource;
       if(typeof clean.name==='string'&&(clean.name.length>120||/[\r\n]/.test(clean.name)))clean.name=null;
       if(!Object.hasOwn(store.data.policies,p.id)&&!p.ephemeral&&p.canAcceptDirectInput!==false&&p.forkedFromId!==p.id){
         const inherited=inheritedForkPolicy(p.forkPolicy,p.forkedFromId);
         if(inherited)store.data.policies[p.id]={...inherited,updatedAt:Date.now()};
       }
-      store.data.threads[p.id]={...store.data.threads[p.id],...clean,observedAt:Date.now()};
+      const activity=mergeActivity(store.data.threads[p.id],p,{allowLegacyTransition:hadOwner});
+      store.data.threads[p.id]={...store.data.threads[p.id],...clean,...activity,observedAt:Date.now()};
       if(bridgeReady(b)&&store.data.policies[p.id])store.data.policies[p.id]=policyForModel(store.data.policies[p.id],modelFor(p.id,clean.model));
       // Desktop-created forks may bypass this bridge's thread/fork RPC. Resolve
       // their native parent metadata before replying with the auto-apply policy.
