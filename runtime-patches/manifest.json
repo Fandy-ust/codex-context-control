@@ -1,0 +1,10 @@
+{
+  "id": "reasoning-accounting-0.160.0-v1",
+  "baseVersion": "0.160.0",
+  "sourceCommit": "a956835d020762cb2b570053af06f643a11c0ecc",
+  "sourceURL": "https://github.com/openai/codex",
+  "patchCommit": "f7200c0e1ddac25383017d02615c4f5ffaa9ac76",
+  "patchURL": "https://github.com/coinman-dev/codex-context-accounting-fix",
+  "patchSHA256": "0ae0125731fc0059b31043127067db1fe9d7eafaceebdb523b334a8cde779022",
+  "toolchain": "1.98.1"
+}

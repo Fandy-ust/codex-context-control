@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 
 const repo=fileURLToPath(new URL('../',import.meta.url));
 const binary=process.env.CONTEXT_CONTROL_TEST_CODEX||'/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
+const expectedFixed=process.env.CONTEXT_CONTROL_EXPECT_FIXED==='1';
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(predicate){for(let n=0;n<300;n++){if(predicate())return;await delay(50);}throw Error('Probe timed out');}
 
@@ -57,7 +58,7 @@ async function runCase(headerIncluded,threshold=80000){
     await call('initialize',{clientInfo:{name:'compaction_accounting_probe',version:'1'},capabilities:{experimentalApi:true}});
     child.stdin.write(JSON.stringify({method:'initialized'})+'\n');
     const started=await call('thread/start',{model:'context-fixture',cwd:temp,ephemeral:true,approvalPolicy:'never',sandbox:'read-only',baseInstructions:'Reply OK. Never call tools.',developerInstructions:'Local synthetic accounting test.'});
-    const turnCount=2;
+    const turnCount=expectedFixed?3:2;
     for(let n=0;n<turnCount;n++){
       const t=await call('turn/start',{threadId:started.thread.id,input:[{type:'text',text:`Synthetic user turn ${n}.`}],effort:'low'});
       await until(()=>completed.has(t.turn.id));
@@ -68,11 +69,11 @@ async function runCase(headerIncluded,threshold=80000){
     assert.deepEqual(errors,[]);
     const thresholdReached=[...clean.matchAll(/post sampling token usage[^\n]*? token_limit_reached=(true|false)/g)].map(m=>m[1]==='true');
     assert.equal(compactionStarts,0); // Both responses finish the turn; no follow-up sampling is requested.
-    assert.equal(requests.length,2);
+    assert.equal(requests.length,turnCount);
     assert.ok(requests.every(r=>r.context==='all_turns'));
     assert.equal(requests[0].reasoningItems,0);assert.equal(requests[1].reasoningItems,1);
-    assert.deepEqual(counts,[10010,headerIncluded?10010:12848]);
-    assert.deepEqual(thresholdReached,[false,threshold===11000&&!headerIncluded]);
+    assert.deepEqual(counts,expectedFixed?[10010,10010,10010]:[10010,headerIncluded?10010:12848]);
+    assert.deepEqual(thresholdReached,expectedFixed?[false,false,false]:[false,threshold===11000&&!headerIncluded]);
     assert.ok(notifications.length>=2);assert.ok(notifications.every(n=>n===10010));
     return {headerIncluded,threshold,requests,serverUsage:{input:10000,output:10,total:10010},uiNotifications:notifications,localCompactionCounts:counts,thresholdReached,syntheticOldReasoningEstimate:2838};
   }finally{
@@ -83,7 +84,7 @@ async function runCase(headerIncluded,threshold=80000){
   }
 }
 
-const report={runtime:spawnSync(binary,['--version'],{encoding:'utf8'}).stdout.trim(),mode:'controlled-loopback-sse',cases:[]};
+const report={runtime:spawnSync(binary,['--version'],{encoding:'utf8'}).stdout.trim(),mode:'controlled-loopback-sse',expectedFixed,cases:[]};
 for(const threshold of [80000,11000])for(const included of [false,true])report.cases.push(await runCase(included,threshold));
 fs.mkdirSync(path.join(repo,'build'),{recursive:true});
 fs.writeFileSync(path.join(repo,'build/compaction-accounting-probe.json'),JSON.stringify(report,null,2)+'\n');

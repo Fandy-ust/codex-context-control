@@ -1,0 +1,25 @@
+name: patched-runtime
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: patched-runtime-macos-arm64
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: node scripts/build-patched-runtime.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patched-runtime-macos-arm64
+          path: build/patched-runtime/
+          retention-days: 30
+          if-no-files-found: error
