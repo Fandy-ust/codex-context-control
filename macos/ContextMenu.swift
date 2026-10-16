@@ -58,12 +58,18 @@ struct ContextUsageRing:View {
     }
 }
 
+private struct MenuRowFrames:PreferenceKey {
+    static let defaultValue:[String:CGRect]=[:]
+    static func reduce(value:inout [String:CGRect],nextValue:()->[String:CGRect]){value.merge(nextValue(),uniquingKeysWith:{$1})}
+}
+
 @MainActor struct ContextMenuView:View {
     @ObservedObject var model:Controller
     let openChat:(String)->Void
     let openSettings:()->Void
     let quit:()->Void
     @State private var editingChatID:String?
+    @State private var hoverSelection=MenuHoverSelection()
     @State private var heldRunning:[String]=[]
     @State private var heldRecent:[String]=[]
     private var running:[Chat] {editingChatID == nil ? model.runningChats:heldRunning.compactMap{id in model.chats.first{$0.id==id}}}
@@ -89,6 +95,16 @@ struct ContextUsageRing:View {
                     }
                 }
             }.scrollIndicators(.automatic)
+            .coordinateSpace(name:"contextMenuRows")
+            .onPreferenceChange(MenuRowFrames.self){frames in
+                hoverSelection.updateFrames(frames);syncSelection()
+            }
+            .onContinuousHover(coordinateSpace:.named("contextMenuRows")){phase in
+                switch phase {
+                case .active(let point):pointerMoved(to:point)
+                case .ended:pointerMoved(to:nil)
+                }
+            }
             Divider().padding(.horizontal,8)
             HStack(spacing:6){
                 Circle().fill(model.serviceAvailable && model.bridgeCount>0 ? Color.green:Color.gray).frame(width:6,height:6)
@@ -101,21 +117,35 @@ struct ContextUsageRing:View {
     private func sectionLabel(_ title:String,count:Int)->some View {
         HStack{Text(title);Spacer();Text("\(count)").monospacedDigit()}.font(.system(size:10,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,10).padding(.vertical,4)
     }
+    private func pointerMoved(to point:CGPoint?){
+        hoverSelection.move(to:point);syncSelection()
+    }
+    private func syncSelection(){
+        let next=hoverSelection.activeID
+        guard editingChatID != next else{return}
+        if editingChatID==nil,next != nil{
+            heldRunning=model.runningChats.map(\.id);heldRecent=model.recentChats.map(\.id)
+        }
+        editingChatID=next
+    }
     private func chatRow(_ chat:Chat)->some View {
-        MenuChatRow(model:model,serviceAvailable:model.serviceAvailable,chat:chat,canBegin:editingChatID==nil || editingChatID==chat.id,openChat:openChat,beginEditing:{
-            if editingChatID==nil{heldRunning=model.runningChats.map(\.id);heldRecent=model.recentChats.map(\.id)}
-            editingChatID=chat.id
-        },endEditing:{if editingChatID==chat.id{editingChatID=nil}})
+        MenuChatRow(model:model,serviceAvailable:model.serviceAvailable,chat:chat,isEditing:editingChatID==chat.id,openChat:openChat,dragChanged:{active in
+            hoverSelection.setDragging(chat.id,active:active)
+            model.menuDragInProgress=hoverSelection.draggingID != nil
+            syncSelection()
+        })
+        .background(GeometryReader{geometry in
+            Color.clear.preference(key:MenuRowFrames.self,value:[chat.id:geometry.frame(in:.named("contextMenuRows"))])
+        })
     }
 }
 
 @MainActor private struct MenuChatRow:View {
     let model:Controller
     let serviceAvailable:Bool
-    let chat:Chat;let canBegin:Bool;let openChat:(String)->Void;let beginEditing:()->Void;let endEditing:()->Void
+    let chat:Chat;let isEditing:Bool;let openChat:(String)->Void;let dragChanged:(Bool)->Void
     @State private var draft:MenuBudgetDraft?
     @State private var selection:BudgetThumb = .window
-    @State private var hovering=false
     @State private var dragging=false
     @State private var saving=false
     @State private var feedback:String?
@@ -129,12 +159,13 @@ struct ContextUsageRing:View {
                 editor(draft)
             }else{information}
         }.frame(height:50).contentShape(Rectangle())
-            .background(.primary.opacity(hovering || draft != nil ? 0.06:0),in:RoundedRectangle(cornerRadius:5))
-            .onHover{inside in hovering=inside;if inside{begin()}else{finishIfClean()}}
-            .onChange(of:canBegin){_,allowed in if allowed && hovering{begin()}}
-            .onChange(of:saving){_,busy in if !busy && hovering{begin()}}
+            .background(.primary.opacity(isEditing || draft != nil ? 0.06:0),in:RoundedRectangle(cornerRadius:5))
+            .onChange(of:isEditing,initial:true){_,active in if active{begin()}else{finishIfOutside()}}
+            .onChange(of:serviceAvailable){_,_ in if isEditing{begin()}}
+            .onChange(of:chat.modelMetadata){_,_ in if isEditing{begin()}}
+            .onChange(of:saving){_,busy in if !busy && isEditing{begin()}}
             .accessibilityAction(named:"调节预算"){begin()}
-            .onDisappear{if dragging{model.menuDragInProgress=false}}
+            .onDisappear{if dragging{dragChanged(false)}}
     }
     private var information:some View {
         Button{openChat(chat.id)} label:{
@@ -162,16 +193,16 @@ struct ContextUsageRing:View {
                 else{Button{Task{await apply()}}label:{Text("应用").font(.system(size:11,weight:.semibold)).foregroundStyle(.white).frame(width:42,height:22).background(Color.accentColor.opacity(value.changed && serviceAvailable ? 1:0.35),in:RoundedRectangle(cornerRadius:5)).contentShape(Rectangle())}.foregroundStyle(.blue).disabled(!value.changed || !serviceAvailable)}
                 Button{cancel()}label:{Image(systemName:"xmark").frame(width:20,height:20).contentShape(Rectangle())}.disabled(saving).help("取消未提交的修改")
             }.buttonStyle(.plain).font(.system(size:11,weight:.medium)).monospacedDigit().frame(height:20)
-            BudgetRangeSlider(window:Binding(get:{draft?.windowK ?? value.windowK},set:{if draft?.windowK != $0{draft?.setWindow($0);feedback=nil}}),compact:Binding(get:{draft?.compactK ?? value.compactK},set:{if draft?.compactK != $0{draft?.setCompact($0);feedback=nil}}),selection:$selection,maximumWindow:value.maximumWindowK,maximumCompact:value.maximumCompactK,compactStyle:true,onEditingChanged:{active in dragging=active;model.menuDragInProgress=active;if !active{finishIfClean()}})
+            BudgetRangeSlider(window:Binding(get:{draft?.windowK ?? value.windowK},set:{if draft?.windowK != $0{draft?.setWindow($0);feedback=nil}}),compact:Binding(get:{draft?.compactK ?? value.compactK},set:{if draft?.compactK != $0{draft?.setCompact($0);feedback=nil}}),selection:$selection,maximumWindow:value.maximumWindowK,maximumCompact:value.maximumCompactK,compactStyle:true,onEditingChanged:{active in dragging=active;dragChanged(active)})
                 .disabled(saving || !serviceAvailable)
         }.padding(.horizontal,10).help(feedback ?? chat.title)
     }
     private func begin(){
-        guard draft==nil,!saving,canBegin,serviceAvailable,let value=try? MenuBudgetDraft(chat:chat) else{return}
-        draft=value;feedback=nil;failed=false;beginEditing()
+        guard draft==nil,!saving,serviceAvailable,let value=try? MenuBudgetDraft(chat:chat) else{return}
+        draft=value;feedback=nil;failed=false
     }
-    private func finishIfClean(){if !hovering && !dragging{cancel()}}
-    private func cancel(){draft=nil;feedback=nil;failed=false;endEditing()}
+    private func finishIfOutside(){if !isEditing && !dragging{cancel()}}
+    private func cancel(){draft=nil;feedback=nil;failed=false}
     private func apply() async {
         guard let value=draft,!saving else{return};saving=true;failed=false
         do {
@@ -194,7 +225,7 @@ struct ContextUsageRing:View {
             }
             await model.refresh()
         }catch{feedback=error.localizedDescription;failed=true}
-        saving=false;finishIfClean()
+        saving=false;finishIfOutside()
     }
     private func shortTokens(_ value:Int?)->String {value.map{String(format:"%.0fK",Double($0)/1000)} ?? "—"}
 }
