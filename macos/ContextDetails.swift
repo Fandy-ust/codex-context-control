@@ -60,6 +60,8 @@ struct ContextDetailsButton:View {
     }
 }
 
+@MainActor private final class DeferredContextDetails {var statistics:ContextStatistics?;var payload:Data?}
+
 private struct ContextDetailsView:View {
     let chatID:String;let title:String
     let model:Controller
@@ -69,6 +71,10 @@ private struct ContextDetailsView:View {
     @State private var error:String?
     @State private var autoRefresh=true
     @State private var lastPayload:Data?
+    @State private var chartInteracting=false
+    @State private var visible=true
+    @State private var deferred=DeferredContextDetails()
+    @State private var interactionRefresh:Task<Void,Never>?
     var body:some View {
         VStack(alignment:.leading,spacing:16){
             HStack(alignment:.top){
@@ -84,7 +90,7 @@ private struct ContextDetailsView:View {
                 if let s=statistics {
                     VStack(alignment:.leading,spacing:16){
                         ContextSummaryView(statistics:s)
-                        ContextResponseChart(responses:s.responses,events:s.timelineEvents,revision:s.threadId+":"+s.generatedAt).equatable()
+                        ContextResponseChart(responses:s.responses,events:s.timelineEvents,revision:s.threadId+":"+s.generatedAt,onInteractionChanged:{active in if chartInteracting != active{chartInteracting=active}}).equatable()
                         VStack(spacing:0){
                             HStack {Text("分类");Spacer();Text("条目").frame(width:65,alignment:.trailing);Text("占用（估算）").frame(width:115,alignment:.trailing)}.font(.caption).foregroundStyle(.secondary).padding(.bottom,8)
                             ForEach(s.categories){row in
@@ -114,17 +120,28 @@ private struct ContextDetailsView:View {
         .padding(26).frame(width:920,height:720).background(Color(white:0.095)).preferredColorScheme(.dark)
         .task(id:chatID){
             await reload(force:false)
-            while !Task.isCancelled {do{try await Task.sleep(for:.seconds(10))}catch{break};if autoRefresh{await reload(force:false)}}
+            while !Task.isCancelled {do{try await Task.sleep(for:.seconds(10))}catch{break};if autoRefresh && !chartInteracting{await reload(force:false)}}
         }
+        .onChange(of:chartInteracting){_,active in
+            interactionRefresh?.cancel()
+            if !active{interactionRefresh=Task{
+                do{try await Task.sleep(for:.milliseconds(180))}catch{return}
+                guard !Task.isCancelled && visible && !chartInteracting else{return}
+                if let pending=deferred.statistics{statistics=pending;lastPayload=deferred.payload;deferred.statistics=nil;deferred.payload=nil}
+                if autoRefresh{await reload(force:false)}
+            }}
+        }
+        .onAppear{visible=true}
+        .onDisappear{visible=false;interactionRefresh?.cancel()}
     }
     private func reload(force:Bool) async {
-        if loading{return};loading=true;defer{loading=false}
+        if loading || !visible{return};loading=true;defer{loading=false}
         do {
             let data=try await model.api("/context-stats",body:["id":chatID,"refresh":force])
-            if data==lastPayload{error=nil;return}
+            if data==lastPayload{if !chartInteracting{deferred.statistics=nil;deferred.payload=nil};error=nil;return}
             let decoded=try await Task.detached(priority:.utility){try JSONDecoder().decode(ContextStatistics.self,from:data)}.value
             guard !Task.isCancelled,decoded.threadId==chatID else{return}
-            statistics=decoded;lastPayload=data;error=nil
+            if chartInteracting{deferred.statistics=decoded;deferred.payload=data}else{deferred.statistics=nil;deferred.payload=nil;statistics=decoded;lastPayload=data};error=nil
         }catch {if !Task.isCancelled{self.error=error.localizedDescription}}
     }
     private func amount(_ n:Int)->String {n>=1000 ? (Double(n)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":n.formatted()}

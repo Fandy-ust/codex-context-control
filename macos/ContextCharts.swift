@@ -5,22 +5,56 @@ private func tokenLabel(_ value:Int?)->String {value.map{$0.formatted()+" tokens
 private func eventColor(_ type:String)->Color {
     switch type {case "final":return .blue;case "user_input","steering":return .green;case "compaction":return .purple;default:return Color(white:0.78)}
 }
+@MainActor private final class TimelineCursor:ObservableObject {
+    @Published private(set) var position:Double?
+    private(set) var fraction:Double?
+    func move(_ next:Double?,upperBound:Double=1){fraction=next.map{$0/upperBound};if position != next{position=next}}
+}
 @MainActor private final class TimelineSelection:ObservableObject {
     @Published private(set) var hovered:Int?
     @Published private(set) var selectedID=""
     @Published private(set) var pinnedPosition:Double?
+    let cursor=TimelineCursor()
+    private let updates=MenuDragUpdates(maxFPS:60)
+    private var tracking=false
+    private var activity:((Bool)->Void)?
+    func setActivityHandler(_ handler:@escaping(Bool)->Void){activity=handler;handler(tracking)}
+    private func track(_ value:Bool){if tracking != value{tracking=value;activity?(value)}}
     func hover(_ index:Int?){if hovered != index{hovered=index}}
-    func pin(_ id:String){if selectedID != id{selectedID=id};pinnedPosition=nil;hover(nil)}
-    func pinBucket(_ position:Double){selectedID="";pinnedPosition=position;hover(nil)}
+    func move(_ position:Double?,in data:TimelineData){
+        guard let position else{endHover();return}
+        track(true)
+#if DEBUG
+        ChartInteractionProbe.pointerEvents+=1
+#endif
+        updates.submit{[weak self] in
+            guard let self else{return}
+            cursor.move(position,upperBound:data.upperBound);hover(data.bucket(at:position))
+#if DEBUG
+            ChartInteractionProbe.pointerUpdates+=1
+#endif
+        }
+    }
+    func endHover(){updates.cancel();cursor.move(nil);hover(nil);track(false)}
+    func rebind(_ data:TimelineData){updates.cancel();if let fraction=cursor.fraction{let position=fraction*data.upperBound;cursor.move(position,upperBound:data.upperBound);hover(data.bucket(at:position))}else{hover(nil)}}
+    func stop(){endHover();activity=nil}
+    func pin(_ id:String){endHover();if selectedID != id{selectedID=id};pinnedPosition=nil}
+    func pinBucket(_ position:Double){endHover();selectedID="";pinnedPosition=position}
     func focus(_ data:TimelineData)->Int? {
         if let hovered,data.buckets.indices.contains(hovered){return hovered}
         return data.bucket(for:selectedID) ?? pinnedPosition.flatMap{data.bucket(at:$0)}
     }
 }
-private enum TimelinePlotKind {case speed,cache,events}
+private enum TimelinePlotKind:String {case speed,cache,events}
 #if DEBUG
 @MainActor enum ChartInteractionProbe {
     static var chartBuilds=0;static var bucketCount=0;static var period=0
+    static var pointerEvents=0;static var pointerUpdates=0
+    static var mappings:[String:TimelineHoverMapping]=[:]
+    static var moves:[String:(CGPoint?)->Void]=[:]
+    static var hoveredIndex:Int?{selection?.hovered}
+    static var cursorPosition:Double?{selection?.cursor.position}
+    static func movePointer(_ kind:String,point:CGPoint?){moves[kind]?(point)}
     static var setSmoothing:((Double)->Void)?
     private static weak var selection:TimelineSelection?
     private static var data:TimelineData?
@@ -33,8 +67,9 @@ private enum TimelinePlotKind {case speed,cache,events}
 @MainActor struct ContextResponseChart:View,Equatable {
     let responses:[ContextStatistics.Response];let events:[ContextStatistics.TimelineEvent]
     nonisolated let revision:String
+    var onInteractionChanged:(Bool)->Void={_ in}
     @State private var smoothing=0.0
-    @State private var prepared:TimelineData?
+    @State private var prepared:PreparedTimeline?
     @State private var preparing=false
     private var key:String{revision+":"+String(Int(smoothing))}
     nonisolated static func ==(lhs:Self,rhs:Self)->Bool{lhs.revision==rhs.revision}
@@ -48,7 +83,7 @@ private enum TimelinePlotKind {case speed,cache,events}
                 if preparing{ProgressView().controlSize(.mini)}
             }
             if let data=prepared {
-                TimelinePlots(data:data).equatable()
+                TimelinePlots(data:data.data,labels:data.labels,onInteractionChanged:onInteractionChanged).equatable()
             }else{ProgressView("正在整理趋势…").frame(maxWidth:.infinity,minHeight:260)}
         }.padding(14).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:14))
 #if DEBUG
@@ -60,7 +95,7 @@ private enum TimelinePlotKind {case speed,cache,events}
             do {
                 if prepared != nil{try await Task.sleep(for:.milliseconds(180))}
                 try Task.checkCancellation();preparing=true
-                let job=Task.detached(priority:.userInitiated){try TimelineData(responses:responses,events:events,revision:requestKey,period:period)}
+                let job=Task.detached(priority:.userInitiated){try PreparedTimeline(TimelineData(responses:responses,events:events,revision:requestKey,period:period))}
                 let result=try await withTaskCancellationHandler(operation:{try await job.value},onCancel:{job.cancel()})
                 try Task.checkCancellation();prepared=result;preparing=false
             }catch {if !Task.isCancelled{preparing=false}}
@@ -68,7 +103,7 @@ private enum TimelinePlotKind {case speed,cache,events}
     }
 }
 @MainActor private struct TimelinePlots:View,Equatable {
-    let data:TimelineData
+    let data:TimelineData;let labels:[TimelineBucketPresentation];let onInteractionChanged:(Bool)->Void
     @State private var selection=TimelineSelection()
     nonisolated static func ==(lhs:Self,rhs:Self)->Bool{lhs.data.revision==rhs.data.revision}
     var body:some View {
@@ -77,18 +112,20 @@ private enum TimelinePlotKind {case speed,cache,events}
 #endif
         return VStack(alignment:.leading,spacing:8){
             HStack{Text("每区间约 \(data.bucketSize) 次响应 · \(data.buckets.count) 个区间");Spacer();Text("共 \(data.responseCount) 次响应")}.font(.caption2).foregroundStyle(.secondary)
-            HStack {Text(data.period<2 ? "区间生成均速":"生成速度 · EMA 趋势").font(.caption.weight(.medium));Spacer();TimelineSpeedLabel(data:data,selection:selection)}
+            HStack {Text(data.period<2 ? "区间生成均速":"生成速度 · EMA 趋势").font(.caption.weight(.medium));Spacer();TimelineSpeedLabel(data:data,labels:labels,selection:selection)}
             speedChart
             HStack(spacing:12){Text("输入与缓存").font(.caption.weight(.medium));Spacer();legend("输入",color:.gray);legend("缓存",color:.cyan)}
             cacheChart
             HStack(spacing:12){Text("区间事件").font(.caption.weight(.medium));Spacer();legend("最终",color:.blue);legend("输入",color:.green);legend("压缩",color:.purple);legend("零值",color:.orange)}
             eventTrack
-            if !data.buckets.isEmpty{TimelineBucketDetails(data:data,selection:selection)}
+            if !data.buckets.isEmpty{TimelineBucketDetails(data:data,labels:labels,selection:selection)}
             DisclosureGroup("统计说明"){
                 Text("总览最多 120 个区间。平滑只改变趋势线；区间速度按输出量÷生成时间计算，输入和缓存取均值，输出取合计。区间有有效样本就连线，整段缺数据才断线；模型变化和压缩只重置 EMA，紫色标记表示压缩。缓存零值保留事件标记和区间最小值。展开区间可逐条查看原始记录，点击可固定。").font(.caption).foregroundStyle(.secondary).padding(.top,5)
             }.font(.caption).foregroundStyle(.secondary)
-        }.onHover{inside in if !inside{selection.hover(nil)}}
-        .onChange(of:data.revision){_,_ in selection.hover(nil)}
+        }.onHover{inside in if !inside{selection.endHover()}}
+        .onAppear{selection.setActivityHandler(onInteractionChanged)}
+        .onDisappear{selection.stop()}
+        .onChange(of:data.revision){_,_ in selection.rebind(data)}
     }
     private func legend(_ title:String,color:Color)->some View {HStack(spacing:4){Circle().fill(color).frame(width:5,height:5);Text(title)}.font(.caption2).foregroundStyle(.secondary)}
     private var speedChart:some View {
@@ -135,59 +172,83 @@ private enum TimelinePlotKind {case speed,cache,events}
     }
 }
 @MainActor private struct TimelineSpeedLabel:View {
-    let data:TimelineData;@ObservedObject var selection:TimelineSelection
+    let data:TimelineData;let labels:[TimelineBucketPresentation];@ObservedObject var selection:TimelineSelection
     var body:some View {let index=selection.focus(data) ?? data.buckets.indices.last
-        Text(index.flatMap{data.buckets[$0].speed}.map{String(format:"区间 %.1f tokens/s",$0)} ?? "无计时").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+        Text(index.map{labels[$0].speedHeading} ?? "无计时").font(.caption).monospacedDigit().foregroundStyle(.secondary)
     }
 }
 @MainActor private struct TimelineOverlay:View {
     let proxy:ChartProxy;let kind:TimelinePlotKind;let data:TimelineData
-    @ObservedObject var selection:TimelineSelection
+    let selection:TimelineSelection
     var body:some View {
-        GeometryReader{geometry in ZStack{
-            Rectangle().fill(.clear).contentShape(Rectangle())
-                .onContinuousHover{phase in if case .active(let location)=phase,let index=nearest(location,geometry){selection.hover(index)}}
-                .onTapGesture(coordinateSpace:.local){location in if let index=nearest(location,geometry){selection.pinBucket(data.buckets[index].position)}}
-            if let index=selection.focus(data),let frame=proxy.plotFrame,let x=proxy.position(forX:data.buckets[index].position){
-                let bounds=geometry[frame],b=data.buckets[index]
-                if let left=proxy.position(forX:Double(b.startPosition)),let right=proxy.position(forX:Double(b.endPosition)){
-                    Rectangle().fill(.white.opacity(0.04)).frame(width:max(2,right-left),height:bounds.height).position(x:bounds.minX+(left+right)/2,y:bounds.midY).allowsHitTesting(false)
+        GeometryReader{geometry in
+            if let frame=proxy.plotFrame {
+                let bounds=geometry[frame]
+                let mapping=TimelineHoverMapping(plot:bounds,viewSize:geometry.size,scaleStart:bounds.minX+(proxy.position(forX:0.0) ?? 0),scaleEnd:bounds.minX+(proxy.position(forX:data.upperBound) ?? bounds.width),upperBound:data.upperBound)
+                ZStack {
+                    TimelinePointerSurface(mapping:mapping,kind:kind,data:data,selection:selection)
+                    TimelineFocusOverlay(mapping:mapping,data:data,selection:selection,cursor:selection.cursor)
                 }
-                Rectangle().fill(.white.opacity(0.4)).frame(width:1,height:bounds.height).position(x:bounds.minX+x,y:bounds.midY).allowsHitTesting(false)
             }
-        }.help("悬停查看区间，点击固定")}
+        }.help("悬停绘图区或横轴查看区间，点击固定")
     }
-    private func nearest(_ location:CGPoint,_ geometry:GeometryProxy)->Int? {
-        guard let frame=proxy.plotFrame else{return nil};let bounds=geometry[frame]
-        guard bounds.contains(location),let position=proxy.value(atX:location.x-bounds.minX,as:Double.self) else{return nil}
-        return data.bucket(at:position)
+}
+@MainActor private struct TimelinePointerSurface:View {
+    let mapping:TimelineHoverMapping;let kind:TimelinePlotKind;let data:TimelineData;let selection:TimelineSelection
+    private func move(_ point:CGPoint?){selection.move(point.flatMap{mapping.position(at:$0)},in:data)}
+    var body:some View {
+        Rectangle().fill(.clear).contentShape(Rectangle())
+            .onContinuousHover{phase in switch phase {case .active(let point):move(point);case .ended:move(nil)}}
+            .onTapGesture(coordinateSpace:.local){point in if let p=mapping.position(at:point),let index=data.bucket(at:p){selection.pinBucket(data.buckets[index].position)}}
+            .onDisappear{selection.endHover()}
+#if DEBUG
+            .onAppear{ChartInteractionProbe.mappings[kind.rawValue]=mapping;ChartInteractionProbe.moves[kind.rawValue]=move}
+            .onChange(of:mapping.plot){_,_ in ChartInteractionProbe.mappings[kind.rawValue]=mapping;ChartInteractionProbe.moves[kind.rawValue]=move}
+            .onChange(of:data.revision){_,_ in ChartInteractionProbe.mappings[kind.rawValue]=mapping;ChartInteractionProbe.moves[kind.rawValue]=move}
+#endif
+    }
+}
+@MainActor private struct TimelineFocusOverlay:View {
+    let mapping:TimelineHoverMapping;let data:TimelineData
+    @ObservedObject var selection:TimelineSelection
+    @ObservedObject var cursor:TimelineCursor
+    var body:some View {
+        Canvas{context,_ in
+            guard let index=selection.focus(data) else{return}
+            let bucket=data.buckets[index],bounds=mapping.plot
+            let left=mapping.x(for:Double(bucket.startPosition)),right=mapping.x(for:Double(bucket.endPosition))
+            context.fill(Path(CGRect(x:left,y:bounds.minY,width:max(2,right-left),height:bounds.height)),with:.color(.white.opacity(0.04)))
+            let x=mapping.x(for:cursor.position ?? bucket.position)
+            context.fill(Path(CGRect(x:x,y:bounds.minY,width:1,height:bounds.height)),with:.color(.white.opacity(0.5)))
+        }.allowsHitTesting(false).accessibilityHidden(true)
     }
 }
 @MainActor private struct TimelineBucketDetails:View {
-    let data:TimelineData;@ObservedObject var selection:TimelineSelection
+    let data:TimelineData;let labels:[TimelineBucketPresentation];@ObservedObject var selection:TimelineSelection
     @State private var page=0
+    @State private var recordsExpanded=false
     private var index:Int{selection.focus(data) ?? data.buckets.count-1}
     var body:some View {
-        let b=data.buckets[index],pageCount=max(1,Int(ceil(Double(b.entryRange.count)/20))),currentPage=min(page,pageCount-1)
+        let b=data.buckets[index],label=labels[index],pageCount=max(1,Int(ceil(Double(b.entryRange.count)/20))),currentPage=min(page,pageCount-1)
         return VStack(alignment:.leading,spacing:9){
-            HStack{Text(b.title).font(.callout.weight(.medium));Spacer();Text("\(b.responses) 次响应 · \(b.measured) 次计时").font(.caption).foregroundStyle(.secondary)}
-            HStack(spacing:12){metric("区间均速",b.speed.map{String(format:"%.1f t/s",$0)} ?? "—");metric("输入均量",amount(b.inputMean));metric("缓存均量",amount(b.cacheMean));metric("输出合计",b.outputSamples>0 ? amount(Double(b.outputTokens)):"—")}
-            Text("最终 \(b.finals) · 用户输入 \(b.users) · 压缩 \(b.compactions) · 缓存零值 \(b.zeroCaches)").font(.caption).foregroundStyle(.secondary)
-            if !b.models.isEmpty {Text(b.models.map{modelDisplayName($0)}.joined(separator:" · ")).font(.caption2).foregroundStyle(.secondary).lineLimit(1)}
+            HStack{Text(b.title).font(.callout.weight(.medium));Spacer();Text(label.counts).font(.caption).foregroundStyle(.secondary)}
+            HStack(spacing:12){metric("区间均速",label.speed);metric("输入均量",label.input);metric("缓存均量",label.cache);metric("输出合计",label.output)}
+            Text(label.events).font(.caption).foregroundStyle(.secondary)
+            if !b.models.isEmpty {Text(label.models).font(.caption2).foregroundStyle(.secondary).lineLimit(1)}
             if b.measured<b.responses || b.inputSamples<b.responses || b.cacheSamples<b.responses {
                 Text("缺少记录：计时 \(b.responses-b.measured) · 输入 \(b.responses-b.inputSamples) · 缓存 \(b.responses-b.cacheSamples)").font(.caption2).foregroundStyle(.secondary)
             }
-            if b.zeroCaches>0{Text("区间最低缓存：\(b.cacheMinimum.map{$0.formatted()} ?? "—") tokens").font(.caption2).foregroundStyle(.orange)}
-            DisclosureGroup("原始记录（\(b.entryRange.count) 条）"){
-                VStack(alignment:.leading,spacing:6){
+            if b.zeroCaches>0{Text(label.minimumCache).font(.caption2).foregroundStyle(.orange)}
+            DisclosureGroup("原始记录（\(b.entryRange.count) 条）",isExpanded:$recordsExpanded){
+                if recordsExpanded {VStack(alignment:.leading,spacing:6){
                     HStack{Text("第 \(currentPage+1)/\(pageCount) 页").font(.caption);Spacer();Button("上一页"){page=max(0,currentPage-1)}.disabled(currentPage==0);Button("下一页"){page=min(pageCount-1,currentPage+1)}.disabled(currentPage+1>=pageCount)}.controlSize(.small)
                     ForEach(Array(data.page(bucket:index,page:currentPage))){entry in
                         Button{selection.pin(entry.id)} label:{HStack{Circle().fill(eventColor(entry.eventType)).frame(width:5,height:5);Text(entry.kind);Spacer();if let r=entry.response{Text(r.tokensPerSecond.map{String(format:"%.1f t/s",$0)} ?? "无计时").monospacedDigit()}}}.buttonStyle(.plain).font(.caption).padding(.vertical,3)
                     }
                     if let entry=data.entry(selection.selectedID),data.bucket(for:entry.id)==index{Divider();TimelineRawDetails(entry:entry)}
-                }.padding(.top,6)
+                }.padding(.top,6)}
             }.font(.caption)
-        }.padding(10).background(.white.opacity(0.04),in:RoundedRectangle(cornerRadius:10)).onChange(of:index){_,_ in page=0}
+        }.padding(10).background(.white.opacity(0.04),in:RoundedRectangle(cornerRadius:10)).onChange(of:index){_,_ in if page != 0{page=0}}
     }
     private func amount(_ n:Double?)->String{n.map{$0>=1000 ? String(format:"%.1fK",$0/1000):String(format:"%.0f",$0)} ?? "—"}
     private func metric(_ label:String,_ value:String)->some View{VStack(alignment:.leading,spacing:3){Text(label).font(.caption2).foregroundStyle(.secondary);Text(value).font(.callout).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading)}

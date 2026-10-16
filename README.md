@@ -2,7 +2,7 @@
 
 为 macOS 上的 Codex / ChatGPT 桌面聊天管理上下文预算，提供菜单栏调节、用量与缓存图表、全局默认和可选的上下文拓展。
 
-**0.15.1 · Apple Silicon · macOS 14+ · 私有测试版**
+**0.15.3 · Apple Silicon · macOS 14+ · 私有测试版**
 
 ## 快速安装
 

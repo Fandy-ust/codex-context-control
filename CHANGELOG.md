@@ -1,5 +1,12 @@
 # Changes
 
+## 0.15.3 — 2026-10-16
+
+- Fix horizontal-axis hover being ignored and stale highlights remaining after pointer exit.
+- Cache chart scale mapping, coalesce pointer bursts to display-rate updates, and render crosshairs independently from detail selection.
+- Preformat bucket summaries off the UI thread; construct raw-record rows only when expanded.
+- Give chart interaction priority over automatic data refresh and apply deferred results after pointer exit.
+
 ## 0.15.1 — 2026-10-16
 
 - Sort chats by real activity rather than the time a bridge snapshot was received; running chats lead, then recent starts/completions.
