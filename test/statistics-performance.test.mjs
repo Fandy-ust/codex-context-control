@@ -6,7 +6,7 @@ import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {readHistory,createHistoryCache,analyzeContext,analyzeEvents} from '../src/context-statistics.mjs';
 import {createContextStatisticsService} from '../src/context-statistics-service.mjs';
-const ids=['11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','33333333-3333-3333-3333-333333333333'];
+const ids=['11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','33333333-3333-3333-3333-333333333333','44444444-4444-4444-4444-444444444444'];
 const event=(type,payload)=>({type,payload,timestamp:'2026-10-16T00:00:00Z'});
 const message=(role,text)=>({type:'message',role,phase:role==='assistant'?'final':undefined,content:[{type:'input_text',text}]});
 const encode=events=>events.map(e=>JSON.stringify(e)).join('\n')+'\n';
@@ -56,5 +56,11 @@ test('failed analysis recovers and closing the service cancels pending work',asy
 test('idle workers release their memory after the configured idle interval',async()=>{
  const f=fixture(),get=createContextStatisticsService(f.home,{cacheMs:0,idleMs:20});
  try{await get(ids[0]);await new Promise(r=>setTimeout(r,150));assert.equal(get.diagnostics().workers,0);}
+ finally{get.close();f.close();}
+});
+
+test('statistics affinity reuses a chat cache even after the worker served another chat',async()=>{
+ const f=fixture(),get=createContextStatisticsService(f.home,{cacheMs:0,idleMs:60000});
+ try{await Promise.all([get(ids[0]),get(ids[1])]);await Promise.all([get(ids[2]),get(ids[3])]);await get(ids[1]);assert.equal(get.diagnostics().last.resultCacheHit,true);assert.equal(get.diagnostics().workerStarts,2);}
  finally{get.close();f.close();}
 });

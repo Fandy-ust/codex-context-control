@@ -6,7 +6,10 @@ import {inheritedForkPolicy} from './fork-budget.mjs';
 
 export class Store {
   constructor(){this.file=path.join(root,'state.json');this.data=readJSON(this.file,{version:2,policies:{},threads:{}});const legacy=this.data.version<2;for(const t of Object.values(this.data.threads)){if(legacy||(t.name&&(t.name.length>120||/[\r\n]/.test(t.name))))t.name=null;}this.data.version=2;this.metadata=new Map();this.metadataCheckedAt=0;}
-  save(){atomicJSON(this.file,this.data);}
+  save(){clearTimeout(this.saveTimer);this.saveTimer=null;atomicJSON(this.file,this.data);this.dirty=false;this.writes=(this.writes??0)+1;}
+  scheduleSave(delay=150){this.dirty=true;if(this.saveTimer)return;this.saveTimer=setTimeout(()=>{this.saveTimer=null;try{this.save();}catch(error){if(Date.now()-(this.lastSaveErrorAt??0)>15000){this.lastSaveErrorAt=Date.now();process.stderr.write('Context Control: 观测状态保存失败：'+error.message+'\n');}}},delay);this.saveTimer.unref();}
+  flush(){if(this.dirty)this.save();}
+  diagnostics(){return {writes:this.writes??0,observationSavePending:!!this.saveTimer};}
   inheritDiscoveredForks(){
     let changed=false;
     const inherit=(id,seen=new Set())=>{

@@ -1,7 +1,7 @@
 import {Worker} from 'node:worker_threads';
 import {codexHome} from './paths.mjs';
 
-export function createContextStatisticsService(home=codexHome,{idleMs=60000,cacheMs=1000,maxWorkers=2,timeoutMs=25000}={}){
+export function createContextStatisticsService(home=codexHome,{idleMs=30000,cacheMs=1000,maxWorkers=2,timeoutMs=25000}={}){
   const cache=new Map(),pending=new Map(),queue=[],slots=[];
   const workerLimit=Number.isInteger(maxWorkers)?Math.max(1,Math.min(2,maxWorkers)):2;
   let sequence=0,closed=false,workerStarts=0,lastDiagnostics=null;
@@ -9,12 +9,12 @@ export function createContextStatisticsService(home=codexHome,{idleMs=60000,cach
   const complete=(slot,error,result)=>{
     const job=slot.job;if(!job)return;slot.job=null;clearTimeout(slot.timer);
     if(error){retire(slot);job.reject(error);}
-    else {job.resolve(result);slot.worker.unref();slot.idleTimer=setTimeout(()=>retire(slot),idleMs);slot.idleTimer.unref();}
+    else {slot.affinity.delete(job.id);slot.affinity.add(job.id);if(slot.affinity.size>12)slot.affinity.delete(slot.affinity.values().next().value);job.resolve(result);slot.worker.unref();slot.idleTimer=setTimeout(()=>retire(slot),idleMs);slot.idleTimer.unref();}
     dispatch();
   };
   function makeSlot(){
     const worker=new Worker(new URL('./context-statistics-worker.mjs',import.meta.url),{workerData:{home},resourceLimits:{maxOldGenerationSizeMb:384},execArgv:[]});
-    const slot={worker,job:null,lastId:null};slots.push(slot);workerStarts++;
+    const slot={worker,job:null,lastId:null,affinity:new Set()};slots.push(slot);workerStarts++;
     worker.on('message',message=>{if(message.taskId!==slot.job?.taskId)return;lastDiagnostics=message.diagnostics??null;complete(slot,message.error?new Error(message.error):null,message.result);});
     worker.on('error',()=>complete(slot,new Error('统计进程无法完成，请刷新重试')));
     worker.on('exit',()=>{clearTimeout(slot.idleTimer);if(slot.job)complete(slot,new Error('统计进程已退出，请重试'));else {const i=slots.indexOf(slot);if(i>=0)slots.splice(i,1);}});
@@ -23,7 +23,7 @@ export function createContextStatisticsService(home=codexHome,{idleMs=60000,cach
   function dispatch(){
     if(closed)return;
     while(queue.length){
-      const next=queue[0];let slot=slots.find(s=>!s.job&&s.lastId===next.id)??slots.find(s=>!s.job);
+      const next=queue[0];let slot=slots.find(s=>!s.job&&s.lastId===next.id)??slots.find(s=>!s.job&&s.affinity.has(next.id))??slots.find(s=>!s.job);
       if(!slot){if(slots.length>=workerLimit)return;try{slot=makeSlot();}catch{queue.shift().reject(new Error('无法启动统计进程'));continue;}}
       const job=queue.shift();clearTimeout(slot.idleTimer);slot.job=job;slot.lastId=job.id;slot.worker.ref();
       slot.timer=setTimeout(()=>complete(slot,new Error('统计耗时过长，请稍后刷新')),timeoutMs);

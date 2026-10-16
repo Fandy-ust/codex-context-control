@@ -5,13 +5,16 @@ import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {root,codexHome,ensureRoot,atomicJSON,readJSON,realBinary} from '../src/paths.mjs';
+import {replaceDirectory} from '../src/install-layout.mjs';
+import {installBundledNode} from '../src/bundled-node.mjs';
+import {runtimeSupported} from '../src/compatibility.mjs';
 import {enableAutomaticStartup,disableAutomaticStartup} from '../src/automatic-startup.mjs';
 import {ensureMenuBarEntry,stopMenuBarEntry} from '../src/menu-bar.mjs';
 
 const repo=fileURLToPath(new URL('../',import.meta.url));
 const applications=process.env.CONTEXT_CONTROL_APPLICATIONS || path.join(os.homedir(),'Applications');
 const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
-const nodeBinary=(process.env.PATH||'').split(path.delimiter).map(dir=>path.join(dir,'node')).find(file=>{try{return fs.realpathSync(file)===fs.realpathSync(process.execPath);}catch{return false;}})||process.execPath;
+let nodeBinary=(process.env.PATH||'').split(path.delimiter).map(dir=>path.join(dir,'node')).find(file=>{try{return fs.realpathSync(file)===fs.realpathSync(process.execPath);}catch{return false;}})||process.execPath;
 const hooksFile=path.join(codexHome,'hooks.json');
 const installedApp=path.join(applications,'Codex Context Control.app');
 const launcherApp=path.join(applications,'Codex Context Launcher.app');
@@ -41,6 +44,11 @@ if(process.argv.includes('--uninstall')){
 }else{
   if(process.platform!=='darwin')throw new Error('首版安装程序面向 macOS；核心测试可在 Node.js 上运行。');
   const binary=realBinary();if(!fs.existsSync(binary))throw new Error('未找到 Codex 二进制文件');
+  if(process.argv.includes('--require-supported-runtime')){const version=spawnSync(binary,['--version'],{encoding:'utf8',timeout:5000}).stdout?.trim();if(!runtimeSupported(version))throw Error('当前 Codex 运行时尚未支持：'+(version||'无法识别版本'));}
+  if(process.argv.includes('--bundled-node')){
+    if(!fs.existsSync(path.join(repo,'build/Codex Context Control.app/Contents/MacOS/ContextControl'))||!fs.existsSync(path.join(repo,'node_modules/js-tiktoken/package.json')))throw Error('安装包不完整，请重新下载。');
+    nodeBinary=installBundledNode({home:root,license:path.join(repo,'vendor/Node-LICENSE.txt')});
+  }
   if(!fs.existsSync(path.join(repo,'node_modules/js-tiktoken/package.json'))){
     const dependencies=spawnSync('npm',['ci','--omit=dev','--ignore-scripts'],{cwd:repo,stdio:'inherit'});if(dependencies.status!==0)process.exit(dependencies.status||1);
   }
@@ -51,11 +59,12 @@ if(process.argv.includes('--uninstall')){
   const oldVersion=readJSON(path.join(root,'code/package.json'),{})?.version;
   const extensionFile=path.join(root,'context-extension.json');
   if(!fs.existsSync(extensionFile)&&/^0\.(12|13)\./.test(oldVersion??''))atomicJSON(extensionFile,{enabled:true,migratedFrom:oldVersion,updatedAt:Date.now()});
-  const code=path.join(root,'code');fs.mkdirSync(code,{recursive:true,mode:0o700});
-  for(const dir of ['src','scripts','runtime-patches'])fs.cpSync(path.join(repo,dir),path.join(code,dir),{recursive:true});
-  fs.copyFileSync(path.join(repo,'package.json'),path.join(code,'package.json'));
-  fs.copyFileSync(path.join(repo,'package-lock.json'),path.join(code,'package-lock.json'));
-  fs.cpSync(path.join(repo,'node_modules'),path.join(code,'node_modules'),{recursive:true});
+  const code=path.join(root,'code');
+  replaceDirectory(code,stage=>{
+    for(const dir of ['src','scripts','runtime-patches'])fs.cpSync(path.join(repo,dir),path.join(stage,dir),{recursive:true});
+    for(const file of ['package.json','package-lock.json'])fs.copyFileSync(path.join(repo,file),path.join(stage,file));
+    fs.cpSync(path.join(repo,'node_modules'),path.join(stage,'node_modules'),{recursive:true});
+  });
   const shim=path.join(root,'bin/codex-context');
   shellFile(shim,`exec ${quote(nodeBinary)} ${quote(path.join(code,'src/wrapper.mjs'))} "$@"`);
   const hookCommand=`${quote(nodeBinary)} ${quote(path.join(code,'src/cli.mjs'))} hook`;
@@ -73,8 +82,7 @@ if(process.argv.includes('--uninstall')){
     try{fs.symlinkSync(path.join(binDir,name),link);}catch{}
   }
   await stopMenuBarEntry(installedApp);
-  fs.mkdirSync(applications,{recursive:true});fs.rmSync(installedApp,{recursive:true,force:true});
-  fs.cpSync(builtPanel,installedApp,{recursive:true});
+  replaceDirectory(installedApp,stage=>{fs.cpSync(builtPanel,stage,{recursive:true});const check=spawnSync('/usr/bin/codesign',['--verify','--strict',stage],{encoding:'utf8'});if(check.status!==0)throw Error('安装应用签名校验失败：'+check.stderr);});
   // Preserve the signed native bundle: CFBundleExecutable must name the real
   // application process so macOS can attribute its menu-bar entry correctly.
   editHook(hookCommand);

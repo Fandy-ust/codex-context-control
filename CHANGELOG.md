@@ -1,5 +1,13 @@
 # Changes
 
+## 0.15.0 — 2026-10-16
+
+- Schedule UI refreshes according to visibility and activity, with immediate wake-up when opened and bounded service-recovery attempts.
+- Coalesce observation persistence while retaining synchronous budget/config writes; improve statistics worker affinity and release idle workers earlier.
+- Add an Apple Silicon GUI installer with a pinned, checksummed Node runtime and precompiled panel; no end-user developer tools required.
+- Install runtime binaries under immutable paths and replace application/code directories only after complete staging.
+- Add package-integrity and empty-PATH installation tests, private artifact workflow, and signing/notarization documentation.
+
 ## 0.14.1 — 2026-10-16
 
 - Fix extension off/on permanently shrinking 920K budgets to 828.4K. Restore pre-disable values unless explicitly edited while native mode was active.

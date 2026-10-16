@@ -1,6 +1,6 @@
 {
   "name": "codex-context-control",
-  "version": "0.14.1",
+  "version": "0.15.0",
   "private": true,
   "type": "module",
   "description": "Local per-chat context budgets for Codex Desktop",
@@ -15,7 +15,9 @@
     "uninstall:local": "node scripts/install.mjs --uninstall",
     "doctor": "node src/cli.mjs doctor",
     "start": "node src/cli.mjs start",
-    "test:stress": "node scripts/stress-app.mjs"
+    "test:stress": "node scripts/stress-app.mjs",
+    "package:mac": "node scripts/package-mac.mjs",
+    "test:distribution": "node --test test/distribution.test.mjs"
   },
   "dependencies": {
     "js-tiktoken": "1.0.21"

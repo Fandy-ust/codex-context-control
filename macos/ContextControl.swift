@@ -540,6 +540,10 @@ struct ContentView: View {
     private var statusHighlight:StatusItemHighlight?
     private var settingsWindow:NSWindow?
     private var refreshTask:Task<Void,Never>?
+    private var refreshTimer:Timer?
+    private var refreshInProgress=false
+    private var refreshPending=false
+    private var lastServiceStart=Date.distantPast
     private var serviceStarter:Process?
     private var menuPanel:ContextMenuPanel?
     private var localMenuMonitor:Any?
@@ -568,14 +572,29 @@ struct ContentView: View {
         updateStatusIcon()
         if !background{showSettings()}
         publishStatus()
-        refreshTask=Task {while !Task.isCancelled{
+        refreshNow()
+    }
+    private func refreshNow(){
+        refreshTimer?.invalidate();refreshTimer=nil
+        if refreshInProgress{refreshPending=true;return}
+        refreshInProgress=true
+        refreshTask=Task{[weak self] in
+            guard let self else{return}
             await model.refresh()
+            guard !Task.isCancelled else{refreshInProgress=false;return}
             updateStatusIcon()
             if menuPanel?.isVisible==true,!model.menuDragInProgress,NSEvent.pressedMouseButtons==0{positionContextMenu()}
             publishStatus()
-            try? await Task.sleep(for:.seconds(2))
-        }}
+            if !model.serviceAvailable && Date().timeIntervalSince(lastServiceStart)>=15{startLocalService()}
+            refreshInProgress=false
+            if refreshPending{refreshPending=false;refreshNow();return}
+            let visible=settingsWindow.map{$0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible)} ?? false
+            let delay=RefreshSchedule.interval(menuVisible:menuPanel?.isVisible==true,settingsVisible:visible,runningChats:model.runningChats.count,connected:model.bridgeCount>0,serviceAvailable:model.serviceAvailable)
+            let timer=Timer(timeInterval:delay,repeats:false){[weak self] _ in Task{@MainActor in self?.refreshNow()}}
+            timer.tolerance=RefreshSchedule.tolerance(for:delay);refreshTimer=timer;RunLoop.main.add(timer,forMode:.common)
+        }
     }
+    func applicationDidBecomeActive(_ notification:Notification){refreshNow()}
     private func updateStatusIcon(){
         statusHighlight?.refresh()
         let busiest=model.busiestContext
@@ -589,6 +608,7 @@ struct ContentView: View {
         statusItem?.button?.setAccessibilityLabel("Context Manager，\(summary)，打开聊天概览")
     }
     @objc private func toggleContextPopover(){
+        refreshNow()
         if menuPanel?.isVisible==true{closeContextMenu();return}
         guard statusItem?.button != nil else{return}
         if menuPanel==nil{
@@ -636,6 +656,7 @@ struct ContentView: View {
         if let globalMenuMonitor{NSEvent.removeMonitor(globalMenuMonitor);self.globalMenuMonitor=nil}
     }
     private func startLocalService(){
+        lastServiceStart=Date()
         // The app itself stays the native CFBundleExecutable. Starting Node
         // from a shell entrypoint prevents reliable Launch Services attribution.
         guard let data=try? Data(contentsOf:model.home.appendingPathComponent("settings.json")),
@@ -669,7 +690,7 @@ struct ContentView: View {
             settingsWindow=window
         }
         settingsWindow?.deminiaturize(nil);settingsWindow?.makeKeyAndOrderFront(nil)
-        NSApplication.shared.activate(ignoringOtherApps:true);publishStatus()
+        NSApplication.shared.activate(ignoringOtherApps:true);publishStatus();refreshNow()
     }
     @objc private func openCodex(){model.launchCodex()}
     @objc private func quitEntry(){NSApplication.shared.terminate(nil)}
@@ -692,5 +713,5 @@ struct ContentView: View {
             try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:url.path);lastStatus=data
         }catch{}
     }
-    func applicationWillTerminate(_ notification:Notification){closeContextMenu();refreshTask?.cancel();try? FileManager.default.removeItem(at:model.home.appendingPathComponent("ui-status.json"))}
+    func applicationWillTerminate(_ notification:Notification){closeContextMenu();refreshTimer?.invalidate();refreshTask?.cancel();try? FileManager.default.removeItem(at:model.home.appendingPathComponent("ui-status.json"))}
 }

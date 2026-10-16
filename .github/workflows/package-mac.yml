@@ -1,0 +1,37 @@
+name: macOS installer
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-installer
+  cancel-in-progress: false
+jobs:
+  apple-silicon:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - uses: actions/cache@v4
+        with:
+          path: build/vendor
+          key: macos-node-${{ hashFiles('packaging/node-runtime.json') }}
+      - run: npm run package:mac -- --release
+      - name: Validate installation without developer tools
+        run: |
+          archive=$(find "$PWD/build/distribution" -maxdepth 1 -name '*.zip' -print -quit)
+          CONTEXT_CONTROL_TEST_INSTALLER_ZIP="$archive" npm run test:distribution
+      - uses: actions/upload-artifact@v4
+        with:
+          name: context-manager-apple-silicon-preview
+          path: |
+            build/distribution/*.zip
+            build/distribution/*.sha256
+            build/distribution/package-info.json
+          retention-days: 30

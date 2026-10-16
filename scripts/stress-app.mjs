@@ -31,6 +31,11 @@ try{
  async function attach(on){for(let i=0;i<4;i++){const p=await connect(async()=>{await sleep(1);return {queued:true};});peers.push(p);await p.call('registerBridge',{pid:process.pid,contextCeiling:on?1:null,contextCatalogRevision:on?2:null,newChatDefaultsVersion:2});for(let j=i;j<ids.length;j+=4)await p.call('updateThread',{id:ids[j],name:'Synthetic chat '+j,model:'context-fixture',status:'idle',lastUsage:{totalTokens:1000},freshUsage:true,observedWindow:on?920000:828400});}}
  async function detach(){for(const p of peers.splice(0))p.close();for(let n=0;n<100;n++){if((await request('state')).bridgeCount===0)return;await sleep(5);}throw Error('Disconnect did not settle');}
  await attach(true);
+ await phase('observation-persistence',async()=>{
+  daemon.store.flush();const before=daemon.store.diagnostics().writes;
+  for(let n=0;n<1000;n++)await peers[n%4].call('updateThread',{id:ids[n%24],model:'context-fixture',status:'idle',lastUsage:{totalTokens:n},freshUsage:true,observedWindow:920000});
+  daemon.store.flush();const writes=daemon.store.diagnostics().writes-before;assert.ok(writes<100);const saved=JSON.parse(fs.readFileSync(path.join(control,'state.json')));assert.equal(saved.threads[ids[999%24]].lastUsage.totalTokens,999);return {observations:1000,persistedWrites:writes};
+ });
  await phase('concurrent-control-requests',async()=>{
   const latency=[];let total=0;for(let batch=0;batch<50;batch++)await Promise.all(ids.map(async(id,i)=>{const t=performance.now(),w=200000+((batch+i)%73)*10000;const r=await post('/policy',{id,policy:{window:Math.ceil(w/.9),compact:Math.floor(w*.8),reserve:16000},apply:true});assert.equal(r.status,200);latency.push(performance.now()-t);total++;}));
   const s=await request('state');assert.equal(s.threads.length,24);for(const t of s.threads)assert.equal(t.policy.revision,50);
