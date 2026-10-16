@@ -68,6 +68,8 @@ macOS 自动接入测试使用随机、独立的探测环境变量与登录任�
 
 当前分发方式是从源码本地构建，不提供已签名/公证的跨机器应用包。后续可增加 GitHub Release 的已签名通用应用、自动更新与独立安装包。
 
+修复版 Codex 核心的构建脚本 `scripts/build-patched-runtime.mjs` 根据 CPU 数和内存选择并行数，默认每个任务预留约 2 GiB 的内存预算（经验值，并非硬性内存限制）。专用构建机可用 `CONTEXT_CONTROL_BUILD_JOBS=8 node scripts/build-patched-runtime.mjs` 显式指定。首次构建仍需编译完整 Rust 依赖；增加并行数不能消除串行依赖和链接耗时。GitHub 工作流保存 Cargo 缓存，并在后续验证失败时仍上传已生成的候选产物；只有通过验证的产物才能安装。已经运行的 GitHub 托管构建无法中途改变机器规格。
+
 ## 开发环境覆盖
 
 仅用于隔离测试：`CONTEXT_CONTROL_HOME`、`CONTEXT_CONTROL_CODEX_HOME`、`CONTEXT_CONTROL_REAL_CODEX`、`CONTEXT_CONTROL_CATALOG_PATH`、`CONTEXT_CONTROL_APPLICATIONS`、`CONTEXT_CONTROL_TEST_CODEX`。这些变量不改变父进程的 HOME，也不会把真实凭据复制到测试目录。

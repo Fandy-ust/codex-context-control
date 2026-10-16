@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const repo=fileURLToPath(new URL('../',import.meta.url));
@@ -14,6 +15,14 @@ const hash=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).diges
 const patch=path.join(repo,`runtime-patches/${pin.baseVersion}.patch`);
 if(hash(patch)!==pin.patchSHA256)throw Error('Patch checksum mismatch');
 const env={...process.env,CARGO_PROFILE_RELEASE_LTO:'false',CARGO_PROFILE_RELEASE_DEBUG:'0',CARGO_PROFILE_RELEASE_CODEGEN_UNITS:'16',CARGO_INCREMENTAL:'0',MACOSX_DEPLOYMENT_TARGET:'14.0'};
+// Rust release builds are memory-heavy. Scale with the host without forcing
+// small CI machines to swap; dedicated builders can explicitly override this.
+const cpuCount=os.availableParallelism(),memoryGiB=os.totalmem()/1024**3;
+const requestedJobs=process.env.CONTEXT_CONTROL_BUILD_JOBS;
+if(requestedJobs!==undefined&&!/^[1-9]\d*$/.test(requestedJobs))throw Error('CONTEXT_CONTROL_BUILD_JOBS must be a positive integer');
+const jobs=requestedJobs===undefined?Math.max(1,Math.min(cpuCount,Math.floor(memoryGiB/2))):Number(requestedJobs);
+if(!Number.isSafeInteger(jobs))throw Error('CONTEXT_CONTROL_BUILD_JOBS is too large');
+console.log(`Build resources: ${cpuCount} CPUs, ${memoryGiB.toFixed(1)} GiB RAM; ${jobs} parallel jobs`);
 function run(cmd,args,cwd=repo,extraEnv={}){
   const r=spawnSync(cmd,args,{cwd,env:{...env,...extraEnv},stdio:'inherit'});
   if(r.error||r.status!==0)throw Error(`${cmd} failed (${r.status??r.error?.message})`);
@@ -31,7 +40,7 @@ if(actual!==pin.sourceCommit)throw Error('Source revision mismatch');
 const applied=spawnSync('git',['apply','--reverse','--check',patch],{cwd:source,stdio:'ignore'}).status===0;
 if(!applied){run('git',['apply','--check',patch],source);run('git',['apply',patch],source);}
 run('rustup',['toolchain','install',pin.toolchain,'--profile','minimal']);
-run('cargo',[`+${pin.toolchain}`,'build','--release','--jobs','3','--package','codex-cli','--bin','codex'],path.join(source,'codex-rs'));
+run('cargo',[`+${pin.toolchain}`,'build','--release','--jobs',String(jobs),'--package','codex-cli','--bin','codex'],path.join(source,'codex-rs'));
 fs.mkdirSync(output,{recursive:true});
 const binary=path.join(output,'codex');
 fs.copyFileSync(path.join(source,'codex-rs/target/release/codex'),binary);fs.chmodSync(binary,0o755);
