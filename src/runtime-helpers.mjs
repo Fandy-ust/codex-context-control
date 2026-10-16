@@ -19,6 +19,8 @@ export function installRuntimeHelpers(directory,original,baseVersion){
   if(version.status!==0||version.stdout.trim()!==`codex-cli ${baseVersion}`)throw Error('辅助程序版本与修复包不匹配');
   const source=path.resolve(path.dirname(original),'..');
   if(!fs.existsSync(path.join(source,'codex-package.json')))throw Error('未找到桌面版 Codex 辅助程序目录');
+  const layout=JSON.parse(fs.readFileSync(path.join(source,'codex-package.json'),'utf8'));
+  if(layout.version!==baseVersion||layout.layoutVersion!==1||layout.entrypoint!=='bin/codex'||layout.resourcesDir!=='codex-resources'||layout.pathDir!=='codex-path')throw Error('桌面辅助程序的版本或布局不匹配');
   fs.mkdirSync(path.join(directory,'bin'),{recursive:true});
   fs.copyFileSync(path.join(source,'bin/codex-code-mode-host'),path.join(directory,'bin/codex-code-mode-host'));
   fs.chmodSync(path.join(directory,'bin/codex-code-mode-host'),0o755);

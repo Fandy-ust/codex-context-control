@@ -110,7 +110,8 @@ test('desktop helpers are copied independently, version checked and verified',{s
     const source=path.join(home,'desktop'),out=path.join(home,'installed');
     for(const d of ['bin','codex-path','codex-resources/voice'])fs.mkdirSync(path.join(source,d),{recursive:true});
     fs.mkdirSync(out);
-    fs.writeFileSync(path.join(source,'codex-package.json'),'{}');
+    const layout={version:'0.160.0',layoutVersion:1,entrypoint:'bin/codex',resourcesDir:'codex-resources',pathDir:'codex-path'};
+    fs.writeFileSync(path.join(source,'codex-package.json'),JSON.stringify(layout));
     const original=path.join(source,'bin/codex');
     fs.writeFileSync(original,"#!/bin/sh\nprintf 'codex-cli 0.160.0\\n'\n",{mode:0o755});
     for(const name of ['bin/codex-code-mode-host','codex-path/rg'])fs.writeFileSync(path.join(source,name),'helper',{mode:0o755});
@@ -118,6 +119,9 @@ test('desktop helpers are copied independently, version checked and verified',{s
     installRuntimeHelpers(out,original,'0.160.0');validateRuntimeHelpers(out,'0.160.0');
     fs.writeFileSync(path.join(source,'codex-resources/voice/data'),'updated resource');
     assert.equal(fs.readFileSync(path.join(out,'codex-resources/voice/data'),'utf8'),'original resource');
+    fs.writeFileSync(path.join(source,'codex-package.json'),JSON.stringify({...layout,version:'0.162.1'}));
+    assert.throws(()=>installRuntimeHelpers(out,original,'0.160.0'),/版本/);
+    fs.writeFileSync(path.join(source,'codex-package.json'),JSON.stringify(layout));
     fs.writeFileSync(original,"#!/bin/sh\nprintf 'codex-cli 0.162.1\\n'\n");
     assert.throws(()=>installRuntimeHelpers(out,original,'0.160.0'),/版本/);
     fs.writeFileSync(path.join(out,'codex-path/rg'),'corrupt');
