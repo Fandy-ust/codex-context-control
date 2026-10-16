@@ -16,7 +16,7 @@ extension Controller {
     var runningChats:[Chat] {serviceAvailable ? chats.filter(\.isRunning):[]}
     var recentChats:[Chat] {Array(chats.filter{$0.menuEligible && (!serviceAvailable || !$0.isRunning)}.prefix(5))}
     var busiestContext:Chat? {runningChats.filter{$0.freshUsage==true && $0.contextFraction != nil}.max{($0.contextFraction ?? 0)<($1.contextFraction ?? 0)}}
-    var contextMenuHeight:CGFloat {min(560,max(210,CGFloat(runningChats.count+recentChats.count)*60+170))}
+    var contextMenuHeight:CGFloat {min(560,max(210,CGFloat(runningChats.count+recentChats.count)*52+175))}
 }
 
 @MainActor func managerStatusImage(progress:Double?)->NSImage {
@@ -49,12 +49,12 @@ struct ContextUsageRing:View {
     private var color:Color {stale ? .gray:(fraction ?? 0)>=0.95 ? .orange:(fraction ?? 0)>=0.8 ? .yellow:.blue}
     var body:some View {
         ZStack {
-            Circle().stroke(.primary.opacity(0.10),lineWidth:2.5)
-            if let fraction {Circle().trim(from:0,to:max(0,min(1,fraction))).stroke(color,style:StrokeStyle(lineWidth:2.5,lineCap:.round)).rotationEffect(.degrees(-90))}
+            Circle().stroke(.primary.opacity(0.10),lineWidth:2)
+            if let fraction {Circle().trim(from:0,to:max(0,min(1,fraction))).stroke(color,style:StrokeStyle(lineWidth:2,lineCap:.round)).rotationEffect(.degrees(-90))}
             Text(fraction.map{String(format:"%.0f%%",$0*100)} ?? "—")
-                .font(.system(size:9,weight:.semibold,design:.rounded)).monospacedDigit()
-                .lineLimit(1).minimumScaleFactor(0.7).padding(4)
-        }.frame(width:34,height:34).accessibilityHidden(true)
+                .font(.system(size:8.5,weight:.semibold,design:.rounded)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.7).padding(3)
+        }.frame(width:28,height:28).accessibilityHidden(true)
     }
 }
 
@@ -100,13 +100,13 @@ struct ContextUsageRing:View {
         let stale = !model.serviceAvailable || !chat.connected || chat.freshUsage != true
         return Button{openChat(chat.id)} label:{
             HStack(spacing:10){
-                Text(chat.title).font(.system(size:12)).lineLimit(1).truncationMode(.middle).frame(maxWidth:.infinity,alignment:.leading)
-                VStack(spacing:3){
+                Text(chat.title).font(.system(size:14,weight:.medium)).lineLimit(1).truncationMode(.middle).frame(maxWidth:.infinity,alignment:.leading)
+                VStack(alignment:.trailing,spacing:3){
                     ContextUsageRing(fraction:chat.contextFraction,stale:stale)
                     Text(chat.contextFraction != nil ? "\(shortTokens(chat.lastUsage?.totalTokens)) / \(shortTokens(chat.observedWindow))\(stale ? " · 上次":"")":"尚无用量")
                         .font(.system(size:9)).foregroundStyle(.secondary)
-                }.monospacedDigit().frame(width:105)
-            }.padding(.horizontal,10).frame(height:58).contentShape(Rectangle())
+                }.monospacedDigit().frame(width:100,alignment:.trailing)
+            }.padding(.horizontal,10).frame(height:50).contentShape(Rectangle())
         }.buttonStyle(ContextMenuButtonStyle()).help("\(chat.title) · \(chat.contextPercentage)\(stale ? "（上次读回）":"")；点击打开设置")
             .accessibilityLabel("\(chat.title)，上下文 \(chat.contextPercentage)\(stale ? "，上次读回":"")，打开设置")
     }
