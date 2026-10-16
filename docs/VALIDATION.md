@@ -99,3 +99,5 @@ Hook stats 的新增定义需要在 `/hooks` 人工审核。该信任状态不�
 - 没有生成文本，没有 token usage 回传；不能将缺失 usage 当作零费用。真实聊天配置与历史未修改，临时登录副本随测试目录清理。
 
 结论：当前登录通道的 GPT-6.1 Sol 普通速度拒绝了此次百万级输入。扩大本地目录不保证服务端接受；一次失败不能测定精确边界，也不能外推到 Astra 或其他通道。原始无凭据报告保存在本机 `build/live-million-sol-result.json`。
+
+2026-10-16 14:45（香港时间），用户另行授权测试 950K。使用同一模型、Low 推理和普通速度，执行 `node scripts/probe-live-million-context.mjs --tokens=950000 --live`；合成用户文本估算为 949,949 tokens，另有原生指令和工具开销。本地窗口仍为 1,050,000，服务端仍返回 `failed` / `context_length_exceeded`，确认模型为 `gpt-6.1-sol`、速度档为 `default`，没有输出或 usage。该档位只转发一次真实请求，没有自动重试。报告为 `build/live-950000-sol-result.json`。这次失败仍不能据此确定精确的服务端 token 边界。

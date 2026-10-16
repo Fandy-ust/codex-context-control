@@ -2,11 +2,15 @@
 // Credentials are handled only by the native runtime and forwarded in memory.
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import http from 'node:http';import https from 'node:https';import zlib from 'node:zlib';import crypto from 'node:crypto';import readline from 'node:readline';import assert from 'node:assert/strict';import {spawn} from 'node:child_process';import {fileURLToPath} from 'node:url';import {getEncoding} from 'js-tiktoken';
 const repo=fileURLToPath(new URL('../',import.meta.url)),live=process.argv.includes('--live');
-const reportPath=path.join(repo,'build',live?'live-million-sol-result.json':'million-sol-dry-run.json');
-const marker=path.join(repo,'build/live-million-sol-attempt.json');
+const tokenArg=process.argv.find(a=>a.startsWith('--tokens='));
+const targetTokens=tokenArg?Number(tokenArg.slice(9)):1000000;
+assert.ok(Number.isSafeInteger(targetTokens)&&targetTokens>=1000&&targetTokens<=1000000,'Token target must be between 1K and 1M');
+const label=targetTokens===1000000?'million':String(targetTokens);
+const reportPath=path.join(repo,'build',live?`live-${label}-sol-result.json`:`${label}-sol-dry-run.json`);
+const marker=path.join(repo,`build/live-${label}-sol-attempt.json`);
 if(live&&fs.existsSync(marker))throw Error('A real attempt was already recorded; automatic repeat is blocked.');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-million-')),home=path.join(temp,'home');fs.mkdirSync(home,{mode:0o700});
-const report={model:'gpt-6.1-sol',requestedServiceTier:'default',reasoningEffort:'low',live,remoteGenerationRequests:0,startedAt:new Date().toISOString()};
+const report={model:'gpt-6.1-sol',requestedServiceTier:'default',reasoningEffort:'low',targetPromptTokens:targetTokens,live,remoteGenerationRequests:0,startedAt:new Date().toISOString()};
 const markers={first:crypto.randomBytes(5).toString('hex'),middle:crypto.randomBytes(5).toString('hex'),last:crypto.randomBytes(5).toString('hex')};
 let child,server,upstream,finished=false,sequence=0;const pending=new Map();let bufferedEvents='',output='',turnError=null;
 const redacted=e=>String(e?.message??e).replace(/Bearer\s+\S+/gi,'Bearer [REDACTED]').slice(0,600);
@@ -30,7 +34,7 @@ function ingest(chunk){
 try{
  const encoding=getEncoding('o200k_base');
  const block=' alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega.\n';
- const half=block.repeat(16666);
+ const half=block.repeat(Math.max(0,Math.floor((targetTokens-100)/60)));
  const prompt=`This is a synthetic context-capacity test. Ignore the filler. Return only JSON with the first, middle, and last MARKER values. Do not use tools or explain.\nFIRST_MARKER=${markers.first}\n${half}\nMIDDLE_MARKER=${markers.middle}\n${half}\nLAST_MARKER=${markers.last}\nReturn the three marker values as {"first":"...","middle":"...","last":"..."}.`;
  report.promptTokensEstimated=encoding.encode(prompt).length;report.promptBytes=Buffer.byteLength(prompt);report.tokenizer='o200k_base';
  console.log(JSON.stringify({stage:'prepared',model:report.model,fast:false,promptTokensEstimated:report.promptTokensEstimated,live}));
@@ -52,7 +56,7 @@ try{
    report.actualRequestServiceTier=body.service_tier??null;report.requestBytes=forwarded.length;report.uncompressedRequestBytes=forwarded.length;
    if(!live){
     const text=JSON.stringify(markers),item={id:'msg_probe',type:'message',role:'assistant',status:'completed',phase:'final',content:[{type:'output_text',text,annotations:[]}]};
-    const events=[{type:'response.created',response:{id:'resp_probe',status:'in_progress',output:[]}},{type:'response.output_item.added',output_index:0,item},{type:'response.output_text.delta',output_index:0,item_id:item.id,content_index:0,delta:text},{type:'response.output_item.done',output_index:0,item},{type:'response.completed',response:{id:'resp_probe',status:'completed',output:[item],usage:{input_tokens:1000000,output_tokens:30,total_tokens:1000030,input_tokens_details:{cached_tokens:0},output_tokens_details:{reasoning_tokens:0}}}}];
+    const events=[{type:'response.created',response:{id:'resp_probe',status:'in_progress',output:[]}},{type:'response.output_item.added',output_index:0,item},{type:'response.output_text.delta',output_index:0,item_id:item.id,content_index:0,delta:text},{type:'response.output_item.done',output_index:0,item},{type:'response.completed',response:{id:'resp_probe',status:'completed',output:[item],usage:{input_tokens:targetTokens,output_tokens:30,total_tokens:targetTokens+30,input_tokens_details:{cached_tokens:0},output_tokens_details:{reasoning_tokens:0}}}}];
     const sse=events.map(e=>`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');ingest(sse);res.writeHead(200,{'Content-Type':'text/event-stream'});res.end(sse);return;
    }
    assert.ok(req.headers.authorization?.startsWith('Bearer '),'Native runtime did not supply login credentials');
