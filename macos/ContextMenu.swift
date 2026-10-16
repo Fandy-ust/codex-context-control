@@ -16,7 +16,7 @@ extension Controller {
     var runningChats:[Chat] {serviceAvailable ? chats.filter(\.isRunning):[]}
     var recentChats:[Chat] {Array(chats.filter{$0.menuEligible && (!serviceAvailable || !$0.isRunning)}.prefix(5))}
     var busiestContext:Chat? {runningChats.filter{$0.freshUsage==true && $0.contextFraction != nil}.max{($0.contextFraction ?? 0)<($1.contextFraction ?? 0)}}
-    var contextMenuHeight:CGFloat {min(560,max(210,CGFloat(runningChats.count+recentChats.count)*42+170))}
+    var contextMenuHeight:CGFloat {min(560,max(210,CGFloat(runningChats.count+recentChats.count)*60+170))}
 }
 
 @MainActor func managerStatusImage(progress:Double?)->NSImage {
@@ -51,7 +51,10 @@ struct ContextUsageRing:View {
         ZStack {
             Circle().stroke(.primary.opacity(0.10),lineWidth:2.5)
             if let fraction {Circle().trim(from:0,to:max(0,min(1,fraction))).stroke(color,style:StrokeStyle(lineWidth:2.5,lineCap:.round)).rotationEffect(.degrees(-90))}
-        }.frame(width:20,height:20).accessibilityHidden(true)
+            Text(fraction.map{String(format:"%.0f%%",$0*100)} ?? "—")
+                .font(.system(size:9,weight:.semibold,design:.rounded)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.7).padding(4)
+        }.frame(width:34,height:34).accessibilityHidden(true)
     }
 }
 
@@ -98,13 +101,12 @@ struct ContextUsageRing:View {
         return Button{openChat(chat.id)} label:{
             HStack(spacing:10){
                 Text(chat.title).font(.system(size:12)).lineLimit(1).truncationMode(.middle).frame(maxWidth:.infinity,alignment:.leading)
-                ContextUsageRing(fraction:chat.contextFraction,stale:stale)
-                VStack(alignment:.trailing,spacing:2){
-                    Text(chat.contextFraction != nil ? chat.contextPercentage:"待观测").font(.system(size:12,weight:.medium))
+                VStack(spacing:3){
+                    ContextUsageRing(fraction:chat.contextFraction,stale:stale)
                     Text(chat.contextFraction != nil ? "\(shortTokens(chat.lastUsage?.totalTokens)) / \(shortTokens(chat.observedWindow))\(stale ? " · 上次":"")":"尚无用量")
                         .font(.system(size:9)).foregroundStyle(.secondary)
-                }.monospacedDigit().frame(width:105,alignment:.trailing)
-            }.padding(.horizontal,10).frame(height:40).contentShape(Rectangle())
+                }.monospacedDigit().frame(width:105)
+            }.padding(.horizontal,10).frame(height:58).contentShape(Rectangle())
         }.buttonStyle(ContextMenuButtonStyle()).help("\(chat.title) · \(chat.contextPercentage)\(stale ? "（上次读回）":"")；点击打开设置")
             .accessibilityLabel("\(chat.title)，上下文 \(chat.contextPercentage)\(stale ? "，上次读回":"")，打开设置")
     }
