@@ -6,11 +6,16 @@ const tokenArg=process.argv.find(a=>a.startsWith('--tokens='));
 const targetTokens=tokenArg?Number(tokenArg.slice(9)):1000000;
 assert.ok(Number.isSafeInteger(targetTokens)&&targetTokens>=1000&&targetTokens<=1000000,'Token target must be between 1K and 1M');
 const label=targetTokens===1000000?'million':String(targetTokens);
-const reportPath=path.join(repo,'build',live?`live-${label}-sol-result.json`:`${label}-sol-dry-run.json`);
-const marker=path.join(repo,`build/live-${label}-sol-attempt.json`);
+const modelArg=process.argv.find(a=>a.startsWith('--model='));
+const requestedModel=modelArg?modelArg.slice(8):'gpt-6.1-sol';
+assert.ok(['gpt-6.1-sol','gpt-6-sol'].includes(requestedModel),'Only explicitly supported Sol models may be tested');
+// Preserve the earlier 6.1 report names and one-attempt guards.
+const modelLabel=requestedModel==='gpt-6.1-sol'?'sol':requestedModel;
+const reportPath=path.join(repo,'build',live?`live-${label}-${modelLabel}-result.json`:`${label}-${modelLabel}-dry-run.json`);
+const marker=path.join(repo,`build/live-${label}-${modelLabel}-attempt.json`);
 if(live&&fs.existsSync(marker))throw Error('A real attempt was already recorded; automatic repeat is blocked.');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-million-')),home=path.join(temp,'home');fs.mkdirSync(home,{mode:0o700});
-const report={model:'gpt-6.1-sol',requestedServiceTier:'default',reasoningEffort:'low',targetPromptTokens:targetTokens,live,remoteGenerationRequests:0,startedAt:new Date().toISOString()};
+const report={model:requestedModel,requestedServiceTier:'default',reasoningEffort:'low',targetPromptTokens:targetTokens,live,remoteGenerationRequests:0,startedAt:new Date().toISOString()};
 const markers={first:crypto.randomBytes(5).toString('hex'),middle:crypto.randomBytes(5).toString('hex'),last:crypto.randomBytes(5).toString('hex')};
 let child,server,upstream,finished=false,sequence=0;const pending=new Map();let bufferedEvents='',output='',turnError=null;
 const redacted=e=>String(e?.message??e).replace(/Bearer\s+\S+/gi,'Bearer [REDACTED]').slice(0,600);
@@ -95,7 +100,8 @@ try{
  if(!finished)report.timeout=true;
  report.finishedAt=new Date().toISOString();try{report.markersCorrect=JSON.stringify(JSON.parse(output))===JSON.stringify(markers);}catch{report.markersCorrect=false;}
  report.completed=report.httpStatus===200&&report.responseStatus==='completed';if(!live)report.completed=report.responseStatus==='completed';persist();
- console.log(JSON.stringify({...report,output,turnError},null,2));
+ const briefUsage=report.usage?Object.fromEntries(Object.entries(report.usage).filter(([key])=>key!=='attribution')):null;
+ console.log(JSON.stringify({...report,usage:briefUsage,output,turnError},null,2));
 }finally{
  upstream?.destroy();if(child){const done=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await Promise.race([done,new Promise(r=>setTimeout(r,1000))]);if(child.exitCode==null)child.kill('SIGKILL');}
  for(const p of pending.values())clearTimeout(p.timer);if(server){server.closeAllConnections();await new Promise(r=>server.close(r));}
