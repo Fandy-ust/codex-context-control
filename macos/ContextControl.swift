@@ -23,7 +23,8 @@ struct Chat: Identifiable, Decodable {
     }
 }
 struct RuntimeFixState:Decodable {let enabled:Bool;let available:Bool;let compatible:Bool;let baseVersion:String;let originalVersion:String?;let activeCount:Int;let pending:Bool;let message:String}
-struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?}
+struct NewChatDefaultsState:Decodable,Equatable {let usableWindow:Int;let compact:Int;let revision:Int}
+struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -33,6 +34,8 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var selectedID:String?
     @Published var bridgeCount=0
     @Published var contextCeilingPending=false
+    @Published var newChatDefaults:NewChatDefaultsState?
+    @Published var newChatDefaultsPending=false
     @Published var serviceAvailable=false
     @Published var menuHeightLimit:CGFloat=560
     @Published var runtimeFix:RuntimeFixState?
@@ -70,7 +73,7 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func refresh() async {
         if refreshing{return};refreshing=true;defer{refreshing=false}
-        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount;runtimeFix=state.runtimeFix;contextCeilingPending=state.contextCeilingPending ?? false;serviceAvailable=true
+        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount;runtimeFix=state.runtimeFix;contextCeilingPending=state.contextCeilingPending ?? false;newChatDefaults=state.newChatDefaults;newChatDefaultsPending=state.newChatDefaultsPending ?? false;serviceAvailable=true
             if selectedID==nil{selectedID=chats.first?.id;fill()}
             else if waitingForModel,let metadata=selected?.modelMetadata,metadata.effective_context_window_percent != nil,metadata.max_context_window != nil{fill()}
             else if !budgetEdited,editingRevision != (selected?.policy?.revision ?? 0){fill()}
@@ -344,6 +347,7 @@ struct RuntimeFixControl:View {
 struct ContentView: View {
     @ObservedObject var model:Controller
     @State private var confirmCompact=false
+    @State private var showNewChatDefaults=false
     @State private var selectedThumb:BudgetThumb = .window
     private var maxMode:Bool {model.selected?.modelMetadata?.context_ceiling==920000 && Int(model.windowK)==920}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -371,6 +375,7 @@ struct ContentView: View {
                     }}
                 }.frame(maxHeight:.infinity)
                 if model.contextCeilingPending {Label("920K 扩展已安装，重开 Codex 后接入",systemImage:"arrow.clockwise").font(.caption).foregroundStyle(.orange)}
+                Button("全局默认",systemImage:"slider.horizontal.3"){showNewChatDefaults=true}.buttonStyle(.bordered)
                 RuntimeFixControl(model:model)
                 Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
             }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
@@ -409,6 +414,7 @@ struct ContentView: View {
         .background(PanelStyle.background)
         .preferredColorScheme(.dark).tint(PanelStyle.blue)
         .onChange(of:model.selectedID){_,_ in model.fill()}
+        .sheet(isPresented:$showNewChatDefaults){NewChatDefaultsView(model:model)}
         .confirmationDialog("请求 Codex 原生压缩？",isPresented:$confirmCompact,titleVisibility:.visible){Button("请求压缩"){Task{await model.act("compact")}};Button("取消",role:.cancel){}}message:{Text("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。")}
     }
     func budgetEditor()->some View {

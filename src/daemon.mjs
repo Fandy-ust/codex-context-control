@@ -13,6 +13,7 @@ import {reconcileWindowConfirmation} from './confirmation.mjs';
 import {inheritedForkPolicy} from './fork-budget.mjs';
 import {createRuntimeFixManager} from './runtime-fix.mjs';
 import {ceilingModel,migrateCeilingPolicy,CONTEXT_CEILING_VERSION} from './context-ceiling.mjs';
+import {initialNewChatDefaults,normalizeNewChatDefaults,policyForNewChat,persistedNewChatPolicy} from './new-chat-defaults.mjs';
 import {createContextStatisticsService} from './context-statistics-service.mjs';
 
 export async function startDaemon() {
@@ -39,12 +40,18 @@ export async function startDaemon() {
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
   function modelFor(id,slug){const model=store.model(slug??store.data.threads[id]?.model);const peers=owners.get(id)||[];return (peers.length===1&&bridges.get(peers[0])?.contextCeiling===CONTEXT_CEILING_VERSION)||(peers.length===0&&store.data.policies[id]?.contextCeilingVersion===CONTEXT_CEILING_VERSION)?ceilingModel(model):model;}
   function publicThread(id){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const catalogReady=peers.length===1&&bridges.get(peers[0])?.contextCatalogRevision===2;return {...t,modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',catalogReady]])):null};}
-  function state(){return {version:'0.12.1',bridgeCount:bridges.size,contextCeilingPending:bridges.size===0||[...bridges.values()].some(b=>b.contextCeiling!==CONTEXT_CEILING_VERSION||b.contextCatalogRevision!==2),runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function newChatDefaults(){return store.data.newChatDefaults||initialNewChatDefaults;}
+  function state(){return {newChatDefaults:newChatDefaults(),newChatDefaultsPending:bridges.size===0||[...bridges.values()].some(b=>b.newChatDefaultsVersion!==1),version:'0.13.0',bridgeCount:bridges.size,contextCeilingPending:bridges.size===0||[...bridges.values()].some(b=>b.contextCeiling!==CONTEXT_CEILING_VERSION||b.contextCatalogRevision!==2),runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.12.1'};
+    if(op==='ping')return {ok:true,version:'0.13.0'};
     if(op==='state')return state();
+    if(op==='newChatBudget')return {policy:policyForNewChat(newChatDefaults())};
+    if(op==='setNewChatDefaults'){
+      const current=newChatDefaults();if(p.expectedRevision!=null&&p.expectedRevision!==current.revision)throw Error('全局默认已被修改，请重新打开设置后保存。');
+      store.data.newChatDefaults={...normalizeNewChatDefaults(p),revision:current.revision+1,updatedAt:Date.now()};store.save();return newChatDefaults();
+    }
     if(op==='forkBudget')return {policy:store.data.policies[p.id]||null,model:modelFor(p.id,p.model)};
-    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
+    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:p.newChatDefaultsVersion===1?1:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180)throw new Error('聊天 ID 无效');
@@ -62,6 +69,7 @@ export async function startDaemon() {
       // Desktop-created forks may bypass this bridge's thread/fork RPC. Resolve
       // their native parent metadata before replying with the auto-apply policy.
       store.refreshMetadata();store.inheritDiscoveredForks();
+      if(!Object.hasOwn(store.data.policies,p.id)&&p.newChatPolicy&&b.newChatDefaultsVersion===1&&!p.ephemeral&&p.canAcceptDirectInput!==false&&!store.data.threads[p.id].forkedFromId){store.data.policies[p.id]={...persistedNewChatPolicy(p.newChatPolicy),updatedAt:Date.now()};}
       Object.assign(store.data.threads[p.id],reconcileWindowConfirmation(store.data.threads[p.id],store.data.policies[p.id],modelFor(p.id)));store.save();
       return {policy:store.data.policies[p.id]||null,model:modelFor(p.id,clean.model)};
     }
@@ -122,6 +130,7 @@ export async function startDaemon() {
         if(!Object.hasOwn(store.data.threads,params.id))throw new Error('未找到所选聊天');
         answer=await contextStatistics(params.id,params.refresh===true);
       }
+      else if(req.method==='POST'&&route==='/new-chat-defaults')answer=await handle(null,'setNewChatDefaults',params);
       else if(req.method==='POST'&&route==='/runtime-fix')answer=runtimeFix.setEnabled(params.enabled,undefined,[...bridges.values()]);
       else if(req.method==='POST'&&route==='/preflight')answer=await handle(null,'preflight',params);
       else if(req.method==='POST'&&route==='/policy')answer=await handle(null,'setPolicy',params);

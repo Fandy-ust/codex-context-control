@@ -2,6 +2,7 @@ import readline from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {getEncoding} from 'js-tiktoken';
 import {ceilingConfig,ceilingModel,migrateCeilingPolicy,MAX_CONTEXT_INPUT,MAX_CONTEXT_COMPACT,MIN_CONTEXT_RESERVE} from './context-ceiling.mjs';
+import {isNewUserChat} from './new-chat-defaults.mjs';
 import {preflight} from './policy.mjs';
 import {inheritedForkPolicy,forkConfig} from './fork-budget.mjs';
 
@@ -16,7 +17,7 @@ function incomingTokens(input=[]){inputEncoder??=getEncoding('o200k_base');retur
 export class Bridge {
   constructor(child,input,output,publish=async()=>({}),resolveFork=async()=>null,options={}) {
     this.child=child;this.input=input;this.output=output;this.publish=publish;this.records=new Map();this.internal=new Map();this.external=new Map();this.sequence=0;this.prefix=`context-control:${randomUUID()}:`;
-    this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;
+    this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;this.resolveNewChatBudget=options.resolveNewChatBudget;
     this.frontLines=readline.createInterface({input,crlfDelay:Infinity});this.backLines=readline.createInterface({input:child.stdout,crlfDelay:Infinity});
     this.frontLines.on('line',line=>this.fromClient(line));this.backLines.on('line',line=>this.fromServer(line));
     child.once('exit',()=>{for(const item of this.internal.values()){clearTimeout(item.timer);item.reject(new Error('Codex 运行时已退出'));}this.internal.clear();});
@@ -25,8 +26,9 @@ export class Bridge {
   writeFrontend(line){if(!this.output.write(line+'\n')){this.child.stdout.pause();this.output.once('drain',()=>this.child.stdout.resume());}}
   fromClient(line,preparedFork=null,guarded=false) {
     let m;try{m=JSON.parse(line);}catch{this.writeBackend(line);return;}
+    if(this.contextCeiling&&this.resolveNewChatBudget&&m.method==='thread/start'&&m.id!=null&&isNewUserChat(m.params)&&!preparedFork?.newChat){this.prepareNewChat(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if(this.contextCeiling&&m.method==='thread/resume'&&m.id!=null&&m.params?.threadId&&!m.params?.path&&!m.params?.ephemeral&&!preparedFork?.resume){this.prepareResume(m).catch(error=>this.rejectTurn(m,error.message));return;}
-    if(this.contextCeiling&&['thread/start','thread/resume','thread/fork'].includes(m.method)&&!m.params?.ephemeral){m.params={...m.params,config:ceilingConfig(m.params?.config)};line=JSON.stringify(m);}
+    if(this.contextCeiling&&['thread/start','thread/resume'].includes(m.method)&&!m.params?.ephemeral){m.params={...m.params,config:ceilingConfig(m.params?.config)};line=JSON.stringify(m);}
     const id=m.params?.threadId;const record=this.records.get(id);
     if(m.method==='turn/start'&&record&&!record.locked&&record.status==='idle'&&record.policy&&record.appliedRevision!==record.policy.revision){
       // Acquire the reload lock synchronously before letting a new turn use an
@@ -56,6 +58,11 @@ export class Bridge {
     }
     if(m.method==='turn/start'&&record)record.usageFresh=false;
     this.writeBackend(line);
+  }
+  async prepareNewChat(message){
+    const {policy}=await this.resolveNewChatBudget();
+    const params={...message.params,config:{...message.params?.config,model_context_window:policy.window,model_auto_compact_token_limit:policy.compact,model_auto_compact_token_limit_scope:'total'}};
+    this.fromClient(JSON.stringify({...message,params}),{newChat:true,newChatPolicy:structuredClone(policy)});
   }
   async prepareResume(message){
     const resolved=await this.resolveFork(message.params.threadId,message.params.model);
@@ -96,6 +103,7 @@ export class Bridge {
           const record=this.record(t.id);record.seed={...record.seed,...pending.seed,config:{...record.seed.config,...pending.seed.config}};
           Object.assign(record,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput']));
           record.model=m.result.model||record.model;record.status=t.status?.type||'idle';record.snapshot=m.result;
+          if(pending.method==='thread/start'&&pending.fork?.newChatPolicy&&!t.ephemeral&&t.canAcceptDirectInput!==false&&!t.forkedFromId){const policy=pending.fork.newChatPolicy;Object.assign(record,{newChatPolicy:policy,policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*.9),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已沿用新对话默认设置，等待首次窗口读回。'});}
           if(pending.fork?.resumePolicy){const policy=pending.fork.resumePolicy;Object.assign(record,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*.9),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已保留原聊天预算，等待下一轮窗口读回。'});}
           if(pending.method==='thread/fork'&&pending.fork?.policy&&t.id!==pending.threadId&&!t.ephemeral&&t.canAcceptDirectInput!==false){
             const {policy,source,parentId,model}=pending.fork;
@@ -151,7 +159,7 @@ export class Bridge {
     if(ready)this.fromClient(line,null,true);
     const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
   }
-  publicRecord(record){return pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy']);}
+  publicRecord(record){return pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy']);}
   notify(record){
     return Promise.resolve(this.publish(this.publicRecord(record))).then(reply=>{
       if(reply?.model?.slug===record.model)record.modelInfo=reply.model;

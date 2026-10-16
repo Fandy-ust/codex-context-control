@@ -24,7 +24,7 @@ if(!desktop||!isStdioServer(args)||!supported){
   let peer,closed=false,bridge;
   bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{
     await ensureDaemon();return request('forkBudget',{id,model});
-  },{contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null});
+  },{contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,resolveNewChatBudget:async()=>{await ensureDaemon();return request('newChatBudget');}});
   async function attach(){
     if(closed)return;
     try{
@@ -34,7 +34,7 @@ if(!desktop||!isStdioServer(args)||!supported){
         if(op==='compact')return bridge.compact(p.id);
         throw new Error('不支持的运行时操作');
       });
-      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null});
+      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,newChatDefaultsVersion:ceiling?1:null});
       for(const record of bridge.records.values())bridge.notify(record);
       peer.socket.once('close',()=>{peer=null;if(!closed)setTimeout(attach,1000).unref();});
     }catch{if(!closed)setTimeout(attach,1500).unref();}

@@ -22,13 +22,24 @@ test('real native runtime reports 920K, compacts after a high final answer and g
   const a=(await call('thread/start',{model:'context-fixture',cwd:temp,sandbox:'read-only',approvalPolicy:'never',baseInstructions:'Reply with fixture text. Never call tools.',config:{model_context_window:9999999,model_auto_compact_token_limit:9999999}})).thread.id;
   const e=await turn(a,'CEILING_HIGH');assert.ok(e.some(e=>e.method==='thread/tokenUsage/updated'&&e.params.tokenUsage.modelContextWindow===920000));
   assert.ok(e.some(e=>e.method==='item/completed'&&String(e.params.item?.type).toLowerCase()==='contextcompaction'),'native post-turn compaction must finish without another user input');
-  let state=await request('state');assert.equal(state.contextCeilingPending,false);assert.equal(state.threads.find(t=>t.id===a).modelMetadata.context_ceiling,920000);
+  let state=await request('state');assert.equal(state.contextCeilingPending,false);assert.equal(state.newChatDefaultsPending,false);assert.equal(state.threads.find(t=>t.id===a).modelMetadata.context_ceiling,920000);
   await assert.rejects(request('setPolicy',{id:a,policy:{window:1022223,compact:919000,reserve:16000},apply:true}),/16K/);
   await turn(a,'CEILING_NEAR');const before=fixture.requests.length;
   const guarded=await turn(a,' a'.repeat(20000));
   assert.ok(guarded.some(e=>e.method==='item/completed'&&String(e.params.item?.type).toLowerCase()==='contextcompaction'),'guard must compact before forwarding large input');
   assert.ok(fixture.requests.length>=before+2,'one summary and one normal request expected');
   assert.equal(fixture.requests.at(-1).model,'context-fixture');
+  await request('setNewChatDefaults',{usableWindow:500000,compact:450000,expectedRevision:0});
+  const b=(await call('thread/start',{model:'context-fixture',threadSource:'user',cwd:temp,sandbox:'read-only',approvalPolicy:'never'})).thread.id;
+  const bEvents=await turn(b,'new chat uses 500K from its first request');assert.ok(bEvents.some(e=>e.method==='thread/tokenUsage/updated'&&e.params.threadId===b&&e.params.tokenUsage.modelContextWindow===500000));
+  await request('setNewChatDefaults',{usableWindow:800000,compact:720000,expectedRevision:1});
+  assert.equal((await request('state')).threads.find(t=>t.id===b).policy.sourceDefaultsRevision,1);
+  const fork=(await call('thread/fork',{threadId:b,excludeTurns:true})).thread.id;
+  const fEvents=await turn(fork,'fork keeps parent 500K despite 800K global default');assert.ok(fEvents.some(e=>e.method==='thread/tokenUsage/updated'&&e.params.threadId===fork&&e.params.tokenUsage.modelContextWindow===500000));
+  assert.equal((await request('state')).threads.find(t=>t.id===fork).policy.inheritedFrom,b);
+  const c=(await call('thread/start',{model:'context-fixture',threadSource:'user',cwd:temp,sandbox:'read-only',approvalPolicy:'never'})).thread.id;
+  const cEvents=await turn(c,'next fresh chat uses changed 800K default without restarting');assert.ok(cEvents.some(e=>e.method==='thread/tokenUsage/updated'&&e.params.threadId===c&&e.params.tokenUsage.modelContextWindow===800000));
+  const original=(await request('state')).threads.find(t=>t.id===a);assert.equal(original.policy.window,1022223);
   await request('setPolicy',{id:a,policy:{window:777778,compact:630000,reserve:16000},apply:false});child.kill('SIGTERM');await until(async()=>(await request('state')).bridgeCount===0);
   const unloaded=(await request('state')).threads.find(t=>t.id===a);assert.equal(unloaded.modelMetadata.effective_context_window_percent,90);assert.equal(Math.floor(unloaded.policy.window*.9),700000);
  }finally{child.kill('SIGTERM');for(const p of pending.values())clearTimeout(p.timer);await sleep(300);try{const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json')));process.kill(c.pid,'SIGTERM');}catch{}fixture.server.closeAllConnections();await new Promise(r=>fixture.server.close(r));await sleep(150);fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});}

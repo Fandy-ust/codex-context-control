@@ -1,5 +1,12 @@
 # Changes
 
+## 0.13.0 — 2026-10-16
+
+- Add global defaults for newly created user chats with K-precision sliders and a copy-from-current-chat action.
+- Read and inject a frozen default budget before thread creation, then persist it independently for that chat.
+- Keep forks on parent inheritance, existing chats on their saved budgets, and temporary/managed sessions outside global-default application.
+- Report when a running desktop bridge still needs the one-time upgrade restart; subsequent default changes apply without restarting.
+
 ## 0.12.1 — 2026-10-16
 
 - Fix desktop startup config precedence: consolidate caller overrides after the app-server subcommand, then append the 920K catalog settings.
