@@ -24,7 +24,9 @@ struct Chat: Identifiable, Decodable,Equatable {
 }
 struct RuntimeFixState:Decodable,Equatable {let enabled:Bool;let available:Bool;let compatible:Bool;let baseVersion:String;let originalVersion:String?;let activeCount:Int;let pending:Bool;let message:String}
 struct NewChatDefaultsState:Decodable,Equatable {let usableWindow:Int;let compact:Int;let revision:Int}
-struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?}
+struct ContextExtensionState:Decodable,Equatable {let enabled:Bool;let effective:Bool;let pending:Bool;let activeCount:Int;let connectedCount:Int;let compatible:Bool;let available:Bool;let message:String}
+struct NewChatDefaultsLimits:Decodable,Equatable {let maximumUsableWindow:Int;let effectivePercent:Int;let extended:Bool}
+struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -34,6 +36,9 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var selectedID:String?
     @Published var bridgeCount=0
     @Published var contextCeilingPending=false
+    @Published var contextExtension:ContextExtensionState?
+    @Published var changingContextExtension=false
+    @Published var newChatDefaultsLimits:NewChatDefaultsLimits?
     @Published var newChatDefaults:NewChatDefaultsState?
     @Published var newChatDefaultsPending=false
     @Published var serviceAvailable=false
@@ -80,6 +85,8 @@ struct ServiceSettings: Decodable {let node:String}
             if bridgeCount != state.bridgeCount{bridgeCount=state.bridgeCount}
             if runtimeFix != state.runtimeFix{runtimeFix=state.runtimeFix}
             if contextCeilingPending != (state.contextCeilingPending ?? false){contextCeilingPending=state.contextCeilingPending ?? false}
+            if contextExtension != state.contextExtension{contextExtension=state.contextExtension}
+            if newChatDefaultsLimits != state.newChatDefaultsLimits{newChatDefaultsLimits=state.newChatDefaultsLimits}
             if newChatDefaults != state.newChatDefaults{newChatDefaults=state.newChatDefaults}
             if newChatDefaultsPending != (state.newChatDefaultsPending ?? false){newChatDefaultsPending=state.newChatDefaultsPending ?? false}
             if !serviceAvailable{serviceAvailable=true}
@@ -88,6 +95,10 @@ struct ServiceSettings: Decodable {let node:String}
             else if !budgetEdited,editingRevision != (selected?.policy?.revision ?? 0){fill()}
             if notice=="正在读取本地状态…"||notice.hasPrefix("读取失败："){notice=bridgeCount>0 ? "已接入 Codex。" : "照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。"}
         }catch{serviceAvailable=false;notice="读取失败：\(error.localizedDescription)"}
+    }
+    func setContextExtension(_ enabled:Bool) async {
+        changingContextExtension=true;defer{changingContextExtension=false}
+        do{let data=try await api("/context-extension",body:["enabled":enabled]);contextExtension=try JSONDecoder().decode(ContextExtensionState.self,from:data);await refresh();fill();notice=contextExtension?.message ?? "拓展设置已保存"}catch{notice=error.localizedDescription}
     }
     func fill(){
         defer{budgetEdited=false}
@@ -105,7 +116,7 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func calculate() throws -> BudgetPreview {
         guard let metadata=selected?.modelMetadata,let percent=metadata.effective_context_window_percent,let maximum=metadata.max_context_window else{throw BudgetInputError(message:"等待当前模型信息后即可设置实际可用窗口")}
-        guard metadata.context_ceiling == nil || metadata.context_catalog_ready != false else{throw BudgetInputError(message:"请完整退出并重开 Codex，加载修正后的 920K 模型目录")}
+        guard metadata.context_catalog_ready != false else{throw BudgetInputError(message:bridgeCount==0 ? "打开 Codex 并进入聊天后即可调整":selected?.connected == true ? "请完整退出并重开 Codex，使上下文设置生效":"请先在 Codex 打开此聊天")}
         guard !waitingForModel else{throw BudgetInputError(message:"正在读取此聊天的窗口设置")}
         guard Int(compactK)<=maximumCompactK else{throw BudgetInputError(message:"压缩阈值需保留下一轮输入余量")}
         return try BudgetMath.sliderPreview(windowK:Int(windowK),compactK:Int(compactK),effectivePercent:percent,maximumRawWindow:maximum)
@@ -120,7 +131,7 @@ struct ServiceSettings: Decodable {let node:String}
         let safe=m.context_ceiling.map{max(1000,$0-max(16000,(try? BudgetMath.tokens(reserve)) ?? 16000))/1000} ?? Int.max
         return min(native,safe)
     }
-    var canEditBudget:Bool {!waitingForModel && (maximumUsableWindow ?? 0)>=2000 && (selected?.modelMetadata?.context_ceiling == nil || selected?.modelMetadata?.context_catalog_ready != false)}
+    var canEditBudget:Bool {!waitingForModel && (maximumUsableWindow ?? 0)>=2000 && selected?.modelMetadata?.context_catalog_ready != false}
     var compactPercent:Double {compactK/windowK*100}
     func setWindowK(_ value:Double){
         budgetEdited=true
@@ -167,7 +178,7 @@ struct ServiceSettings: Decodable {let node:String}
 
 func formatted(_ n:Int?) -> String {guard let n else{return "待观测"};return n.formatted()+" tokens"}
 func phaseName(_ value:String?) -> String {
-    switch value {case "compacting":return "正在保护性压缩";case "confirmed":return "窗口已确认";case "awaiting_runtime_confirmation":return "等待下一轮确认";case "reloading":return "正在应用";case "waiting_for_idle","queued":return "等待轮次结束";case "needs_compaction":return "需要先压缩";case "needs_observation":return "等待用量记录";case "error","mismatch":return "需要处理";case "saved":return "已保存";default:return "尚未接入"}
+    switch value {case "extension_pending":return "等待重开 Codex";case "compacting":return "正在保护性压缩";case "confirmed":return "窗口已确认";case "awaiting_runtime_confirmation":return "等待下一轮确认";case "reloading":return "正在应用";case "waiting_for_idle","queued":return "等待轮次结束";case "needs_compaction":return "需要先压缩";case "needs_observation":return "等待用量记录";case "error","mismatch":return "需要处理";case "saved":return "已保存";default:return "尚未接入"}
 }
 
 private enum PanelStyle {
@@ -402,8 +413,9 @@ struct ContentView: View {
                         }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
                     }}
                 }.frame(maxHeight:.infinity)
-                if model.contextCeilingPending {Label("920K 扩展已安装，重开 Codex 后接入",systemImage:"arrow.clockwise").font(.caption).foregroundStyle(.orange)}
                 Button("全局默认",systemImage:"slider.horizontal.3"){showNewChatDefaults=true}.buttonStyle(.bordered)
+                Text("额外功能").font(.caption).foregroundStyle(.secondary)
+                ContextExtensionControl(model:model)
                 RuntimeFixControl(model:model)
                 Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
             }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)

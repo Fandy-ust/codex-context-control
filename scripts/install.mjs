@@ -48,6 +48,9 @@ if(process.argv.includes('--uninstall')){
   if(!process.argv.includes('--use-built-panel')||!fs.existsSync(path.join(builtPanel,'Contents/MacOS/ContextControl'))){
     const build=spawnSync(process.execPath,[path.join(repo,'scripts/build-mac.mjs')],{stdio:'inherit'});if(build.status!==0)process.exit(build.status||1);
   }
+  const oldVersion=readJSON(path.join(root,'code/package.json'),{})?.version;
+  const extensionFile=path.join(root,'context-extension.json');
+  if(!fs.existsSync(extensionFile)&&/^0\.(12|13)\./.test(oldVersion??''))atomicJSON(extensionFile,{enabled:true,migratedFrom:oldVersion,updatedAt:Date.now()});
   const code=path.join(root,'code');fs.mkdirSync(code,{recursive:true,mode:0o700});
   for(const dir of ['src','scripts','runtime-patches'])fs.cpSync(path.join(repo,dir),path.join(code,dir),{recursive:true});
   fs.copyFileSync(path.join(repo,'package.json'),path.join(code,'package.json'));

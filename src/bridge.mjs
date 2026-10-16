@@ -1,7 +1,7 @@
 import readline from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {getEncoding} from 'js-tiktoken';
-import {ceilingConfig,ceilingModel,migrateCeilingPolicy,MAX_CONTEXT_INPUT,MAX_CONTEXT_COMPACT,MIN_CONTEXT_RESERVE} from './context-ceiling.mjs';
+import {ceilingConfig,ceilingModel,migrateCeilingPolicy,policyForModel,MAX_CONTEXT_INPUT,MAX_CONTEXT_COMPACT,MIN_CONTEXT_RESERVE} from './context-ceiling.mjs';
 import {isNewUserChat} from './new-chat-defaults.mjs';
 import {preflight} from './policy.mjs';
 import {inheritedForkPolicy,forkConfig} from './fork-budget.mjs';
@@ -17,7 +17,7 @@ function incomingTokens(input=[]){inputEncoder??=getEncoding('o200k_base');retur
 export class Bridge {
   constructor(child,input,output,publish=async()=>({}),resolveFork=async()=>null,options={}) {
     this.child=child;this.input=input;this.output=output;this.publish=publish;this.records=new Map();this.internal=new Map();this.external=new Map();this.sequence=0;this.prefix=`context-control:${randomUUID()}:`;
-    this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;this.resolveNewChatBudget=options.resolveNewChatBudget;
+    this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;this.resolveNewChatBudget=options.resolveNewChatBudget;this.nativeBudgetSupport=options.nativeBudgetSupport===true;
     this.frontLines=readline.createInterface({input,crlfDelay:Infinity});this.backLines=readline.createInterface({input:child.stdout,crlfDelay:Infinity});
     this.frontLines.on('line',line=>this.fromClient(line));this.backLines.on('line',line=>this.fromServer(line));
     child.once('exit',()=>{for(const item of this.internal.values()){clearTimeout(item.timer);item.reject(new Error('Codex 运行时已退出'));}this.internal.clear();});
@@ -26,8 +26,8 @@ export class Bridge {
   writeFrontend(line){if(!this.output.write(line+'\n')){this.child.stdout.pause();this.output.once('drain',()=>this.child.stdout.resume());}}
   fromClient(line,preparedFork=null,guarded=false) {
     let m;try{m=JSON.parse(line);}catch{this.writeBackend(line);return;}
-    if(this.contextCeiling&&this.resolveNewChatBudget&&m.method==='thread/start'&&m.id!=null&&isNewUserChat(m.params)&&!preparedFork?.newChat){this.prepareNewChat(m).catch(error=>this.rejectTurn(m,error.message));return;}
-    if(this.contextCeiling&&m.method==='thread/resume'&&m.id!=null&&m.params?.threadId&&!m.params?.path&&!m.params?.ephemeral&&!preparedFork?.resume){this.prepareResume(m).catch(error=>this.rejectTurn(m,error.message));return;}
+    if(this.resolveNewChatBudget&&m.method==='thread/start'&&m.id!=null&&isNewUserChat(m.params)&&!preparedFork?.newChat){this.prepareNewChat(m).catch(error=>this.rejectTurn(m,error.message));return;}
+    if((this.contextCeiling||this.nativeBudgetSupport)&&m.method==='thread/resume'&&m.id!=null&&m.params?.threadId&&!m.params?.path&&!m.params?.ephemeral&&!preparedFork?.resume){this.prepareResume(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if(this.contextCeiling&&['thread/start','thread/resume'].includes(m.method)&&!m.params?.ephemeral){m.params={...m.params,config:ceilingConfig(m.params?.config)};line=JSON.stringify(m);}
     const id=m.params?.threadId;const record=this.records.get(id);
     if(m.method==='turn/start'&&record&&!record.locked&&record.status==='idle'&&record.policy&&record.appliedRevision!==record.policy.revision){
@@ -60,13 +60,15 @@ export class Bridge {
     this.writeBackend(line);
   }
   async prepareNewChat(message){
-    const {policy}=await this.resolveNewChatBudget();
+    let model=message.params?.model;
+    if(!model&&this.nativeBudgetSupport){const config=await this.rpc('config/read',{includeLayers:false});model=config.config?.model;}
+    const {policy}=await this.resolveNewChatBudget(model);
     const params={...message.params,config:{...message.params?.config,model_context_window:policy.window,model_auto_compact_token_limit:policy.compact,model_auto_compact_token_limit_scope:'total'}};
     this.fromClient(JSON.stringify({...message,params}),{newChat:true,newChatPolicy:structuredClone(policy)});
   }
   async prepareResume(message){
     const resolved=await this.resolveFork(message.params.threadId,message.params.model);
-    const policy=resolved?.policy?.enabled?migrateCeilingPolicy(resolved.policy,resolved.model):null;
+    const policy=resolved?.policy?.enabled?(this.contextCeiling?migrateCeilingPolicy(resolved.policy,resolved.model):policyForModel(resolved.policy,resolved.model)):null;
     const config=policy?{...message.params.config,model_context_window:policy.window,model_auto_compact_token_limit:policy.compact}:message.params.config;
     this.fromClient(JSON.stringify({...message,params:{...message.params,config}}),{resume:true,resumePolicy:policy});
   }
@@ -82,6 +84,11 @@ export class Bridge {
       model=resolved?.model??(!params.model||params.model===parent?.model?parent?.modelInfo:null);
     }
     if(this.contextCeiling&&source){source=migrateCeilingPolicy(source,model);model=ceilingModel(model);}
+    if(!this.contextCeiling&&source&&model){
+      const oldPercent=source.effectivePercent??(source.contextCeilingVersion?90:model.effective_context_window_percent);
+      if(Math.floor(source.window*oldPercent/100)>Math.floor(model.max_context_window*model.effective_context_window_percent/100))throw Error('父对话预算超过分支模型上限，请先调整预算再 fork。');
+      source=policyForModel(source,model);
+    }
     const policy=inheritedForkPolicy(source,parentId);
     if(policy&&params.model&&!model)throw new Error('无法核对分支模型的窗口上限，请先加载该模型信息再 fork。');
     if(policy&&Number.isSafeInteger(model?.max_context_window)&&policy.window>model.max_context_window)throw new Error('父对话预算超过分支模型上限，请先调整预算再 fork。');
@@ -103,8 +110,8 @@ export class Bridge {
           const record=this.record(t.id);record.seed={...record.seed,...pending.seed,config:{...record.seed.config,...pending.seed.config}};
           Object.assign(record,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput']));
           record.model=m.result.model||record.model;record.status=t.status?.type||'idle';record.snapshot=m.result;
-          if(pending.method==='thread/start'&&pending.fork?.newChatPolicy&&!t.ephemeral&&t.canAcceptDirectInput!==false&&!t.forkedFromId){const policy=pending.fork.newChatPolicy;Object.assign(record,{newChatPolicy:policy,policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*.9),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已沿用新对话默认设置，等待首次窗口读回。'});}
-          if(pending.fork?.resumePolicy){const policy=pending.fork.resumePolicy;Object.assign(record,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*.9),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已保留原聊天预算，等待下一轮窗口读回。'});}
+          if(pending.method==='thread/start'&&pending.fork?.newChatPolicy&&!t.ephemeral&&t.canAcceptDirectInput!==false&&!t.forkedFromId){const policy=pending.fork.newChatPolicy;Object.assign(record,{newChatPolicy:policy,policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已沿用新对话默认设置，等待首次窗口读回。'});}
+          if(pending.fork?.resumePolicy){const policy=pending.fork.resumePolicy;Object.assign(record,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已保留原聊天预算，等待下一轮窗口读回。'});}
           if(pending.method==='thread/fork'&&pending.fork?.policy&&t.id!==pending.threadId&&!t.ephemeral&&t.canAcceptDirectInput!==false){
             const {policy,source,parentId,model}=pending.fork;
             record.forkedFromId=parentId;record.forkPolicy=source;

@@ -1,5 +1,12 @@
 # Changes
 
+## 0.14.0 — 2026-10-16
+
+- Add an independent context-extension toggle with off, waiting-for-Codex, pending-restart and active states, plus in-app explanation and repository documentation.
+- Remove the misleading 920K activation banner when no Codex connection exists.
+- Restore per-model native slider limits when disabled, including global defaults; preserve smaller budgets and clamp oversized ones without changing the running engine in place.
+- Keep global defaults and fork inheritance working in native mode; fresh installs default off and upgrades preserve the previously enabled extension.
+
 ## 0.13.0 — 2026-10-16
 
 - Add global defaults for newly created user chats with K-precision sliders and a copy-from-current-chat action.

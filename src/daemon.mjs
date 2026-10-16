@@ -11,9 +11,10 @@ import {savedBudget} from './budget.mjs';
 import {ensureMenuBarEntry} from './menu-bar.mjs';
 import {reconcileWindowConfirmation} from './confirmation.mjs';
 import {inheritedForkPolicy} from './fork-budget.mjs';
+import {createContextExtensionManager} from './context-extension.mjs';
 import {createRuntimeFixManager} from './runtime-fix.mjs';
-import {ceilingModel,migrateCeilingPolicy,CONTEXT_CEILING_VERSION} from './context-ceiling.mjs';
-import {initialNewChatDefaults,normalizeNewChatDefaults,policyForNewChat,persistedNewChatPolicy} from './new-chat-defaults.mjs';
+import {ceilingModel,policyForModel,CONTEXT_CEILING_VERSION} from './context-ceiling.mjs';
+import {initialNewChatDefaults,nativeNewChatDefaults,newChatDefaultLimits,clampNewChatDefaults,normalizeNewChatDefaults,policyForNewChat,persistedNewChatPolicy} from './new-chat-defaults.mjs';
 import {createContextStatisticsService} from './context-statistics-service.mjs';
 
 export async function startDaemon() {
@@ -37,21 +38,38 @@ export async function startDaemon() {
   const bridges=new Map();const owners=new Map();
   const contextStatistics=createContextStatisticsService();
   const runtimeFix=createRuntimeFixManager();
+  const extension=createContextExtensionManager();
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
-  function modelFor(id,slug){const model=store.model(slug??store.data.threads[id]?.model);const peers=owners.get(id)||[];return (peers.length===1&&bridges.get(peers[0])?.contextCeiling===CONTEXT_CEILING_VERSION)||(peers.length===0&&store.data.policies[id]?.contextCeilingVersion===CONTEXT_CEILING_VERSION)?ceilingModel(model):model;}
-  function publicThread(id){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const catalogReady=peers.length===1&&bridges.get(peers[0])?.contextCatalogRevision===2;return {...t,modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',catalogReady]])):null};}
-  function newChatDefaults(){return store.data.newChatDefaults||initialNewChatDefaults;}
-  function state(){return {newChatDefaults:newChatDefaults(),newChatDefaultsPending:bridges.size===0||[...bridges.values()].some(b=>b.newChatDefaultsVersion!==1),version:'0.13.0',bridgeCount:bridges.size,contextCeilingPending:bridges.size===0||[...bridges.values()].some(b=>b.contextCeiling!==CONTEXT_CEILING_VERSION||b.contextCatalogRevision!==2),runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function nativeDefaultModel(){store.model(null);return [...(store.catalog?.values()||[])].filter(m=>Number.isSafeInteger(m.max_context_window)&&Number.isInteger(m.effective_context_window_percent)).sort((a,b)=>b.max_context_window*b.effective_context_window_percent-a.max_context_window*a.effective_context_window_percent)[0]||null;}
+  function defaultModel(){const m=nativeDefaultModel();return extension.enabled()?ceilingModel(m):m;}
+  function modelFor(id,slug){const m=store.model(slug??store.data.threads[id]?.model);return extension.enabled()?ceilingModel(m):m;}
+  function bridgeReady(b){return !!b&&(extension.enabled()?b.contextCeiling===CONTEXT_CEILING_VERSION&&b.contextCatalogRevision===2:b.contextCeiling!==CONTEXT_CEILING_VERSION);}
+  function runtimeModel(id,slug,extended){const m=store.model(slug??store.data.threads[id]?.model)||nativeDefaultModel();if(typeof extended!=='boolean'){const peers=owners.get(id)||[];extended=peers.length===1?bridges.get(peers[0])?.contextCeiling===CONTEXT_CEILING_VERSION:extension.enabled();}return extended?ceilingModel(m):m;}
+  function extensionState(fix=runtimeFix.status()){return extension.status([...bridges.values()],{compatible:fix.originalVersion==='0.160.0',available:!!nativeDefaultModel()});}
+  function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:'extension_pending',message:(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
+  function newChatDefaults(){return clampNewChatDefaults(store.data.newChatDefaults||(extension.enabled()?initialNewChatDefaults:nativeNewChatDefaults),defaultModel());}
+  function state(){const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version:'0.14.0',bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.13.0'};
+    if(op==='ping')return {ok:true,version:'0.14.0'};
     if(op==='state')return state();
-    if(op==='newChatBudget')return {policy:policyForNewChat(newChatDefaults())};
+    if(op==='newChatBudget'){const m=runtimeModel(null,p.model,p.contextCeiling??true);if(!m)throw Error('等待当前模型的原生窗口信息');return {policy:policyForNewChat(newChatDefaults(),m)};}
     if(op==='setNewChatDefaults'){
       const current=newChatDefaults();if(p.expectedRevision!=null&&p.expectedRevision!==current.revision)throw Error('全局默认已被修改，请重新打开设置后保存。');
-      store.data.newChatDefaults={...normalizeNewChatDefaults(p),revision:current.revision+1,updatedAt:Date.now()};store.save();return newChatDefaults();
+      store.data.newChatDefaults={...normalizeNewChatDefaults(p,defaultModel()),revision:current.revision+1,updatedAt:Date.now()};store.save();return newChatDefaults();
     }
-    if(op==='forkBudget')return {policy:store.data.policies[p.id]||null,model:modelFor(p.id,p.model)};
-    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:p.newChatDefaultsVersion===1?1:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
+    if(op==='forkBudget'){const m=runtimeModel(p.id,p.model,p.contextCeiling);return {policy:policyForModel(store.data.policies[p.id],runtimeModel(p.id,null,p.contextCeiling)),model:m};}
+    if(op==='setContextExtension'){
+      if(typeof p.enabled!=='boolean')throw Error('开关值无效');
+      const previous=extension.enabled(),status=extensionState();if(p.enabled&&(!status.available||!status.compatible))throw Error('当前模型目录或 Codex 版本不支持拓展');
+      const oldPolicies=structuredClone(store.data.policies),oldDefaults=store.data.newChatDefaults;const before=newChatDefaults();
+      try{extension.setEnabled(p.enabled);
+        for(const [id,policy] of Object.entries(store.data.policies)){const m=modelFor(id);if(m)store.data.policies[id]=policyForModel(policy,m);}
+        const next=clampNewChatDefaults(before,defaultModel());if(next.usableWindow!==before.usableWindow||next.compact!==before.compact)store.data.newChatDefaults={...next,revision:before.revision+1,updatedAt:Date.now()};
+        store.save();
+      }catch(error){store.data.policies=oldPolicies;store.data.newChatDefaults=oldDefaults;extension.setEnabled(previous);throw error;}
+      return extensionState();
+    }
+    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180)throw new Error('聊天 ID 无效');
@@ -65,28 +83,28 @@ export async function startDaemon() {
         if(inherited)store.data.policies[p.id]={...inherited,updatedAt:Date.now()};
       }
       store.data.threads[p.id]={...store.data.threads[p.id],...clean,observedAt:Date.now()};
-      if(b.contextCeiling===CONTEXT_CEILING_VERSION&&store.data.policies[p.id])store.data.policies[p.id]=migrateCeilingPolicy(store.data.policies[p.id],store.model(clean.model||store.data.threads[p.id].model));
+      if(bridgeReady(b)&&store.data.policies[p.id])store.data.policies[p.id]=policyForModel(store.data.policies[p.id],modelFor(p.id,clean.model));
       // Desktop-created forks may bypass this bridge's thread/fork RPC. Resolve
       // their native parent metadata before replying with the auto-apply policy.
       store.refreshMetadata();store.inheritDiscoveredForks();
-      if(!Object.hasOwn(store.data.policies,p.id)&&p.newChatPolicy&&b.newChatDefaultsVersion===1&&!p.ephemeral&&p.canAcceptDirectInput!==false&&!store.data.threads[p.id].forkedFromId){store.data.policies[p.id]={...persistedNewChatPolicy(p.newChatPolicy),updatedAt:Date.now()};}
+      if(!Object.hasOwn(store.data.policies,p.id)&&p.newChatPolicy&&b.newChatDefaultsVersion!=null&&!p.ephemeral&&p.canAcceptDirectInput!==false&&!store.data.threads[p.id].forkedFromId){store.data.policies[p.id]={...persistedNewChatPolicy(p.newChatPolicy,runtimeModel(p.id,clean.model,b.contextCeiling===CONTEXT_CEILING_VERSION)),updatedAt:Date.now()};}
       Object.assign(store.data.threads[p.id],reconcileWindowConfirmation(store.data.threads[p.id],store.data.policies[p.id],modelFor(p.id)));store.save();
-      return {policy:store.data.policies[p.id]||null,model:modelFor(p.id,clean.model)};
+      return {policy:bridgeReady(b)?store.data.policies[p.id]||null:null,model:runtimeModel(p.id,clean.model,b.contextCeiling===CONTEXT_CEILING_VERSION)};
     }
     if(op==='preflight') {
-      if((owners.get(p.id)||[]).some(peer=>bridges.get(peer)?.contextCeiling===CONTEXT_CEILING_VERSION&&bridges.get(peer)?.contextCatalogRevision!==2))return {code:'runtime_restart_required',allowed:false,message:'请完整退出并重开 Codex，加载修正后的模型目录。'};
+      if((owners.get(p.id)||[]).some(peer=>!bridgeReady(bridges.get(peer))))return {code:'runtime_restart_required',allowed:false,message:'请完整退出并重开 Codex，加载修正后的模型目录。'};
       const policy=normalizePolicy(p.policy);const t=store.data.threads[p.id];
       return preflight(t,policy,modelFor(p.id,t?.model));
     }
     if(op==='setPolicy') {
       const t=store.data.threads[p.id];if(!t)throw new Error('未找到聊天');
-      const peers=owners.get(p.id)||[];if(peers.some(peer=>bridges.get(peer)?.contextCeiling===CONTEXT_CEILING_VERSION&&bridges.get(peer)?.contextCatalogRevision!==2))throw Error('当前 Codex 连接尚未加载修正后的模型目录，请完整退出并重新打开 Codex。');
+      const peers=owners.get(p.id)||[];if(peers.some(peer=>!bridgeReady(bridges.get(peer))))throw Error('当前 Codex 连接尚未加载修正后的模型目录，请完整退出并重新打开 Codex。');
       const policy=normalizePolicy(p.policy);const plan=preflight(t,policy,modelFor(t.id,t.model));
       if(['above_catalog_maximum','above_safe_compact','below_retained_floor','unsupported_thread'].includes(plan.code))throw new Error(plan.message);
       const previous=store.data.policies[p.id];
       if(p.expectedRevision!=null&&p.expectedRevision!==(previous?.revision||0))throw new Error('设置已在另一窗口更新，请刷新后重试');
       const meta=modelFor(t.id,t.model);
-      const saved={...policy,...(meta?.context_ceiling?{contextCeilingVersion:CONTEXT_CEILING_VERSION,effectivePercent:meta.effective_context_window_percent}:{}),revision:(previous?.revision||0)+1,enabled:p.apply!==false,updatedAt:Date.now()};
+      const saved={...policy,...(meta?{effectivePercent:meta.effective_context_window_percent}:{}),...(meta?.context_ceiling?{contextCeilingVersion:CONTEXT_CEILING_VERSION,effectivePercent:meta.effective_context_window_percent}:{}),revision:(previous?.revision||0)+1,enabled:p.apply!==false,updatedAt:Date.now()};
       store.data.policies[p.id]=saved;
       const candidates=owners.get(p.id)||[];
       Object.assign(t,{phase:p.apply===false?'saved':candidates.length===1?'queued':'waiting_bridge',message:p.apply===false?'已保存；尚未请求应用。':candidates.length>1?'多个运行时加载了此聊天，请先关闭其中一个。':'等待接入 Codex 的连接。'});
@@ -104,7 +122,8 @@ export async function startDaemon() {
       return candidates[0].call('compact',{id:p.id},30000);
     }
     if(op==='hook') {
-      const t=Object.values(store.data.threads).find(t=>t.id===p.sessionId&&(!p.turnId||t.turnId===p.turnId));
+      const found=Object.values(store.data.threads).find(t=>t.id===p.sessionId&&(!p.turnId||t.turnId===p.turnId));
+      const t=found?publicThread(found.id):null;
       if(!t)return {};
       const policy=store.data.policies[t.id];const fmt=n=>Number.isSafeInteger(n)?n.toLocaleString('en-US'):'待观测';
       const lines=[`Context Control｜实际窗口 ${fmt(t.observedWindow)}｜最近请求 ${fmt(t.lastUsage?.totalTokens)}（占用估算）`];
@@ -130,6 +149,7 @@ export async function startDaemon() {
         if(!Object.hasOwn(store.data.threads,params.id))throw new Error('未找到所选聊天');
         answer=await contextStatistics(params.id,params.refresh===true);
       }
+      else if(req.method==='POST'&&route==='/context-extension')answer=await handle(null,'setContextExtension',params);
       else if(req.method==='POST'&&route==='/new-chat-defaults')answer=await handle(null,'setNewChatDefaults',params);
       else if(req.method==='POST'&&route==='/runtime-fix')answer=runtimeFix.setEnabled(params.enabled,undefined,[...bridges.values()]);
       else if(req.method==='POST'&&route==='/preflight')answer=await handle(null,'preflight',params);
