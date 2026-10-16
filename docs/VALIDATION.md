@@ -87,3 +87,15 @@ Hook stats 的新增定义需要在 `/hooks` 人工审核。该信任状态不�
 官方 [GPT-6 Astra 模型页](https://developers.openai.com/api/docs/models/gpt-6-astra) 列出 1,050,000 总上下文和 128,000 最大输出；这不能直接证明 ChatGPT 登录的 Codex 服务具有相同输入接受边界。保留 95% 时，精确 1M 可用需要 1,052,632 的底层窗口，已略高于上述公开总窗口，不应为凑整数直接采用。`total` 自动压缩阈值还被原生限制在底层窗口的 90%；解除目录限制不会同时解除这个阈值。
 
 测试仅使用短提示和模拟 token 用量；报告的 `serverCapacityVerified` 为 `false`。尚未向真实服务发送百万 token 输入，也未在用户聊天启用扩展。
+
+### 后续真实服务测试：GPT-6.1 Sol，普通速度
+
+2026-10-16 14:44（香港时间），用户明确要求进行一次真实测试，并指定 GPT-6.1 Sol、不开 Fast。`scripts/probe-live-million-context.mjs --live` 使用原版 Codex 及独立临时配置，复用现有 ChatGPT 登录，向同一官方 Codex 后端转发一次生成请求。默认不加 `--live` 时只做本地模拟；实际发送后写入标记，阻止脚本自动重复真实测试。
+
+- 合成用户文本按 `o200k_base` 估算为 1,000,049 tokens；另有原生工具与指令开销。服务端没有返回 usage，因此没有精确的服务端输入 token 数。
+- 原生单轮输入有 1,048,576 字符限制；测试在本地转发层将合成文本拆成多个用户消息，放入原生请求。这是服务端输入容量测试，不代表桌面输入框或完整多轮历史已经通过相同容量测试。
+- 本地模型目录调整到 1,050,000，比例 100%；原生读回窗口为 1,050,000。推理为 Low，原生会话明确选择 `default`，服务端响应也确认 `gpt-6.1-sol` / `default`。
+- 仅转发一次真实请求，无自动重试、后续工具调用或远程压缩。HTTP 流建立返回 200，但流内响应为 `failed`，错误为 `context_length_exceeded`：`Your input exceeds the context window of this model. Please adjust your input and try again.`
+- 没有生成文本，没有 token usage 回传；不能将缺失 usage 当作零费用。真实聊天配置与历史未修改，临时登录副本随测试目录清理。
+
+结论：当前登录通道的 GPT-6.1 Sol 普通速度拒绝了此次百万级输入。扩大本地目录不保证服务端接受；一次失败不能测定精确边界，也不能外推到 Astra 或其他通道。原始无凭据报告保存在本机 `build/live-million-sol-result.json`。
