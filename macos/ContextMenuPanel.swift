@@ -6,7 +6,7 @@ enum ContextMenuPlacement {
         let width=min(size.width,max(1,screen.width-margin*2))
         let top=min(anchor.minY-4,screen.maxY-margin)
         let height=min(size.height,max(1,top-screen.minY-margin))
-        let x=max(screen.minX+margin,min(anchor.minX,screen.maxX-margin-width))
+        let x=max(screen.minX+margin,min(anchor.minX-8,screen.maxX-margin-width))
         let y=max(screen.minY+margin,top-height)
         return NSRect(x:x,y:y,width:width,height:height)
     }

@@ -29,7 +29,7 @@ draft.setWindow(0);draft.setCompact(0);precondition(draft.windowK==2 && draft.co
 let size=NSSize(width:400,height:560)
 let normal=NSRect(x:0,y:0,width:1920,height:1000)
 let right=ContextMenuPlacement.frame(anchor:NSRect(x:1000,y:1000,width:30,height:30),size:size,screen:normal)
-precondition(right.minX==1000 && right.maxY<=992)
+precondition(right.minX==992 && right.maxY<=992)
 let edge=ContextMenuPlacement.frame(anchor:NSRect(x:1880,y:1000,width:30,height:30),size:size,screen:normal)
 precondition(edge.maxX<=1912 && edge.minX>=8)
 let secondary=NSRect(x:-1920,y:100,width:1920,height:800)

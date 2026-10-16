@@ -503,6 +503,7 @@ struct ContentView: View {
         let item=NSStatusBar.system.statusItem(withLength:30)
         item.button?.title=""
         item.button?.imagePosition = .imageOnly
+        item.button?.setButtonType(.pushOnPushOff)
         item.button?.target=self;item.button?.action=#selector(toggleContextPopover)
         statusItem=item
         updateStatusIcon()
@@ -517,6 +518,7 @@ struct ContentView: View {
         }}
     }
     private func updateStatusIcon(){
+        statusItem?.button?.state=menuPanel?.isVisible==true ? .on:.off
         let busiest=model.busiestContext
         let percentage=busiest?.contextFraction.map{Int(($0*100).rounded())}
         if !iconInitialized || percentage != lastIconPercentage {
@@ -545,6 +547,7 @@ struct ContentView: View {
         host.translatesAutoresizingMaskIntoConstraints=false;backdrop.addSubview(host)
         NSLayoutConstraint.activate([host.leadingAnchor.constraint(equalTo:backdrop.leadingAnchor),host.trailingAnchor.constraint(equalTo:backdrop.trailingAnchor),host.topAnchor.constraint(equalTo:backdrop.topAnchor),host.bottomAnchor.constraint(equalTo:backdrop.bottomAnchor)])
         menuPanel?.contentView=backdrop;positionContextMenu();menuPanel?.orderFrontRegardless();menuPanel?.makeKey()
+        statusItem?.button?.state = .on
         localMenuMonitor=NSEvent.addLocalMonitorForEvents(matching:[.leftMouseDown,.rightMouseDown,.keyDown]){[weak self] event in
             guard let self,self.menuPanel?.isVisible==true else{return event}
             if event.type == .keyDown{if event.keyCode==53{self.closeContextMenu();return nil};return event}
@@ -565,6 +568,7 @@ struct ContentView: View {
         menuPanel?.setFrame(frame,display:true)
     }
     private func closeContextMenu(){
+        statusItem?.button?.state = .off
         menuPanel?.orderOut(nil);menuPanel?.contentView=nil
         if let localMenuMonitor{NSEvent.removeMonitor(localMenuMonitor);self.localMenuMonitor=nil}
         if let globalMenuMonitor{NSEvent.removeMonitor(globalMenuMonitor);self.globalMenuMonitor=nil}
