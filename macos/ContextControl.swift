@@ -316,7 +316,7 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
                     if let chat=model.selected {
-                        VStack(alignment:.leading,spacing:7){Text(chat.title).font(.system(size:20,weight:.medium)).lineLimit(2).truncationMode(.tail);Text(chat.model ?? "模型将在接入后识别").font(.callout).foregroundStyle(.secondary)}
+                        VStack(alignment:.leading,spacing:7){Text(chat.title).font(.system(size:20,weight:.medium)).lineLimit(2).truncationMode(.tail);Text(chat.model.map{modelDisplayName($0)} ?? "模型将在接入后识别").font(.callout).foregroundStyle(.secondary)}
                         VStack(alignment:.leading,spacing:12){
                             HStack(spacing:28){metric(chat.observedWindowTitle,formatted(chat.observedWindow));metric("最近请求用量",formatted(chat.lastUsage?.totalTokens))}
                             if let target=chat.targetWindow,let policy=chat.policy {

@@ -1,6 +1,21 @@
 import SwiftUI
 import Charts
 
+func modelDisplayName(_ raw:String)->String {
+    guard raw.lowercased().hasPrefix("gpt-") else{return raw}
+    let parts=raw.dropFirst(4).split(separator:"-").map(String.init)
+    guard let version=parts.first else{return raw}
+    return (["GPT-"+version]+parts.dropFirst().map{$0.capitalized}).joined(separator:" ")
+}
+func effortDisplayName(_ raw:String?)->String {
+    guard let raw else{return "—"}
+    switch raw.lowercased(){case "xhigh":return "XHigh";default:return raw.capitalized}
+}
+func serviceTierDisplayName(_ raw:String?)->String {
+    guard let raw else{return "—"}
+    switch raw.lowercased(){case "priority","fast":return "Fast";case "default","standard":return "Standard";default:return raw.capitalized}
+}
+
 struct ContextStatistics:Decodable,Sendable {
     struct Category:Decodable,Sendable,Identifiable {let category:String;let label:String;let items:Int;let tokensEstimate:Int;let images:Int;var id:String{category}}
     struct Tool:Decodable,Sendable,Identifiable {let name:String;let count:Int;var id:String{name}}
@@ -12,7 +27,7 @@ struct ContextStatistics:Decodable,Sendable {
         struct Group:Decodable,Sendable,Identifiable {let model:String;let tier:String;let requests:Int;let usd:Double;var id:String{model+":"+tier}}
         let usd:Double?;let upperUSD:Double?;let maxWriteSurcharge:Double;let extraWriteTokens:Int;let pricedRequests:Int;let totalRequests:Int;let unpricedRequests:Int
         let unknownTier:Int;let unknownModel:Int;let unknownUsage:Int;let unsupportedRate:Int;let longContextCount:Int;let unverifiedWriteRequests:Int
-        let standardUSD:Double?;let fastUSD:Double?;let standardUpperUSD:Double?;let fastUpperUSD:Double?;let comparisonRequests:Int;let groups:[Group];let checkedAt:String;let source:String
+        let groups:[Group];let checkedAt:String;let source:String
     }
     let cost:Cost
     struct Response:Decodable,Sendable,Identifiable {
@@ -126,7 +141,6 @@ struct ContextSummaryView:View {
     let statistics:ContextStatistics
     private func amount(_ n:Int?)->String {n.map{ $0>=1000000 ? (Double($0)/1000000).formatted(.number.precision(.fractionLength(0...2)))+"M":$0>=1000 ? (Double($0)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":$0.formatted()} ?? "待观测"}
     private func money(_ n:Double?)->String {n.map{String(format:"$%.2f",$0)} ?? "待估算"}
-    private func tierName(_ tier:String)->String {switch tier{case "fast":return "Fast";case "standard":return "Standard";case "ultrafast":return "Ultrafast";case "flex":return "Flex";default:return tier}}
     var body:some View {
         VStack(alignment:.leading,spacing:12){
             HStack(spacing:12){
@@ -147,7 +161,7 @@ struct ContextSummaryView:View {
                 if cost.unpricedRequests>0{Text("可估部分").font(.caption).foregroundStyle(.secondary)}
                 Text((cost.usd != nil ? "≈ ":"")+money(cost.usd)).font(.system(size:23,weight:.medium,design:.rounded)).monospacedDigit()
             }
-            HStack {Text("按配置 · 已估 \(cost.pricedRequests)/\(cost.totalRequests) 次 · 非实际账单");Spacer();Text("USD")}.font(.caption2).foregroundStyle(.secondary)
+            HStack {Text("Standard 单价 · 已估 \(cost.pricedRequests)/\(cost.totalRequests) 次 · 非实际账单");Spacer();Text("USD")}.font(.caption2).foregroundStyle(.secondary)
             HStack(spacing:12){ForEach(cost.breakdown){part in
                 VStack(alignment:.leading,spacing:3){Text(part.category=="cache_write" ? "缓存写入 · 估算":part.label).font(.caption2).foregroundStyle(.secondary);Text(cost.pricedRequests>0 ? amount(part.tokens):"—").font(.callout).monospacedDigit();Text(cost.pricedRequests>0 ? money(part.usd):"—").font(.caption2).foregroundStyle(.secondary).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading)
             }}.padding(.vertical,3)
@@ -158,11 +172,10 @@ struct ContextSummaryView:View {
                     Text("费用 =（普通输入 × 输入价 + 缓存读取 × 读取价 + 缓存写入 × 写入价 + 输出 × 输出价）÷ 1,000,000")
                     Link("OpenAI 官方 calculateInputCost",destination:URL(string:"https://developers.openai.com/api/docs/guides/prompt-caching#monitor-cache-performance")!)
                     Text("四项按官方公式计费。估算写入对应的 token 已从普通输入扣除，不重复收费。")
-                    ForEach(cost.groups){group in HStack {Text("\(group.model) · \(tierName(group.tier))");Spacer();Text("\(group.requests) 次 · \(money(group.usd))").monospacedDigit()}}
-                    if cost.unpricedRequests>0{Text("未计入：档位未知 \(cost.unknownTier) · 模型价格未知 \(cost.unknownModel) · 用量缺失 \(cost.unknownUsage) · 不支持的费率 \(cost.unsupportedRate)").foregroundStyle(.orange)}
-                    if cost.comparisonRequests>0{Text("同批 \(cost.comparisonRequests) 次用量：Standard \(money(cost.standardUSD)) ／ Fast \(money(cost.fastUSD))").monospacedDigit()}
+                    ForEach(cost.groups){group in HStack {Text("\(modelDisplayName(group.model)) · Standard 计价");Spacer();Text("\(group.requests) 次 · \(money(group.usd))").monospacedDigit()}}
+                    if cost.unpricedRequests>0{Text("未计入：模型价格未知 \(cost.unknownModel) · 用量缺失 \(cost.unknownUsage) · 不支持的费率 \(cost.unsupportedRate)").foregroundStyle(.orange)}
                     Text("价格核对：\(cost.checkedAt)。仅累计本聊天请求，不含父聊天既有费用、税费、工具费或地区加价。缓存读取、写入分别计价，推理已包含在输出中。")
-                    Text("\(cost.longContextCount) 次已计价请求超过 272K，按长上下文费率。这里使用配置档位；日志未提供服务器最终结算档位，不能核对降档或实际扣费。")
+                    Text("\(cost.longContextCount) 次已计价请求超过 272K，按长上下文费率。统一使用 Standard 基础单价，不含加速溢价。")
                     Link("官方 API 价格",destination:URL(string:cost.source)!)
                 }.font(.caption).foregroundStyle(.secondary).padding(.top,8)
             }.font(.caption).foregroundStyle(.secondary)

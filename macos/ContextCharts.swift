@@ -199,8 +199,8 @@ private enum TimelinePlotKind {case speed,cache,events}
                 field("命中率",r.cacheHitRate.map{String(format:"%.1f%%",$0*100)} ?? "—")
             }
             HStack(spacing:6){
-                Text(r.config.model ?? "模型未记录").foregroundStyle(.primary)
-                Text("· \(r.config.effort ?? "—") · \(r.config.serviceTier ?? "—") · 窗口 \(compactTokens(r.config.contextWindow))")
+                Text(r.config.model.map{modelDisplayName($0)} ?? "模型未记录").foregroundStyle(.primary)
+                Text("· \(effortDisplayName(r.config.effort)) · \(serviceTierDisplayName(r.config.serviceTier))")
                 Spacer();Text(localTime(r.timestamp))
             }.font(.caption).foregroundStyle(.secondary).lineLimit(1)
             DisclosureGroup("更多信息"){
@@ -210,9 +210,9 @@ private enum TimelinePlotKind {case speed,cache,events}
                     Text("生成用时 \(r.durationMs.map{String(format:"%.2f 秒",$0/1000)} ?? "未记录") · 生成前间隔 \(r.preGenerationGapMs.map{String(format:"≈ %.2f 秒",$0/1000)} ?? "未记录")")
                     Text("生成前间隔来自最近输入记录到首个生成项目，含客户端等待等开销，不是精确的服务器首 token 延迟。").foregroundStyle(.secondary)
                     if let parts=r.costEstimate?.breakdown {ForEach(parts){part in HStack {Text(part.label);Spacer();Text("\(part.tokens.formatted()) tokens · \(String(format:"$%.4f",part.usd))").monospacedDigit()}}}
-                    Text("本次 API 估算 \(r.costEstimate?.usd.map{String(format:"$%.4f",$0)} ?? "未知") · 按配置档位")
+                    Text("本次 API 估算 \(r.costEstimate?.usd.map{String(format:"$%.4f",$0)} ?? "未知") · Standard 单价")
                     Text("推理 \(tokenLabel(r.reasoningTokens)) · 缓存写入（估算） \(tokenLabel(r.costEstimate?.breakdown?.first(where:{$0.category=="cache_write"})?.tokens)) · 用时 \(r.durationMs.map{String(format:"%.2f 秒",$0/1000)} ?? "未记录")")
-                    Text("压缩阈值 \(tokenLabel(r.config.compactThreshold)) · 轮次 \(r.turnId ?? "未记录")")
+                    Text("窗口 \(tokenLabel(r.config.contextWindow)) · 压缩阈值 \(tokenLabel(r.config.compactThreshold)) · 轮次 \(r.turnId ?? "未记录")")
                 }.font(.caption2).foregroundStyle(.secondary).textSelection(.enabled).padding(.top,4)
             }.font(.caption2).foregroundStyle(.secondary)
         }

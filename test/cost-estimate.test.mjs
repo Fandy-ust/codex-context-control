@@ -17,10 +17,10 @@ test('long-context pricing uses actual input, not configured capacity, at the ex
  assert.equal(estimateResponse(base).contextBand,'short');near(estimateResponse(base).usd,2.77);
  const long=estimateResponse({...base,inputTokens:272001});assert.equal(long.contextBand,'long');near(long.usd,5.51502);
 });
-test('unknown models, tiers, missing usage and invalid cache counts never become free requests',()=>{
+test('generic estimator rejects unknown tiers; panel base pricing does not require a runtime tier',()=>{
  for(const input of [row({config:{model:'custom',serviceTier:'default'}}),row({config:{model:'gpt-6-astra',serviceTier:null}}),row({cachedInputTokens:null}),row({cacheWriteTokens:100000})])assert.equal(estimateResponse(input).usd,null);
  const result=estimateConversation([row(),row(),row({id:'b',config:{model:'gpt-6-astra',serviceTier:null}})]);
- near(result.usd,.405);assert.equal(result.totalRequests,2);assert.equal(result.pricedRequests,1);assert.equal(result.unknownTier,1);near(result.standardUSD,.81);near(result.fastUSD,1.62);
+ near(result.usd,.81);assert.equal(result.totalRequests,2);assert.equal(result.pricedRequests,2);assert.equal(result.unknownTier,0);
  assert.equal(estimateConversation([]).usd,null);
 });
 test('model-specific cached rates and explicit ultrafast rates are preserved',()=>{
@@ -36,7 +36,7 @@ test('turn settings clear stale Fast and a mid-response change does not reprice 
 
 test('fee buckets add up over mixed tiers and models without using cache delta as writes',()=>{
  const a=row({cacheDelta:900000});const b=row({id:'b',config:{model:'gpt-6.1-sol',serviceTier:'fast'},cacheDelta:-999});
- const total=estimateConversation([a,b]);near(total.usd,.551);
+ const total=estimateConversation([a,b]);near(total.usd,.478);
  assert.deepEqual(total.breakdown.map(x=>x.tokens),[20000,160000,20000,4000]);
  near(total.breakdown.reduce((sum,x)=>sum+x.usd,0),total.usd);
  assert.equal(a.costEstimate.breakdown.find(x=>x.category==='cache_write').tokens,10000);
@@ -62,7 +62,6 @@ test('unknown physical writes give finite API-equivalent bounds without double c
  const cached=estimateResponse(row({inputTokens:80000,cacheWriteTokens:0}));near(cached.usd,cached.upperUSD);
  const long=estimateResponse(row({inputTokens:300000,cachedInputTokens:200000,cacheWriteTokens:0}));near(long.maxWriteSurcharge,.5);
  const total=estimateConversation([row({cacheWriteTokens:0}),row({id:'b'})]);near(total.upperUSD,.835);near(total.maxWriteSurcharge,0);
- near(total.fastUpperUSD,1.67);
 });
 
 test('cumulative cache reads grow with reuse without creating new-write charges',()=>{
@@ -84,6 +83,24 @@ test('display estimate fills cache writes from uncached input and keeps all fees
  assert.equal(original.cacheWriteTokens,0);assert.equal(original.costEstimate.writeEstimated,true);
  assert.deepEqual(total.breakdown.map(x=>x.tokens),[0,80000,20000,2000]);near(total.usd,.43);
  near(total.breakdown.reduce((sum,x)=>sum+x.usd,0),total.usd);
- near(total.groups[0].usd,total.usd);near(total.standardUSD,.43);near(total.fastUSD,.86);
+ near(total.groups[0].usd,total.usd);
  assert.equal(estimateResponseWithWrites(row()).writeEstimated,false);
+});
+
+test('panel totals and every response use Standard rates while retaining actual Fast config',()=>{
+ const responses=['default','priority','fast','ultrafast','flex',null,'auto'].map((serviceTier,i)=>row({id:String(i),config:{model:'gpt-6-astra',serviceTier,effort:'high'},cacheWriteTokens:0}));
+ const configs=structuredClone(responses.map(r=>r.config));
+ const total=estimateConversation(responses);
+ assert.equal(total.basis,'standard_rates');near(total.usd,.43*responses.length);
+ assert.equal(total.pricedRequests,responses.length);assert.equal(total.groups.length,1);
+ assert.deepEqual(responses.map(r=>r.config),configs);
+ for(const r of responses){near(r.costEstimate.usd,.43);assert.equal(r.costEstimate.tier,'standard');}
+ near(total.breakdown.reduce((sum,p)=>sum+p.usd,0),total.usd);
+ near(total.groups[0].usd,total.usd);assert.equal(total.groups[0].tier,'standard');
+ assert.equal('fastUSD' in total,false);
+ const long=row({id:'long',inputTokens:300000,cachedInputTokens:200000,cacheWriteTokens:0,config:{model:'gpt-6-astra',serviceTier:'priority'}});
+ near(estimateConversation([long]).usd,estimateResponseWithWrites(long,'standard').usd);
+ for(const unknown of [row({cachedInputTokens:null}),row({config:{model:'custom',serviceTier:'fast'}})]){
+   const incomplete=estimateConversation([unknown]);assert.equal(incomplete.usd,null);assert.equal(incomplete.unpricedRequests,1);
+ }
 });

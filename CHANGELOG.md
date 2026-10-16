@@ -1,5 +1,11 @@
 # Changes
 
+## 0.8.1 — 2026-10-16
+
+- Use Standard base rates for all panel cost estimates, with no Fast surcharge or price comparison.
+- Preserve actual response configurations and display names as `GPT-6 Astra · High · Fast`.
+- Keep window and compaction details in the expanded response metadata.
+
 ## 0.4.0 — 2026-10-16
 
 - Automatically show a menu-bar entry when Codex connects, with connection status and a settings shortcut.
