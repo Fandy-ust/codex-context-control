@@ -33,6 +33,7 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var selectedID:String?
     @Published var bridgeCount=0
     @Published var serviceAvailable=false
+    @Published var menuHeightLimit:CGFloat=560
     @Published var runtimeFix:RuntimeFixState?
     @Published var changingRuntimeFix=false
     @Published var notice="正在读取本地状态…"
@@ -181,7 +182,7 @@ private struct ApplyButtonStyle:ButtonStyle {
     }
 }
 
-private enum BudgetThumb {case compact,window}
+enum BudgetThumb {case compact,window}
 
 /// Integrate motion locally so changing the budget changes speed without
 /// teleporting particles. Additional short streams make the right side denser.
@@ -231,18 +232,21 @@ private struct BudgetFlowParticles:View {
 
 /// Both handles share the model-capacity scale. The selected handle stays fixed
 /// during a gesture even when moving the window also moves the linked threshold.
-private struct BudgetRangeSlider:View {
+struct BudgetRangeSlider:View {
     @Binding var window:Double
     @Binding var compact:Double
     @Binding var selection:BudgetThumb
     let maximumWindow:Int
     let maximumCompact:Int
+    var compactStyle=false
+    var onEditingChanged:(Bool)->Void={_ in}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var enabled
     @FocusState private var focused:Bool
     @State private var active=NSApplication.shared.isActive
     @State private var dragging:BudgetThumb?
-    private let diameter:CGFloat=32
+    private var diameter:CGFloat {compactStyle ? 16:32}
+    private var trackHeight:CGFloat {compactStyle ? 8:26}
     var body:some View {
         GeometryReader {geometry in
             let travel=max(1,geometry.size.width-diameter)
@@ -254,17 +258,18 @@ private struct BudgetRangeSlider:View {
                     Rectangle().fill(PanelStyle.blue).frame(width:compactX)
                     Rectangle().fill(PanelStyle.headroom.opacity(0.8)).frame(width:max(0,windowX-compactX)).offset(x:compactX)
                     HStack {ForEach(0..<5){_ in Circle().fill(.white.opacity(0.18)).frame(width:3,height:3).frame(maxWidth:.infinity)}}.padding(.horizontal,diameter/2)
-                    BudgetFlowParticles(intensity:compact/Double(max(1,maximumWindow)),paused:reduceMotion || !active || !enabled,reducedMotion:reduceMotion)
-                        .frame(width:compactX).clipped()
-                }.frame(height:26).clipShape(Capsule())
-                    .overlay(Capsule().strokeBorder(LinearGradient(colors:[.white.opacity(0.17),.white.opacity(0.035)],startPoint:.top,endPoint:.bottom),lineWidth:1).frame(height:26))
+                    if !compactStyle {BudgetFlowParticles(intensity:compact/Double(max(1,maximumWindow)),paused:reduceMotion || !active || !enabled,reducedMotion:reduceMotion)
+                        .frame(width:compactX).clipped()}
+                }.frame(height:trackHeight).clipShape(Capsule())
+                    .overlay(Capsule().strokeBorder(LinearGradient(colors:[.white.opacity(0.17),.white.opacity(0.035)],startPoint:.top,endPoint:.bottom),lineWidth:1).frame(height:trackHeight))
                 thumb(.compact).offset(x:compactX-diameter/2).zIndex(selection == .compact ? 2:1)
                 thumb(.window).offset(x:windowX-diameter/2).zIndex(selection == .window ? 2:1)
             }
-            .frame(height:34).frame(maxHeight:.infinity).contentShape(Rectangle())
+            .frame(height:compactStyle ? 20:34).frame(maxHeight:.infinity).contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance:0).onChanged {event in
                 guard enabled else{return}
                 if dragging==nil {
+                    onEditingChanged(true)
                     // In tight ranges, choosing the numeric heading first also
                     // lets the user select a handle whose hit areas overlap.
                     let left=abs(event.startLocation.x-compactX),right=abs(event.startLocation.x-windowX)
@@ -274,11 +279,11 @@ private struct BudgetRangeSlider:View {
                 let tokens=(max(0,min(1,(event.location.x-diameter/2)/travel))*Double(maximumWindow)).rounded()
                 if dragging == .compact{compact=max(1,min(Double(maximumCompact),tokens))}
                 else{window=max(2,min(Double(maximumWindow),tokens))}
-            }.onEnded {_ in dragging=nil})
+            }.onEnded {_ in dragging=nil;onEditingChanged(false)})
             .animation(reduceMotion || dragging != nil ? nil:.easeOut(duration:0.18),value:window)
             .animation(reduceMotion || dragging != nil ? nil:.easeOut(duration:0.18),value:compact)
         }
-        .frame(height:46).opacity(enabled ? 1:0.4)
+        .frame(height:compactStyle ? 24:46).opacity(enabled ? 1:0.4)
         .focusable(enabled).focusEffectDisabled().focused($focused)
         .onKeyPress(.leftArrow){guard enabled else{return .ignored};adjust(-1);return .handled}
         .onKeyPress(.rightArrow){guard enabled else{return .ignored};adjust(1);return .handled}
@@ -478,7 +483,9 @@ struct ContentView: View {
     private var settingsWindow:NSWindow?
     private var refreshTask:Task<Void,Never>?
     private var serviceStarter:Process?
-    private let contextPopover=NSPopover()
+    private var menuPanel:ContextMenuPanel?
+    private var localMenuMonitor:Any?
+    private var globalMenuMonitor:Any?
     private var lastIconPercentage:Int?
     private var iconInitialized=false
     private let background=CommandLine.arguments.contains("--background")
@@ -498,18 +505,13 @@ struct ContentView: View {
         item.button?.imagePosition = .imageOnly
         item.button?.target=self;item.button?.action=#selector(toggleContextPopover)
         statusItem=item
-        contextPopover.behavior = .transient
-        contextPopover.animates=false
-        contextPopover.contentViewController=NSHostingController(rootView:ContextMenuView(model:model,openChat:{[weak self] id in
-            guard let self else{return};self.model.selectedID=id;self.model.fill();self.showSettings()
-        },openSettings:{[weak self] in self?.showSettings()},quit:{[weak self] in self?.quitEntry()}))
         updateStatusIcon()
         if !background{showSettings()}
         publishStatus()
         refreshTask=Task {while !Task.isCancelled{
             await model.refresh()
             updateStatusIcon()
-            if contextPopover.isShown{contextPopover.contentSize=NSSize(width:400,height:model.contextMenuHeight)}
+            if menuPanel?.isVisible==true,NSEvent.pressedMouseButtons==0{positionContextMenu()}
             publishStatus()
             try? await Task.sleep(for:.seconds(2))
         }}
@@ -526,11 +528,46 @@ struct ContentView: View {
         statusItem?.button?.setAccessibilityLabel("Context Manager，\(summary)，打开聊天概览")
     }
     @objc private func toggleContextPopover(){
-        if contextPopover.isShown{contextPopover.performClose(nil);return}
-        guard let button=statusItem?.button else{return}
-        contextPopover.contentSize=NSSize(width:400,height:model.contextMenuHeight)
-        contextPopover.show(relativeTo:button.bounds,of:button,preferredEdge:.minY)
-        contextPopover.contentViewController?.view.window?.makeKey()
+        if menuPanel?.isVisible==true{closeContextMenu();return}
+        guard statusItem?.button != nil else{return}
+        if menuPanel==nil{
+            let panel=ContextMenuPanel(contentRect:.zero,styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
+            panel.isReleasedWhenClosed=false;panel.isFloatingPanel=true;panel.hidesOnDeactivate=false;panel.delegate=self
+            panel.level = .popUpMenu;panel.collectionBehavior=[.canJoinAllSpaces,.fullScreenAuxiliary]
+            panel.backgroundColor = .clear;panel.isOpaque=false;panel.hasShadow=true;panel.animationBehavior = .none
+            menuPanel=panel
+        }
+        let backdrop=NSVisualEffectView();backdrop.material = .popover;backdrop.blendingMode = .behindWindow;backdrop.state = .active
+        backdrop.wantsLayer=true;backdrop.layer?.cornerRadius=12;backdrop.layer?.masksToBounds=true
+        let host=NSHostingView(rootView:ContextMenuView(model:model,openChat:{[weak self] id in
+            guard let self else{return};self.model.selectedID=id;self.model.fill();self.showSettings()
+        },openSettings:{[weak self] in self?.showSettings()},quit:{[weak self] in self?.quitEntry()}))
+        host.translatesAutoresizingMaskIntoConstraints=false;backdrop.addSubview(host)
+        NSLayoutConstraint.activate([host.leadingAnchor.constraint(equalTo:backdrop.leadingAnchor),host.trailingAnchor.constraint(equalTo:backdrop.trailingAnchor),host.topAnchor.constraint(equalTo:backdrop.topAnchor),host.bottomAnchor.constraint(equalTo:backdrop.bottomAnchor)])
+        menuPanel?.contentView=backdrop;positionContextMenu();menuPanel?.orderFrontRegardless();menuPanel?.makeKey()
+        localMenuMonitor=NSEvent.addLocalMonitorForEvents(matching:[.leftMouseDown,.rightMouseDown,.keyDown]){[weak self] event in
+            guard let self,self.menuPanel?.isVisible==true else{return event}
+            if event.type == .keyDown{if event.keyCode==53{self.closeContextMenu();return nil};return event}
+            if event.window !== self.menuPanel && event.window !== self.statusItem?.button?.window{self.closeContextMenu()}
+            return event
+        }
+        globalMenuMonitor=NSEvent.addGlobalMonitorForEvents(matching:[.leftMouseDown,.rightMouseDown]){[weak self] _ in Task{@MainActor in
+            guard let self else{return}
+            if let button=self.statusItem?.button,let window=button.window,window.convertToScreen(button.convert(button.bounds,to:nil)).contains(NSEvent.mouseLocation){return}
+            self.closeContextMenu()
+        }}
+    }
+    private func positionContextMenu(){
+        guard let button=statusItem?.button,let window=button.window,let screen=window.screen ?? NSScreen.main else{return}
+        let anchor=window.convertToScreen(button.convert(button.bounds,to:nil))
+        model.menuHeightLimit=max(1,min(560,min(anchor.minY-4,screen.visibleFrame.maxY-8)-screen.visibleFrame.minY-8))
+        let frame=ContextMenuPlacement.frame(anchor:anchor,size:NSSize(width:400,height:model.contextMenuHeight),screen:screen.visibleFrame)
+        menuPanel?.setFrame(frame,display:true)
+    }
+    private func closeContextMenu(){
+        menuPanel?.orderOut(nil);menuPanel?.contentView=nil
+        if let localMenuMonitor{NSEvent.removeMonitor(localMenuMonitor);self.localMenuMonitor=nil}
+        if let globalMenuMonitor{NSEvent.removeMonitor(globalMenuMonitor);self.globalMenuMonitor=nil}
     }
     private func startLocalService(){
         // The app itself stays the native CFBundleExecutable. Starting Node
@@ -554,7 +591,7 @@ struct ContentView: View {
         editItem.submenu=edit;bar.addItem(editItem);NSApplication.shared.mainMenu=bar
     }
     @objc private func showSettings(){
-        contextPopover.performClose(nil)
+        closeContextMenu()
         if settingsWindow==nil{
             let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:760),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
             window.title="Context Manager";window.minSize=NSSize(width:960,height:700)
@@ -573,6 +610,10 @@ struct ContentView: View {
     func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows:Bool)->Bool{showSettings();return false}
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool{false}
     func windowWillClose(_ notification:Notification){publishStatus(windowVisible:false)}
+    func windowDidResignKey(_ notification:Notification){
+        guard notification.object as? NSWindow === menuPanel else{return}
+        DispatchQueue.main.async{[weak self] in if self?.menuPanel?.isKeyWindow==false{self?.closeContextMenu()}}
+    }
     private func publishStatus(windowVisible:Bool?=nil){
         let menuWindow=statusItem?.button?.window
         let frame=menuWindow?.frame ?? .zero
@@ -585,5 +626,5 @@ struct ContentView: View {
             try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:url.path);lastStatus=data
         }catch{}
     }
-    func applicationWillTerminate(_ notification:Notification){refreshTask?.cancel();try? FileManager.default.removeItem(at:model.home.appendingPathComponent("ui-status.json"))}
+    func applicationWillTerminate(_ notification:Notification){closeContextMenu();refreshTask?.cancel();try? FileManager.default.removeItem(at:model.home.appendingPathComponent("ui-status.json"))}
 }

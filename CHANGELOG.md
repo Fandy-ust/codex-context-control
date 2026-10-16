@@ -1,5 +1,11 @@
 # Changes
 
+## 0.11.0 — 2026-10-16
+
+- Open the menu below the status icon toward the right, with screen-edge clamping and outside-click/Escape dismissal.
+- Replace a hovered chat row with the shared dual-handle budget slider and explicit Apply/Cancel controls.
+- Preserve draft revisions and advanced reserves, freeze row ordering during editing, and report queued or blocked application states.
+
 ## 0.10.0 — 2026-10-16
 
 - Rename the visible app to Context Manager and replace the menu-bar text with a robot inside a live usage ring.

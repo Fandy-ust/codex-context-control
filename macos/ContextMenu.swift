@@ -16,7 +16,7 @@ extension Controller {
     var runningChats:[Chat] {serviceAvailable ? chats.filter(\.isRunning):[]}
     var recentChats:[Chat] {Array(chats.filter{$0.menuEligible && (!serviceAvailable || !$0.isRunning)}.prefix(5))}
     var busiestContext:Chat? {runningChats.filter{$0.freshUsage==true && $0.contextFraction != nil}.max{($0.contextFraction ?? 0)<($1.contextFraction ?? 0)}}
-    var contextMenuHeight:CGFloat {min(560,max(210,CGFloat(runningChats.count+recentChats.count)*52+175))}
+    var contextMenuHeight:CGFloat {min(menuHeightLimit,max(210,CGFloat(runningChats.count+recentChats.count)*52+175))}
 }
 
 @MainActor func managerStatusImage(progress:Double?)->NSImage {
@@ -63,6 +63,11 @@ struct ContextUsageRing:View {
     let openChat:(String)->Void
     let openSettings:()->Void
     let quit:()->Void
+    @State private var editingChatID:String?
+    @State private var heldRunning:[String]=[]
+    @State private var heldRecent:[String]=[]
+    private var running:[Chat] {editingChatID == nil ? model.runningChats:heldRunning.compactMap{id in model.chats.first{$0.id==id}}}
+    private var recent:[Chat] {editingChatID == nil ? model.recentChats:heldRecent.compactMap{id in model.chats.first{$0.id==id}}}
     var body:some View {
         VStack(alignment:.leading,spacing:8){
             Button(action:openSettings){
@@ -72,15 +77,15 @@ struct ContextUsageRing:View {
             Divider().padding(.horizontal,8)
             ScrollView {
                 VStack(alignment:.leading,spacing:2){
-                    sectionLabel("正在运行",count:model.runningChats.count)
-                    if model.runningChats.isEmpty {
+                    sectionLabel("正在运行",count:running.count)
+                    if running.isEmpty {
                         Text(model.serviceAvailable ? "暂无运行中的聊天":"正在连接控制服务…").font(.system(size:12)).foregroundStyle(.secondary).padding(10)
                     }
-                    ForEach(model.runningChats){chat in chatRow(chat)}
-                    if !model.recentChats.isEmpty {
+                    ForEach(running){chat in chatRow(chat)}
+                    if !recent.isEmpty {
                         Divider().padding(.horizontal,8).padding(.vertical,6)
-                        sectionLabel("近期聊天",count:model.recentChats.count)
-                        ForEach(model.recentChats){chat in chatRow(chat)}
+                        sectionLabel("近期聊天",count:recent.count)
+                        ForEach(recent){chat in chatRow(chat)}
                     }
                 }
             }.scrollIndicators(.automatic)
@@ -97,8 +102,36 @@ struct ContextUsageRing:View {
         HStack{Text(title);Spacer();Text("\(count)").monospacedDigit()}.font(.system(size:10,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,10).padding(.vertical,4)
     }
     private func chatRow(_ chat:Chat)->some View {
-        let stale = !model.serviceAvailable || !chat.connected || chat.freshUsage != true
-        return Button{openChat(chat.id)} label:{
+        MenuChatRow(model:model,chat:chat,canBegin:editingChatID==nil || editingChatID==chat.id,openChat:openChat,beginEditing:{
+            if editingChatID==nil{heldRunning=model.runningChats.map(\.id);heldRecent=model.recentChats.map(\.id)}
+            editingChatID=chat.id
+        },endEditing:{if editingChatID==chat.id{editingChatID=nil}})
+    }
+}
+
+@MainActor private struct MenuChatRow:View {
+    @ObservedObject var model:Controller
+    let chat:Chat;let canBegin:Bool;let openChat:(String)->Void;let beginEditing:()->Void;let endEditing:()->Void
+    @State private var draft:MenuBudgetDraft?
+    @State private var selection:BudgetThumb = .window
+    @State private var hovering=false
+    @State private var dragging=false
+    @State private var touched=false
+    @State private var saving=false
+    @State private var feedback:String?
+    @State private var failed=false
+    private var stale:Bool {!model.serviceAvailable || !chat.connected || chat.freshUsage != true}
+    var body:some View {
+        ZStack {
+            if let draft {editor(draft)}else{information}
+        }.frame(height:50).contentShape(Rectangle())
+            .background(.primary.opacity(hovering || draft != nil ? 0.06:0),in:RoundedRectangle(cornerRadius:5))
+            .onHover{inside in hovering=inside;if inside{begin()}else{finishIfClean()}}
+            .onChange(of:canBegin){_,allowed in if allowed && hovering{begin()}}
+            .accessibilityAction(named:"调节预算"){begin()}
+    }
+    private var information:some View {
+        Button{openChat(chat.id)} label:{
             HStack(spacing:10){
                 Text(chat.title).font(.system(size:14,weight:.medium)).lineLimit(1).truncationMode(.middle).frame(maxWidth:.infinity,alignment:.leading)
                 VStack(alignment:.trailing,spacing:3){
@@ -106,9 +139,58 @@ struct ContextUsageRing:View {
                     Text(chat.contextFraction != nil ? "\(shortTokens(chat.lastUsage?.totalTokens)) / \(shortTokens(chat.observedWindow))\(stale ? " · 上次":"")":"尚无用量")
                         .font(.system(size:9)).foregroundStyle(.secondary)
                 }.monospacedDigit().frame(width:100,alignment:.trailing)
-            }.padding(.horizontal,10).frame(height:50).contentShape(Rectangle())
-        }.buttonStyle(ContextMenuButtonStyle()).help("\(chat.title) · \(chat.contextPercentage)\(stale ? "（上次读回）":"")；点击打开设置")
+            }.padding(.horizontal,10).contentShape(Rectangle())
+        }.buttonStyle(.plain).help("\(chat.title) · \(chat.contextPercentage)；悬停调节预算，点击打开设置")
             .accessibilityLabel("\(chat.title)，上下文 \(chat.contextPercentage)\(stale ? "，上次读回":"")，打开设置")
+    }
+    private func editor(_ value:MenuBudgetDraft)->some View {
+        VStack(spacing:0){
+            HStack(spacing:8){
+                if let feedback {Text(feedback).font(.system(size:10)).foregroundStyle(failed ? .orange:.secondary).lineLimit(1).help(feedback)}
+                else {
+                    Button("压缩 \(Int(value.compactK))K"){selection = .compact}.foregroundStyle(.blue)
+                    Button("窗口 \(Int(value.windowK))K"){selection = .window}
+                }
+                Spacer(minLength:2)
+                Button{openChat(chat.id)}label:{Image(systemName:"arrow.up.right.square")}.help("\(chat.title) · 打开主面板")
+                if saving{ProgressView().controlSize(.mini).frame(width:28)}
+                else{Button("应用"){Task{await apply()}}.foregroundStyle(.blue).disabled(!value.changed || !model.serviceAvailable)}
+                Button{cancel()}label:{Image(systemName:"xmark")}.disabled(saving).help("取消未提交的修改")
+            }.buttonStyle(.plain).font(.system(size:11,weight:.medium)).monospacedDigit().frame(height:20)
+            BudgetRangeSlider(window:Binding(get:{draft?.windowK ?? value.windowK},set:{draft?.setWindow($0);touched=true;feedback=nil}),compact:Binding(get:{draft?.compactK ?? value.compactK},set:{draft?.setCompact($0);touched=true;feedback=nil}),selection:$selection,maximumWindow:value.maximumWindowK,maximumCompact:value.maximumCompactK,compactStyle:true,onEditingChanged:{active in dragging=active;if !active{finishIfClean()}})
+                .disabled(saving || !model.serviceAvailable)
+        }.padding(.horizontal,10).help(chat.title)
+    }
+    private func begin(){
+        guard draft==nil,canBegin,model.serviceAvailable,let value=try? MenuBudgetDraft(chat:chat) else{return}
+        draft=value;touched=false;feedback=nil;failed=false;beginEditing()
+    }
+    private func finishIfClean(){if !hovering && !dragging && !saving && !touched{cancel()}}
+    private func cancel(){draft=nil;touched=false;feedback=nil;failed=false;endEditing()}
+    private func apply() async {
+        guard let value=draft,!saving else{return};saving=true;failed=false
+        do {
+            guard let current=model.chats.first(where:{$0.id==value.chatID}),current.model==value.model,
+                  current.modelMetadata?.effective_context_window_percent==value.effectivePercent,
+                  current.modelMetadata?.max_context_window==value.maximumRawWindow else{throw BudgetInputError(message:"模型信息已变化，请取消后重新调整")}
+            let data=try await model.api("/policy",body:["id":value.chatID,"policy":try value.policy(),"apply":true,"expectedRevision":value.revision])
+            let result=try JSONSerialization.jsonObject(with:data) as? [String:Any]
+            let code=(result?["plan"] as? [String:Any])?["code"] as? String
+            switch code {
+            case "waiting_for_idle":feedback="已保存 · 本轮结束后应用"
+            case "needs_compaction":feedback="已保存 · 需先压缩再应用";failed=true
+            case "needs_observation":feedback="已保存 · 等待用量读回"
+            default:feedback="已提交 · 等待读回确认"
+            }
+            touched=false
+            if let raw=result?["thread"],let data=try? JSONSerialization.data(withJSONObject:raw),let updated=try? JSONDecoder().decode(Chat.self,from:data){
+                draft=try? MenuBudgetDraft(chat:updated)
+                if let index=model.chats.firstIndex(where:{$0.id==updated.id}){model.chats[index]=updated}
+                if !updated.connected{feedback="已保存 · 接入后自动应用"}
+            }
+            await model.refresh()
+        }catch{feedback=error.localizedDescription;failed=true}
+        saving=false;finishIfClean()
     }
     private func shortTokens(_ value:Int?)->String {value.map{String(format:"%.0fK",Double($0)/1000)} ?? "—"}
 }
