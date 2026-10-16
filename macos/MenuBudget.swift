@@ -18,6 +18,7 @@ struct MenuBudgetDraft {
     private var ratioDenominator:Int
 
     init(chat:Chat) throws {
+        guard chat.modelMetadata?.context_ceiling == nil || chat.modelMetadata?.context_catalog_ready != false else{throw BudgetInputError(message:"重开 Codex 后才能调整 920K 目录")}
         guard let percent=chat.modelMetadata?.effective_context_window_percent,
               let maximum=chat.modelMetadata?.max_context_window,(1...100).contains(percent),maximum>=2000,maximum<Int.max/20000 else{throw BudgetInputError(message:"等待模型信息后即可调整")}
         chatID=chat.id;model=chat.model;revision=chat.policy?.revision ?? 0

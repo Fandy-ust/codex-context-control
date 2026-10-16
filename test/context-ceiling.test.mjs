@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {EventEmitter} from 'node:events';import {PassThrough} from 'node:stream';
-import {ceilingModel,prepareContextCatalog,migrateCeilingPolicy,ceilingConfig,CEILING_RAW_WINDOW} from '../src/context-ceiling.mjs';
+import {ceilingModel,prepareContextCatalog,migrateCeilingPolicy,ceilingConfig,contextCeilingLaunchArgs,CEILING_RAW_WINDOW} from '../src/context-ceiling.mjs';
 import {preflight} from '../src/policy.mjs';import {calculateBudget} from '../src/budget.mjs';import {Bridge} from '../src/bridge.mjs';
 const base={slug:'fixture',context_window:500000,max_context_window:872000,effective_context_window_percent:95};
 test('all-model ceiling reads back exactly 920K, preserves defaults and caps compaction at 904K',()=>{
@@ -40,4 +40,11 @@ test('resuming a saved budget injects its rebased window before the first normal
  f.bridge.fromClient(JSON.stringify({id:10,method:'thread/resume',params:{threadId:'chat',excludeTurns:true}}));await tick();const request=f.writes.find(x=>x.id===10);assert.equal(Math.floor(request.params.config.model_context_window*.9),700000);assert.equal(request.params.config.model_auto_compact_token_limit,630000);
  f.bridge.fromServer(JSON.stringify({id:10,result:{thread:{id:'chat',status:{type:'idle'}},model:'fixture'}}));await tick();assert.equal(f.r.expectedWindow,700000);assert.equal(f.r.policy.contextCeilingVersion,1);assert.equal(f.r.appliedRevision,4);
  }finally{f.close();}
+});
+
+test('desktop config flags before and after app-server remain in one trailing group',()=>{
+ const args=['-c','features.code_mode_host=true','app-server','--listen','stdio://','--config','model_reasoning_effort="low"','--config=plugins.sample.enabled=true'];
+ const ceiling={args:['-c','model_catalog_json="/tmp/ceiling.json"']};
+ assert.deepEqual(contextCeilingLaunchArgs(args,ceiling),['app-server','--listen','stdio://','-c','features.code_mode_host=true','--config','model_reasoning_effort="low"','--config=plugins.sample.enabled=true',...ceiling.args]);
+ assert.equal(contextCeilingLaunchArgs(args,null),args);
 });

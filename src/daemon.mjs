@@ -37,14 +37,14 @@ export async function startDaemon() {
   const contextStatistics=createContextStatisticsService();
   const runtimeFix=createRuntimeFixManager();
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
-  function modelFor(id,slug){const model=store.model(slug??store.data.threads[id]?.model);const peers=owners.get(id)||[];return peers.length===1&&bridges.get(peers[0])?.contextCeiling===CONTEXT_CEILING_VERSION?ceilingModel(model):model;}
-  function publicThread(id){const t=store.publicThread(id,owners),m=modelFor(id,t.model);return {...t,modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]])):null};}
-  function state(){return {version:'0.12.0',bridgeCount:bridges.size,contextCeilingPending:bridges.size===0||[...bridges.values()].some(b=>b.contextCeiling!==CONTEXT_CEILING_VERSION),runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function modelFor(id,slug){const model=store.model(slug??store.data.threads[id]?.model);const peers=owners.get(id)||[];return (peers.length===1&&bridges.get(peers[0])?.contextCeiling===CONTEXT_CEILING_VERSION)||(peers.length===0&&store.data.policies[id]?.contextCeilingVersion===CONTEXT_CEILING_VERSION)?ceilingModel(model):model;}
+  function publicThread(id){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const catalogReady=peers.length===1&&bridges.get(peers[0])?.contextCatalogRevision===2;return {...t,modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',catalogReady]])):null};}
+  function state(){return {version:'0.12.1',bridgeCount:bridges.size,contextCeilingPending:bridges.size===0||[...bridges.values()].some(b=>b.contextCeiling!==CONTEXT_CEILING_VERSION||b.contextCatalogRevision!==2),runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.12.0'};
+    if(op==='ping')return {ok:true,version:'0.12.1'};
     if(op==='state')return state();
     if(op==='forkBudget')return {policy:store.data.policies[p.id]||null,model:modelFor(p.id,p.model)};
-    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
+    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180)throw new Error('聊天 ID 无效');
@@ -66,11 +66,13 @@ export async function startDaemon() {
       return {policy:store.data.policies[p.id]||null,model:modelFor(p.id,clean.model)};
     }
     if(op==='preflight') {
+      if((owners.get(p.id)||[]).some(peer=>bridges.get(peer)?.contextCeiling===CONTEXT_CEILING_VERSION&&bridges.get(peer)?.contextCatalogRevision!==2))return {code:'runtime_restart_required',allowed:false,message:'请完整退出并重开 Codex，加载修正后的模型目录。'};
       const policy=normalizePolicy(p.policy);const t=store.data.threads[p.id];
       return preflight(t,policy,modelFor(p.id,t?.model));
     }
     if(op==='setPolicy') {
       const t=store.data.threads[p.id];if(!t)throw new Error('未找到聊天');
+      const peers=owners.get(p.id)||[];if(peers.some(peer=>bridges.get(peer)?.contextCeiling===CONTEXT_CEILING_VERSION&&bridges.get(peer)?.contextCatalogRevision!==2))throw Error('当前 Codex 连接尚未加载修正后的模型目录，请完整退出并重新打开 Codex。');
       const policy=normalizePolicy(p.policy);const plan=preflight(t,policy,modelFor(t.id,t.model));
       if(['above_catalog_maximum','above_safe_compact','below_retained_floor','unsupported_thread'].includes(plan.code))throw new Error(plan.message);
       const previous=store.data.policies[p.id];

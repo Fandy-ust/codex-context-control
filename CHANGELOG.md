@@ -1,5 +1,11 @@
 # Changes
 
+## 0.12.1 — 2026-10-16
+
+- Fix desktop startup config precedence: consolidate caller overrides after the app-server subcommand, then append the 920K catalog settings.
+- Reproduce the real desktop argument shape in native integration tests and verify resolved configuration plus the 920K token-usage event.
+- Identify older connections that missed the catalog, require restart before budget changes, and preserve converted budget display for unloaded chats.
+
 ## 0.12.0 — 2026-10-16
 
 - Add a 920K local input ceiling across models through a separate startup catalog; preserve existing visible budgets during migration.

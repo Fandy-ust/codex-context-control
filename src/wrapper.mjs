@@ -5,7 +5,7 @@ import {connect,request} from './ipc.mjs';
 import {callerRuntime} from './runtime-selection.mjs';
 import {ensureDaemon} from './service.mjs';
 import {createRuntimeFixManager} from './runtime-fix.mjs';
-import {prepareContextCatalog} from './context-ceiling.mjs';
+import {prepareContextCatalog,contextCeilingLaunchArgs} from './context-ceiling.mjs';
 import {runtimeSupported,isStdioServer} from './compatibility.mjs';
 
 const args=process.argv.slice(2);const caller=callerRuntime();
@@ -20,11 +20,11 @@ if(!desktop||!isStdioServer(args)||!supported){
   const p=spawn(binary,args,{stdio:'inherit',env:process.env});p.on('exit',(code,signal)=>signal?process.kill(process.pid,signal):process.exit(code??1));
 }else{
   const ceiling=nativeVersion.trim()==='codex-cli 0.160.0'?prepareContextCatalog():null;
-  const child=spawn(binary,ceiling?[...ceiling.args,...args]:args,{stdio:['pipe','pipe','inherit'],env:process.env});
+  const child=spawn(binary,contextCeilingLaunchArgs(args,ceiling),{stdio:['pipe','pipe','inherit'],env:process.env});
   let peer,closed=false,bridge;
   bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{
     await ensureDaemon();return request('forkBudget',{id,model});
-  },{contextCeiling:ceiling?.version??null});
+  },{contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null});
   async function attach(){
     if(closed)return;
     try{
@@ -34,7 +34,7 @@ if(!desktop||!isStdioServer(args)||!supported){
         if(op==='compact')return bridge.compact(p.id);
         throw new Error('不支持的运行时操作');
       });
-      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null});
+      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null});
       for(const record of bridge.records.values())bridge.notify(record);
       peer.socket.once('close',()=>{peer=null;if(!closed)setTimeout(attach,1000).unref();});
     }catch{if(!closed)setTimeout(attach,1500).unref();}

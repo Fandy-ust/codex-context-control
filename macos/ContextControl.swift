@@ -3,7 +3,7 @@ import AppKit
 
 struct Budget: Decodable { let window:Int;let compact:Int;let reserve:Int;let retainedFloor:Int;let revision:Int;let enabled:Bool? }
 struct Usage: Decodable { let totalTokens:Int }
-struct Metadata: Decodable { let max_context_window:Int?;let effective_context_window_percent:Int?;let context_ceiling:Int?;let context_compact_ceiling:Int? }
+struct Metadata: Decodable { let max_context_window:Int?;let effective_context_window_percent:Int?;let context_ceiling:Int?;let context_compact_ceiling:Int?;let context_catalog_ready:Bool? }
 struct Chat: Identifiable, Decodable {
     let id:String;let name:String?;let model:String?;let cwd:String?;let status:String?
     let connected:Bool;let ambiguous:Bool;let phase:String?;let message:String?
@@ -93,6 +93,7 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func calculate() throws -> BudgetPreview {
         guard let metadata=selected?.modelMetadata,let percent=metadata.effective_context_window_percent,let maximum=metadata.max_context_window else{throw BudgetInputError(message:"等待当前模型信息后即可设置实际可用窗口")}
+        guard metadata.context_ceiling == nil || metadata.context_catalog_ready != false else{throw BudgetInputError(message:"请完整退出并重开 Codex，加载修正后的 920K 模型目录")}
         guard !waitingForModel else{throw BudgetInputError(message:"正在读取此聊天的窗口设置")}
         guard Int(compactK)<=maximumCompactK else{throw BudgetInputError(message:"压缩阈值需保留下一轮输入余量")}
         return try BudgetMath.sliderPreview(windowK:Int(windowK),compactK:Int(compactK),effectivePercent:percent,maximumRawWindow:maximum)
@@ -107,7 +108,7 @@ struct ServiceSettings: Decodable {let node:String}
         let safe=m.context_ceiling.map{max(1000,$0-max(16000,(try? BudgetMath.tokens(reserve)) ?? 16000))/1000} ?? Int.max
         return min(native,safe)
     }
-    var canEditBudget:Bool {!waitingForModel && (maximumUsableWindow ?? 0)>=2000}
+    var canEditBudget:Bool {!waitingForModel && (maximumUsableWindow ?? 0)>=2000 && (selected?.modelMetadata?.context_ceiling == nil || selected?.modelMetadata?.context_catalog_ready != false)}
     var compactPercent:Double {compactK/windowK*100}
     func setWindowK(_ value:Double){
         budgetEdited=true

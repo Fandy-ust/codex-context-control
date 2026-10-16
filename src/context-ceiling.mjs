@@ -43,3 +43,18 @@ export function ceilingConfig(config={}){
  result.model_auto_compact_token_limit=Math.min(Number.isSafeInteger(config.model_auto_compact_token_limit)&&config.model_auto_compact_token_limit>0?config.model_auto_compact_token_limit:MAX_CONTEXT_COMPACT,MAX_CONTEXT_COMPACT);
  return result;
 }
+
+// Clap's global config vector can be replaced by the subcommand occurrence.
+// Put every caller override in the same trailing group, then our ceiling values.
+export function contextCeilingLaunchArgs(args,ceiling){
+ if(!ceiling)return args;
+ const positional=[],overrides=[];
+ for(let i=0;i<args.length;i++){
+  if(args[i]==='-c'||args[i]==='--config'){
+   if(i+1>=args.length)throw Error('Codex config argument is missing its value');
+   overrides.push(args[i],args[++i]);
+  }else if(args[i].startsWith('--config='))overrides.push(args[i]);
+  else positional.push(args[i]);
+ }
+ return [...positional,...overrides,...ceiling.args];
+}
