@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 extension Chat {
-    var menuEligible:Bool {ephemeral != true && canAcceptDirectInput != false}
+    var menuEligible:Bool {connected && ephemeral != true && canAcceptDirectInput != false}
     var isRunning:Bool {menuEligible && connected && ["active","inProgress"].contains(status ?? "")}
     // Use the runtime's observed capacity, never an unapplied slider draft.
     var contextFraction:Double? {
@@ -72,8 +72,8 @@ private struct MenuRowFrames:PreferenceKey {
     @State private var hoverSelection=MenuHoverSelection()
     @State private var heldRunning:[String]=[]
     @State private var heldRecent:[String]=[]
-    private var running:[Chat] {editingChatID == nil ? model.runningChats:heldRunning.compactMap{id in model.chats.first{$0.id==id}}}
-    private var recent:[Chat] {editingChatID == nil ? model.recentChats:heldRecent.compactMap{id in model.chats.first{$0.id==id}}}
+    private var running:[Chat] {editingChatID == nil ? model.runningChats:heldRunning.compactMap{id in model.chats.first{$0.id==id && $0.menuEligible}}}
+    private var recent:[Chat] {editingChatID == nil ? model.recentChats:heldRecent.compactMap{id in model.chats.first{$0.id==id && $0.menuEligible}}}
     var body:some View {
         VStack(alignment:.leading,spacing:8){
             Button(action:openSettings){
