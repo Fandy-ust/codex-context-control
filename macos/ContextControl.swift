@@ -21,7 +21,8 @@ struct Chat: Identifiable, Decodable {
         return phase=="mismatch" ? "运行时读回窗口（与目标不符）":"最近读回窗口"
     }
 }
-struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat]}
+struct RuntimeFixState:Decodable {let enabled:Bool;let available:Bool;let compatible:Bool;let baseVersion:String;let originalVersion:String?;let activeCount:Int;let pending:Bool;let message:String}
+struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -30,6 +31,8 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var chats:[Chat]=[]
     @Published var selectedID:String?
     @Published var bridgeCount=0
+    @Published var runtimeFix:RuntimeFixState?
+    @Published var changingRuntimeFix=false
     @Published var notice="正在读取本地状态…"
     @Published private(set) var windowK=400.0
     @Published private(set) var compactK=360.0
@@ -62,7 +65,7 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func refresh() async {
         if refreshing{return};refreshing=true;defer{refreshing=false}
-        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount
+        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount;runtimeFix=state.runtimeFix
             if selectedID==nil{selectedID=chats.first?.id;fill()}
             else if waitingForModel,let metadata=selected?.modelMetadata,metadata.effective_context_window_percent != nil,metadata.max_context_window != nil{fill()}
             if notice=="正在读取本地状态…"||notice.hasPrefix("读取失败："){notice=bridgeCount>0 ? "已接入 Codex。" : "照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。"}
@@ -117,6 +120,13 @@ struct ServiceSettings: Decodable {let node:String}
             else if action=="policy"{editingRevision=(object?["policy"] as? [String:Any])?["revision"] as? Int ?? editingRevision;notice="预算已保存。请查看下方应用状态；实际值将在正常下一轮请求后确认。"}
             else{notice=object?["message"] as? String ?? "操作已提交。"}
             await refresh()
+        }catch{notice=error.localizedDescription}
+    }
+    func setRuntimeFix(_ enabled:Bool) async {
+        if changingRuntimeFix{return};changingRuntimeFix=true;defer{changingRuntimeFix=false}
+        do {
+            runtimeFix=try JSONDecoder().decode(RuntimeFixState.self,from:await api("/runtime-fix",body:["enabled":enabled]))
+            notice=runtimeFix?.message ?? "设置已保存"
         }catch{notice=error.localizedDescription}
     }
     func launchCodex(){
@@ -310,6 +320,21 @@ struct ContentView: View {
                         }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
                     }}
                 }.frame(maxHeight:.infinity)
+                if let fix=model.runtimeFix {
+                    VStack(alignment:.leading,spacing:7){
+                        Toggle("提前压缩修复",isOn:Binding(get:{model.runtimeFix?.enabled ?? false},set:{value in Task{await model.setRuntimeFix(value)}}))
+                            .toggleStyle(.switch).controlSize(.small)
+                            .disabled(model.changingRuntimeFix || (!fix.enabled && (!fix.available || !fix.compatible)))
+                        Text(fix.message).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                        DisclosureGroup("修复说明"){
+                            VStack(alignment:.leading,spacing:6){
+                                Text("避免历史推理重复计数。使用独立修复版 Codex \(fix.baseVersion)，切换后需重新打开 Codex。")
+                                Text("社区修复 · 适用于跨轮推理；以服务器已计入历史推理为前提。")
+                                Link("查看补丁",destination:URL(string:"https://github.com/coinman-dev/codex-context-accounting-fix")!)
+                            }.font(.caption2).foregroundStyle(.secondary).padding(.top,5)
+                        }.font(.caption2).foregroundStyle(.secondary)
+                    }.padding(10).background(.white.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
+                }
                 Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
             }.padding().frame(minWidth:235).background(PanelStyle.background)
         } detail: {

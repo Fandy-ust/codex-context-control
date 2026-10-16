@@ -4,9 +4,13 @@ import {Bridge} from './bridge.mjs';
 import {connect,request} from './ipc.mjs';
 import {callerRuntime} from './runtime-selection.mjs';
 import {ensureDaemon} from './service.mjs';
+import {createRuntimeFixManager} from './runtime-fix.mjs';
 import {runtimeSupported,isStdioServer} from './compatibility.mjs';
 
-const args=process.argv.slice(2);const {binary,desktop}=callerRuntime();
+const args=process.argv.slice(2);const caller=callerRuntime();
+const desktop=caller.desktop,originalBinary=caller.binary;
+const runtime=desktop&&isStdioServer(args)?createRuntimeFixManager().select(originalBinary):{binary:originalBinary,runtimeFixId:null};
+const binary=runtime.binary;
 const bridgeVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 const supported=!isStdioServer(args)||runtimeSupported(spawnSync(binary,['--version'],{encoding:'utf8'}).stdout||'');
 if(!desktop||!isStdioServer(args)||!supported){
@@ -27,7 +31,7 @@ if(!desktop||!isStdioServer(args)||!supported){
         if(op==='compact')return bridge.compact(p.id);
         throw new Error('不支持的运行时操作');
       });
-      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion});
+      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,runtimeFixId:runtime.runtimeFixId});
       for(const record of bridge.records.values())bridge.notify(record);
       peer.socket.once('close',()=>{peer=null;if(!closed)setTimeout(attach,1000).unref();});
     }catch{if(!closed)setTimeout(attach,1500).unref();}

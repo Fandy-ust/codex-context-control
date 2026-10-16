@@ -4,7 +4,27 @@
 
 包含原生控制面板、Codex 连接桥接、Hook stats 状态输出，以及可重复执行的安装/卸载程序。使用原有 Codex 登录和运行时，不需要为本工具配置 API key。
 
-**当前版本：0.8.1，本地预览版。已验证 Codex 0.159.2 和 0.160.0。** 窗口与压缩阈值均使用滑条，按 1K 调整；窗口变化时压缩阈值按比例联动。照常打开 Codex 后，菜单栏自动出现 **「上下文」**，点击即可打开设置。未验证的运行时仅透传，不执行预算调整。0.5.2 增加 fork 预算继承，并保留连续调整时下一轮前优先完成最新预算的修复。
+**当前版本：0.9.0，本地预览版。已验证 Codex 0.159.2 和 0.160.0。** 窗口与压缩阈值均使用滑条，按 1K 调整；窗口变化时压缩阈值按比例联动。照常打开 Codex 后，菜单栏自动出现 **「上下文」**，点击即可打开设置。未验证的运行时仅透传，不执行预算调整。0.5.2 增加 fork 预算继承，并保留连续调整时下一轮前优先完成最新预算的修复。
+
+## 提前压缩修复（0.9）
+
+侧栏提供「提前压缩修复」开关，**默认关闭**。它选择独立存放的修复版 Codex 运行时，解决部分跨轮推理请求中重复补算历史推理导致的提前压缩。实际请求用量和费用仍按服务器报告计算。
+
+修复基于 [coinman-dev 的社区补丁](https://github.com/coinman-dev/codex-context-accounting-fix)，源码提交、补丁提交和校验值锁定在 `runtime-patches/manifest.json`。这是社区修复：它假定 Responses Lite 的跨轮推理已包含在服务器用量内，不代表 OpenAI 已确认所有服务路径都遵守这一约定。
+
+首个包针对 Apple Silicon macOS 和 **Codex 0.160.0**。开关只影响下一次启动的 Codex 运行进程；当前进程继续使用原版，界面会显示待生效。关闭后，重新打开 Codex 即恢复原版。Codex 更新到其他版本、修复包缺失或文件校验失败时，后续启动自动使用原版。安装过程不会修改 ChatGPT.app，也不会修改已有登录信息。
+
+准备修复包：
+
+```sh
+# 在装有 Rust/rustup、Git 和 Xcode 命令行工具的 Apple Silicon Mac 上构建。
+node scripts/build-patched-runtime.mjs
+node scripts/install-patched-runtime.mjs build/patched-runtime
+```
+
+也可以在本私有仓库运行 `patched-runtime` GitHub Actions 工作流，下载它生成的 macOS artifact 后安装。下载 artifact 后须恢复 `codex` 文件的执行权限（`chmod +x`）。工作流编译固定版本的上游源码，并执行本机模拟计数测试及桥接兼容性测试；不使用账户凭据，也不调用远程模型。它不自动发布、安装或启用修复。常规安装／重新安装保留用户的开关选择。
+
+修复包保存在 `~/Library/Application Support/CodexContextControl/runtimes/`，开关保存在同目录的 `runtime-fix.json`。文件签名、SHA-256、源码版本和补丁标识在安装时校验；运行时选择会再次校验文件并检查宿主 Codex 版本。
 
 ## 软件形态
 
@@ -68,7 +88,7 @@ npm run install:local
 
 ## 功能边界
 
-| 能力 | 0.8.1 |
+| 能力 | 0.9.0 |
 | --- | --- |
 | 逐聊天窗口、压缩阈值及预算持久保存 | 已实现 |
 | fork 预算继承 | 创建时复制父对话预算；分支与父对话随后独立调整 |

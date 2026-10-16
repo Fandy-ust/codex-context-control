@@ -49,7 +49,7 @@ if(process.argv.includes('--uninstall')){
     const build=spawnSync(process.execPath,[path.join(repo,'scripts/build-mac.mjs')],{stdio:'inherit'});if(build.status!==0)process.exit(build.status||1);
   }
   const code=path.join(root,'code');fs.mkdirSync(code,{recursive:true,mode:0o700});
-  for(const dir of ['src','scripts'])fs.cpSync(path.join(repo,dir),path.join(code,dir),{recursive:true});
+  for(const dir of ['src','scripts','runtime-patches'])fs.cpSync(path.join(repo,dir),path.join(code,dir),{recursive:true});
   fs.copyFileSync(path.join(repo,'package.json'),path.join(code,'package.json'));
   fs.copyFileSync(path.join(repo,'package-lock.json'),path.join(code,'package-lock.json'));
   fs.cpSync(path.join(repo,'node_modules'),path.join(code,'node_modules'),{recursive:true});

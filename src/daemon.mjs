@@ -11,6 +11,7 @@ import {savedBudget} from './budget.mjs';
 import {ensureMenuBarEntry} from './menu-bar.mjs';
 import {reconcileWindowConfirmation} from './confirmation.mjs';
 import {inheritedForkPolicy} from './fork-budget.mjs';
+import {createRuntimeFixManager} from './runtime-fix.mjs';
 import {createContextStatisticsService} from './context-statistics-service.mjs';
 
 export async function startDaemon() {
@@ -33,13 +34,14 @@ export async function startDaemon() {
   store.save();
   const bridges=new Map();const owners=new Map();
   const contextStatistics=createContextStatisticsService();
+  const runtimeFix=createRuntimeFixManager();
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
-  function state(){return {version:'0.8.1',bridgeCount:bridges.size,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null})),threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).filter(t=>!t.archived).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function state(){return {version:'0.9.0',bridgeCount:bridges.size,runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).filter(t=>!t.archived).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.8.1'};
+    if(op==='ping')return {ok:true,version:'0.9.0'};
     if(op==='state')return state();
     if(op==='forkBudget')return {policy:store.data.policies[p.id]||null,model:store.model(p.model||store.data.threads[p.id]?.model)};
-    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
+    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180)throw new Error('聊天 ID 无效');
@@ -110,6 +112,7 @@ export async function startDaemon() {
         if(!Object.hasOwn(store.data.threads,params.id))throw new Error('未找到所选聊天');
         answer=await contextStatistics(params.id,params.refresh===true);
       }
+      else if(req.method==='POST'&&route==='/runtime-fix')answer=runtimeFix.setEnabled(params.enabled,undefined,[...bridges.values()]);
       else if(req.method==='POST'&&route==='/preflight')answer=await handle(null,'preflight',params);
       else if(req.method==='POST'&&route==='/policy')answer=await handle(null,'setPolicy',params);
       else if(req.method==='POST'&&route==='/clear')answer=await handle(null,'clearPolicy',params);

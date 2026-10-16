@@ -1,5 +1,12 @@
 # Changes
 
+## 0.9.0 — 2026-10-16
+
+- Add an optional, disabled-by-default early-compaction fix switch in the native sidebar.
+- Select an independently installed, pinned Codex 0.160.0 runtime on the next launch, with integrity checks and version-mismatch fallback.
+- Distinguish saved preference from active runtime; disabling takes effect on the next launch.
+- Provide reproducible Apple Silicon builds and offline validation for the community reasoning-accounting patch.
+
 ## 0.8.1 — 2026-10-16
 
 - Use Standard base rates for all panel cost estimates, with no Fast surcharge or price comparison.
