@@ -72,3 +72,19 @@ test('broken preference files fail closed and enabled state survives a manager r
     assert.throws(()=>f.manager.setEnabled('true',f.original),/开关值无效/);
   }finally{f.close();}
 });
+
+test('a nested desktop executable update invalidates version checks even when its launcher is unchanged',{skip:process.platform==='win32'},()=>{
+  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-nested-runtime-'));
+  try{
+    const launcher=path.join(home,'codex-cli/bin/codex');
+    const actual=path.join(home,'codex-cli/CodexCLI.app/Contents/MacOS/codex');
+    fs.mkdirSync(path.dirname(launcher),{recursive:true});fs.mkdirSync(path.dirname(actual),{recursive:true});
+    fs.writeFileSync(launcher,'#!/bin/sh\nexec "$(dirname "$0")/../CodexCLI.app/Contents/MacOS/codex" "$@"\n',{mode:0o755});
+    fs.writeFileSync(actual,"#!/bin/sh\nprintf 'codex-cli 0.160.0\\n'\n",{mode:0o755});
+    const manager=createRuntimeFixManager({home,platform:'darwin',arch:'arm64'});
+    assert.equal(manager.status(launcher).compatible,true);
+    fs.writeFileSync(actual,"#!/bin/sh\nprintf 'codex-cli 0.162.1\\n'\n");
+    assert.equal(manager.status(launcher).originalVersion,'0.162.1');
+    assert.equal(manager.status(launcher).compatible,false);
+  }finally{fs.rmSync(home,{recursive:true,force:true});}
+});

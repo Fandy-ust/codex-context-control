@@ -27,7 +27,9 @@ export function createRuntimeFixManager({home=root,platform=process.platform,arc
   const version=file=>{
     if(!file)return null;
     if(versionOf)return versionOf(file);
-    const key=fingerprint(file),previous=versionCache.get(file);
+    // Desktop distributions use a stable shell launcher next to a nested app.
+    const companion=path.join(path.dirname(file),'../CodexCLI.app/Contents/MacOS/codex');
+    const key=fingerprint(file)+':'+fingerprint(companion),previous=versionCache.get(file);
     if(previous?.key===key)return previous.value;
     const r=spawnSync(file,['--version'],{encoding:'utf8',timeout:5000});
     const value=r.status===0?r.stdout.trim().match(/^codex-cli (\d+\.\d+\.\d+)$/)?.[1]??null:null;
