@@ -22,6 +22,7 @@ export function preflight(thread,policy,model) {
   if(!Number.isInteger(percent)||percent<1||percent>100) return {...result,code:'metadata_missing',allowed:false,message:'缺少该模型的可用比例，暂不应用。'};
   if(!Number.isSafeInteger(maximum)||maximum<1)return {...result,code:'metadata_missing',allowed:false,message:'缺少该模型的目录上限，暂不应用。'};
   if(policy.window>maximum)return {...result,code:'above_catalog_maximum',allowed:false,message:`超过当前模型目录上限 ${maximum.toLocaleString()}；这不代表服务端接受边界。`};
+  if(model.context_ceiling&&policy.compact>model.context_ceiling-Math.max(16000,policy.reserve))return {...result,code:'above_safe_compact',allowed:false,message:'920K 上限模式必须为下一轮保留至少 16K；请降低压缩阈值。'};
   const usable=Math.floor(policy.window*percent/100);
   const compact=Math.min(policy.compact,Math.floor(policy.window*90/100));
   Object.assign(result,{expectedWindow:usable,effectiveCompact:compact,catalogMaximum:maximum,usablePercent:percent});

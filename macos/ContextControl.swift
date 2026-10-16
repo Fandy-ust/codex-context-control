@@ -88,7 +88,8 @@ struct ServiceSettings: Decodable {let node:String}
             windowK=Double(max(2,min(usable/1000,maximumWindowK)))
             compactK=Double(max(1,min(actualCompact/1000,maximumCompactK)))
             ratioNumerator=Int(compactK);ratioDenominator=Int(windowK)
-        }else{ratioNumerator=90;ratioDenominator=100;setWindowK(400)}
+        }else if chat.modelMetadata?.context_ceiling != nil {setWindowK(Double((chat.observedWindow ?? 920000)/1000));setCompactK(Double(maximumCompactK))}
+        else{ratioNumerator=90;ratioDenominator=100;setWindowK(400)}
     }
     func calculate() throws -> BudgetPreview {
         guard let metadata=selected?.modelMetadata,let percent=metadata.effective_context_window_percent,let maximum=metadata.max_context_window else{throw BudgetInputError(message:"等待当前模型信息后即可设置实际可用窗口")}
@@ -259,11 +260,11 @@ struct BudgetRangeSlider:View {
             ZStack(alignment:.leading){
                 ZStack(alignment:.leading){
                     Rectangle().fill(.white.opacity(0.10))
-                    Rectangle().fill(PanelStyle.blue).frame(width:compactX)
+                    if maximumWindow==920 && Int(window)==920 {MaxContextFlow(vivid:true).frame(width:compactX)}else{Rectangle().fill(PanelStyle.blue).frame(width:compactX)}
                     Rectangle().fill(PanelStyle.headroom.opacity(0.8)).frame(width:max(0,windowX-compactX)).offset(x:compactX)
                     HStack {ForEach(0..<5){_ in Circle().fill(.white.opacity(0.18)).frame(width:3,height:3).frame(maxWidth:.infinity)}}.padding(.horizontal,diameter/2)
-                    BudgetFlowParticles(intensity:compact/Double(max(1,maximumWindow)),paused:reduceMotion || (!compactStyle && !active) || !enabled,reducedMotion:reduceMotion)
-                        .frame(width:compactX).clipped()
+                    if !(maximumWindow==920 && Int(window)==920) {BudgetFlowParticles(intensity:compact/Double(max(1,maximumWindow)),paused:reduceMotion || (!compactStyle && !active) || !enabled,reducedMotion:reduceMotion)
+                        .frame(width:compactX).clipped()}
                 }.frame(height:trackHeight).clipShape(Capsule())
                     .overlay(Capsule().strokeBorder(LinearGradient(colors:[.white.opacity(0.17),.white.opacity(0.035)],startPoint:.top,endPoint:.bottom),lineWidth:1).frame(height:trackHeight))
                 thumb(.compact).offset(x:compactX-diameter/2).zIndex(selection == .compact ? 2:1)
@@ -305,7 +306,7 @@ struct BudgetRangeSlider:View {
         .onAppear{active=NSApplication.shared.isActive}.onDisappear{active=false}
     }
     private func thumb(_ target:BudgetThumb)->some View {
-        Circle().fill(LinearGradient(colors:target == .compact ? [Color(red:0.43,green:0.63,blue:1),PanelStyle.blue]:[.white,Color(white:0.93)],startPoint:.topLeading,endPoint:.bottomTrailing))
+        Circle().fill(LinearGradient(colors:target == .compact ? (maximumWindow==920 && Int(window)==920 ? [Color(red:0.78,green:0.59,blue:1),.purple]:[Color(red:0.43,green:0.63,blue:1),PanelStyle.blue]):[.white,Color(white:0.93)],startPoint:.topLeading,endPoint:.bottomTrailing))
             .overlay(Circle().strokeBorder(LinearGradient(colors:[.white.opacity(0.95),.white.opacity(0.35),.black.opacity(0.18)],startPoint:.topLeading,endPoint:.bottomTrailing),lineWidth:1))
             .overlay(Circle().strokeBorder(.white.opacity(target == .compact ? 0.35:0.65),lineWidth:0.75).padding(2))
             .frame(width:diameter,height:diameter)
@@ -343,6 +344,7 @@ struct ContentView: View {
     @ObservedObject var model:Controller
     @State private var confirmCompact=false
     @State private var selectedThumb:BudgetThumb = .window
+    private var maxMode:Bool {model.selected?.modelMetadata?.context_ceiling==920000 && Int(model.windowK)==920}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         // Keep content below the native title bar; NavigationSplitView installs
@@ -370,7 +372,7 @@ struct ContentView: View {
                 if model.contextCeilingPending {Label("920K 扩展已安装，重开 Codex 后接入",systemImage:"arrow.clockwise").font(.caption).foregroundStyle(.orange)}
                 RuntimeFixControl(model:model)
                 Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
-            }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
+            }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(maxMode ? Color.clear:PanelStyle.background)
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
                     if let chat=model.selected {
@@ -400,17 +402,17 @@ struct ContentView: View {
                     }
                     Divider();Text(model.notice).font(.callout).textSelection(.enabled).foregroundStyle(.secondary)
                 }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity)
-            }.frame(minWidth:650).background(PanelStyle.background)
+            }.frame(minWidth:650).background(maxMode ? Color.clear:PanelStyle.background)
         }
         .frame(minWidth:960,minHeight:670)
-        .background(PanelStyle.background)
-        .preferredColorScheme(.dark).tint(PanelStyle.blue)
+        .background {if maxMode {MaxContextFlow()}else{PanelStyle.background}}
+        .preferredColorScheme(.dark).tint(maxMode ? .purple:PanelStyle.blue)
         .onChange(of:model.selectedID){_,_ in model.fill()}
         .confirmationDialog("请求 Codex 原生压缩？",isPresented:$confirmCompact,titleVisibility:.visible){Button("请求压缩"){Task{await model.act("compact")}};Button("取消",role:.cancel){}}message:{Text("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。")}
     }
     func budgetEditor()->some View {
         VStack(alignment:.leading,spacing:18){
-            if model.selected?.modelMetadata?.context_ceiling != nil && Int(model.windowK)==model.maximumWindowK {Label("MAX CONTEXT · 920K",systemImage:"lock.fill").font(.callout.weight(.semibold)).foregroundStyle(PanelStyle.blue)}
+            if maxMode {Label("MAX CONTEXT · 920K",systemImage:"bolt.fill").font(.callout.weight(.semibold)).foregroundStyle(Color(red:0.72,green:0.49,blue:1))}
             rangeEditor()
             Text(model.selected?.modelMetadata?.context_ceiling != nil ? "920K 硬上限 · 最晚 904K 压缩 · 预留至少 16K" : "将蓝色压缩点往左拉，灰色压缩窗口余量随之增加。每步 1K，应用后生效。")
                 .font(.system(size:11)).foregroundStyle(.secondary)
@@ -433,7 +435,7 @@ struct ContentView: View {
     private func rangeEditor()->some View {
         VStack(spacing:16){
             HStack(alignment:.center){
-                rangeValue("压缩触发",value:model.compactK,color:PanelStyle.blue,thumb:.compact)
+                rangeValue("压缩触发",value:model.compactK,color:maxMode ? .purple:PanelStyle.blue,thumb:.compact)
                 Spacer()
                 VStack(spacing:5){Text("\(Int(max(0,model.windowK-model.compactK)))K").font(.system(size:22,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(PanelStyle.headroom);Text("压缩窗口余量").font(.system(size:11)).foregroundStyle(.secondary)}
                 Spacer()

@@ -8,6 +8,7 @@ struct MenuBudgetDraft {
     let maximumRawWindow:Int
     let reserve:Int
     let retainedFloor:Int
+    let safeCompactLimitK:Int
     private let originalWindow:Int
     private let originalCompact:Int
     private let wasEnabled:Bool
@@ -22,15 +23,16 @@ struct MenuBudgetDraft {
         chatID=chat.id;model=chat.model;revision=chat.policy?.revision ?? 0
         effectivePercent=percent;maximumRawWindow=maximum
         reserve=chat.policy?.reserve ?? 16000;retainedFloor=chat.policy?.retainedFloor ?? 0
+        safeCompactLimitK=chat.modelMetadata?.context_ceiling.map{max(1000,$0-max(16000,chat.policy?.reserve ?? 16000))/1000} ?? Int.max
         let maxK=maximum*percent/100/1000
-        let w=max(2,min(maxK,chat.policy.map{$0.window*percent/100/1000} ?? 400))
-        let maxCompact=try BudgetMath.maximumSliderCompactK(windowK:w,effectivePercent:percent,maximumRawWindow:maximum)
-        let c=max(1,min(maxCompact,chat.policy.map{min($0.compact,$0.window*90/100)/1000} ?? w*90/100))
+        let w=max(2,min(maxK,chat.policy.map{$0.window*percent/100/1000} ?? (chat.modelMetadata?.context_ceiling != nil ? (chat.observedWindow ?? 920000)/1000:400)))
+        let maxCompact=min(safeCompactLimitK,try BudgetMath.maximumSliderCompactK(windowK:w,effectivePercent:percent,maximumRawWindow:maximum))
+        let c=max(1,min(maxCompact,chat.policy.map{min($0.compact,$0.window*90/100)/1000} ?? (chat.modelMetadata?.context_ceiling != nil ? maxCompact:w*90/100)))
         windowK=Double(w);compactK=Double(c);originalWindow=w;originalCompact=c;wasEnabled=chat.policy?.enabled != false && chat.policy != nil
         ratioNumerator=c;ratioDenominator=w
     }
     var maximumWindowK:Int {maximumRawWindow*effectivePercent/100/1000}
-    var maximumCompactK:Int {(try? BudgetMath.maximumSliderCompactK(windowK:Int(windowK),effectivePercent:effectivePercent,maximumRawWindow:maximumRawWindow)) ?? 1}
+    var maximumCompactK:Int {min(safeCompactLimitK,(try? BudgetMath.maximumSliderCompactK(windowK:Int(windowK),effectivePercent:effectivePercent,maximumRawWindow:maximumRawWindow)) ?? 1)}
     var changed:Bool {Int(windowK) != originalWindow || Int(compactK) != originalCompact || !wasEnabled}
     mutating func setWindow(_ value:Double){
         windowK=max(2,min(Double(maximumWindowK),value.rounded()))
@@ -41,6 +43,7 @@ struct MenuBudgetDraft {
         ratioNumerator=Int(compactK);ratioDenominator=Int(windowK)
     }
     func policy() throws -> [String:Any] {
+        guard Int(compactK)<=maximumCompactK else{throw BudgetInputError(message:"压缩阈值需保留下一轮输入余量")}
         let preview=try BudgetMath.sliderPreview(windowK:Int(windowK),compactK:Int(compactK),effectivePercent:effectivePercent,maximumRawWindow:maximumRawWindow)
         return ["window":preview.rawWindow,"compact":preview.compact,"reserve":reserve,"retainedFloor":retainedFloor,"scope":"total"]
     }

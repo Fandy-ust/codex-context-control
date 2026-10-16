@@ -42,7 +42,15 @@ export function enableAutomaticStartup(shim,options={}){
     if(loaded)launchctl(['bootout',`${loc.domain}/${loc.label}`]);
     fs.writeFileSync(loc.plist,plist,{mode:0o600});
     launchctl(['bootstrap',loc.domain,loc.plist]);
-    // Apply synchronously as well: a RunAtLoad job is dispatched asynchronously.
+    // Finish this one-shot job before returning. Otherwise a delayed RunAtLoad
+    // can overwrite a later external edit after installation has completed.
+    let finished=false;
+    for(let attempt=0;attempt<200;attempt++){
+      const state=launchctl(['print',`${loc.domain}/${loc.label}`],false).stdout;
+      if(/runs = [1-9]\d*/.test(state)&&/last exit code = 0/.test(state)&&/state = not running/.test(state)){finished=true;break;}
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);
+    }
+    if(!finished)throw new Error('自动接入登录任务尚未完成，已取消此次登记。');
     launchctl(['setenv',loc.key,shim]);
     if(guiEnvironment(loc.key)!==shim)throw new Error('自动接入环境未读回确认');
     atomicJSON(loc.recordFile,record);

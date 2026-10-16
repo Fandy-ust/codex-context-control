@@ -1,5 +1,7 @@
 import readline from 'node:readline';
 import {randomUUID} from 'node:crypto';
+import {getEncoding} from 'js-tiktoken';
+import {ceilingConfig,ceilingModel,migrateCeilingPolicy,MAX_CONTEXT_INPUT,MAX_CONTEXT_COMPACT,MIN_CONTEXT_RESERVE} from './context-ceiling.mjs';
 import {preflight} from './policy.mjs';
 import {inheritedForkPolicy,forkConfig} from './fork-budget.mjs';
 
@@ -8,28 +10,42 @@ const resumeFields=['model','modelProvider','cwd','approvalPolicy','approvalsRev
 const stickyFields=['model','effort','summary','serviceTier','cwd','sandboxPolicy','approvalPolicy','approvalsReviewer','collaborationMode','disabledPluginIds','environments','permissions','runtimeWorkspaceRoots'];
 const pick=(value,keys)=>Object.fromEntries(keys.filter(k=>Object.hasOwn(value,k)).map(k=>[k,value[k]]));
 const key=id=>JSON.stringify(id);
+let inputEncoder;
+function incomingTokens(input=[]){inputEncoder??=getEncoding('o200k_base');return input.reduce((n,item)=>n+(item.type==='text'?inputEncoder.encode(item.text??'').length:16000),0);}
 
 export class Bridge {
-  constructor(child,input,output,publish=async()=>({}),resolveFork=async()=>null) {
+  constructor(child,input,output,publish=async()=>({}),resolveFork=async()=>null,options={}) {
     this.child=child;this.input=input;this.output=output;this.publish=publish;this.records=new Map();this.internal=new Map();this.external=new Map();this.sequence=0;this.prefix=`context-control:${randomUUID()}:`;
-    this.resolveFork=resolveFork;
+    this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;
     this.frontLines=readline.createInterface({input,crlfDelay:Infinity});this.backLines=readline.createInterface({input:child.stdout,crlfDelay:Infinity});
     this.frontLines.on('line',line=>this.fromClient(line));this.backLines.on('line',line=>this.fromServer(line));
     child.once('exit',()=>{for(const item of this.internal.values()){clearTimeout(item.timer);item.reject(new Error('Codex 运行时已退出'));}this.internal.clear();});
   }
   writeBackend(line){if(!this.child.stdin.write(line+'\n')){this.input.pause();this.child.stdin.once('drain',()=>this.input.resume());}}
   writeFrontend(line){if(!this.output.write(line+'\n')){this.child.stdout.pause();this.output.once('drain',()=>this.child.stdout.resume());}}
-  fromClient(line,preparedFork=null) {
+  fromClient(line,preparedFork=null,guarded=false) {
     let m;try{m=JSON.parse(line);}catch{this.writeBackend(line);return;}
+    if(this.contextCeiling&&m.method==='thread/resume'&&m.id!=null&&m.params?.threadId&&!m.params?.path&&!m.params?.ephemeral&&!preparedFork?.resume){this.prepareResume(m).catch(error=>this.rejectTurn(m,error.message));return;}
+    if(this.contextCeiling&&['thread/start','thread/resume','thread/fork'].includes(m.method)&&!m.params?.ephemeral){m.params={...m.params,config:ceilingConfig(m.params?.config)};line=JSON.stringify(m);}
     const id=m.params?.threadId;const record=this.records.get(id);
     if(m.method==='turn/start'&&record&&!record.locked&&record.status==='idle'&&record.policy&&record.appliedRevision!==record.policy.revision){
       // Acquire the reload lock synchronously before letting a new turn use an
       // intermediate budget; apply() still performs the normal safety checks.
       this.apply(record).catch(()=>{});
     }
-    if(record?.locked&&blockedMethods.has(m.method)){
+    if((record?.locked||record?.initializing)&&blockedMethods.has(m.method)){
       if(record.queue.length>=128||record.queueBytes+line.length>128*1024*1024){if(m.id!=null)this.writeFrontend(JSON.stringify({id:m.id,error:{code:-32000,message:'Context Control is applying a change; retry this request.'}}));return;}
       record.queue.push(line);record.queueBytes+=line.length;return;
+    }
+    if(this.contextCeiling&&!guarded&&m.method==='turn/start'&&record&&!record.ephemeral&&record.canAcceptDirectInput!==false){
+      const cap=Math.min(record.expectedWindow??record.observedWindow??MAX_CONTEXT_INPUT,MAX_CONTEXT_INPUT),reserve=Math.max(record.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);
+      const incoming=incomingTokens(m.params.input),used=record.lastUsage?.totalTokens??0;
+      const threshold=Math.min(record.policy?.compact??MAX_CONTEXT_COMPACT,MAX_CONTEXT_COMPACT,cap-reserve);
+      if(incoming+reserve>=cap){this.rejectTurn(m,'新输入本身已接近上下文上限，请拆分输入。');return;}
+      if(used+incoming+reserve>=Math.min(cap,threshold+reserve)){
+        if(record.status!=='idle'){this.rejectTurn(m,'上下文已接近上限；请等待当前轮次结束并压缩后再追加输入。');return;}
+        this.guardTurn(record,m,line,incoming,reserve,cap).catch(()=>{});return;
+      }
     }
     if(m.method==='thread/fork'&&m.id!=null&&!preparedFork){
       this.prepareFork(m).catch(error=>this.writeFrontend(JSON.stringify({id:m.id,error:{code:-32000,message:`Context Control: ${error.message}`}})));return;
@@ -40,6 +56,12 @@ export class Bridge {
     }
     if(m.method==='turn/start'&&record)record.usageFresh=false;
     this.writeBackend(line);
+  }
+  async prepareResume(message){
+    const resolved=await this.resolveFork(message.params.threadId,message.params.model);
+    const policy=resolved?.policy?.enabled?migrateCeilingPolicy(resolved.policy,resolved.model):null;
+    const config=policy?{...message.params.config,model_context_window:policy.window,model_auto_compact_token_limit:policy.compact}:message.params.config;
+    this.fromClient(JSON.stringify({...message,params:{...message.params,config}}),{resume:true,resumePolicy:policy});
   }
   async prepareFork(message){
     const params=message.params||{},parentId=params.threadId;
@@ -52,6 +74,7 @@ export class Bridge {
       source=resolved?.policy??parent?.policy;
       model=resolved?.model??(!params.model||params.model===parent?.model?parent?.modelInfo:null);
     }
+    if(this.contextCeiling&&source){source=migrateCeilingPolicy(source,model);model=ceilingModel(model);}
     const policy=inheritedForkPolicy(source,parentId);
     if(policy&&params.model&&!model)throw new Error('无法核对分支模型的窗口上限，请先加载该模型信息再 fork。');
     if(policy&&Number.isSafeInteger(model?.max_context_window)&&policy.window>model.max_context_window)throw new Error('父对话预算超过分支模型上限，请先调整预算再 fork。');
@@ -73,6 +96,7 @@ export class Bridge {
           const record=this.record(t.id);record.seed={...record.seed,...pending.seed,config:{...record.seed.config,...pending.seed.config}};
           Object.assign(record,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput']));
           record.model=m.result.model||record.model;record.status=t.status?.type||'idle';record.snapshot=m.result;
+          if(pending.fork?.resumePolicy){const policy=pending.fork.resumePolicy;Object.assign(record,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*.9),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已保留原聊天预算，等待下一轮窗口读回。'});}
           if(pending.method==='thread/fork'&&pending.fork?.policy&&t.id!==pending.threadId&&!t.ephemeral&&t.canAcceptDirectInput!==false){
             const {policy,source,parentId,model}=pending.fork;
             record.forkedFromId=parentId;record.forkPolicy=source;
@@ -83,7 +107,8 @@ export class Bridge {
             record.freshUsage=false;record.usageFresh=false;record.phase='awaiting_runtime_confirmation';
             record.message='已继承父对话预算；等待分支首次请求读回窗口。';
           }else if(t.forkedFromId){record.forkedFromId=t.forkedFromId;}
-          this.notify(record);
+          record.initializing=true;
+          this.notify(record).finally(()=>{record.initializing=false;if(!record.locked){const queued=record.queue.splice(0);record.queueBytes=0;for(const line of queued)this.fromClient(line);}});
         }else if(pending.threadId&&['turn/start','thread/settings/update'].includes(pending.method)){
           const record=this.record(pending.threadId);Object.assign(record.sticky,pick(pending.seed,stickyFields));
           const nextModel=pending.seed.collaborationMode?.settings?.model||pending.seed.model;
@@ -96,21 +121,39 @@ export class Bridge {
       const record=this.records.get(id);
       if(record){
         if(m.method==='thread/tokenUsage/updated'){
-          record.observedWindow=p.tokenUsage.modelContextWindow;record.lastUsage=p.tokenUsage.last;record.freshUsage=true;record.usageFresh=true;
+          record.usageGeneration=(record.usageGeneration??0)+1;record.observedWindow=p.tokenUsage.modelContextWindow;record.lastUsage=p.tokenUsage.last;record.freshUsage=true;record.usageFresh=true;
           if(record.expectedWindow!=null&&record.policy&&record.revision===record.policy.revision){record.phase=record.observedWindow===record.expectedWindow?'confirmed':'mismatch';record.message=record.phase==='confirmed'?'下一轮窗口已读回确认。':'实际窗口与目标不一致；请查看运行时或模型目录。';}
           this.notify(record);
         }
         if(m.method==='thread/status/changed'){record.status=p.status.type;this.notify(record);if(record.status==='idle')this.schedule(record);}
         if(m.method==='turn/started'){record.status='active';record.turnId=p.turn.id;record.usageFresh=false;this.notify(record);}
-        if(m.method==='turn/completed'){record.status='idle';record.turnId=p.turn.id;this.notify(record);this.schedule(record);}
+        if(m.method==='error'&&record.compactionWait)record.compactionWait.reject(new Error(p.error?.message||'原生压缩失败'));
+        if(m.method==='turn/completed'){if(record.compactionWait){p.turn?.error?record.compactionWait.reject(new Error(p.turn.error.message||'原生压缩失败')):record.compactionWait.resolve();}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.schedule(record);}
         if(m.method==='thread/name/updated'){record.name=p.name;this.notify(record);}
       }
     }
     this.writeFrontend(line);
   }
+  rejectTurn(message,text){if(message.id!=null)this.writeFrontend(JSON.stringify({id:message.id,error:{code:-32000,message:`Context Control: ${text}`}}));}
+  async guardTurn(record,message,line,incoming,reserve,cap){
+    record.locked=true;record.phase='compacting';record.message='接近上下文上限，正在先压缩历史。';this.notify(record);
+    const generation=record.usageGeneration??0;let timer;
+    const completed=new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(new Error('原生压缩等待超时，已保留新输入未发送。')),120000);record.compactionWait={resolve,reject};});
+    completed.catch(()=>{});
+    let ready=false;
+    try{
+      await this.rpc('thread/compact/start',{threadId:record.id});await completed;
+      if((record.usageGeneration??0)<=generation)throw new Error('压缩后尚无用量记录，已暂停发送新输入。');
+      if((record.lastUsage?.totalTokens??cap)+incoming+reserve>=cap)throw new Error('压缩后剩余空间仍不足，请减少新输入或开启新聊天。');
+      ready=true;record.phase='awaiting_runtime_confirmation';record.message='压缩完成，继续提交新输入。';
+    }catch(error){record.phase='error';record.message=error.message;this.rejectTurn(message,error.message);}
+    finally{clearTimeout(timer);record.compactionWait=null;record.locked=false;this.notify(record);}
+    if(ready)this.fromClient(line,null,true);
+    const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
+  }
   publicRecord(record){return pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy']);}
   notify(record){
-    Promise.resolve(this.publish(this.publicRecord(record))).then(reply=>{
+    return Promise.resolve(this.publish(this.publicRecord(record))).then(reply=>{
       if(reply?.model?.slug===record.model)record.modelInfo=reply.model;
       if(reply?.policy&&reply.policy.revision>(record.policyVersion||0)){
         if(reply.policy.enabled)this.setPolicy(record.id,reply.policy,reply.model);
@@ -166,6 +209,7 @@ export class Bridge {
       else throw new Error('当前沙盒策略无法无损恢复，已取消调整');
       originalParams=structuredClone(resume);
       Object.assign(resume.config,{model_context_window:policy.window,model_auto_compact_token_limit:policy.compact,model_auto_compact_token_limit_scope:'total'});
+      if(this.contextCeiling)resume.config=ceilingConfig(resume.config);
       await this.rpc('thread/unsubscribe',{threadId:record.id});detached=true;
       const after=await this.rpc('thread/resume',resume);
       const restore={threadId:record.id,effort:before.reasoningEffort??null,disabledPluginIds:before.disabledPluginIds||[],...pick(record.sticky,['summary'])};

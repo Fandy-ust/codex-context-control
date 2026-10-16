@@ -16,7 +16,7 @@ export function calculateBudget(input,model){
   const maximumUsableWindow=effectiveWindow(maximum,percent);
   if(usableWindow>maximumUsableWindow)throw new Error(`当前模型最多可用 ${maximumUsableWindow.toLocaleString('en-US')} tokens`);
   const window=Number((BigInt(usableWindow)*100n+BigInt(percent)-1n)/BigInt(percent));
-  const maximumCompact=effectiveWindow(window,90);
+  const maximumCompact=Math.min(effectiveWindow(window,90),model.context_compact_ceiling??Number.MAX_SAFE_INTEGER);
   const maxBasisPoints=Math.min(10000,Number(((BigInt(maximumCompact)+1n)*10000n-1n)/BigInt(usableWindow)));
   const basisPoints=ratioBasisPoints(input.compactPercent??90);
   if(basisPoints>maxBasisPoints)throw new Error(`这个窗口最多可设置 ${maxBasisPoints/100}% 的压缩比例`);

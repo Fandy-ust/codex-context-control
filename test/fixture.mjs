@@ -1,11 +1,11 @@
 import http from 'node:http';
-export async function fixtureServer(){
+export async function fixtureServer({usageForRequest}={}){
   const requests=[];let release;
   const server=http.createServer(async(req,res)=>{
     let body='';for await(const data of req)body+=data;
     const request=JSON.parse(body);requests.push(request);
     const last=[...(request.input||[])].reverse().find(item=>item.role==='user');
-    const inputTokens=JSON.stringify(last).includes('REPORT_HIGH_USAGE')?20000:120;
+    const inputTokens=usageForRequest?usageForRequest(request,requests.length):JSON.stringify(last).includes('REPORT_HIGH_USAGE')?20000:120;
     if(JSON.stringify(last).includes('HOLD_FIXTURE'))await new Promise(resolve=>{release=resolve;});
     const number=requests.length;const message={id:`msg_test_${number}`,type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:'LOCAL TEST OK',annotations:[]}]};
     const events=[{type:'response.created',response:{id:`resp_test_${number}`,object:'response',status:'in_progress',output:[]}},

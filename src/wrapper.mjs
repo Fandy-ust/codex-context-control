@@ -5,6 +5,7 @@ import {connect,request} from './ipc.mjs';
 import {callerRuntime} from './runtime-selection.mjs';
 import {ensureDaemon} from './service.mjs';
 import {createRuntimeFixManager} from './runtime-fix.mjs';
+import {prepareContextCatalog} from './context-ceiling.mjs';
 import {runtimeSupported,isStdioServer} from './compatibility.mjs';
 
 const args=process.argv.slice(2);const caller=callerRuntime();
@@ -12,16 +13,18 @@ const desktop=caller.desktop,originalBinary=caller.binary;
 const runtime=desktop&&isStdioServer(args)?createRuntimeFixManager().select(originalBinary):{binary:originalBinary,runtimeFixId:null};
 const binary=runtime.binary;
 const bridgeVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
-const supported=!isStdioServer(args)||runtimeSupported(spawnSync(binary,['--version'],{encoding:'utf8'}).stdout||'');
+const nativeVersion=isStdioServer(args)?spawnSync(binary,['--version'],{encoding:'utf8'}).stdout||'':'';
+const supported=!isStdioServer(args)||runtimeSupported(nativeVersion);
 if(!desktop||!isStdioServer(args)||!supported){
   if(!supported)process.stderr.write('Context Control: 当前运行时版本未经验证，本次仅透传。\n');
   const p=spawn(binary,args,{stdio:'inherit',env:process.env});p.on('exit',(code,signal)=>signal?process.kill(process.pid,signal):process.exit(code??1));
 }else{
-  const child=spawn(binary,args,{stdio:['pipe','pipe','inherit'],env:process.env});
+  const ceiling=nativeVersion.trim()==='codex-cli 0.160.0'?prepareContextCatalog():null;
+  const child=spawn(binary,ceiling?[...ceiling.args,...args]:args,{stdio:['pipe','pipe','inherit'],env:process.env});
   let peer,closed=false,bridge;
   bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{
     await ensureDaemon();return request('forkBudget',{id,model});
-  });
+  },{contextCeiling:ceiling?.version??null});
   async function attach(){
     if(closed)return;
     try{
@@ -31,7 +34,7 @@ if(!desktop||!isStdioServer(args)||!supported){
         if(op==='compact')return bridge.compact(p.id);
         throw new Error('不支持的运行时操作');
       });
-      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,runtimeFixId:runtime.runtimeFixId});
+      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null});
       for(const record of bridge.records.values())bridge.notify(record);
       peer.socket.once('close',()=>{peer=null;if(!closed)setTimeout(attach,1000).unref();});
     }catch{if(!closed)setTimeout(attach,1500).unref();}

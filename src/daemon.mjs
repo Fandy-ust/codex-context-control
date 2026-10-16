@@ -12,6 +12,7 @@ import {ensureMenuBarEntry} from './menu-bar.mjs';
 import {reconcileWindowConfirmation} from './confirmation.mjs';
 import {inheritedForkPolicy} from './fork-budget.mjs';
 import {createRuntimeFixManager} from './runtime-fix.mjs';
+import {ceilingModel,migrateCeilingPolicy,CONTEXT_CEILING_VERSION} from './context-ceiling.mjs';
 import {createContextStatisticsService} from './context-statistics-service.mjs';
 
 export async function startDaemon() {
@@ -36,12 +37,14 @@ export async function startDaemon() {
   const contextStatistics=createContextStatisticsService();
   const runtimeFix=createRuntimeFixManager();
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
-  function state(){return {version:'0.11.0',bridgeCount:bridges.size,runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
+  function modelFor(id,slug){const model=store.model(slug??store.data.threads[id]?.model);const peers=owners.get(id)||[];return peers.length===1&&bridges.get(peers[0])?.contextCeiling===CONTEXT_CEILING_VERSION?ceilingModel(model):model;}
+  function publicThread(id){const t=store.publicThread(id,owners),m=modelFor(id,t.model);return {...t,modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]])):null};}
+  function state(){return {version:'0.12.0',bridgeCount:bridges.size,contextCeilingPending:bridges.size===0||[...bridges.values()].some(b=>b.contextCeiling!==CONTEXT_CEILING_VERSION),runtimeFix:runtimeFix.status(undefined,[...bridges.values()]),bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id)).filter(t=>!t.archived&&t.ephemeral!==true).sort((a,b)=>(b.observedAt||0)-(a.observedAt||0))};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.11.0'};
+    if(op==='ping')return {ok:true,version:'0.12.0'};
     if(op==='state')return state();
-    if(op==='forkBudget')return {policy:store.data.policies[p.id]||null,model:store.model(p.model||store.data.threads[p.id]?.model)};
-    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
+    if(op==='forkBudget')return {policy:store.data.policies[p.id]||null,model:modelFor(p.id,p.model)};
+    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180)throw new Error('聊天 ID 无效');
@@ -55,29 +58,31 @@ export async function startDaemon() {
         if(inherited)store.data.policies[p.id]={...inherited,updatedAt:Date.now()};
       }
       store.data.threads[p.id]={...store.data.threads[p.id],...clean,observedAt:Date.now()};
+      if(b.contextCeiling===CONTEXT_CEILING_VERSION&&store.data.policies[p.id])store.data.policies[p.id]=migrateCeilingPolicy(store.data.policies[p.id],store.model(clean.model||store.data.threads[p.id].model));
       // Desktop-created forks may bypass this bridge's thread/fork RPC. Resolve
       // their native parent metadata before replying with the auto-apply policy.
       store.refreshMetadata();store.inheritDiscoveredForks();
-      Object.assign(store.data.threads[p.id],reconcileWindowConfirmation(store.data.threads[p.id],store.data.policies[p.id],store.model(store.data.threads[p.id].model)));store.save();
-      return {policy:store.data.policies[p.id]||null,model:store.model(clean.model||store.data.threads[p.id].model)};
+      Object.assign(store.data.threads[p.id],reconcileWindowConfirmation(store.data.threads[p.id],store.data.policies[p.id],modelFor(p.id)));store.save();
+      return {policy:store.data.policies[p.id]||null,model:modelFor(p.id,clean.model)};
     }
     if(op==='preflight') {
       const policy=normalizePolicy(p.policy);const t=store.data.threads[p.id];
-      return preflight(t,policy,store.model(t?.model));
+      return preflight(t,policy,modelFor(p.id,t?.model));
     }
     if(op==='setPolicy') {
       const t=store.data.threads[p.id];if(!t)throw new Error('未找到聊天');
-      const policy=normalizePolicy(p.policy);const plan=preflight(t,policy,store.model(t.model));
-      if(['above_catalog_maximum','below_retained_floor','unsupported_thread'].includes(plan.code))throw new Error(plan.message);
+      const policy=normalizePolicy(p.policy);const plan=preflight(t,policy,modelFor(t.id,t.model));
+      if(['above_catalog_maximum','above_safe_compact','below_retained_floor','unsupported_thread'].includes(plan.code))throw new Error(plan.message);
       const previous=store.data.policies[p.id];
       if(p.expectedRevision!=null&&p.expectedRevision!==(previous?.revision||0))throw new Error('设置已在另一窗口更新，请刷新后重试');
-      const saved={...policy,revision:(previous?.revision||0)+1,enabled:p.apply!==false,updatedAt:Date.now()};
+      const meta=modelFor(t.id,t.model);
+      const saved={...policy,...(meta?.context_ceiling?{contextCeilingVersion:CONTEXT_CEILING_VERSION,effectivePercent:meta.effective_context_window_percent}:{}),revision:(previous?.revision||0)+1,enabled:p.apply!==false,updatedAt:Date.now()};
       store.data.policies[p.id]=saved;
       const candidates=owners.get(p.id)||[];
       Object.assign(t,{phase:p.apply===false?'saved':candidates.length===1?'queued':'waiting_bridge',message:p.apply===false?'已保存；尚未请求应用。':candidates.length>1?'多个运行时加载了此聊天，请先关闭其中一个。':'等待接入 Codex 的连接。'});
       store.save();
-      if(saved.enabled&&candidates.length===1){await candidates[0].call('setPolicy',{id:p.id,policy:saved,model:store.model(t.model)});}
-      return {policy:saved,plan,thread:store.publicThread(p.id,owners)};
+      if(saved.enabled&&candidates.length===1){await candidates[0].call('setPolicy',{id:p.id,policy:saved,model:modelFor(t.id,t.model)});}
+      return {policy:saved,plan,thread:publicThread(p.id)};
     }
     if(op==='clearPolicy'){
       const previous=store.data.policies[p.id];if(previous)store.data.policies[p.id]={...previous,enabled:false,revision:previous.revision+1};store.save();
@@ -93,7 +98,7 @@ export async function startDaemon() {
       if(!t)return {};
       const policy=store.data.policies[t.id];const fmt=n=>Number.isSafeInteger(n)?n.toLocaleString('en-US'):'待观测';
       const lines=[`Context Control｜实际窗口 ${fmt(t.observedWindow)}｜最近请求 ${fmt(t.lastUsage?.totalTokens)}（占用估算）`];
-      if(policy){const budget=savedBudget(policy,store.model(t.model));lines.push(`目标可用 ${fmt(budget?.usableWindow)}｜压缩 ${budget?.compactPercent??'待识别'}%（${fmt(budget?.compact)}）｜${t.message||t.phase||'等待接入'}`);}
+      if(policy){const budget=savedBudget(policy,modelFor(t.id,t.model));lines.push(`目标可用 ${fmt(budget?.usableWindow)}｜压缩 ${budget?.compactPercent??'待识别'}%（${fmt(budget?.compact)}）｜${t.message||t.phase||'等待接入'}`);}
       else lines.push('未设置该聊天的独立预算。');
       return {systemMessage:lines.join('\n')};
     }

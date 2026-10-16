@@ -1,5 +1,13 @@
 # Changes
 
+## 0.12.0 — 2026-10-16
+
+- Add a 920K local input ceiling across models through a separate startup catalog; preserve existing visible budgets during migration.
+- Limit total-mode auto-compaction to 904K, compact at turn completion, and guard large next inputs before forwarding. Failed or insufficient compaction holds the request.
+- Show a purple animated MAX CONTEXT panel and menu card, with a hard slider endpoint and reduced-motion support.
+- Keep old runtime connections on their original metadata until restart; do not claim the extension is already active.
+- Wait for automatic startup registration to finish before returning, so its delayed job cannot overwrite a subsequent external setting.
+
 ## 0.11.0 — 2026-10-16
 
 - Open the menu below the status icon toward the right, with screen-edge clamping and outside-click/Escape dismissal.
