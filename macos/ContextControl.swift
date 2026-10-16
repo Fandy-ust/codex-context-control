@@ -3,7 +3,7 @@ import AppKit
 
 struct Budget: Decodable { let window:Int;let compact:Int;let reserve:Int;let retainedFloor:Int;let revision:Int;let enabled:Bool? }
 struct Usage: Decodable { let totalTokens:Int }
-struct Metadata: Decodable { let max_context_window:Int?;let effective_context_window_percent:Int? }
+struct Metadata: Decodable { let max_context_window:Int?;let effective_context_window_percent:Int?;let context_ceiling:Int?;let context_compact_ceiling:Int? }
 struct Chat: Identifiable, Decodable {
     let id:String;let name:String?;let model:String?;let cwd:String?;let status:String?
     let connected:Bool;let ambiguous:Bool;let phase:String?;let message:String?
@@ -23,7 +23,7 @@ struct Chat: Identifiable, Decodable {
     }
 }
 struct RuntimeFixState:Decodable {let enabled:Bool;let available:Bool;let compatible:Bool;let baseVersion:String;let originalVersion:String?;let activeCount:Int;let pending:Bool;let message:String}
-struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?}
+struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -32,6 +32,7 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var chats:[Chat]=[]
     @Published var selectedID:String?
     @Published var bridgeCount=0
+    @Published var contextCeilingPending=false
     @Published var serviceAvailable=false
     @Published var menuHeightLimit:CGFloat=560
     @Published var runtimeFix:RuntimeFixState?
@@ -69,7 +70,7 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func refresh() async {
         if refreshing{return};refreshing=true;defer{refreshing=false}
-        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount;runtimeFix=state.runtimeFix;serviceAvailable=true
+        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount;runtimeFix=state.runtimeFix;contextCeilingPending=state.contextCeilingPending ?? false;serviceAvailable=true
             if selectedID==nil{selectedID=chats.first?.id;fill()}
             else if waitingForModel,let metadata=selected?.modelMetadata,metadata.effective_context_window_percent != nil,metadata.max_context_window != nil{fill()}
             else if !budgetEdited,editingRevision != (selected?.policy?.revision ?? 0){fill()}
@@ -92,6 +93,7 @@ struct ServiceSettings: Decodable {let node:String}
     func calculate() throws -> BudgetPreview {
         guard let metadata=selected?.modelMetadata,let percent=metadata.effective_context_window_percent,let maximum=metadata.max_context_window else{throw BudgetInputError(message:"等待当前模型信息后即可设置实际可用窗口")}
         guard !waitingForModel else{throw BudgetInputError(message:"正在读取此聊天的窗口设置")}
+        guard Int(compactK)<=maximumCompactK else{throw BudgetInputError(message:"压缩阈值需保留下一轮输入余量")}
         return try BudgetMath.sliderPreview(windowK:Int(windowK),compactK:Int(compactK),effectivePercent:percent,maximumRawWindow:maximum)
     }
     var preview:BudgetPreview? {try? calculate()}
@@ -100,7 +102,9 @@ struct ServiceSettings: Decodable {let node:String}
     var maximumWindowK:Int {max(2,(maximumUsableWindow ?? 400000)/1000)}
     var maximumCompactK:Int {
         guard let m=selected?.modelMetadata,let p=m.effective_context_window_percent,let w=m.max_context_window else{return 1}
-        return (try? BudgetMath.maximumSliderCompactK(windowK:Int(windowK),effectivePercent:p,maximumRawWindow:w)) ?? 1
+        let native=(try? BudgetMath.maximumSliderCompactK(windowK:Int(windowK),effectivePercent:p,maximumRawWindow:w)) ?? 1
+        let safe=m.context_ceiling.map{max(1000,$0-max(16000,(try? BudgetMath.tokens(reserve)) ?? 16000))/1000} ?? Int.max
+        return min(native,safe)
     }
     var canEditBudget:Bool {!waitingForModel && (maximumUsableWindow ?? 0)>=2000}
     var compactPercent:Double {compactK/windowK*100}
@@ -149,7 +153,7 @@ struct ServiceSettings: Decodable {let node:String}
 
 func formatted(_ n:Int?) -> String {guard let n else{return "待观测"};return n.formatted()+" tokens"}
 func phaseName(_ value:String?) -> String {
-    switch value {case "confirmed":return "窗口已确认";case "awaiting_runtime_confirmation":return "等待下一轮确认";case "reloading":return "正在应用";case "waiting_for_idle","queued":return "等待轮次结束";case "needs_compaction":return "需要先压缩";case "needs_observation":return "等待用量记录";case "error","mismatch":return "需要处理";case "saved":return "已保存";default:return "尚未接入"}
+    switch value {case "compacting":return "正在保护性压缩";case "confirmed":return "窗口已确认";case "awaiting_runtime_confirmation":return "等待下一轮确认";case "reloading":return "正在应用";case "waiting_for_idle","queued":return "等待轮次结束";case "needs_compaction":return "需要先压缩";case "needs_observation":return "等待用量记录";case "error","mismatch":return "需要处理";case "saved":return "已保存";default:return "尚未接入"}
 }
 
 private enum PanelStyle {
@@ -273,7 +277,9 @@ struct BudgetRangeSlider:View {
                     // In tight ranges, choosing the numeric heading first also
                     // lets the user select a handle whose hit areas overlap.
                     let left=abs(event.startLocation.x-compactX),right=abs(event.startLocation.x-windowX)
-                    dragging=abs(left-right)<3 ? selection:(left<right ? .compact:.window)
+                    if compactStyle && abs(compactX-windowX)<diameter {
+                        dragging=event.startLocation.x<(compactX+windowX)/2 ? .compact:.window
+                    }else{dragging=abs(left-right)<3 ? selection:(left<right ? .compact:.window)}
                     selection=dragging!;focused=true
                 }
                 let tokens=(max(0,min(1,(event.location.x-diameter/2)/travel))*Double(maximumWindow)).rounded()
@@ -361,6 +367,7 @@ struct ContentView: View {
                         }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
                     }}
                 }.frame(maxHeight:.infinity)
+                if model.contextCeilingPending {Label("920K 扩展已安装，重开 Codex 后接入",systemImage:"arrow.clockwise").font(.caption).foregroundStyle(.orange)}
                 RuntimeFixControl(model:model)
                 Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
             }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
@@ -403,8 +410,9 @@ struct ContentView: View {
     }
     func budgetEditor()->some View {
         VStack(alignment:.leading,spacing:18){
+            if model.selected?.modelMetadata?.context_ceiling != nil && Int(model.windowK)==model.maximumWindowK {Label("MAX CONTEXT · 920K",systemImage:"lock.fill").font(.callout.weight(.semibold)).foregroundStyle(PanelStyle.blue)}
             rangeEditor()
-            Text("将蓝色压缩点往左拉，灰色压缩窗口余量随之增加。每步 1K，应用后生效。")
+            Text(model.selected?.modelMetadata?.context_ceiling != nil ? "920K 硬上限 · 最晚 904K 压缩 · 预留至少 16K" : "将蓝色压缩点往左拉，灰色压缩窗口余量随之增加。每步 1K，应用后生效。")
                 .font(.system(size:11)).foregroundStyle(.secondary)
             if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
             DisclosureGroup("高级设置"){

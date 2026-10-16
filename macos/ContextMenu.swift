@@ -123,7 +123,11 @@ struct ContextUsageRing:View {
     private var stale:Bool {!model.serviceAvailable || !chat.connected || chat.freshUsage != true}
     var body:some View {
         ZStack {
-            if let draft {editor(draft)}else{information}
+            if let draft {
+                Button{openChat(chat.id)}label:{Color.clear.contentShape(Rectangle())}
+                    .buttonStyle(.plain).accessibilityLabel("打开 \(chat.title) 的主面板")
+                editor(draft)
+            }else{information}
         }.frame(height:50).contentShape(Rectangle())
             .background(.primary.opacity(hovering || draft != nil ? 0.06:0),in:RoundedRectangle(cornerRadius:5))
             .onHover{inside in hovering=inside;if inside{begin()}else{finishIfClean()}}
@@ -146,20 +150,19 @@ struct ContextUsageRing:View {
     private func editor(_ value:MenuBudgetDraft)->some View {
         VStack(spacing:0){
             HStack(spacing:8){
-                if let feedback {Text(feedback).font(.system(size:10)).foregroundStyle(failed ? .orange:.secondary).lineLimit(1).help(feedback)}
+                if let feedback {Text(feedback).font(.system(size:10)).foregroundStyle(failed ? .orange:.secondary).lineLimit(1).help(feedback).allowsHitTesting(false)}
                 else {
-                    Button("压缩 \(Int(value.compactK))K"){selection = .compact}.foregroundStyle(.blue)
-                    Button("窗口 \(Int(value.windowK))K"){selection = .window}
+                    Text("压缩 \(Int(value.compactK))K").foregroundStyle(.blue).allowsHitTesting(false)
+                    Text("窗口 \(Int(value.windowK))K").allowsHitTesting(false)
                 }
                 Spacer(minLength:2)
-                Button{openChat(chat.id)}label:{Image(systemName:"arrow.up.right.square")}.help("\(chat.title) · 打开主面板")
                 if saving{ProgressView().controlSize(.mini).frame(width:28)}
-                else{Button("应用"){Task{await apply()}}.foregroundStyle(.blue).disabled(!value.changed || !model.serviceAvailable)}
-                Button{cancel()}label:{Image(systemName:"xmark")}.disabled(saving).help("取消未提交的修改")
+                else{Button{Task{await apply()}}label:{Text("应用").frame(width:32,height:20).contentShape(Rectangle())}.foregroundStyle(.blue).disabled(!value.changed || !model.serviceAvailable)}
+                Button{cancel()}label:{Image(systemName:"xmark").frame(width:20,height:20).contentShape(Rectangle())}.disabled(saving).help("取消未提交的修改")
             }.buttonStyle(.plain).font(.system(size:11,weight:.medium)).monospacedDigit().frame(height:20)
             BudgetRangeSlider(window:Binding(get:{draft?.windowK ?? value.windowK},set:{draft?.setWindow($0);touched=true;feedback=nil}),compact:Binding(get:{draft?.compactK ?? value.compactK},set:{draft?.setCompact($0);touched=true;feedback=nil}),selection:$selection,maximumWindow:value.maximumWindowK,maximumCompact:value.maximumCompactK,compactStyle:true,onEditingChanged:{active in dragging=active;if !active{finishIfClean()}})
                 .disabled(saving || !model.serviceAvailable)
-        }.padding(.horizontal,10).help(chat.title)
+        }.padding(.horizontal,10).help(feedback ?? chat.title)
     }
     private func begin(){
         guard draft==nil,canBegin,model.serviceAvailable,let value=try? MenuBudgetDraft(chat:chat) else{return}
