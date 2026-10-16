@@ -109,3 +109,5 @@ Hook stats 的新增定义需要在 `/hooks` 人工审核。该信任状态不�
 2026-10-16 14:49（香港时间），用户指定切换为 **GPT-6 Sol**、保持普通速度，测试 940K。命令为 `node scripts/probe-live-million-context.mjs --model=gpt-6-sol --tokens=940000 --live`；本地合成文本估算 939,987 tokens，另有原生指令与工具开销。只转发一次真实请求，服务端确认 `gpt-6-sol` / `default`，返回 `failed` / `context_length_exceeded`，没有输出或 usage。本地窗口为 1,050,000。报告保存在 `build/live-940000-gpt-6-sol-result.json`。由于模型已变，不能与 GPT-6.1 Sol 的 900K 成功直接合并为同一模型的上下界。
 
 2026-10-16 14:51–14:52（香港时间），用户另行授权 **GPT-6 Sol / 普通速度 / 900K**。执行 `--model=gpt-6-sol --tokens=900000 --live`，仅转发一次真实请求，服务端返回 `completed`，确认 `gpt-6-sol` / `default`。合成文本本地估算 899,966 tokens，服务器实际输入 **907,234**、输出 **30**、总量 **907,264**；缓存读取、写入及推理输出字段均为 0。三个位置的随机标记全部返回正确。报告为 `build/live-900000-gpt-6-sol-result.json`。因此该模型的这组 900K 档输入成功、940K 档输入失败；仍不是精确边界或长期多轮稳定性验证。
+
+2026-10-16 14:53（香港时间），用户另行授权 **GPT-6 Sol / 普通速度 / 930K**。执行 `--model=gpt-6-sol --tokens=930000 --live`，只转发一次真实请求。合成文本本地估算 929,969 tokens，另有原生指令和工具开销；服务端确认 `gpt-6-sol` / `default`，返回 `failed` / `context_length_exceeded`，没有输出或 usage。本地窗口为 1,050,000。报告为 `build/live-930000-gpt-6-sol-result.json`。当前同模型已测到 900K 档成功、930K 与 940K 档失败，未确定精确边界。
