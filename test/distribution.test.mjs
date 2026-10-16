@@ -8,6 +8,13 @@ test('downloaded installer validates payload, installs with empty PATH, and surv
   const app=path.join(unpacked,'Install Context Manager.app'),resources=path.join(app,'Contents/Resources'),payload=path.join(resources,'payload');
   const manifest=JSON.parse(fs.readFileSync(path.join(resources,'payload-manifest.json')));assert.equal(manifest.arch,'arm64');assert.ok(!Object.keys(manifest.files).some(f=>f.startsWith('test/')||f.includes('auth.json')||f.includes('patched-runtime/codex')));
   r=run('/usr/bin/codesign',['--verify','--strict','--deep',app]);assert.equal(r.status,0,r.stderr);
+  const panel=path.join(payload,'build/Codex Context Control.app');
+  const readPlist=(bundle,key)=>{const result=run('/usr/libexec/PlistBuddy',['-c','Print :'+key,path.join(bundle,'Contents/Info.plist')]);assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
+  assert.equal(readPlist(panel,'CFBundleShortVersionString'),manifest.version);
+  const panelIcon=readPlist(panel,'CFBundleIconFile'),installerIcon=readPlist(app,'CFBundleIconFile');
+  assert.equal(installerIcon,panelIcon);
+  assert.deepEqual(fs.readFileSync(path.join(resources,installerIcon+'.icns')),fs.readFileSync(path.join(panel,'Contents/Resources',panelIcon+'.icns')));
+
   const original=path.join(temp,'Fixture Codex.app/Contents'),binary=path.join(original,'Resources/codex-cli/bin/codex');fs.mkdirSync(path.dirname(binary),{recursive:true});fs.mkdirSync(path.join(original,'MacOS'));
   fs.writeFileSync(binary,'#!/bin/sh\nprintf "codex-cli 0.160.0\\n"\n',{mode:0o700});fs.writeFileSync(path.join(original,'MacOS/Fixture'),'#!/bin/sh\nexit 0\n',{mode:0o700});fs.writeFileSync(path.join(original,'Info.plist'),'<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>Fixture</string><key>CFBundleIdentifier</key><string>io.github.context-manager.fixture</string></dict></plist>');
   const env={...process.env,PATH:path.join(temp,'empty-path'),CONTEXT_CONTROL_HOME:control,CONTEXT_CONTROL_CODEX_HOME:home,CONTEXT_CONTROL_APPLICATIONS:path.join(temp,'Applications'),CONTEXT_CONTROL_REAL_CODEX:binary};fs.mkdirSync(env.PATH);

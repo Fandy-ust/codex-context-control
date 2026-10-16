@@ -29,17 +29,12 @@ extension Controller {
         arc.appendArc(withCenter:NSPoint(x:11,y:11),radius:9.5,startAngle:90,endAngle:90-min(1,progress)*360,clockwise:true)
         NSColor.black.setStroke();arc.stroke()
     }
-    // Compact robot silhouette: antenna, rounded head and two clear eyes.
-    NSColor.black.setStroke()
-    let antenna=NSBezierPath();antenna.lineWidth=1.2;antenna.move(to:NSPoint(x:11,y:14.5));antenna.line(to:NSPoint(x:11,y:16.5));antenna.stroke()
-    NSColor.black.setFill();NSBezierPath(ovalIn:NSRect(x:10.1,y:16,width:1.8,height:1.8)).fill()
-    NSBezierPath(roundedRect:NSRect(x:5.7,y:6.5,width:10.6,height:8),xRadius:2.3,yRadius:2.3).fill()
-    NSBezierPath(roundedRect:NSRect(x:4.2,y:9,width:1.5,height:3),xRadius:0.6,yRadius:0.6).fill()
-    NSBezierPath(roundedRect:NSRect(x:16.3,y:9,width:1.5,height:3),xRadius:0.6,yRadius:0.6).fill()
-    NSGraphicsContext.saveGraphicsState();NSGraphicsContext.current?.compositingOperation = .copy
-    NSColor.clear.setFill()
-    for x in [8.0,12.0] {NSBezierPath(roundedRect:NSRect(x:x,y:10,width:2,height:2.3),xRadius:0.7,yRadius:0.7).fill()}
-    NSGraphicsContext.restoreGraphicsState()
+    // Monochrome menu-bar version of Assets/ContextManager: ring + three bars.
+    // Keep the outer ring live; an idle icon must not imply a fictional usage.
+    NSColor.black.setFill()
+    for (y,width) in [(13.4,7.2),(10.3,8.6),(7.2,10.0)] {
+        NSBezierPath(roundedRect:NSRect(x:7,y:y,width:width,height:1.5),xRadius:0.75,yRadius:0.75).fill()
+    }
     image.unlockFocus();image.isTemplate=true;image.accessibilityDescription="Context Manager"
     return image
 }

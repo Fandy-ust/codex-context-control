@@ -93,5 +93,5 @@ if(process.argv.includes('--uninstall')){
     const entry=ensureMenuBarEntry(installedApp);
     if(entry.error)throw new Error(entry.error);
   }
-  console.log(`已安装：${installedApp}\n菜单栏 Context Manager 机器人图标提供聊天概览和设置入口。照常打开原来的 Codex，预算控制会自动接入；首次安装后请正常重开一次客户端。\n请在 Codex 的 /hooks 中审核并信任新增 hook；安装程序不会生成信任记录。`);
+  console.log(`已安装：${installedApp}\n菜单栏 Context Manager 圆环图标提供聊天概览和设置入口。照常打开原来的 Codex，预算控制会自动接入；首次安装后请正常重开一次客户端。\n请在 Codex 的 /hooks 中审核并信任新增 hook；安装程序不会生成信任记录。`);
 }

@@ -1,74 +1,68 @@
 # Context Manager
 
-为 macOS 上的 Codex / ChatGPT 桌面聊天管理上下文预算，提供菜单栏调节、用量与缓存图表、全局默认和可选的上下文拓展。
+<img src="macos/Assets/ContextManager.png" width="112" alt="Context Manager 图标">
 
-**0.15.3 · Apple Silicon · macOS 14+ · 私有测试版**
+macOS 菜单栏里的 Codex 上下文管理器：按聊天调整预算，查看用量、缓存与费用估算。
 
-## 快速安装
+**0.15.4 · Apple Silicon · macOS 14+ · 私有测试版**
 
-1. 取得 对应版本的 `Context-Manager-版本-macos-arm64.zip` 并解压。
+## 下载与安装
+
+[GitHub Releases / 测试包](https://github.com/Fandy-ust/codex-context-control/releases) · [完整安装指南](docs/INSTALL_MAC.md) · [更新记录](CHANGELOG.md)
+
+仓库目前私有，安装包以草稿供维护者检查，**尚未公开发布，也未上架 Mac App Store**。草稿不等于对所有协作者开放下载。授权测试者由维护者提供 ZIP；发布后的私有 Release 仍需要仓库访问权限。
+
+1. 获取 `Context-Manager-0.15.4-macos-arm64.zip` 并解压。
 2. 打开 **Install Context Manager.app**，点击「安装 / 更新」。
-3. 完整退出并重开 Codex；菜单栏会自动出现机器人图标。
-4. 如需原生 Hook stats 文字，在 Codex 的 `/hooks` 审核新增 hook。
+3. 首次安装后完整退出并重开 Codex；菜单栏出现圆环图标。
+4. 点击圆环即可查看聊天或打开主窗口。Hook stats 可另外在 Codex 的 `/hooks` 中审核启用。
 
-安装包内置所需运行环境，**使用者无需安装 Node、npm、Homebrew 或 Xcode**。安装到当前用户目录；下载的安装器用完后可删除，也可保留用于卸载。需要事先安装 Codex / ChatGPT 桌面客户端。当前完整验证运行时为 Codex 0.160.0；未支持版本会在安装前说明。
+无需安装 Node、npm、Homebrew 或 Xcode。需要事先安装 Codex / ChatGPT 桌面客户端；目前完整验证的 Codex 运行时是 **0.160.0**。
 
-当前安装包尚未使用 Developer ID 签名和 Apple 公证。确认来源后，首次按 macOS「隐私与安全」提示允许打开即可用于测试；不需要关闭系统安全功能。使用者无需购买开发者会员。[安装步骤与限制](docs/INSTALL_MAC.md)
+测试包尚未使用 Developer ID 签名与 Apple 公证。确认来源后，按 macOS「隐私与安全」提示允许打开；使用者无需购买开发者会员。[系统提示与兼容性](docs/INSTALL_MAC.md)
 
-仓库保持私有。测试包由项目所有者提供给授权测试者；GitHub 自动构建产物需要仓库访问权限。
+## 功能
 
-## 主要功能
+- **逐聊天预算**：1K 精度，区分实际读回值与待应用目标。
+- **全局默认**：新聊天沿用设置；fork 继承父聊天，已有聊天独立保存。
+- **可选上下文拓展**：最高 920K，最晚 904K 压缩；关闭则遵守原生上限。
+- **上下文详情**：输入、缓存、费用估算、响应速度与压缩事件，共享图表时间轴。
+- **流畅交互**：后台聚合、缓存复用、鼠标事件合并；悬停时延后刷新。
+- **聊天概览**：运行中优先，其余按真实活动时间排列，保留最近完成的聊天。
+- **可选提前压缩修复**：独立开关及额外运行时下载，不占主安装包体积。
 
-- **聊天排序**：运行中优先，其余按开始／完成时间排序；完成后即使卸载，也保留在最近五条，后台同步不会顶起旧聊天。
-- **逐聊天预算**：窗口与压缩阈值按 1K 调整，显示真实读回值及待应用目标。
-- **全局默认**：只作用于之后新建的用户聊天；fork 继承父聊天，已有聊天独立保存。
-- **拓展上下文**：独立开关；开启后最高 920K、最晚 904K 压缩。关闭按原生上限；重新开启恢复未手动改过的预算。
-- **提前压缩修复**：另一个独立开关，选择可选修复运行时。大修复包不包含在主安装包内。
-- **上下文详情**：输入、缓存、费用估算、响应速度与压缩事件。缺失的数据不会补成零。
+新安装默认关闭拓展；升级保留预算与开关。920K 是本地控制上限，并非所有服务端模型的容量保证。切换已运行的核心模式后需重开 Codex。
 
-新安装的拓展开关默认关闭；已有用户的选择保留。切换已启动运行时的模式，需要完整退出再打开 Codex。920K 是本地控制上限，不是所有服务端模型的容量保证。
+## 更新与卸载
 
-[详细功能](docs/FEATURES.md) · [拓展说明](docs/CONTEXT_EXTENSION.md) · [架构](docs/ARCHITECTURE.md) · [隐私](docs/PRIVACY.md)
+运行新版安装器，选择「安装 / 更新」。安装器会替换并重启菜单栏应用；桥接更新需要重开 Codex。预算、开关与备份保留。下载的安装器可以删除。
 
-## 性能调度
+卸载：再次打开安装器，选择「移除安装」。预算与备份保留。
 
-隐藏且空闲时降低轮询频率；打开面板或菜单立即刷新。预算、开关等关键设置立即落盘，观测更新合并写盘。统计最多两个 worker，同聊天请求合并，优先复用缓存，空闲后释放。
+## 文档
 
-[调度策略与测量](docs/PERFORMANCE.md) · [完整压力测试](docs/STRESS_TEST_2026-10-16.md) · [验证记录](docs/VALIDATION.md)
+| 使用 | 开发与维护 |
+| --- | --- |
+| [安装与更新](docs/INSTALL_MAC.md) | [开发指南](docs/DEVELOPMENT.md) |
+| [详细功能](docs/FEATURES.md) | [架构](docs/ARCHITECTURE.md) |
+| [上下文拓展](docs/CONTEXT_EXTENSION.md) | [打包与发布](docs/RELEASING.md) |
+| [隐私](docs/PRIVACY.md) | [图标维护](macos/Assets/README.md) |
+| [图表与性能](docs/CHART-PERFORMANCE.md) | [性能调度](docs/PERFORMANCE.md) |
+| [更新记录](CHANGELOG.md) | [验证记录](docs/VALIDATION.md) |
 
-## 开发与打包
+## 本地开发
 
-开发机器需要 Node.js 22.13+；编译 macOS 界面需 Apple Command Line Tools。
+开发需要 Node.js 22.13+ 与 Apple Command Line Tools。
 
 ```sh
 npm ci --ignore-scripts
 npm test
 npm run build:mac
 npm run install:local
-npm run test:stress -- --large
-npm run package:mac
 ```
 
-`package:mac` 从官方来源下载固定版本 Node，并核对仓库中固定的 SHA-256。只打包允许的应用代码、依赖、原生面板及许可证，不包含用户状态、凭据、聊天历史、压力测试数据或大型修复核心。
+打包：提交变更并保持工作树干净，运行 `npm run package:mac -- --release`。GitHub Actions 的 **macOS installer** 工作流也可构建并验证安装包；它不会自动发布 Release。
 
-GitHub Actions 的 **macOS installer** 工作流可手动生成 Apple Silicon 安装包、校验文件和构建信息。它不自动公开仓库或发布 Release。
+安装包包含固定版本、校验过的 Node 及生产依赖，不包含账号凭据、聊天记录、个人配置或大型修复核心。
 
-[开发文档](docs/DEVELOPMENT.md) · [发布流程](docs/RELEASING.md) · [Developer ID 办理](docs/DEVELOPER_ID.md) · [变更记录](CHANGELOG.md)
-
-## 更新与卸载
-
-运行新安装器并选择「安装 / 更新」。卸载可再次打开安装器，或在源码目录执行 `npm run uninstall:local`；预算与备份保留。升级不会修改签名的 Codex 应用，也不会伪造 hook 信任记录。
-
-这是独立工具，与 OpenAI 无隶属关系。项目当前保留所有权利，未授予公开开源或再分发许可；第三方组件按各自许可证提供。
-
-### 大量响应的平滑趋势与区间视图
-
-详情页新增「平滑度」滑条（0–40，默认关闭）。总览按响应数量自动划分为最多 120 个区间；每个区间显示起止响应序号、响应/计时数量、生成均速、输入与缓存均量、输出合计，以及最终回复、用户输入、压缩、缓存零值的数量。展开原始记录，每页最多 20 条，点击即可查看逐次详情。
-
-平滑与分组仅用于图形，不改变 token 用量或费用。EMA 遇到缺失值、压缩和模型配置变化会重置；缺口不跨接，原始零值保留计数和区间最小值。关闭平滑后显示区间统计值。区间生成均速按有效输出 token 总量 / 对应生成时长计算。
-
-聚合在后台执行，滑条变化合并 180ms 后再计算，旧任务可取消。悬停只刷新高亮和区间详情；不重建 Chart，不展开全量选择菜单。详见 [图表性能验证](docs/CHART-PERFORMANCE.md)。
-
-### 区间断线修正（0.15.2）
-
-保留区间视图，平滑默认关闭。此前区间内只要出现个别缺失计时或重置，整段两侧都会断开，导致大量碎线。现在按区间统计的语义绘制：有有效样本就连接相邻区间，只有整个区间没有该项数据时才断线。详情显示缺少计时、输入、缓存记录的数量。压缩和模型配置变化仍重置 EMA，但通过事件标记表达，不再强制制造空白；关平滑时使用直线连接区间均值。
+这是独立工具，与 OpenAI 无隶属关系。项目保留所有权利，未授予公开开源或再分发许可；第三方组件按各自许可证提供。

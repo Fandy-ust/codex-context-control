@@ -1,5 +1,12 @@
 # Changes
 
+## 0.15.4 — 2026-10-17
+
+- Apply the new app icon to the app bundle and installer; match the menu-bar glyph to its ring and three bars while preserving live usage.
+- Give app icon resources content-based names to avoid stale icon cache entries.
+- Reject packaging a prebuilt panel from a different version.
+- Consolidate download, installation, update and release-status documentation.
+
 ## 0.15.3 — 2026-10-16
 
 - Fix horizontal-axis hover being ignored and stale highlights remaining after pointer exit.

@@ -6,7 +6,8 @@
 npm ci --ignore-scripts
 npm test
 npm run package:mac
-CONTEXT_CONTROL_TEST_INSTALLER_ZIP="$PWD/build/distribution/Context-Manager-0.15.0-macos-arm64.zip" npm run test:distribution
+version=$(node -p "require('./package.json').version")
+CONTEXT_CONTROL_TEST_INSTALLER_ZIP="$PWD/build/distribution/Context-Manager-$version-macos-arm64.zip" npm run test:distribution
 ```
 
 版本取自 package.json。输出在 `build/distribution/`：安装器、ZIP、SHA-256 和 package-info.json。Node 下载版本及哈希固定在 packaging/node-runtime.json，官方归档缓存到 build/vendor。
@@ -40,3 +41,14 @@ GitHub 的 **macOS installer** workflow_dispatch 工作流先测试、打包，�
 - 安装器删除后仍能工作；预算和其他 hooks 保留。
 - 确认实际签名／公证状态、兼容版本和许可证，不改变仓库可见性。
 - 建议再用另一台干净 Mac 通过浏览器下载验证 Gatekeeper 体验；本机无隔离属性的解压测试不能代替这一步。
+
+## 发布状态与附件
+
+- 本地构建：只在维护者机器上存在，不等于可下载的 Release。
+- Draft：维护者可复核与下载，普通只读协作者不能据此下载。
+- 私有预发布：发布后，有仓库读取权限的用户可下载；仓库仍然私有。
+- 公开发布 / Mac App Store：本项目尚未进行，不能与上述步骤混称。
+
+每版附件仅上传同次构建的 ZIP、`.sha256`、`package-info.json`、`README-FIRST.txt`。Release 说明标出支持平台、实际签名状态、可选修复核心不包含、安装步骤和源代码提交。旧版附件保留，不把旧 ZIP 改名冒充新版。
+
+更新图标时同时检查 App、安装器和菜单栏；参阅[图标维护](../macos/Assets/README.md)。
