@@ -590,7 +590,7 @@ struct ContentView: View {
             if refreshPending{refreshPending=false;refreshNow();return}
             let visible=settingsWindow.map{$0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible)} ?? false
             let delay=RefreshSchedule.interval(menuVisible:menuPanel?.isVisible==true,settingsVisible:visible,runningChats:model.runningChats.count,connected:model.bridgeCount>0,serviceAvailable:model.serviceAvailable)
-            let timer=Timer(timeInterval:delay,repeats:false){[weak self] _ in Task{@MainActor in self?.refreshNow()}}
+            let timer=Timer(timeInterval:delay,repeats:false){[weak self] _ in Task{@MainActor [weak self] in self?.refreshNow()}}
             timer.tolerance=RefreshSchedule.tolerance(for:delay);refreshTimer=timer;RunLoop.main.add(timer,forMode:.common)
         }
     }
