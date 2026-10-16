@@ -62,7 +62,7 @@ struct ContextDetailsButton:View {
 
 @MainActor private final class DeferredContextDetails {var statistics:ContextStatistics?;var payload:Data?}
 
-private struct ContextDetailsView:View {
+@MainActor private struct ContextDetailsView:View {
     let chatID:String;let title:String
     let model:Controller
     @Environment(\.dismiss) private var dismiss
