@@ -480,6 +480,7 @@ struct ContentView: View {
 @main @MainActor final class ContextControlApp:NSObject,NSApplicationDelegate,NSWindowDelegate {
     private let model=Controller()
     private var statusItem:NSStatusItem?
+    private var statusHighlight:StatusItemHighlight?
     private var settingsWindow:NSWindow?
     private var refreshTask:Task<Void,Never>?
     private var serviceStarter:Process?
@@ -506,6 +507,7 @@ struct ContentView: View {
         item.button?.setButtonType(.pushOnPushOff)
         item.button?.target=self;item.button?.action=#selector(toggleContextPopover)
         statusItem=item
+        if let button=item.button{statusHighlight=StatusItemHighlight(button:button,isOpen:{[weak self] in self?.menuPanel?.isVisible==true})}
         updateStatusIcon()
         if !background{showSettings()}
         publishStatus()
@@ -518,7 +520,7 @@ struct ContentView: View {
         }}
     }
     private func updateStatusIcon(){
-        statusItem?.button?.state=menuPanel?.isVisible==true ? .on:.off
+        statusHighlight?.refresh()
         let busiest=model.busiestContext
         let percentage=busiest?.contextFraction.map{Int(($0*100).rounded())}
         if !iconInitialized || percentage != lastIconPercentage {
@@ -547,7 +549,7 @@ struct ContentView: View {
         host.translatesAutoresizingMaskIntoConstraints=false;backdrop.addSubview(host)
         NSLayoutConstraint.activate([host.leadingAnchor.constraint(equalTo:backdrop.leadingAnchor),host.trailingAnchor.constraint(equalTo:backdrop.trailingAnchor),host.topAnchor.constraint(equalTo:backdrop.topAnchor),host.bottomAnchor.constraint(equalTo:backdrop.bottomAnchor)])
         menuPanel?.contentView=backdrop;positionContextMenu();menuPanel?.orderFrontRegardless();menuPanel?.makeKey()
-        statusItem?.button?.state = .on
+        statusHighlight?.refresh()
         localMenuMonitor=NSEvent.addLocalMonitorForEvents(matching:[.leftMouseDown,.rightMouseDown,.keyDown]){[weak self] event in
             guard let self,self.menuPanel?.isVisible==true else{return event}
             if event.type == .keyDown{if event.keyCode==53{self.closeContextMenu();return nil};return event}
@@ -568,8 +570,8 @@ struct ContentView: View {
         menuPanel?.setFrame(frame,display:true)
     }
     private func closeContextMenu(){
-        statusItem?.button?.state = .off
         menuPanel?.orderOut(nil);menuPanel?.contentView=nil
+        statusHighlight?.refresh()
         if let localMenuMonitor{NSEvent.removeMonitor(localMenuMonitor);self.localMenuMonitor=nil}
         if let globalMenuMonitor{NSEvent.removeMonitor(globalMenuMonitor);self.globalMenuMonitor=nil}
     }

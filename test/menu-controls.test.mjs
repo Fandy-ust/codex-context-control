@@ -6,7 +6,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
-test('menu budgets preserve linking, revision and reserves; right-aligned panels remain on screen',{skip:process.platform!=='darwin',timeout:60000},()=>{
+test('native menu budgets, screen placement and highlight survive click tracking',{skip:process.platform!=='darwin',timeout:60000},()=>{
  const root=fileURLToPath(new URL('../',import.meta.url)),temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-menu-controls-'));
  try{
   const source=fs.readFileSync(path.join(root,'macos/ContextControl.swift'),'utf8');
@@ -38,7 +38,43 @@ precondition(secondary.insetBy(dx:8,dy:8).contains(other))
 let small=NSRect(x:0,y:0,width:600,height:350)
 let fit=ContextMenuPlacement.frame(anchor:NSRect(x:400,y:350,width:30,height:30),size:size,screen:small)
 precondition(small.insetBy(dx:8,dy:8).contains(fit))
-print("Native menu controls passed")
+
+@MainActor final class MenuToggleTarget:NSObject {
+ var opened=false
+ var highlight:StatusItemHighlight?
+ @objc func click(){opened.toggle();highlight?.refresh()}
+}
+MainActor.assumeIsolated {
+ let app=NSApplication.shared;app.setActivationPolicy(.accessory)
+ DispatchQueue.main.async {
+  let item=NSStatusBar.system.statusItem(withLength:30),target=MenuToggleTarget()
+  let button=item.button!;button.setButtonType(.pushOnPushOff);button.target=target;button.action=#selector(MenuToggleTarget.click)
+  target.highlight=StatusItemHighlight(button:button,isOpen:{[weak target] in target?.opened==true})
+  button.performClick(nil)
+  DispatchQueue.main.asyncAfter(deadline:.now()+0.1){
+   precondition(target.opened && button.cell!.isHighlighted && button.state == .on,"opened=\(target.opened) highlighted=\(button.cell!.isHighlighted) state=\(button.state.rawValue)")
+   let exited=NSEvent.enterExitEvent(with:.mouseExited,location:.zero,modifierFlags:[],timestamp:0,windowNumber:button.window!.windowNumber,context:nil,eventNumber:0,trackingNumber:0,userData:nil)!
+   button.mouseExited(with:exited)
+   DispatchQueue.main.asyncAfter(deadline:.now()+0.1){
+    precondition(button.cell!.isHighlighted,"Mouse exit must retain the open-menu background")
+    button.performClick(nil)
+    DispatchQueue.main.asyncAfter(deadline:.now()+0.1){
+     precondition(!target.opened && !button.cell!.isHighlighted && button.state == .off)
+     target.opened=true;target.highlight?.refresh();target.opened=false;target.highlight?.refresh()
+     DispatchQueue.main.asyncAfter(deadline:.now()+0.1){
+      precondition(!button.cell!.isHighlighted,"Queued callbacks must not re-highlight a closed menu")
+      NSStatusBar.system.removeStatusItem(item)
+      print("Native menu controls and persistent highlight passed")
+      app.terminate(nil)
+     }
+    }
+   }
+  }
+ }
+ app.run()
+}
+
+
 `);
   const binary=path.join(temp,'probe');
   const compiled=spawnSync('xcrun',['swiftc',path.join(root,'macos/BudgetMath.swift'),path.join(temp,'Models.swift'),path.join(root,'macos/MenuBudget.swift'),path.join(root,'macos/ContextMenuPanel.swift'),path.join(temp,'main.swift'),'-o',binary],{encoding:'utf8',timeout:45000});assert.equal(compiled.status,0,compiled.stderr);

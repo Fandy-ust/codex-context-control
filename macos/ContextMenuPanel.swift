@@ -16,3 +16,22 @@ enum ContextMenuPlacement {
     override var canBecomeKey:Bool {true}
     override var canBecomeMain:Bool {false}
 }
+
+// NSStatusBarButton does not retain its native pressed background from `state`
+// alone. Tracking can also clear highlight after the action returns on mouse-up.
+@MainActor final class StatusItemHighlight {
+    private weak var button:NSStatusBarButton?
+    private let isOpen:()->Bool
+    private var lastSelected:Bool?
+    init(button:NSStatusBarButton,isOpen:@escaping()->Bool){self.button=button;self.isOpen=isOpen}
+    func refresh(){
+        apply()
+        DispatchQueue.main.async{[weak self] in self?.apply()}
+    }
+    private func apply(){
+        let selected=isOpen()
+        button?.state=selected ? .on:.off
+        if selected || lastSelected != selected{button?.highlight(selected)}
+        lastSelected=selected
+    }
+}
