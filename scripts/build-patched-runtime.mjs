@@ -44,5 +44,6 @@ if(!validation.expectedFixed)throw Error('Patched behavior was not validated');
 fs.writeFileSync(path.join(output,'runtime.json'),JSON.stringify({...pin,platform:'darwin',arch:'arm64',binarySHA256:hash(binary),validated:true,builtAt:new Date().toISOString()},null,2)+'\n');
 fs.copyFileSync(path.join(repo,'build/compaction-accounting-probe.json'),path.join(output,'validation.json'));
 fs.copyFileSync(path.join(source,'LICENSE'),path.join(output,'CODEX-LICENSE'));
+fs.copyFileSync(path.join(source,'NOTICE'),path.join(output,'CODEX-NOTICE'));
 fs.copyFileSync(path.join(repo,'runtime-patches/LICENSE'),path.join(output,'PATCH-LICENSE'));
 console.log('Patched runtime built, signed and checked without remote inference.');

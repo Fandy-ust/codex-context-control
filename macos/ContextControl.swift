@@ -311,7 +311,7 @@ struct RuntimeFixControl:View {
                         Text(fix.message).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                         DisclosureGroup("修复说明"){
                             VStack(alignment:.leading,spacing:6){
-                                Text("避免历史推理重复计数。使用独立修复版 Codex \(fix.baseVersion)，切换后需重新打开 Codex。")
+                                Text("避免历史推理重复计数。使用独立修复版 Codex \(fix.baseVersion)，切换后需完全退出并重开 Codex。")
                                 Text("社区修复 · 适用于跨轮推理；以服务器已计入历史推理为前提。")
                                 Link("查看补丁",destination:URL(string:"https://github.com/coinman-dev/codex-context-accounting-fix")!)
                             }.font(.caption2).foregroundStyle(.secondary).padding(.top,5)

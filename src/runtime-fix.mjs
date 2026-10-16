@@ -51,8 +51,8 @@ export function createRuntimeFixManager({home=root,platform=process.platform,arc
     const compatible=platform==='darwin'&&arch==='arm64'&&originalVersion===runtimeFixPin.baseVersion;
     const activeCount=bridges.filter(b=>b.runtimeFixId===runtimeFixPin.id).length;
     const pending=enabled?activeCount<bridges.length||bridges.length===0:activeCount>0;
-    let message=!pack.available?pack.message:!compatible?'Codex 版本不匹配，后续启动使用原版':!enabled?'已关闭':pending?'已开启，重新打开 Codex 后生效':'已生效';
-    if(!enabled&&activeCount>0)message='已关闭，重新打开 Codex 后恢复原版';
+    let message=!pack.available?pack.message:!compatible?'Codex 版本不匹配，后续启动使用原版':!enabled?'已关闭':pending?'已开启，退出并重开 Codex 后生效':'已生效';
+    if(!enabled&&activeCount>0)message='已关闭，退出并重开 Codex 后恢复原版';
     return {enabled,available:pack.available,compatible,baseVersion:runtimeFixPin.baseVersion,originalVersion,activeCount,pending,message};
   }
   function setEnabled(enabled,original,bridges=[]){

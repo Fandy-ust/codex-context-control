@@ -12,7 +12,7 @@
 
 修复基于 [coinman-dev 的社区补丁](https://github.com/coinman-dev/codex-context-accounting-fix)，源码提交、补丁提交和校验值锁定在 `runtime-patches/manifest.json`。这是社区修复：它假定 Responses Lite 的跨轮推理已包含在服务器用量内，不代表 OpenAI 已确认所有服务路径都遵守这一约定。
 
-首个包针对 Apple Silicon macOS 和 **Codex 0.160.0**。开关只影响下一次启动的 Codex 运行进程；当前进程继续使用原版，界面会显示待生效。关闭后，重新打开 Codex 即恢复原版。Codex 更新到其他版本、修复包缺失或文件校验失败时，后续启动自动使用原版。安装过程不会修改 ChatGPT.app，也不会修改已有登录信息。
+首个包针对 Apple Silicon macOS 和 **Codex 0.160.0**。开关只影响下一次启动的 Codex 运行进程；当前进程继续使用原版，界面会显示待生效。开启或关闭后，须完全退出并重新打开 Codex；仅关闭聊天窗口不会更换运行时。关闭后即恢复原版。Codex 更新到其他版本、修复包缺失或文件校验失败时，后续启动自动使用原版。安装过程不会修改 ChatGPT.app，也不会修改已有登录信息。
 
 准备修复包：
 

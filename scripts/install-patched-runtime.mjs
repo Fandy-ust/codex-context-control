@@ -20,6 +20,7 @@ if(fs.existsSync(target)){
 }else{
   const stage=fs.mkdtempSync(path.join(parent,'.install-'));
   try{for(const file of ['codex','runtime.json','validation.json','CODEX-LICENSE','PATCH-LICENSE'])fs.copyFileSync(path.join(source,file),path.join(stage,file));
+    fs.copyFileSync(new URL('../runtime-patches/CODEX-NOTICE',import.meta.url),path.join(stage,'CODEX-NOTICE'));
     fs.chmodSync(path.join(stage,'codex'),0o755);validateRuntimePackage(stage);fs.renameSync(stage,target);
   }finally{fs.rmSync(stage,{recursive:true,force:true});}
 }
