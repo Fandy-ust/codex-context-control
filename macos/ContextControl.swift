@@ -300,6 +300,27 @@ private struct BudgetRangeSlider:View {
     }
 }
 
+struct RuntimeFixControl:View {
+    @ObservedObject var model:Controller
+    var body:some View {
+                if let fix=model.runtimeFix {
+                    VStack(alignment:.leading,spacing:7){
+                        Toggle("提前压缩修复",isOn:Binding(get:{model.runtimeFix?.enabled ?? false},set:{value in Task{await model.setRuntimeFix(value)}}))
+                            .toggleStyle(.switch).controlSize(.small)
+                            .disabled(model.changingRuntimeFix || (!fix.enabled && (!fix.available || !fix.compatible)))
+                        Text(fix.message).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                        DisclosureGroup("修复说明"){
+                            VStack(alignment:.leading,spacing:6){
+                                Text("避免历史推理重复计数。使用独立修复版 Codex \(fix.baseVersion)，切换后需重新打开 Codex。")
+                                Text("社区修复 · 适用于跨轮推理；以服务器已计入历史推理为前提。")
+                                Link("查看补丁",destination:URL(string:"https://github.com/coinman-dev/codex-context-accounting-fix")!)
+                            }.font(.caption2).foregroundStyle(.secondary).padding(.top,5)
+                        }.font(.caption2).foregroundStyle(.secondary)
+                    }.padding(10).background(.white.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
+                }
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var model:Controller
     @State private var confirmCompact=false
@@ -320,21 +341,7 @@ struct ContentView: View {
                         }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
                     }}
                 }.frame(maxHeight:.infinity)
-                if let fix=model.runtimeFix {
-                    VStack(alignment:.leading,spacing:7){
-                        Toggle("提前压缩修复",isOn:Binding(get:{model.runtimeFix?.enabled ?? false},set:{value in Task{await model.setRuntimeFix(value)}}))
-                            .toggleStyle(.switch).controlSize(.small)
-                            .disabled(model.changingRuntimeFix || (!fix.enabled && (!fix.available || !fix.compatible)))
-                        Text(fix.message).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
-                        DisclosureGroup("修复说明"){
-                            VStack(alignment:.leading,spacing:6){
-                                Text("避免历史推理重复计数。使用独立修复版 Codex \(fix.baseVersion)，切换后需重新打开 Codex。")
-                                Text("社区修复 · 适用于跨轮推理；以服务器已计入历史推理为前提。")
-                                Link("查看补丁",destination:URL(string:"https://github.com/coinman-dev/codex-context-accounting-fix")!)
-                            }.font(.caption2).foregroundStyle(.secondary).padding(.top,5)
-                        }.font(.caption2).foregroundStyle(.secondary)
-                    }.padding(10).background(.white.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
-                }
+                RuntimeFixControl(model:model)
                 Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
             }.padding().frame(minWidth:235).background(PanelStyle.background)
         } detail: {
