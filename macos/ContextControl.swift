@@ -7,6 +7,7 @@ struct Metadata: Decodable { let max_context_window:Int?;let effective_context_w
 struct Chat: Identifiable, Decodable {
     let id:String;let name:String?;let model:String?;let cwd:String?;let status:String?
     let connected:Bool;let ambiguous:Bool;let phase:String?;let message:String?
+    let ephemeral:Bool?;let canAcceptDirectInput:Bool?
     let observedWindow:Int?;let expectedWindow:Int?;let lastUsage:Usage?;let freshUsage:Bool?;let revision:Int?
     let policy:Budget?;let modelMetadata:Metadata?
     var title:String { if let name,!name.isEmpty{return name};if let cwd{return URL(fileURLWithPath:cwd).lastPathComponent};return String(id.prefix(12)) }
@@ -31,6 +32,7 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var chats:[Chat]=[]
     @Published var selectedID:String?
     @Published var bridgeCount=0
+    @Published var serviceAvailable=false
     @Published var runtimeFix:RuntimeFixState?
     @Published var changingRuntimeFix=false
     @Published var notice="正在读取本地状态…"
@@ -66,12 +68,12 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func refresh() async {
         if refreshing{return};refreshing=true;defer{refreshing=false}
-        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount;runtimeFix=state.runtimeFix
+        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"));chats=state.threads;bridgeCount=state.bridgeCount;runtimeFix=state.runtimeFix;serviceAvailable=true
             if selectedID==nil{selectedID=chats.first?.id;fill()}
             else if waitingForModel,let metadata=selected?.modelMetadata,metadata.effective_context_window_percent != nil,metadata.max_context_window != nil{fill()}
             else if !budgetEdited,editingRevision != (selected?.policy?.revision ?? 0){fill()}
             if notice=="正在读取本地状态…"||notice.hasPrefix("读取失败："){notice=bridgeCount>0 ? "已接入 Codex。" : "照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。"}
-        }catch{notice="读取失败：\(error.localizedDescription)"}
+        }catch{serviceAvailable=false;notice="读取失败：\(error.localizedDescription)"}
     }
     func fill(){
         defer{budgetEdited=false}
@@ -337,13 +339,13 @@ struct ContentView: View {
         HSplitView {
             VStack(alignment:.leading,spacing:14){
                 HStack(spacing:7){
-                    Circle().fill(model.bridgeCount>0 ? Color.green:Color.gray).frame(width:7,height:7)
+                    Circle().fill((model.serviceAvailable && model.bridgeCount>0) ? Color.green:Color.gray).frame(width:7,height:7)
                     Text("Codex").font(.system(size:11)).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth:.infinity,alignment:.leading)
                 .accessibilityElement(children:.ignore)
-                .accessibilityLabel(model.bridgeCount>0 ? "已连接 Codex":"等待 Codex 连接")
-                .help(model.bridgeCount>0 ? "已连接 Codex":"等待 Codex 连接")
+                .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? "已连接 Codex":"等待 Codex 连接")
+                .help((model.serviceAvailable && model.bridgeCount>0) ? "已连接 Codex":"等待 Codex 连接")
                 ScrollView {
                     LazyVStack(spacing:4){ForEach(model.chats){chat in
                         Button {model.selectedID=chat.id} label:{
@@ -476,8 +478,9 @@ struct ContentView: View {
     private var settingsWindow:NSWindow?
     private var refreshTask:Task<Void,Never>?
     private var serviceStarter:Process?
-    private let connectionItem=NSMenuItem(title:"正在连接 Codex…",action:nil,keyEquivalent:"")
-    private let usageItem=NSMenuItem(title:"窗口待观测",action:nil,keyEquivalent:"")
+    private let contextPopover=NSPopover()
+    private var lastIconPercentage:Int?
+    private var iconInitialized=false
     private let background=CommandLine.arguments.contains("--background")
     private var lastStatus:Data?
 
@@ -490,30 +493,44 @@ struct ContentView: View {
     func applicationDidFinishLaunching(_ notification:Notification){
         startLocalService()
         installMainMenu()
-        let item=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength)
-        item.button?.title=" 上下文"
-        item.button?.image=NSImage(systemSymbolName:"slider.horizontal.3",accessibilityDescription:"Codex 上下文设置")
-        item.button?.image?.isTemplate=true
-        item.button?.imagePosition = .imageLeading
-        item.button?.toolTip="Codex 上下文设置"
-        item.button?.setAccessibilityLabel("Codex 上下文设置")
-        let menu=NSMenu();connectionItem.isEnabled=false;usageItem.isEnabled=false
-        menu.addItem(connectionItem);menu.addItem(usageItem);menu.addItem(.separator())
-        let open=NSMenuItem(title:"打开上下文设置…",action:#selector(showSettings),keyEquivalent:"");open.target=self;menu.addItem(open)
-        let codex=NSMenuItem(title:"打开 Codex",action:#selector(openCodex),keyEquivalent:"");codex.target=self;menu.addItem(codex)
-        menu.addItem(.separator())
-        let note=NSMenuItem(title:"关闭设置窗口后，预算继续生效",action:nil,keyEquivalent:"");note.isEnabled=false;menu.addItem(note)
-        let quit=NSMenuItem(title:"退出菜单栏入口",action:#selector(quitEntry),keyEquivalent:"");quit.target=self;quit.toolTip="预算控制继续运行，下次启动 Codex 时入口会再出现。";menu.addItem(quit)
-        item.menu=menu;statusItem=item
+        let item=NSStatusBar.system.statusItem(withLength:30)
+        item.button?.title=""
+        item.button?.imagePosition = .imageOnly
+        item.button?.target=self;item.button?.action=#selector(toggleContextPopover)
+        statusItem=item
+        contextPopover.behavior = .transient
+        contextPopover.animates=false
+        contextPopover.contentViewController=NSHostingController(rootView:ContextMenuView(model:model,openChat:{[weak self] id in
+            guard let self else{return};self.model.selectedID=id;self.model.fill();self.showSettings()
+        },openSettings:{[weak self] in self?.showSettings()},quit:{[weak self] in self?.quitEntry()}))
+        updateStatusIcon()
         if !background{showSettings()}
         publishStatus()
         refreshTask=Task {while !Task.isCancelled{
             await model.refresh()
-            connectionItem.title=model.bridgeCount>0 ? "Codex 已连接":"等待 Codex 接入"
-            usageItem.title="最近读回窗口：\(formatted(model.selected?.observedWindow))"
+            updateStatusIcon()
+            if contextPopover.isShown{contextPopover.contentSize=NSSize(width:400,height:model.contextMenuHeight)}
             publishStatus()
             try? await Task.sleep(for:.seconds(2))
         }}
+    }
+    private func updateStatusIcon(){
+        let busiest=model.busiestContext
+        let percentage=busiest?.contextFraction.map{Int(($0*100).rounded())}
+        if !iconInitialized || percentage != lastIconPercentage {
+            statusItem?.button?.image=managerStatusImage(progress:busiest?.contextFraction)
+            lastIconPercentage=percentage;iconInitialized=true
+        }
+        let summary=model.runningChats.isEmpty ? (model.serviceAvailable ? "暂无运行中的聊天":"等待连接") : "\(model.runningChats.count) 个运行中 · \(busiest.map{"最高占用 \($0.contextPercentage)"} ?? "等待用量读回")"
+        statusItem?.button?.toolTip="Context Manager · \(summary)"
+        statusItem?.button?.setAccessibilityLabel("Context Manager，\(summary)，打开聊天概览")
+    }
+    @objc private func toggleContextPopover(){
+        if contextPopover.isShown{contextPopover.performClose(nil);return}
+        guard let button=statusItem?.button else{return}
+        contextPopover.contentSize=NSSize(width:400,height:model.contextMenuHeight)
+        contextPopover.show(relativeTo:button.bounds,of:button,preferredEdge:.minY)
+        contextPopover.contentViewController?.view.window?.makeKey()
     }
     private func startLocalService(){
         // The app itself stays the native CFBundleExecutable. Starting Node
@@ -528,16 +545,19 @@ struct ContentView: View {
     }
     private func installMainMenu(){
         let bar=NSMenu(),appItem=NSMenuItem(),appMenu=NSMenu()
-        appMenu.addItem(withTitle:"退出上下文设置",action:#selector(quitEntry),keyEquivalent:"q").target=self
+        appMenu.addItem(withTitle:"打开主窗口",action:#selector(showSettings),keyEquivalent:"m").target=self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle:"退出 Context Manager",action:#selector(quitEntry),keyEquivalent:"q").target=self
         appItem.submenu=appMenu;bar.addItem(appItem)
         let editItem=NSMenuItem(title:"编辑",action:nil,keyEquivalent:""),edit=NSMenu(title:"编辑")
         for (title,action,key) in [("撤销","undo:","z"),("重做","redo:","Z"),("剪切","cut:","x"),("复制","copy:","c"),("粘贴","paste:","v"),("全选","selectAll:","a")]{edit.addItem(withTitle:title,action:Selector(action),keyEquivalent:key)}
         editItem.submenu=edit;bar.addItem(editItem);NSApplication.shared.mainMenu=bar
     }
     @objc private func showSettings(){
+        contextPopover.performClose(nil)
         if settingsWindow==nil{
             let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:760),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
-            window.title="Codex Context Control";window.minSize=NSSize(width:960,height:700)
+            window.title="Context Manager";window.minSize=NSSize(width:960,height:700)
             window.titleVisibility = .visible;window.titlebarAppearsTransparent=false
             window.appearance=NSAppearance(named:.darkAqua)
             window.backgroundColor=NSColor(white:0.095,alpha:1)
@@ -557,7 +577,7 @@ struct ContentView: View {
         let menuWindow=statusItem?.button?.window
         let frame=menuWindow?.frame ?? .zero
         let onScreen=frame.width>0 && frame.height>0 && NSScreen.screens.contains{$0.frame.intersects(frame)}
-        let state:[String:Any]=["pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"menuWindowVisible":menuWindow?.isVisible==true,"menuOnScreen":onScreen,"menuFrame":["x":frame.origin.x,"y":frame.origin.y,"width":frame.width,"height":frame.height],"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background]
+        let state:[String:Any]=["pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"menuWindowVisible":menuWindow?.isVisible==true,"menuOnScreen":onScreen,"menuFrame":["x":frame.origin.x,"y":frame.origin.y,"width":frame.width,"height":frame.height],"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background,"statusTitle":statusItem?.button?.title ?? "","runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()]
         guard let data=try? JSONSerialization.data(withJSONObject:state,options:.sortedKeys),data != lastStatus else{return}
         do {
             try FileManager.default.createDirectory(at:model.home,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])

@@ -1,5 +1,11 @@
 # Changes
 
+## 0.10.0 — 2026-10-16
+
+- Rename the visible app to Context Manager and replace the menu-bar text with a robot inside a live usage ring.
+- Show running chats first in a compact menu, with usage rings and numbers on the right, followed by recent chats.
+- Open a chat’s settings directly from its menu row; retain unknown/stale usage states and use observed capacity for percentages.
+
 ## 0.9.1 — 2026-10-16
 
 - Recover saved parent budgets for native desktop forks that bypass the bridge fork RPC; queue application automatically at a safe turn boundary.

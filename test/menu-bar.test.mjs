@@ -29,6 +29,7 @@ test('a desktop connection automatically creates a menu entry without opening a 
   try{
     peer=await connect(()=>({}));await peer.call('registerBridge',{pid:process.pid});
     const first=await until(()=>{const s=status();return s.menuReady&&s.bridgeCount===1?s:false;});
+    assert.equal(first.statusTitle,'');
     assert.equal(first.startedInBackground,true);assert.equal(first.windowVisible,false);
     assert.equal(first.bundleIdentifier,bundleId);
     assert.equal(await until(()=>fs.existsSync(path.join(control,'service-started'))),true);
