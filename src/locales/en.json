@@ -506,5 +506,10 @@
   "安装更新 {0}": "Install update {0}",
   "检查更新": "Check for updates",
   "更新已安装，请重开 Codex": "Update installed. Restart Codex.",
-  "更新失败：{0}": "Update failed: {0}"
+  "更新失败：{0}": "Update failed: {0}",
+  "请输入有效的快捷键": "Enter a valid shortcut.",
+  "快捷键不能重复修饰键": "Shortcut modifiers must not be repeated.",
+  "快捷键需要一个按键和可选的修饰键": "Choose one key with optional modifiers.",
+  "请使用 Ctrl、Alt 或 Win 组合，或 F1–F24 功能键": "Use Ctrl, Alt or Win, or an F1–F24 function key.",
+  "快捷键已被占用，请选择其他组合": "This shortcut is already in use. Choose a different combination."
 }

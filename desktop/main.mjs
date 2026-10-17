@@ -1,13 +1,16 @@
-import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,shell} from 'electron';
+import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut} from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {spawn} from 'node:child_process';
 import {trayState} from '../src/tray-state.mjs';
+import {defaultRoot} from '../src/platform/index.mjs';
+import {createShortcutManager} from '../src/ui-shortcut.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url)),repo=path.dirname(here),args=process.argv;
 if(fs.existsSync(path.join(repo,'vendor/node.exe')))process.env.CONTEXT_CONTROL_NODE=path.join(repo,'vendor/node.exe');
 const demo=args.includes('--demo'),smoke=args.includes('--smoke-test');
+const liveHome=process.env.CONTEXT_CONTROL_LIVE_HOME||defaultRoot();
 if(smoke)setTimeout(()=>{console.error('UI_SMOKE_FAILED startup timeout');app.exit(1);},30000).unref();
 if(demo&&!process.env.CONTEXT_CONTROL_HOME)process.env.CONTEXT_CONTROL_HOME=path.join(os.tmpdir(),'context-manager-demo');
 const {root,readJSON,atomicJSON,ensureRoot,settings}=await import('../src/paths.mjs');
@@ -19,6 +22,7 @@ app.setName('Context Manager');app.setAppUserModelId('io.github.codex-context-co
 app.setPath('userData',path.join(root,'ui-profile'));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
 let main,trayWindow,tray,quitting=false,lastState=null,ready=false,timer,lastIcon='',menuDragging=false,lastServiceAttempt=Date.now();
+const shortcutManager=createShortcutManager({read:()=>readJSON(path.join(root,'ui-settings.json'),{}),write:doc=>atomicJSON(path.join(root,'ui-settings.json'),doc),register:(key,callback)=>globalShortcut.register(key,callback),unregister:key=>globalShortcut.unregister(key),onTrigger:()=>showMain(),inactive:smoke});
 const zh=()=>resolveLanguage(languagePreference())==='zh';
 const label=(a,b)=>zh()?a:b;
 app.on('second-instance',(_event,argv)=>{if(argv.includes('--quit'))app.quit();else if(!argv.includes('--background'))showMain();});
@@ -42,7 +46,8 @@ async function api(action,params={}){
   const response=await fetch(`http://127.0.0.1:${connection.port}${route[1]}`,{method:route[0],headers:{Authorization:`Bearer ${connection.token}`},...(route[0]==='POST'?{body:JSON.stringify(params)}:{}),signal:AbortSignal.timeout(action==='statistics'?60000:30000)});
   const body=await response.json();if(!response.ok)throw Error(localize(body.error||'Local service error'));return body;
 }
-const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,menuReady:!!tray,menuWindowVisible:!!trayWindow?.isVisible(),menuOnScreen:!!trayWindow?.isVisible(),windowVisible:!!main?.isVisible(),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow?.getBounds()});};
+const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,shortcut:shortcutManager.status(),menuReady:!!tray,menuWindowVisible:!!trayWindow?.isVisible(),menuOnScreen:!!trayWindow?.isVisible(),windowVisible:!!main?.isVisible(),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow?.getBounds()});};
+async function ensureUiService(){try{if((await api('state')).version===pkg.version)return;}catch{}await ensureDaemon();}
 function createWindow(menu=false){
   const win=new BrowserWindow({width:menu?400:1080,height:menu?450:760,minWidth:menu?320:960,minHeight:menu?180:670,show:false,frame:!menu,resizable:!menu,skipTaskbar:menu,alwaysOnTop:menu,backgroundColor:'#181818',title:'Context Manager',icon:path.join(repo,'macos/Assets/ContextManager.png'),webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   win.setMenuBarVisibility(false);win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
@@ -51,10 +56,12 @@ function createWindow(menu=false){
   win.loadFile(path.join(here,'renderer/index.html'),{query:{mode:menu?'tray':'main'}});
   win.on('close',event=>{if(!quitting){event.preventDefault();win.hide();publish();}});
   win.on('show',publish);win.on('hide',publish);win.on('focus',()=>win.webContents.send('refresh'));
+  win.on('blur',()=>{if(win===main)globalShortcut.setSuspended(false);});
   if(menu)win.on('blur',()=>{if(!menuDragging)win.hide();publish();});
   return win;
 }
 function showMain(id){if(!main)main=createWindow();if(main.isMinimized())main.restore();main.show();main.focus();trayWindow?.hide();if(id){if(main.webContents.isLoading())main.webContents.once('did-finish-load',()=>main.webContents.send('select-chat',id));else main.webContents.send('select-chat',id);}publish();}
+function showSettings(){showMain();if(main.webContents.isLoading())main.webContents.once('did-finish-load',()=>main.webContents.send('open-settings'));else main.webContents.send('open-settings');}
 function placeMenu(){
   const bounds=tray.getBounds(),cursor=screen.getCursorScreenPoint(),display=screen.getDisplayNearestPoint(bounds.width?{x:bounds.x,y:bounds.y}:cursor),area=display.workArea;
   const sections=trayState(lastState?.threads),count=sections.running.length+sections.recent.length;
@@ -77,11 +84,19 @@ function updateTray(){
   const key=(fraction==null?'unknown':Math.round(fraction*100))+'-'+nativeTheme.shouldUseDarkColors;if(lastIcon!==key){tray.setImage(icon(fraction));lastIcon=key;}
   tray.setToolTip(`Context Manager · ${active.length} ${label('个运行中','running')}${fraction==null?'':` · ${Math.round(fraction*100)}%`}`);
 }
-function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口','Open main window'),click:()=>showMain()},{label:label('检查更新','Check for updates'),click:async()=>{try{await api('check-update');showMain();main.webContents.send('refresh');}catch(e){console.error(e.message);}}},{type:'separator'},{label:label('退出管理界面','Quit manager UI'),click:()=>app.quit()}]);}
+function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口','Open main window'),click:()=>showMain()},{label:label('设置','Settings'),click:showSettings},{label:label('检查更新','Check for updates'),click:async()=>{try{await api('check-update');showMain();main.webContents.send('refresh');}catch(e){console.error(e.message);}}},{type:'separator'},{label:label('退出管理界面','Quit manager UI'),click:()=>app.quit()}]);}
 ipcMain.handle('context-manager',async(event,action,params)=>{
   if(![main?.webContents.id,trayWindow?.webContents.id].includes(event.sender.id)||event.senderFrame!==event.sender.mainFrame)throw Error('Unknown UI sender');
   if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>65536)throw Error('Invalid UI request');
-  if(action==='preferences')return {selection:languagePreference(),language:resolveLanguage(languagePreference()),english:JSON.parse(fs.readFileSync(path.join(repo,'src/locales/en.json'),'utf8')),version:pkg.version,demo};
+  if(action==='preferences')return {selection:languagePreference(),language:resolveLanguage(languagePreference()),english:JSON.parse(fs.readFileSync(path.join(repo,'src/locales/en.json'),'utf8')),version:pkg.version,demo,shortcut:shortcutManager.status()};
+  if(action==='shortcut-save'){if(typeof params.enabled!=='boolean')throw Error('Invalid shortcut setting');globalShortcut.setSuspended(false);const result=shortcutManager.set(params);publish();return result;}
+  if(action==='shortcut-recording'){if(event.sender===main?.webContents)globalShortcut.setSuspended(params.active===true&&!smoke);return {ok:true};}
+  if(action==='open-live'){
+    if(!demo)return {ok:true};if(smoke)throw Error('Live mode is disabled during smoke tests');
+    const env={...process.env,CONTEXT_CONTROL_HOME:liveHome};delete env.ELECTRON_RUN_AS_NODE;
+    await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[...(app.isPackaged?[]:[path.join(here,'main.mjs')]),'--open-main'],{env,detached:true,windowsHide:true,stdio:'ignore'});child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});});
+    shortcutManager.dispose();setTimeout(()=>app.quit(),100);return {ok:true};
+  }
   if(action==='language'){if(!['auto','zh','en'].includes(params.selection))throw Error('Invalid language');atomicJSON(path.join(root,'language.json'),{selection:params.selection});main?.webContents.send('refresh');trayWindow?.webContents.send('refresh');return {ok:true};}
   if(action==='open-main'){showMain(typeof params.id==='string'?params.id:undefined);return {ok:true};}
   if(action==='hide'){BrowserWindow.fromWebContents(event.sender)?.hide();return {ok:true};}
@@ -94,15 +109,23 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
 app.whenReady().then(async()=>{ensureRoot();ready=true;
 tray=new Tray(icon(null));tray.on('click',toggleMenu);tray.on('double-click',()=>showMain());tray.on('right-click',()=>tray.popUpContextMenu(trayMenu()));nativeTheme.on('updated',()=>updateTray());
 if(args.includes('--quit')){app.quit();}else{
-  if(!demo){try{await ensureDaemon();}catch(e){console.error(e.message);}}
+  if(!demo){try{await ensureUiService();}catch(e){console.error(e.message);}}
   main=createWindow();trayWindow=createWindow(true);
+  shortcutManager.start();
   if(!args.includes('--background')&&!smoke)main.once('ready-to-show',()=>showMain());
-  const refresh=async()=>{try{lastState=await api('state');updateTray();}catch{if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};updateTray();}if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureDaemon();}catch{}}}publish();if(!quitting)timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
+  const refresh=async()=>{try{lastState=await api('state');updateTray();}catch{if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};updateTray();}if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting)timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
   if(smoke){
     const loaded=win=>new Promise((resolve,reject)=>{if(!win.webContents.isLoading())resolve();else{win.webContents.once('did-finish-load',resolve);win.webContents.once('did-fail-load',(_e,code,message)=>reject(Error(`${code}: ${message}`)));}});
-    try{await Promise.all([loaded(main),loaded(trayWindow)]);await new Promise(r=>setTimeout(r,1200));const results=await Promise.all([main,trayWindow].map(w=>w.webContents.executeJavaScript('window.__contextSmoke()')));if(results.some(r=>!r.ok))throw Error(JSON.stringify(results));console.log('UI_SMOKE '+JSON.stringify(results));app.exit(0);}catch(e){console.error('UI_SMOKE_FAILED '+e.message);app.exit(1);}
+    try{
+      if(args.includes('--shortcut-probe')){
+        const probe='Control+Alt+Shift+F24';
+        try{if(!globalShortcut.register(probe,()=>{})||!globalShortcut.isRegistered(probe))throw Error('Native shortcut registration failed');globalShortcut.setSuspended(true);if(!globalShortcut.isSuspended())throw Error('Native shortcut suspension failed');globalShortcut.setSuspended(false);}finally{globalShortcut.setSuspended(false);globalShortcut.unregister(probe);}
+        if(globalShortcut.isRegistered(probe))throw Error('Native shortcut release failed');console.log('NATIVE_SHORTCUT_PROBE passed');
+      }
+      await Promise.all([loaded(main),loaded(trayWindow)]);await new Promise(r=>setTimeout(r,1200));const results=await Promise.all([main,trayWindow].map(w=>w.webContents.executeJavaScript('window.__contextSmoke()')));if(results.some(r=>!r.ok))throw Error(JSON.stringify(results));console.log('UI_SMOKE '+JSON.stringify(results));app.exit(0);
+    }catch(e){console.error('UI_SMOKE_FAILED '+e.message);app.exit(1);}
   }
 }
 }).catch(error=>{console.error(error);app.exit(1);});
-app.on('will-quit',()=>{try{const s=readJSON(path.join(root,'ui-status.json'));if(s?.pid===process.pid)fs.unlinkSync(path.join(root,'ui-status.json'));}catch{}});
+app.on('will-quit',()=>{shortcutManager.dispose();try{const s=readJSON(path.join(root,'ui-status.json'));if(s?.pid===process.pid)fs.unlinkSync(path.join(root,'ui-status.json'));}catch{}});
 }

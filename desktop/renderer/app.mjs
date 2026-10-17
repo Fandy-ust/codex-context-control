@@ -3,9 +3,12 @@ import {savedBudget} from '../../src/budget.mjs';
 import {timelineData,nearestBucket} from '../../src/timeline-data.mjs';
 import {translate} from '../../src/localization-core.mjs';
 import {trayState} from '../../src/tray-state.mjs';
+import {timelinePlot,timelineX,timelinePosition} from '../../src/timeline-scale.mjs';
+import {DEFAULT_SHORTCUT,shortcutLabel,shortcutFromEvent,normalizeShortcut} from '../../src/ui-shortcut.mjs';
 
 const api=window.contextManager,root=document.querySelector('#app'),mode=new URLSearchParams(location.search).get('mode')||'main';
 let state=null,preferences={language:'zh',selection:'auto',english:{}},selected=null,view='chat',draft=null,dirty=false,dragging=false,busy=false,stats=null,statsJSON='',timeline=null,period=0,hover=null,pinned=null,page=0,auto=true,lastStats=0,toastTimer,refreshing=false,interactionId=null;
+let shortcutDraft=DEFAULT_SHORTCUT,shortcutEnabled=true,shortcutRecording=false,shortcutDirty=false;
 const trayDrafts=new Map();
 let sidebarWidth=Number(localStorage.getItem('sidebar-width'))||270;
 const visibleSidebarWidth=()=>Math.max(235,Math.min(sidebarWidth,340,window.innerWidth-650));
@@ -24,7 +27,7 @@ function ring(thread){const fraction=observed(thread);return `<span class="ring"
 function statusText(thread){return thread.connected?phase(thread):t(thread.lastUsage?'已缓存':'本地聊天',thread.lastUsage?'Cached':'Local chat');}
 function sidebar(){
   const connected=state?.bridgeCount>0,ext=state?.contextExtension,u=state?.update||{};
-  return `<aside class="sidebar"><div class="brand row"><span class="dot ${connected?'on':''}"></span><span>Codex</span><span class="grow"></span><span class="tiny">v${e(preferences.version||'')}</span></div><nav class="chat-list" aria-label="${e(t('聊天','Chats'))}">${(state?.threads||[]).map(chat=>`<button class="chat-button ${selected===chat.id&&view!=='defaults'?'selected':''}" data-action="select" data-id="${e(chat.id)}"><span class="truncate">${e(chat.title||chat.id)}</span><span class="muted">${e(statusText(chat))}</span></button>`).join('')||`<p class="muted tiny">${e(t('等待本地聊天…','Waiting for local chats…'))}</p>`}</nav><div class="sidebar-footer"><label class="tiny muted" for="language">${e(t('语言','Language'))}</label><select id="language"><option value="auto" ${preferences.selection==='auto'?'selected':''}>${e(t('自动（按时区）','Automatic (time zone)'))}</option><option value="zh" ${preferences.selection==='zh'?'selected':''}>中文</option><option value="en" ${preferences.selection==='en'?'selected':''}>English</option></select><button data-action="scan">↻ ${e(t('同步本地聊天','Sync local chats'))}</button><button data-action="defaults">☷ ${e(t('全局默认','Global defaults'))}</button><div class="extension"><div class="row between"><span class="tiny">${e(t('拓展上下文','Extended context'))}</span><input type="checkbox" id="extension" class="switch" aria-label="${e(t('拓展上下文','Extended context'))}" ${ext?.enabled?'checked':''} ${!ext?.available||!ext?.compatible?'disabled':''}></div><p class="tiny muted">${e(t(ext?.message||'等待 Codex 连接','Waiting for Codex'))}</p></div><button data-action="update" ${['downloading','installing'].includes(u.phase)?'disabled':''}>↓ ${e(['downloading','installing'].includes(u.phase)?t('正在更新…','Updating…'):u.available?t('安装更新 {0}','Install update {0}',u.version):t('检查更新','Check for updates'))}</button>${u.error?`<span class="tiny error">${e(t(u.error))}</span>`:''}<button data-action="open-codex">↗ ${e(t('打开 Codex','Open Codex'))}</button><button class="flat tiny muted" data-action="diagnostics">${e(t('诊断','Diagnostics'))}</button>${preferences.demo?`<span class="demo-notice">${e(t('合成数据预览','Synthetic data preview'))}</span>`:''}</div></aside>`;
+  return `<aside class="sidebar"><div class="brand row"><span class="dot ${connected?'on':''}"></span><span>Codex</span>${preferences.demo?`<span class="preview-pill">${e(t('预览','Preview'))}</span>`:''}<span class="grow"></span><span class="tiny">v${e(preferences.version||'')}</span></div><nav class="chat-list" aria-label="${e(t('聊天','Chats'))}">${(state?.threads||[]).map(chat=>`<button class="chat-button ${selected===chat.id&&view!=='defaults'?'selected':''}" data-action="select" data-id="${e(chat.id)}"><span class="truncate">${e(chat.title||chat.id)}</span><span class="muted">${e(statusText(chat))}</span></button>`).join('')||`<p class="muted tiny">${e(t('等待本地聊天…','Waiting for local chats…'))}</p>`}</nav><div class="sidebar-footer"><label class="tiny muted" for="language">${e(t('语言','Language'))}</label><select id="language"><option value="auto" ${preferences.selection==='auto'?'selected':''}>${e(t('自动（按时区）','Automatic (time zone)'))}</option><option value="zh" ${preferences.selection==='zh'?'selected':''}>中文</option><option value="en" ${preferences.selection==='en'?'selected':''}>English</option></select><button data-action="scan">↻ ${e(t('同步本地聊天','Sync local chats'))}</button><button data-action="defaults">☷ ${e(t('全局默认','Global defaults'))}</button><div class="extension"><div class="row between"><span class="tiny">${e(t('拓展上下文','Extended context'))}</span><input type="checkbox" id="extension" class="switch" aria-label="${e(t('拓展上下文','Extended context'))}" ${ext?.enabled?'checked':''} ${!ext?.available||!ext?.compatible?'disabled':''}></div><p class="tiny muted">${e(t(ext?.message||'等待 Codex 连接','Waiting for Codex'))}</p></div><button data-action="update" ${['downloading','installing'].includes(u.phase)?'disabled':''}>↓ ${e(['downloading','installing'].includes(u.phase)?t('正在更新…','Updating…'):u.available?t('安装更新 {0}','Install update {0}',u.version):t('检查更新','Check for updates'))}</button>${u.error?`<span class="tiny error">${e(t(u.error))}</span>`:''}<button data-action="open-codex">↗ ${e(t('打开 Codex','Open Codex'))}</button><button data-action="settings">⚙ ${e(t('设置','Settings'))}</button><button class="flat tiny muted" data-action="diagnostics">${e(t('诊断','Diagnostics'))}</button>${preferences.demo?`<span class="demo-notice">${e(t('合成数据预览','Synthetic data preview'))}</span>`:''}</div></aside>`;
 }
 function slider(value,model,{single=false,id='main'}={}){
   const limit=draftLimits(model,value.window,value.reserve),max=limit?.maximum||1,white=value.window/max*100,blue=value.compact/max*100;
@@ -43,7 +46,14 @@ function chatPage(){
 }
 function defaultModel(){const l=state?.newChatDefaultsLimits;return l?{max_context_window:Math.ceil(l.maximumUsableWindow*100/l.effectivePercent),effective_context_window_percent:l.effectivePercent,...(l.extended?{context_ceiling:920000,context_compact_ceiling:904000}:{})}:null;}
 function defaultsPage(){return `<div class="content"><div><h1>${e(t('全局默认','Global defaults'))}</h1><p class="muted">${e(t('只影响之后创建的新聊天；分支继续继承父聊天预算。','Only affects new chats. Forks continue to inherit their parent budget.'))}</p></div>${budgetCard(draft,defaultModel(),{defaults:true})}<div class="actions"><button class="primary" data-action="save-defaults" ${!draft?'disabled':''}>${e(t('保存默认值','Save defaults'))}</button><button data-action="copy-current" ${!current()?'disabled':''}>${e(t('使用当前聊天设置','Use current chat settings'))}</button><button class="flat" data-action="reload">${e(t('取消','Cancel'))}</button></div>${state.newChatDefaultsPending?`<div class="state-card">${e(t('已有连接需要重开 Codex 才能加载新聊天默认功能。','Restart Codex to load defaults support in older connections.'))}</div>`:''}</div>`;}
-function render(){if(mode==='tray'){renderTray();return;}const oldMain=root.querySelector('.main'),same=oldMain?.dataset.view===view,open=same?[...oldMain.querySelectorAll('details')].map((d,i)=>d.open?i:-1).filter(i=>i>=0):[],scroll=same?oldMain.scrollTop:0;root.innerHTML=`<div class="shell" style="--sidebar-width:${visibleSidebarWidth()}px">${sidebar()}<main class="main" id="main-content" data-view="${view}">${view==='stats'?statsPage():view==='defaults'?defaultsPage():chatPage()}</main></div>`;const newMain=root.querySelector('.main');for(const [i,d]of [...newMain.querySelectorAll('details')].entries())if(open.includes(i))d.open=true;newMain.scrollTop=scroll;bindSliders();bindSidebar();if(view==='stats'&&stats)drawCharts();}
+function render(){if(mode==='tray'){renderTray();return;}if(view!=='settings'&&shortcutRecording)finishShortcutRecording();const oldMain=root.querySelector('.main'),same=oldMain?.dataset.view===view,open=same?[...oldMain.querySelectorAll('details')].map((d,i)=>d.open?i:-1).filter(i=>i>=0):[],scroll=same?oldMain.scrollTop:0;root.innerHTML=`<div class="shell" style="--sidebar-width:${visibleSidebarWidth()}px">${sidebar()}<main class="main" id="main-content" data-view="${view}">${preferences.demo?demoBanner():''}${view==='settings'?settingsPage():view==='stats'?statsPage():view==='defaults'?defaultsPage():chatPage()}</main></div>`;const newMain=root.querySelector('.main');for(const [i,d]of [...newMain.querySelectorAll('details')].entries())if(open.includes(i))d.open=true;newMain.scrollTop=scroll;bindSliders();bindSidebar();if(view==='stats'&&stats)drawCharts();}
+function demoBanner(){return `<div class="demo-banner row between"><div><strong>${e(t('合成数据预览 · 3 个示例聊天','Preview · 3 sample chats'))}</strong><p class="tiny">${e(t('这里不读取真实聊天；切换到本地模式可查看你的聊天。','Preview does not read real chats. Switch to local mode to see your chats.'))}</p></div><button class="small" data-action="open-live">${e(t('查看真实聊天','View real chats'))} ↗</button></div>`;}
+function settingsPage(){
+  const shortcut=preferences.shortcut||{accelerator:DEFAULT_SHORTCUT,enabled:true},status=!shortcut.enabled?t('已关闭','Disabled'):shortcut.inactive?t('当前未注册系统快捷键','System shortcut not registered'):shortcut.registered?t('快捷键已生效','Shortcut active'):t(shortcut.error||'快捷键尚未注册','Shortcut is not registered');
+  return `<div class="content"><div class="heading"><h1>${e(t('设置','Settings'))}</h1><button class="small" data-action="back">${e(t('返回聊天','Back to chat'))}</button></div><section class="card stack"><div class="row between"><h2>${e(t('唤起主窗口','Show main window'))}</h2><label class="row tiny"><span>${e(t('启用全局快捷键','Enable global shortcut'))}</span><input id="shortcut-enabled" class="switch" type="checkbox" ${shortcutEnabled?'checked':''}></label></div><p class="muted">${e(t('默认 Ctrl + Shift + M，可自定义。','Default: Ctrl + Shift + M. You can customize it.'))}</p><label class="stack tiny" for="shortcut-input">${e(t('快捷键','Shortcut'))}<input id="shortcut-input" type="text" class="shortcut-input ${shortcutRecording?'recording':''}" value="${e(shortcutRecording?t('按下组合键…','Press a key combination…'):shortcutLabel(shortcutDraft))}" ${shortcutRecording?'readonly':''} spellcheck="false" autocomplete="off"></label><div class="row wrap"><button data-action="shortcut-record">${e(shortcutRecording?t('取消录制','Cancel recording'):t('录制快捷键','Record shortcut'))}</button><button data-action="shortcut-reset">${e(t('恢复默认','Restore default'))}</button><span class="grow"></span><button class="primary" data-action="shortcut-save">${e(t('保存设置','Save settings'))}</button></div><div class="state-card ${shortcut.error?'error':''}" role="status">${e(status)}</div><p class="tiny muted">${e(t('可直接输入 Ctrl+Alt+K 等组合，或录制按键。按 Esc 取消录制。','Type a combination such as Ctrl+Alt+K, or record it. Press Esc to cancel recording.'))}</p><p class="tiny muted">${e(t('管理器驻留系统托盘时生效；完全退出后不再响应。','Works while the manager is running in the system tray. It stops when the manager exits.'))}</p>${preferences.demo?`<p class="tiny demo-notice">${e(t('预览设置与真实模式分开；请在真实模式中保存常用快捷键。','Preview preferences are separate. Save your shortcut in local mode for regular use.'))}</p>`:''}</section></div>`;
+}
+function openSettings(){view='settings';dirty=false;hover=pinned=null;shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;shortcutDirty=false;render();}
+function finishShortcutRecording(){shortcutRecording=false;api.invoke('shortcut-recording',{active:false}).catch(()=>{});const field=document.getElementById('shortcut-input');if(field){field.readOnly=false;field.value=shortcutLabel(shortcutDraft);field.classList.remove('recording');}const button=root.querySelector('[data-action="shortcut-record"]');if(button)button.textContent=t('录制快捷键','Record shortcut');}
 function bindSidebar(){
   const side=root.querySelector('.sidebar');if(!side||side.querySelector('.sidebar-resizer'))return;
   const handle=document.createElement('div');handle.className='sidebar-resizer';handle.tabIndex=0;handle.setAttribute('role','separator');handle.setAttribute('aria-orientation','vertical');handle.setAttribute('aria-label',t('调整侧栏宽度','Resize sidebar'));side.append(handle);
@@ -98,20 +108,46 @@ function statsBody(){const cost=stats.cost||{},max=Math.max(1,stats.inputTokens|
 function drawCharts(){
   const container=document.querySelector('#charts');if(!container||!stats)return;
   timeline=timelineData(stats.responses||[],stats.timelineEvents||[],{period});
-  const w=720,h=130,pad=8;
-  const plot=(name,series)=>{const max=Math.max(1,...series.flatMap(s=>s.points.map(p=>p.value))),paths=series.map(s=>{const groups=new Map();for(const p of s.points){if(!groups.has(p.series))groups.set(p.series,[]);groups.get(p.series).push(p);}return [...groups.values()].map(points=>`<path stroke="${s.color}" d="${points.map((p,i)=>(i?'L':'M')+((p.position/timeline.upperBound)*(w-2*pad)+pad).toFixed(2)+','+(h-20-p.value/max*(h-30)).toFixed(2)).join(' ')}"/>`).join('');}).join('');return `<div class="plot" data-plot="${name}"><span class="axis">${e(name==='speed'?t('生成速度 · tokens/s','Generation · tokens/s'):t('输入与缓存 · tokens','Input and cache · tokens'))} · ${e(k(max))}</span><svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="${e(name==='speed'?t('生成速度趋势','Generation speed trend'):t('输入和缓存趋势','Input and cache trend'))}" role="img">${[30,65,100].map(y=>`<line class="chart-grid" x1="8" y1="${y}" x2="712" y2="${y}"/>`).join('')}${paths}</svg><i class="chart-cursor"></i></div>`;};
-  container.innerHTML=plot('speed',[{points:timeline.speed,color:'#6d9dff'}])+plot('cache',[{points:timeline.input,color:'#aaa'},{points:timeline.cache,color:'#78b8cf'}])+`<div class="chart-label"><span>● ${e(t('输入','Input'))}</span><span style="color:#78b8cf">● ${e(t('缓存读取','Cached reads'))}</span></div><div class="plot events-plot" data-plot="events">${timeline.buckets.flatMap(bucket=>[['user_input',bucket.users,6],['final',bucket.finals,20],['compaction',bucket.compactions,10]].filter(([,count])=>count>0).map(([type,count,top])=>`<i class="event-marker ${type}" style="left:${bucket.position/timeline.upperBound*100}%;top:${top}px" title="${e(type)} · ${count}"></i>`)).join('')}<i class="chart-cursor"></i></div>`;
+  const {width:w,height:h,padding}=timelinePlot;
+  const plot=(name,series)=>{
+    const max=Math.max(1,...series.flatMap(s=>s.points.map(p=>p.value)));
+    const paths=series.map(s=>{
+      const groups=new Map();for(const point of s.points){if(!groups.has(point.series))groups.set(point.series,[]);groups.get(point.series).push(point);}
+      return [...groups.values()].map(points=>`<path data-series="${s.key}" stroke="${s.color}" d="${points.map((point,i)=>(i?'L':'M')+timelineX(point.position,timeline.upperBound).toFixed(2)+','+(h-20-point.value/max*(h-30)).toFixed(2)).join(' ')}"/>`).join('');
+    }).join('');
+    const dots=series.map(s=>`<circle class="chart-selection-point" data-measure="${s.key}" r="3.5" stroke="${s.color}" visibility="hidden"/>`).join('');
+    return `<div class="plot" data-plot="${name}" data-maximum="${max}"><span class="axis">${e(name==='speed'?t('生成速度 · tokens/s','Generation · tokens/s'):t('输入与缓存 · tokens','Input and cache · tokens'))} · ${e(k(max))}</span><svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="${e(name==='speed'?t('生成速度趋势','Generation speed trend'):t('输入和缓存趋势','Input and cache trend'))}" role="img">${[30,65,100].map(y=>`<line class="chart-grid" x1="${padding}" y1="${y}" x2="${w-padding}" y2="${y}"/>`).join('')}${paths}${dots}</svg><i class="chart-cursor"></i></div>`;
+  };
+  container.innerHTML=plot('speed',[{key:'speed',points:timeline.speed,color:'#6d9dff'}])+plot('cache',[{key:'input',points:timeline.input,color:'#aaa'},{key:'cache',points:timeline.cache,color:'#78b8cf'}])+`<div class="chart-label"><span>● ${e(t('输入','Input'))}</span><span style="color:#78b8cf">● ${e(t('缓存读取','Cached reads'))}</span></div><div class="plot events-plot" data-plot="events">${timeline.buckets.flatMap(bucket=>[['user_input',bucket.users,6],['final',bucket.finals,20],['compaction',bucket.compactions,10]].filter(([,count])=>count>0).map(([type,count,top])=>`<i class="event-marker ${type}" data-bucket="${bucket.id}" style="left:${timelineX(bucket.position,timeline.upperBound,100)}%;top:${top}px" title="${e(type)} · ${count}"></i>`)).join('')}<i class="chart-cursor"></i></div>`;
   let pending=null,frame=null;
-  const select=(plot,event)=>{const rect=plot.getBoundingClientRect(),fraction=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),bucket=nearestBucket(timeline,fraction*timeline.upperBound);if(pinned==null){hover=bucket;updateChartSelection();}};
+  const select=(plot,event)=>{
+    const rect=plot.getBoundingClientRect(),position=timelinePosition(event.clientX-rect.left,timeline.upperBound,rect.width);
+    if(pinned==null){hover=position==null?null:nearestBucket(timeline,position);updateChartSelection();}
+  };
   for(const plot of container.querySelectorAll('[data-plot]')){
     plot.addEventListener('pointermove',event=>{pending={plot,event};if(frame==null)frame=requestAnimationFrame(()=>{frame=null;if(pending)select(pending.plot,pending.event);pending=null;});});
     plot.addEventListener('pointerleave',()=>{if(frame!=null)cancelAnimationFrame(frame);frame=null;pending=null;hover=null;if(pinned==null)updateChartSelection();});
     plot.addEventListener('click',event=>{select(plot,event);pinned=pinned==null?hover:null;page=0;updateChartSelection();});
   }
-  document.querySelector('#raw-records')?.addEventListener('toggle',()=>renderRaw());
-  updateChartSelection();
+  document.querySelector('#raw-records')?.addEventListener('toggle',()=>renderRaw());updateChartSelection();
 }
-function updateChartSelection(){const bucket=pinned??hover,b=timeline?.buckets[bucket],detail=document.querySelector('#chart-detail');for(const cursor of document.querySelectorAll('.chart-cursor')){cursor.style.display=b?'block':'none';if(b){const entry=timeline.entries[b.start];cursor.style.left=(entry?.position??0)/timeline.upperBound*100+'%';}}if(!detail)return;if(!b){detail.innerHTML=`<span class="muted">${e(t('悬停查看，点击固定','Hover to inspect; click to pin'))}</span>`;return;}detail.innerHTML=`<h3>${e(b.firstResponse==null?t('对话事件','Conversation events'):t('响应 #{0}–#{1}','Responses #{0}–#{1}',b.firstResponse,b.lastResponse))} ${pinned!=null?'⌖':''}</h3><div class="row wrap tiny"><span>${e(t('生成速度','Generation speed'))}: ${b.speed==null?'—':amount(b.speed)} t/s</span><span>${e(t('输入','Input'))}: ${e(k(b.inputMean))}</span><span>${e(t('缓存读取','Cached reads'))}: ${e(k(b.cacheMean))}</span><span>${e(t('输出','Output'))}: ${e(k(b.outputSamples?b.output:null))}</span><span>${e(t('压缩','Compactions'))}: ${b.compactions}</span></div><p class="tiny muted">${e(b.models.join(' · '))}${b.zeros?' · '+e(t('日志零缓存值未独立证实','Zero cache values are unverified')):''}</p>`;if(document.querySelector('#raw-records')?.open)renderRaw();}
+function updateChartSelection(){
+  const bucket=pinned??hover,b=timeline?.buckets[bucket],detail=document.querySelector('#chart-detail');
+  for(const cursor of document.querySelectorAll('.chart-cursor')){
+    cursor.style.display=b?'block':'none';if(b)cursor.style.left=timelineX(b.position,timeline.upperBound,100)+'%';
+  }
+  for(const circle of document.querySelectorAll('.chart-selection-point')){
+    const point=b?timeline[circle.dataset.measure]?.find(point=>point.id===b.id):null;
+    circle.setAttribute('visibility',point?'visible':'hidden');if(!point)continue;
+    const maximum=Number(circle.closest('[data-plot]').dataset.maximum),h=timelinePlot.height;
+    circle.setAttribute('cx',String(timelineX(point.position,timeline.upperBound)));
+    circle.setAttribute('cy',String(h-20-point.value/maximum*(h-30)));
+  }
+  if(!detail)return;
+  if(!b){detail.innerHTML=`<span class="muted">${e(t('悬停查看，点击固定','Hover to inspect; click to pin'))}</span>`;return;}
+  detail.innerHTML=`<h3>${e(b.firstResponse==null?t('对话事件','Conversation events'):t('响应 #{0}–#{1}','Responses #{0}–#{1}',b.firstResponse,b.lastResponse))} ${pinned!=null?'⌖':''}</h3><div class="row wrap tiny"><span>${e(t('生成速度','Generation speed'))}: ${b.speed==null?'—':amount(b.speed)} t/s</span><span>${e(t('输入','Input'))}: ${e(k(b.inputMean))}</span><span>${e(t('缓存读取','Cached reads'))}: ${e(k(b.cacheMean))}</span><span>${e(t('输出','Output'))}: ${e(k(b.outputSamples?b.output:null))}</span><span>${e(t('压缩','Compactions'))}: ${b.compactions}</span></div><p class="tiny muted">${e(b.models.join(' · '))}${b.zeros?' · '+e(t('日志零缓存值未独立证实','Zero cache values are unverified')):''}</p>`;
+  if(document.querySelector('#raw-records')?.open)renderRaw();
+}
 function renderRaw(){const node=document.querySelector('#raw-page');if(!node||!timeline)return;const bucket=pinned??hover??0,b=timeline.buckets[bucket];if(!b){node.textContent=t('暂无记录','No records');return;}const entries=timeline.entries.slice(b.start,b.end),total=Math.ceil(entries.length/20);page=Math.max(0,Math.min(page,total-1));node.innerHTML=entries.slice(page*20,page*20+20).map(entry=>`<details class="raw-entry"><summary>${e(entry.response?t('响应 #{0}','Response #{0}',entry.response.index):t(entry.event.kind))} · ${e(entry.response?.config?.model||entry.eventType)}</summary><pre>${e(JSON.stringify(entry.response||entry.event,null,2))}</pre></details>`).join('')+`<div class="row between"><button class="small" data-action="raw-prev" ${page===0?'disabled':''}>←</button><span class="tiny muted">${page+1} / ${Math.max(1,total)}</span><button class="small" data-action="raw-next" ${page+1>=total?'disabled':''}>→</button></div>`;}
 function snapshotInfo(){
   const u=stats.unclassified||{},at=stats.snapshotAt?new Date(stats.snapshotAt).toLocaleString(preferences.language==='zh'?'zh-CN':'en-US'):'';
@@ -120,9 +156,20 @@ function snapshotInfo(){
 async function loadStats(force=false){if(view!=='stats'||!selected||document.hidden&&!force)return;const id=selected;try{const result=await api.invoke('statistics',{id,refresh:force});if(id!==selected||view!=='stats'||(hover!=null||pinned!=null)&&!force)return;lastStats=Date.now();const json=JSON.stringify(result);if(json===statsJSON)return;statsJSON=json;stats=result;if(hover!=null||pinned!=null)return;render();}catch(error){notify(error.message);const node=document.querySelector('#stats-body');if(node&&!stats)node.innerHTML=`<div class="banner-error">${e(error.message)}</div>`;}}
 function selectChat(id){selected=id;view='chat';draft=threadDraft(current());dirty=false;stats=null;statsJSON='';pinned=hover=null;render();}
 function loadDraft(){if(view==='defaults'){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else draft=threadDraft(current());dirty=false;}
-async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');state=next;if(!selected||!current())selected=state.threads[0]?.id??null;if(!dirty)loadDraft();if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select')){if(view==='stats'&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(view==='stats'&&auto&&Date.now()-lastStats>10000&&hover==null&&pinned==null)await loadStats();}catch(error){if(state){state={...state,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
+async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(view==='settings'&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');state=next;if(!selected||!current())selected=state.threads[0]?.id??null;if(!dirty)loadDraft();if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select')){if(view==='stats'&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(view==='stats'&&auto&&Date.now()-lastStats>10000&&hover==null&&pinned==null)await loadStats();}catch(error){if(state){state={...state,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
   try{
+    if(action==='settings'){openSettings();return;}
+    if(action==='shortcut-record'){
+      if(shortcutRecording){finishShortcutRecording();return;}
+      await api.invoke('shortcut-recording',{active:true});shortcutRecording=true;render();document.getElementById('shortcut-input')?.focus();return;
+    }
+    if(action==='shortcut-reset'){finishShortcutRecording();shortcutDraft=DEFAULT_SHORTCUT;shortcutEnabled=true;shortcutDirty=true;render();return;}
+    if(action==='shortcut-save'){
+      finishShortcutRecording();await api.invoke('shortcut-recording',{active:false});
+      const saved=await run('shortcut-save',{accelerator:normalizeShortcut(shortcutDraft),enabled:shortcutEnabled});
+      preferences.shortcut=saved;shortcutDraft=saved.accelerator;shortcutDirty=false;render();notify(saved.inactive?t('预览设置已保存；真实模式中需单独保存。','Preview preference saved. Save it separately in local mode.'):t('快捷键设置已保存','Shortcut settings saved'));return;
+    }
     if(action==='select'){selectChat(button.dataset.id);return;}
     if(action==='target'){interactionId=button.dataset.target;document.querySelector(`[data-range="${interactionId}"]`)?.focus();updateDraftDOM();return;}
     if(action==='step'){setDraft(button.dataset.target,draft[button.dataset.target]+Number(button.dataset.step),view==='defaults'?defaultModel():current()?.modelMetadata);return;}
@@ -145,30 +192,60 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action==='tray-cancel'){const chat=state.threads.find(t=>t.id===button.dataset.id),d=threadDraft(chat);trayDrafts.set(chat.id,d);updateTrayDraft(chat.id,d,chat.modelMetadata);return;}
     if(action==='diagnostics'){const data=await api.invoke('diagnostics');notify(JSON.stringify(data));return;}
     if(action==='retry'){await refresh();return;}
-    if(['open-main','open-codex','quit'].includes(action))await api.invoke(action);
+    if(['open-main','open-codex','quit','open-live'].includes(action))await api.invoke(action);
   }catch(error){notify(error.message);}
 });
 root.addEventListener('change',async event=>{const target=event.target;try{
   if(target.id==='language'){await api.invoke('language',{selection:target.value});preferences=await api.invoke('preferences');render();}
+  if(target.id==='shortcut-enabled'){shortcutEnabled=target.checked;shortcutDirty=true;}
   if(target.id==='extension'){await run('extension',{enabled:target.checked});dirty=false;await refresh();render();}
   if(target.id==='reserve'||target.id==='retained'){draft={...draft,[target.id==='reserve'?'reserve':'retainedFloor']:Math.max(0,Number(target.value)||0)};dirty=true;updateDraftDOM();}
   if(target.id==='auto-stats')auto=target.checked;
   if(target.id==='smoothing'){period=Number(target.value);hover=pinned=null;drawCharts();}
 }catch{await refresh();}});
+root.addEventListener('input',event=>{if(event.target.id==='shortcut-input'&&!shortcutRecording){shortcutDraft=event.target.value;shortcutDirty=true;}});
+document.addEventListener('keydown',event=>{
+  if(!shortcutRecording)return;event.preventDefault();event.stopImmediatePropagation();
+  if(event.key==='Escape'){finishShortcutRecording();return;}
+  try{const accelerator=shortcutFromEvent(event);if(!accelerator)return;shortcutDraft=accelerator;shortcutDirty=true;finishShortcutRecording();}catch(error){notify(error.message);}
+},true);
 document.addEventListener('keydown',event=>{if(event.key==='Escape'){if(mode==='tray')api.invoke('hide');else if(pinned!=null){pinned=null;hover=null;updateChartSelection();}else if(view!=='chat'){view='chat';loadDraft();render();}}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='m'){event.preventDefault();api.invoke('open-main');}});
 function visibility(){if(mode==='tray'&&document.hidden)renderTray(true);document.body.classList.toggle('hidden',document.hidden);document.body.classList.toggle('focused',document.hasFocus());if(!document.hidden)refresh();}
 document.addEventListener('visibilitychange',visibility);window.addEventListener('focus',visibility);window.addEventListener('blur',visibility);visibility();
+window.addEventListener('blur',()=>{if(shortcutRecording)finishShortcutRecording();});
 window.addEventListener('resize',()=>root.querySelector('.shell')?.style.setProperty('--sidebar-width',visibleSidebarWidth()+'px'));
 api.onSelect(id=>selectChat(id));api.onRefresh(()=>refresh());
+api.onSettings(()=>openSettings());
+function chartGeometryCheck(){
+  const container=document.getElementById('charts'),before=container.style.width;let maxError=0,samples=0;
+  for(const width of [320,704,1080]){
+    container.style.width=width+'px';
+    for(const bucket of [timeline.buckets[0],timeline.buckets[Math.floor(timeline.buckets.length/2)],timeline.buckets.at(-1)]){
+      if(!bucket)continue;hover=bucket.id;pinned=null;updateChartSelection();
+      for(const plot of container.querySelectorAll('[data-plot]')){
+        const rect=plot.getBoundingClientRect(),cursor=plot.querySelector('.chart-cursor').getBoundingClientRect(),x=cursor.left+cursor.width/2;
+        maxError=Math.max(maxError,Math.abs(x-(rect.left+timelineX(bucket.position,timeline.upperBound,rect.width))));
+        for(const point of plot.querySelectorAll('.chart-selection-point[visibility="visible"]')){const p=point.getBoundingClientRect();maxError=Math.max(maxError,Math.abs(x-(p.left+p.width/2)));samples++;}
+        for(const marker of plot.querySelectorAll(`[data-bucket="${bucket.id}"]`)){const p=marker.getBoundingClientRect();maxError=Math.max(maxError,Math.abs(x-(p.left+p.width/2)));samples++;}
+      }
+    }
+  }
+  container.style.width=before;hover=pinned=null;updateChartSelection();return {ok:samples>0&&maxError<.75,maxError,samples};
+}
 window.__contextSmoke=async()=>{
-  const initial=!!state&&!!root.querySelector(mode==='tray'?'.tray-shell':'.shell')&&!!root.querySelector('[data-slider]');let defaults=true,charts=true;
+  const initial=!!state&&!!root.querySelector(mode==='tray'?'.tray-shell':'.shell')&&!!root.querySelector('[data-slider]');let defaults=true,charts=true,settings=true,geometry={ok:true},radius=true;
   if(mode==='main'&&preferences.demo){
+    radius=['[data-action="apply"]','[data-action="preflight"]','[data-action="clear"]','[data-action="stats"]','.pill','#language','.sidebar-footer>button'].every(selector=>[...root.querySelectorAll(selector)].every(node=>getComputedStyle(node).borderTopLeftRadius==='10px'));
+    radius=radius&&root.querySelector('[data-action="stats"]').getBoundingClientRect().height<48;
     root.querySelector('[data-action="defaults"]').click();defaults=root.querySelectorAll('[data-range]').length===2;
     selectChat(state.threads[0].id);root.querySelector('[data-action="stats"]').click();
     const deadline=Date.now()+5000;while(!document.querySelector('[data-plot]')&&Date.now()<deadline)await new Promise(r=>setTimeout(r,30));
-    charts=document.querySelectorAll('[data-plot]').length===3&&!!timeline?.entries.length;selectChat(state.threads[0].id);
+    charts=document.querySelectorAll('[data-plot]').length===3&&!!timeline?.entries.length;if(charts)geometry=chartGeometryCheck();
+    openSettings();settings=!!document.querySelector('#shortcut-input')&&document.querySelector('#shortcut-input').value==='Ctrl + Shift + M'&&!!document.querySelector('[data-action="shortcut-save"]');
+    const saved=await api.invoke('shortcut-save',{accelerator:'Control+Alt+K',enabled:true});preferences=await api.invoke('preferences');settings=settings&&saved.accelerator==='Control+Alt+K'&&preferences.shortcut.accelerator==='Control+Alt+K'&&preferences.shortcut.inactive;
+    await api.invoke('shortcut-save',{accelerator:DEFAULT_SHORTCUT,enabled:true});preferences=await api.invoke('preferences');selectChat(state.threads[0].id);
   }
-  return {ok:initial&&defaults&&charts,mode,chats:state?.threads.length,defaults,charts,isolated:typeof window.require==='undefined'};
+  return {ok:initial&&defaults&&charts&&settings&&geometry.ok&&radius,mode,chats:state?.threads.length,defaults,charts,settings,geometry,radius,isolated:typeof window.require==='undefined'};
 };
 await refresh();
 setInterval(()=>{if(!document.hidden&&!dragging&&hover==null)refresh();},2000);

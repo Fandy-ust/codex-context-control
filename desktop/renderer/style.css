@@ -4,3 +4,11 @@
 :root .sidebar{position:relative}
 :root .sidebar-resizer{display:block;position:absolute;right:-3px;top:0;bottom:0;width:6px;cursor:col-resize;touch-action:none;z-index:5}
 .sidebar-resizer:hover{background:#ffffff0b}.sidebar-resizer:focus-visible{background:#4580fc66;outline:none}
+html:root{--radius-control:10px;--radius-card:26px;--radius:var(--radius-card)}
+body button,body select,body input[type=number],body input[type=text],body .pill,body .actions .primary,body .range-value,body .chat-button,body .tray-top{border-radius:var(--radius-control)}
+.heading{align-items:flex-start}.heading>button{align-self:flex-start;flex-shrink:0}
+.chart-cursor{transform:translateX(-50%)}.chart-selection-point{fill:var(--surface);stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:none}
+input[type=text]{background:#ffffff08;color:inherit;border:1px solid var(--line);padding:10px 12px;min-width:0;width:100%}
+.shortcut-input{max-width:420px;font-size:18px;font-variant-numeric:tabular-nums}.shortcut-input.recording{outline:2px solid var(--blue);outline-offset:2px}
+.demo-banner{max-width:850px;margin:0 auto 22px;border:1px solid #a27fd444;border-radius:var(--radius-control);background:#a27fd412;color:#cdb4e8;padding:12px 14px;gap:16px}.demo-banner p{margin:4px 0 0}.demo-banner button{flex-shrink:0}
+.preview-pill{font-size:10px;color:#c9a7ed;background:#a27fd41c;padding:2px 6px;border-radius:var(--radius-control)}

@@ -1,5 +1,12 @@
 # Changes
 
+## Unreleased — Windows UI refinements
+
+- Align trend cursors, selected points, event markers and pointer hit testing with one padded horizontal scale.
+- Add configurable global show-window shortcut, defaulting to Ctrl+Shift+M, with recording, conflict handling and saved preferences.
+- Unify control corners at 10px and prevent the information button from stretching with the heading.
+- Make the three-chat synthetic preview explicit and add an entry to open real local chats.
+
 
 ## 0.17.2 — Complete OTA cleanup
 
