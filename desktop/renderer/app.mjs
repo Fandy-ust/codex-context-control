@@ -56,19 +56,31 @@ function slider(value,model,{single=false,id='main'}={}){
   const maxMode=model.context_ceiling===920000&&value.window===920000;
   return `<div class="slider" data-slider="${e(id)}" data-single="${single}" style="--motion-duration:${sliderMotion(value,max).duration.toFixed(3)}s"><div class="track"><div class="fill ${maxMode?'max-flow':''}" style="width:${single?white:blue}%"></div>${single?'':`<div class="headroom-fill" style="left:${blue}%;width:${Math.max(0,white-blue)}%"></div>`}<span class="particles">${single?'':particleMarkup(value,max)}</span></div>${single?'':`<i class="thumb compact ${interactionId==='compact'?'selected':''}" style="left:${blue}%"></i>`}<i class="thumb ${interactionId!=='compact'?'selected':''}" style="left:${white}%"></i>${single?'':`<input class="a11y-range" data-range="compact" aria-label="${e(t('压缩触发','Compression trigger'))}" aria-valuetext="${k(value.compact)}" type="range" min="1000" max="${Math.max(1000,limit.compact)}" step="1000" value="${value.compact}">`}<input class="a11y-range" data-range="window" aria-label="${e(t('上下文窗口','Context window'))}" aria-valuetext="${k(value.window)}" type="range" min="${single?2000:1000}" max="${max}" step="1000" value="${value.window}"><span class="keyboard-focus">${e(t('使用左右方向键调节','Use arrow keys to adjust'))}</span></div>`;
 }
+// Keep random profiles and a focus-aware clock across automatic DOM refreshes.
+// CSS animates every frame; JS only sets up particles when controls change.
+const particleProfiles=[];
+const particleClock={elapsed:0,at:performance.now(),running:!document.hidden&&document.hasFocus()};
+function particleTime(){return particleClock.elapsed+(particleClock.running?performance.now()-particleClock.at:0);}
+function particleStyle(index,motion){
+  const p=particleProfiles[index]??=({phase:Math.random(),pace:.85+Math.random()*.6,top:4+Math.random()*15,size:1.7+Math.random()*1.4,opacity:.3+Math.random()*.5,sway:5+Math.random()*9,driftA:-3+Math.random()*6,driftB:-3+Math.random()*6});
+  const duration=motion.duration*p.pace;
+  return `--particle-duration:${duration.toFixed(3)}s;--particle-delay:-${(p.phase*duration).toFixed(3)}s;--drift-duration:${p.sway.toFixed(3)}s;--drift-delay:-${(p.phase*p.sway).toFixed(3)}s;--particle-opacity:${p.opacity.toFixed(3)};--drift-a:${p.driftA.toFixed(2)}px;--drift-b:${p.driftB.toFixed(2)}px;top:${p.top.toFixed(2)}px;width:${p.size.toFixed(2)}px;height:${p.size.toFixed(2)}px`;
+}
+function syncParticleTime(slider){
+  const time=particleTime();
+  for(const node of slider.querySelectorAll('.particles i,.max-flow'))for(const animation of node.getAnimations())animation.currentTime=time;
+}
 function particleMarkup(value,maximum){
   const motion=sliderMotion(value,maximum);
-  return Array.from({length:motion.count},(_,i)=>`<i style="animation-delay:-${(i*motion.duration/motion.count).toFixed(3)}s;animation-duration:${motion.duration.toFixed(3)}s;top:${5+i%14}px"></i>`).join('');
+  return Array.from({length:motion.count},(_,i)=>`<i style="${particleStyle(i,motion)}"></i>`).join('');
 }
 function updateParticles(slider,value,maximum){
   const motion=sliderMotion(value,maximum);slider.style.setProperty('--motion-duration',motion.duration.toFixed(3)+'s');
   const particles=slider.querySelector('.particles');if(!particles||slider.dataset.single==='true')return;
   while(particles.children.length<motion.count)particles.append(document.createElement('i'));
   while(particles.children.length>motion.count)particles.lastElementChild.remove();
-  for(const [i,particle]of [...particles.children].entries()){
-    particle.style.animationDuration=motion.duration.toFixed(3)+'s';
-    particle.style.animationDelay=-(i*motion.duration/motion.count).toFixed(3)+'s';particle.style.top=(5+i%14)+'px';
-  }
+  for(const [i,particle]of [...particles.children].entries())particle.style.cssText=particleStyle(i,motion);
+  syncParticleTime(slider);
 }
 function budgetCard(value,model,options={}){
   if(options.defaults)return settingsBudgetCard(value,model,options);
@@ -224,6 +236,7 @@ function updateDraftDOM(){
 }
 function bindSliders(){
   for(const slider of (settingsOpen?editorRoot():document).querySelectorAll('[data-slider]')){
+    syncParticleTime(slider);
     const id=slider.dataset.slider,single=slider.dataset.single==='true';let target=null;
     const data=()=>id==='main'?{value:draft,model:editingDefaults()?defaultModel():current()?.modelMetadata}: {value:trayDrafts.get(id),model:state.threads.find(t=>t.id===id)?.modelMetadata};
     const move=event=>{const {value,model}=data();if(!value||!model)return;const rect=slider.getBoundingClientRect(),maximum=draftLimits(model,value.window,value.reserve).maximum,n=Math.round(Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width))*maximum/1000)*1000;
@@ -432,7 +445,7 @@ document.addEventListener('keydown',event=>{
   else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
 },true);
 document.addEventListener('keydown',event=>{if(event.key==='Escape'){if(mode==='tray')api.invoke('hide');else if(pinned!=null){pinned=null;hover=null;updateChartSelection();}else if(view!=='chat'){view='chat';loadDraft();render();}}});
-function visibility(){if(mode==='tray'&&document.hidden)renderTray(true);document.body.classList.toggle('hidden',document.hidden);document.body.classList.toggle('focused',document.hasFocus());if(!document.hidden)refresh();}
+function visibility(){const now=performance.now();if(particleClock.running)particleClock.elapsed+=now-particleClock.at;particleClock.at=now;particleClock.running=!document.hidden&&document.hasFocus();if(mode==='tray'&&document.hidden)renderTray(true);document.body.classList.toggle('hidden',document.hidden);document.body.classList.toggle('focused',document.hasFocus());if(!document.hidden)refresh();}
 document.addEventListener('visibilitychange',visibility);window.addEventListener('focus',visibility);window.addEventListener('blur',visibility);visibility();
 window.addEventListener('blur',()=>{if(shortcutRecording)finishShortcutRecording();});
 window.addEventListener('resize',()=>root.querySelector('.shell')?.style.setProperty('--sidebar-width',visibleSidebarWidth()+'px'));

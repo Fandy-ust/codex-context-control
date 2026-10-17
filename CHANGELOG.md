@@ -5,6 +5,7 @@
 - Put context details beside the saved budget summary and remove the redundant instruction below the slider.
 - Use equal-sized main action buttons, with Apply to this chat to the right of Stop auto apply.
 - Reduce main-page spacing at the default window height so budget actions are easier to reach.
+- Slow slider particles with independent randomized speed, position, size and gentle drift; preserve 80/20 budget weighting and animation continuity across refreshes.
 
 ## 0.19.1 — Apple-led cross-platform interaction
 
