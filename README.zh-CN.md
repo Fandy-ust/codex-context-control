@@ -1,6 +1,6 @@
 # Context Manager
 
-本整合分支统一为 **0.19.4**，共用业务核心，分别构建 Windows 原生安装 EXE 与 macOS SwiftUI 安装包。[双平台构建说明](docs/CROSS_PLATFORM_BUILD.md)。两端使用相同设置结构，Mac 保留 Apple 原生材质。
+本整合分支统一为 **0.19.5**，共用业务核心，分别构建 Windows 原生安装 EXE 与 macOS SwiftUI 安装包。[双平台构建说明](docs/CROSS_PLATFORM_BUILD.md)。两端使用相同设置结构，Mac 保留 Apple 原生材质。
 
 本适配分支新增 **Windows 11 x64 系统托盘预览版**，共用现有预算与统计核心。[安装与构建](docs/INSTALL_WINDOWS.md) · [验证结果](docs/WINDOWS_COMPATIBILITY.md) · [UI 验收](docs/WINDOWS_UI_CHECKLIST.md)。Windows 包目前在本地构建，下面的公开下载仍为 macOS 版本。
 

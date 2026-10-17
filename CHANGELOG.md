@@ -1,5 +1,11 @@
 # Changes
 
+## 0.19.5 — Synchronized slider and progressive motion
+
+- Remove fill-width transitions so the blue fill, headroom and handles follow the same drag frame.
+- Accelerate particles progressively toward the right with the existing 80/20 budget weighting, keeping randomized drift and pacing.
+- Adjust playback speed without restarting phases, and batch animation reads instead of rewriting every particle during drag.
+
 ## 0.19.4 — Continuous trends and inline chart values
 
 - Join available chart measurements across missing intervals with straight lines on Windows and macOS.

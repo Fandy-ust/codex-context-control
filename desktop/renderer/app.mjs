@@ -7,7 +7,7 @@ import {translate} from '../../src/localization-core.mjs';
 import {trayState} from '../../src/tray-state.mjs';
 import {timelinePlot,timelineX,timelinePosition} from '../../src/timeline-scale.mjs';
 import {DEFAULT_SHORTCUT,shortcutLabel,shortcutFromEvent,normalizeShortcut} from '../../src/ui-shortcut.mjs';
-import {sliderMotion} from '../../src/slider-motion.mjs';
+import {sliderMotion,SLIDER_MOTION_SECONDS} from '../../src/slider-motion.mjs';
 import {selectedQuota,quotaWindows,quotaStale} from '../../src/quota-display.mjs';
 import {budgetView,chatView,detailsView,statisticsView,chartDetailView,chartTooltipView,rawRecordsView,trayChatView} from './apple-view.mjs';
 
@@ -55,32 +55,42 @@ function sidebar(){
 function slider(value,model,{single=false,id='main'}={}){
   const limit=draftLimits(model,value.window,value.reserve),max=limit?.maximum||1,white=value.window/max*100,blue=value.compact/max*100;
   const maxMode=model.context_ceiling===920000&&value.window===920000;
-  return `<div class="slider" data-slider="${e(id)}" data-single="${single}" style="--motion-duration:${sliderMotion(value,max).duration.toFixed(3)}s"><div class="track"><div class="fill ${maxMode?'max-flow':''}" style="width:${single?white:blue}%"></div>${single?'':`<div class="headroom-fill" style="left:${blue}%;width:${Math.max(0,white-blue)}%"></div>`}<span class="particles">${single?'':particleMarkup(value,max)}</span></div>${single?'':`<i class="thumb compact ${interactionId==='compact'?'selected':''}" style="left:${blue}%"></i>`}<i class="thumb ${interactionId!=='compact'?'selected':''}" style="left:${white}%"></i>${single?'':`<input class="a11y-range" data-range="compact" aria-label="${e(t('压缩触发','Compression trigger'))}" aria-valuetext="${k(value.compact)}" type="range" min="1000" max="${Math.max(1000,limit.compact)}" step="1000" value="${value.compact}">`}<input class="a11y-range" data-range="window" aria-label="${e(t('上下文窗口','Context window'))}" aria-valuetext="${k(value.window)}" type="range" min="${single?2000:1000}" max="${max}" step="1000" value="${value.window}"><span class="keyboard-focus">${e(t('使用左右方向键调节','Use arrow keys to adjust'))}</span></div>`;
+  return `<div class="slider" data-slider="${e(id)}" data-single="${single}" data-motion-rate="${sliderMotion(value,max).rate}" style="--motion-duration:${SLIDER_MOTION_SECONDS}s"><div class="track"><div class="fill ${maxMode?'max-flow':''}" style="width:${single?white:blue}%"></div>${single?'':`<div class="headroom-fill" style="left:${blue}%;width:${Math.max(0,white-blue)}%"></div>`}<span class="particles">${single?'':particleMarkup(value,max)}</span></div>${single?'':`<i class="thumb compact ${interactionId==='compact'?'selected':''}" style="left:${blue}%"></i>`}<i class="thumb ${interactionId!=='compact'?'selected':''}" style="left:${white}%"></i>${single?'':`<input class="a11y-range" data-range="compact" aria-label="${e(t('压缩触发','Compression trigger'))}" aria-valuetext="${k(value.compact)}" type="range" min="1000" max="${Math.max(1000,limit.compact)}" step="1000" value="${value.compact}">`}<input class="a11y-range" data-range="window" aria-label="${e(t('上下文窗口','Context window'))}" aria-valuetext="${k(value.window)}" type="range" min="${single?2000:1000}" max="${max}" step="1000" value="${value.window}"><span class="keyboard-focus">${e(t('使用左右方向键调节','Use arrow keys to adjust'))}</span></div>`;
 }
 // Keep random profiles and a focus-aware clock across automatic DOM refreshes.
 // CSS animates every frame; JS only sets up particles when controls change.
-const particleProfiles=[];
+const particleProfiles=[],motionTimelines=new Map(),initializedMotion=new WeakSet();
 const particleClock={elapsed:0,at:performance.now(),running:!document.hidden&&document.hasFocus()};
 function particleTime(){return particleClock.elapsed+(particleClock.running?performance.now()-particleClock.at:0);}
-function particleStyle(index,motion){
+function particleStyle(index){
   const p=particleProfiles[index]??=({phase:Math.random(),pace:.85+Math.random()*.6,top:4+Math.random()*15,size:1.7+Math.random()*1.4,opacity:.3+Math.random()*.5,sway:5+Math.random()*9,driftA:-3+Math.random()*6,driftB:-3+Math.random()*6});
-  const duration=motion.duration*p.pace;
+  const duration=SLIDER_MOTION_SECONDS*p.pace;
   return `--particle-duration:${duration.toFixed(3)}s;--particle-delay:-${(p.phase*duration).toFixed(3)}s;--drift-duration:${p.sway.toFixed(3)}s;--drift-delay:-${(p.phase*p.sway).toFixed(3)}s;--particle-opacity:${p.opacity.toFixed(3)};--drift-a:${p.driftA.toFixed(2)}px;--drift-b:${p.driftB.toFixed(2)}px;top:${p.top.toFixed(2)}px;width:${p.size.toFixed(2)}px;height:${p.size.toFixed(2)}px`;
 }
 function syncParticleTime(slider){
-  const time=particleTime();
-  for(const node of slider.querySelectorAll('.particles i,.max-flow'))for(const animation of node.getAnimations())animation.currentTime=time;
+  const now=particleTime(),rate=Number(slider.dataset.motionRate)||1,key=slider.dataset.slider;
+  let clock=motionTimelines.get(key);
+  if(!clock){clock={at:now,time:now*rate,rate};motionTimelines.set(key,clock);}
+  else{clock.time+=(now-clock.at)*clock.rate;clock.at=now;clock.rate=rate;}
+  // Read the animation list once after all DOM writes, rather than flushing
+  // styles for every particle. Change playback rate without seeking its phase.
+  for(const animation of slider.getAnimations({subtree:true})){
+    const drifting=animation.animationName==='particle-drift';
+    if(!drifting&&!['particle','max-flow'].includes(animation.animationName))continue;
+    if(!initializedMotion.has(animation)){animation.currentTime=drifting?now:clock.time;initializedMotion.add(animation);}
+    const nextRate=drifting?1:rate;
+    if(animation.playbackRate!==nextRate)animation.updatePlaybackRate(nextRate);
+  }
 }
 function particleMarkup(value,maximum){
   const motion=sliderMotion(value,maximum);
-  return Array.from({length:motion.count},(_,i)=>`<i style="${particleStyle(i,motion)}"></i>`).join('');
+  return Array.from({length:motion.count},(_,i)=>`<i style="${particleStyle(i)}"></i>`).join('');
 }
 function updateParticles(slider,value,maximum){
-  const motion=sliderMotion(value,maximum);slider.style.setProperty('--motion-duration',motion.duration.toFixed(3)+'s');
-  const particles=slider.querySelector('.particles');if(!particles||slider.dataset.single==='true')return;
-  while(particles.children.length<motion.count)particles.append(document.createElement('i'));
+  const motion=sliderMotion(value,maximum);slider.dataset.motionRate=String(motion.rate);
+  const particles=slider.querySelector('.particles');if(!particles||slider.dataset.single==='true'){syncParticleTime(slider);return;}
+  while(particles.children.length<motion.count){const particle=document.createElement('i');particle.style.cssText=particleStyle(particles.children.length);particles.append(particle);}
   while(particles.children.length>motion.count)particles.lastElementChild.remove();
-  for(const [i,particle]of [...particles.children].entries())particle.style.cssText=particleStyle(i,motion);
   syncParticleTime(slider);
 }
 function budgetCard(value,model,options={}){
