@@ -28,7 +28,7 @@ npm run build
 npm run package
 ```
 
-输出 `build/Context-Manager-0.19.1-windows-x64-Setup.exe`、ZIP 和 SHA-256。只分发 Setup.exe 即可。
+输出 `build/Context-Manager-0.19.2-windows-x64-Setup.exe`、ZIP 和 SHA-256。只分发 Setup.exe 即可。
 
 Apple Silicon Mac 上：
 

@@ -1,5 +1,11 @@
 # Changes
 
+## 0.19.2 — Compact Windows budget layout
+
+- Put context details beside the saved budget summary and remove the redundant instruction below the slider.
+- Use equal-sized main action buttons, with Apply to this chat to the right of Stop auto apply.
+- Reduce main-page spacing at the default window height so budget actions are easier to reach.
+
 ## 0.19.1 — Apple-led cross-platform interaction
 
 - Align Windows budget control order, percentage/window preset rows, model readiness, minimums and strict readback confirmation with the native Apple interface.
