@@ -16,6 +16,7 @@
     "dev:win": "node scripts/dev-win.mjs",
     "test:win:ui-smoke": "node scripts/dev-win.mjs --demo --smoke-test",
     "test:win:package": "node scripts/test-win-package.mjs",
+    "test:win:setup": "node scripts/test-win-package.mjs --standalone",
     "test:win:update": "node scripts/test-win-update.mjs",
     "install:win": "node scripts/install-win.mjs",
     "uninstall:win": "node scripts/install-win.mjs --uninstall",

@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {rcedit} from 'rcedit';
 import {powershell} from '../src/platform/index.mjs';
+import {compileWindowsInstaller} from './windows-installer.mjs';
 
 if(process.platform!=='win32')throw Error('Build Windows packages on Windows');
 const repo=fileURLToPath(new URL('../',import.meta.url)),pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
@@ -23,10 +24,11 @@ const images=JSON.parse(powershell('Add-Type -AssemblyName System.Drawing;$sourc
 const iconHeader=Buffer.alloc(6+images.length*16);iconHeader.writeUInt16LE(1,2);iconHeader.writeUInt16LE(images.length,4);let iconOffset=iconHeader.length;
 const iconImages=images.map((image,i)=>{const png=Buffer.from(image.data,'base64'),at=6+i*16;iconHeader[at]=iconHeader[at+1]=image.size===256?0:image.size;iconHeader.writeUInt16LE(1,at+4);iconHeader.writeUInt16LE(32,at+6);iconHeader.writeUInt32LE(png.length,at+8);iconHeader.writeUInt32LE(iconOffset,at+12);iconOffset+=png.length;return png;});
 const icon=path.join(native,'ContextManager.ico');fs.writeFileSync(icon,Buffer.concat([iconHeader,...iconImages]));
-for(const [source,target,refs]of [['Launcher.cs','codex-context.exe',['System.Web.Extensions.dll']],['Installer.cs','Install Context Manager.exe',['System.Windows.Forms.dll','System.Drawing.dll']]]){
+for(const [source,target,refs]of [['Launcher.cs','codex-context.exe',['System.Web.Extensions.dll']]]){
   const r=spawnSync(compiler,['/nologo','/optimize+','/target:winexe','/platform:anycpu','/win32icon:'+icon,...refs.map(r=>'/reference:'+r),'/out:'+path.join(native,target),path.join(repo,'windows/native',source)],{encoding:'utf8',windowsHide:true});
   if(r.error||r.status!==0)throw Error(r.error?.message||r.stdout+r.stderr);
 }
+compileWindowsInstaller({output:path.join(native,'Install Context Manager.exe'),icon});
 if(process.argv.includes('--native-only')){console.log(native);process.exit(0);}
 const electron=path.join(repo,'node_modules/electron/dist');if(!fs.existsSync(path.join(electron,'electron.exe')))throw Error('Run npm ci first to install Electron');
 const payload=path.join(out,'payload');fs.mkdirSync(payload,{recursive:true});fs.cpSync(electron,payload,{recursive:true});

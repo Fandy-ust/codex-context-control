@@ -4,8 +4,8 @@
 
 ## 安装
 
-1. 将整个 ZIP 解压到普通本地目录，保留 `Install Context Manager.exe` 与同级 `payload/`。
-2. 双击 `Install Context Manager.exe`，选择「安装 / 更新」。安装到当前用户，不需要修改 Codex 安装文件。
+1. 下载 `Context-Manager-0.17.2-windows-x64-Setup.exe`，只需要这一个文件，不需要旁边放 `payload/`。
+2. 双击 `Setup.exe`，选择「安装 / 更新」。安装器先校验并解压内置程序，再安装到当前用户；完成后自动清理临时解压目录，不需要修改 Codex 安装文件。安装成功后可以删除下载的 EXE。
 3. 当前工作结束后，**完整退出并重新打开 Codex**。已经运行的桌面进程不会因为安装完成就自动更换运行时。
 4. 在右下角系统托盘点击圆环图标。Windows 可能把它收在 `^` 折叠区，可在系统任务栏设置中选择显示。
 5. 进入聊天，观察连接状态与实际用量。需要 Hook stats 时，在 Codex 自己的 `/hooks` 中审核本项目新增的 Hook。
@@ -13,6 +13,8 @@
 首次激活时，若正常重开仍未读到新的用户环境，退出并重新登录 Windows 后再打开。诊断中应区分用户环境已登记、桥接已连接和下一轮窗口已确认；这些不是同一个状态。
 
 安装器创建用户级 `CODEX_CLI_PATH` 登记、开始菜单入口和卸载信息。已有其他自定义 `CODEX_CLI_PATH` 时会保留并报告冲突。它追加自己的 Stop hook，不修改其他 hooks，也不代写信任记录。
+
+也保留 ZIP 分发格式，供更新器与开发调试使用。选择 ZIP 时需完整解压并保留 `Install Context Manager.exe` 与同级 `payload/`；单文件 `Setup.exe` 已将这些程序文件内置，无需额外解压。
 
 ## 使用
 
@@ -45,7 +47,7 @@
 
 在「设置 → 应用」或原安装器中卸载。卸载只撤销自己的环境登记和 Hook，保留预算、缓存、偏好与备份。仍有 Codex 进程或桥接使用程序时，保留对应文件；完整退出 Codex 后可再次执行卸载以清理。卸载后残留进程若仍继承旧入口，新调用只透传原版运行时。
 
-程序按不可变目录安装，升级前保留一份轻量配置快照。不要手动删除正在使用的版本目录；回退时同样使用安装器并核对数据 schema。
+直接运行新版 `Setup.exe` 即可更新，无需先卸载。开始菜单和管理器入口切到新版，预算、快捷键与其他偏好保留。程序按不可变目录安装，升级前保留一份轻量配置快照；升级时目前不自动删除旧版目录，以免影响仍在使用的桥接。不要手动删除正在使用的版本目录；回退时同样使用安装器并核对数据 schema。
 
 ## 从源码构建
 
@@ -58,7 +60,9 @@ npm run build:win
 npm run package:win
 ```
 
-输出：`build/Context-Manager-0.17.2-windows-x64/`、同名 ZIP 和 `.sha256`。构建包含应用图标和版本信息，沿用已有品牌源图。
+`build:win` 输出 `build/Context-Manager-0.17.2-windows-x64/`。`package:win` 输出独立的 `build/Context-Manager-0.17.2-windows-x64-Setup.exe`、同名 `.sha256`，以及更新器使用的 ZIP 和校验文件。分发给使用者时只需发送 `Setup.exe`。构建包含应用图标和版本信息，沿用已有品牌源图。
+
+单文件安装器使用系统 .NET Framework 的[程序集内置资源](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/compiler-options/resources)封装压缩包，运行时通过[资源流](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.assembly.getmanifestresourcestream)读取。解压前验证 SHA-256，解压时拒绝越界路径和符号链接；内部仍复用同一套安装/升级脚本。
 
 ```powershell
 # 使用合成状态查看 UI；不登记接入，不修改真实预算
@@ -69,6 +73,9 @@ npm run test:win:ui-smoke
 
 # 构建后，在隔离目录检查安装/跨版本服务替换/卸载
 node scripts/test-win-package.mjs
+
+# 只复制一个 EXE 到中文/空格目录，验证解压、重复安装、跨版本升级、卸载和临时文件清理
+npm run test:win:setup
 
 # 打 ZIP 后，用本地模拟下载检查更新全流程和坏包拒绝
 node scripts/test-win-update.mjs

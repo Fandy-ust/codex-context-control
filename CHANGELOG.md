@@ -6,6 +6,7 @@
 - Add configurable global show-window shortcut, defaulting to Ctrl+Shift+M, with recording, conflict handling and saved preferences.
 - Unify control corners at 10px and prevent the information button from stretching with the heading.
 - Make the three-chat synthetic preview explicit and add an entry to open real local chats.
+- Package Windows as a self-contained Setup.exe with an embedded, checksum-verified payload and automatic temporary-file cleanup, reusing the existing installation and upgrade flow.
 
 
 ## 0.17.2 — Complete OTA cleanup
