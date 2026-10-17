@@ -3,6 +3,7 @@ import SwiftUI
 struct NewChatDefaultsView:View {
     @ObservedObject var model:Controller
     var onClose:(()->Void)? = nil
+    var compact=false
     @Environment(\.dismiss) private var dismiss
     @State private var windowK=400.0
     @State private var compactK=360.0
@@ -23,17 +24,22 @@ struct NewChatDefaultsView:View {
                 HStack{metric(L("压缩触发"),Int(compactK),.blue);Spacer();metric(L("预留"),Int(windowK-compactK),.secondary);Spacer();metric(L("上下文窗口"),Int(windowK),.primary)}
                 BudgetRangeSlider(window:Binding(get:{windowK},set:{setWindow($0)}),compact:Binding(get:{compactK},set:{setCompact($0)}),selection:$selection,maximumWindow:maximumWindowK,maximumCompact:maximumCompactK)
                 HStack{Text(L("每步 1K"));Spacer();Text(L("最大 {0}K · 至少预留 16K", maximumWindowK))}.font(.caption).foregroundStyle(.secondary)
+                if compact {
+                    HStack{ForEach([200,400,800,920].filter{$0<=maximumWindowK},id:\.self){value in Button("\(value)K"){setWindow(Double(value))}}}.buttonStyle(.bordered)
+                    Button(L("使用当前聊天设置")){copySelected()}.buttonStyle(.bordered).disabled(model.selected?.policy==nil)
+                } else {
                 HStack{ForEach([200,400,800,920].filter{$0<=maximumWindowK},id:\.self){value in Button("\(value)K"){setWindow(Double(value))}};Spacer();Button(L("使用当前聊天设置")){copySelected()}.disabled(model.selected?.policy==nil)}.buttonStyle(.bordered)
+                }
             }.disabled(model.newChatDefaultsLimits==nil).padding(22).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:20))
             if model.newChatDefaultsLimits?.extended == false {Text(L("拓展已关闭，使用 Codex 原生上限；新聊天还会按所选模型限制。")).font(.caption).foregroundStyle(.secondary)}
             if model.newChatDefaultsLimits==nil {Text(L("等待 Codex 模型上限信息")).font(.caption).foregroundStyle(.secondary)}
             if model.newChatDefaultsPending {Label(L("首次接入需完整退出并重开 Codex；之后改默认值无需重启。"),systemImage:"arrow.clockwise").font(.caption).foregroundStyle(.orange)}
             if let notice {Text(L(notice)).font(.callout).foregroundStyle(failed ? .orange:.secondary)}
             HStack{Button(L(onClose == nil ? "关闭":"返回")){if let onClose{onClose()}else{dismiss()}}.keyboardShortcut(.cancelAction);Spacer();if saving{ProgressView().controlSize(.small)};Button(L("保存默认")){Task{await save()}}.buttonStyle(.borderedProminent).disabled(!edited || saving || !model.serviceAvailable || model.newChatDefaultsLimits==nil).keyboardShortcut(.defaultAction)}
-        }.padding(28).frame(width:650).background(Color(white:0.095)).preferredColorScheme(.dark)
+        }.padding(compact ? 20:28).frame(width:compact ? 360:650).background(Color(white:0.095)).preferredColorScheme(.dark)
             .onAppear{load()}.onChange(of:model.newChatDefaults?.revision){_,_ in if !edited{load()}}.onChange(of:model.newChatDefaultsLimits){_,_ in load()}
     }
-    private func metric(_ title:String,_ value:Int,_ color:Color)->some View {VStack(alignment:.leading,spacing:5){Text("\(value)K").font(.system(size:28,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(color);Text(title).font(.caption).foregroundStyle(.secondary)}}
+    private func metric(_ title:String,_ value:Int,_ color:Color)->some View {VStack(alignment:.leading,spacing:5){Text("\(value)K").font(.system(size:compact ? 24:28,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(color);Text(title).font(.caption).foregroundStyle(.secondary)}}
     private func load(){let value=model.newChatDefaults;windowK=Double(max(34,min(maximumWindowK,(value?.usableWindow ?? 400000)/1000)));compactK=Double(max(17,min(maximumCompactK,(value?.compact ?? 360000)/1000)));revision=value?.revision ?? 0;ratioNumerator=Int(compactK);ratioDenominator=Int(windowK);edited=false}
     private func setWindow(_ value:Double){windowK=max(34,min(Double(maximumWindowK),value.rounded()));compactK=Double(max(17,BudgetMath.linkedSliderCompactK(windowK:Int(windowK),ratioNumerator:ratioNumerator,ratioDenominator:ratioDenominator,maximumK:maximumCompactK)));edited=true;notice=nil}
     private func setCompact(_ value:Double){compactK=max(17,min(Double(maximumCompactK),value.rounded()));ratioNumerator=Int(compactK);ratioDenominator=Int(windowK);edited=true;notice=nil}

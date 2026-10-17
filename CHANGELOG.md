@@ -1,10 +1,10 @@
 # Changes
 
 
-## 0.18.0 — Quota bolt and floating control panel
+## 0.18.0 — Quota indicator and floating control panel
 
 - Consolidate sidebar settings in a bottom-left floating control panel, including inline navigation to global defaults.
-- Keep one menu-bar control: the context ring plus a small lightning bolt on its right. The bolt empties as the tightest periodic quota is used.
+- Replace the old menu-bar logo with stepped bars and a remaining-percentage badge. Bars progressively become hollow as quota decreases.
 - Integrate remaining quota and reset times into the existing chat menu; no extra quota window or ring.
 - Show extra-credit availability separately from periodic quota percentages.
 - Support multiple usage pools without inventing missing values; unavailable and stale observations are labeled.

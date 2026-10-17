@@ -6,9 +6,9 @@ struct MainControlPanelView:View {
     @State private var defaults=false
     @State private var feedback:String?
     var body:some View {
-        Group {
+        VStack(alignment:.leading,spacing:0) {
             if defaults {
-                NewChatDefaultsView(model:model,onClose:{defaults=false})
+                NewChatDefaultsView(model:model,onClose:{defaults=false},compact:true)
             } else {
                 VStack(alignment:.leading,spacing:14){
                     HStack{Text(L("主控制面板")).font(.system(size:16,weight:.semibold));Spacer();Button(action:close){Image(systemName:"xmark").foregroundStyle(.secondary)}.buttonStyle(.plain).help(L("关闭"))}

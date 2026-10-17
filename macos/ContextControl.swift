@@ -590,7 +590,6 @@ struct ContentView: View {
     private var menuPanel:ContextMenuPanel?
     private var localMenuMonitor:Any?
     private var globalMenuMonitor:Any?
-    private var lastIconPercentage:Int?
     private var iconInitialized=false
     private let background=CommandLine.arguments.contains("--background")
     private var lastStatus:Data?
@@ -610,7 +609,7 @@ struct ContentView: View {
                 Task{@MainActor [weak self] in self?.installMainMenu();self?.updateStatusIcon()}
             })
         }
-        let item=NSStatusBar.system.statusItem(withLength:44)
+        let item=NSStatusBar.system.statusItem(withLength:56)
         item.button?.title=""
         item.button?.imagePosition = .imageOnly
         item.button?.setButtonType(.pushOnPushOff)
@@ -649,15 +648,14 @@ struct ContentView: View {
         let quotaTooltip=quotaStale ? L("上次记录，待刷新")+" · "+quotaSummary:quotaSummary
         statusHighlight?.refresh()
         let busiest=model.busiestContext
-        let percentage=busiest?.contextFraction.map{Int(($0*100).rounded())}
-        if !iconInitialized || percentage != lastIconPercentage || lastQuotaIcon != model.quota || lastQuotaID != model.selectedQuota?.id || lastQuotaStale != quotaStale {
-            statusItem?.button?.image=combinedStatusImage(progress:busiest?.contextFraction,bucket:model.selectedQuota,stale:quotaStale)
+        if !iconInitialized || lastQuotaIcon != model.quota || lastQuotaID != model.selectedQuota?.id || lastQuotaStale != quotaStale {
+            statusItem?.button?.image=quotaBarsStatusImage(bucket:model.selectedQuota,stale:quotaStale)
             lastQuotaIcon=model.quota;lastQuotaID=model.selectedQuota?.id;lastQuotaStale=quotaStale
-            lastIconPercentage=percentage;iconInitialized=true
+            iconInitialized=true
         }
         let summary=model.runningChats.isEmpty ? (model.serviceAvailable ? L("暂无运行中的聊天"):L("等待连接")) : L("{0} 个运行中 · {1}", model.runningChats.count, busiest.map{L("最高占用 {0}", $0.contextPercentage)} ?? L("等待用量读回"))
-        statusItem?.button?.toolTip="Context Manager · \(summary)\n"+L("Codex 额度 · {0}",quotaTooltip)
-        statusItem?.button?.setAccessibilityLabel(L("Context Manager，{0}，打开聊天概览", summary))
+        statusItem?.button?.toolTip=L("Codex 额度 · {0}",quotaTooltip)+"\nContext Manager · \(summary)"
+        statusItem?.button?.setAccessibilityLabel(L("Codex 额度 · {0}",quotaTooltip))
     }
     @objc private func toggleContextPopover(){
         refreshNow()

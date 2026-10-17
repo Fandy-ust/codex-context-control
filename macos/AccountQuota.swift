@@ -8,19 +8,28 @@ func quotaPeriod(_ window:QuotaWindow)->String {
     return L("{0}分钟",minutes)
 }
 
-@MainActor func combinedStatusImage(progress:Double?,bucket:QuotaBucket?,stale:Bool)->NSImage {
-    let image=NSImage(size:NSSize(width:36,height:22));image.lockFocus()
-    managerStatusImage(progress:progress).draw(in:NSRect(x:0,y:0,width:22,height:22))
+@MainActor func quotaBarsStatusImage(bucket:QuotaBucket?,stale:Bool)->NSImage {
     let remaining=[bucket?.primary,bucket?.secondary].compactMap{$0?.remainingPercent}.min().map{max(0,min(1,$0/100))}
-    let bolt=NSBezierPath();bolt.move(to:NSPoint(x:32,y:18.5));bolt.line(to:NSPoint(x:26,y:10));bolt.line(to:NSPoint(x:29.5,y:10));bolt.line(to:NSPoint(x:28.5,y:3.5));bolt.line(to:NSPoint(x:35,y:12));bolt.line(to:NSPoint(x:31.5,y:12));bolt.close()
-    let alpha:CGFloat=remaining == nil ? 0.35:stale ? 0.45:1
-    if let remaining,remaining>0 {
-        NSGraphicsContext.saveGraphicsState();bolt.addClip();NSColor.black.withAlphaComponent(alpha).setFill()
-        NSBezierPath(rect:NSRect(x:25,y:3.5,width:11,height:15*remaining)).fill();NSGraphicsContext.restoreGraphicsState()
+    let image=NSImage(size:NSSize(width:48,height:22));image.lockFocus()
+    let opacity:CGFloat=remaining == nil ? 0.35:stale ? 0.45:1
+    let bars:[(CGFloat,CGFloat)]=[(5,4),(11,2),(17,4),(12,9),(6,12)]
+    for (index,dimensions) in bars.enumerated(){
+        let (height,y)=dimensions,rect=NSRect(x:1+CGFloat(index)*4,y:y,width:2.8,height:height)
+        let outline=NSBezierPath(roundedRect:rect,xRadius:1.4,yRadius:1.4)
+        if let remaining,remaining>0 {
+            NSGraphicsContext.saveGraphicsState();outline.addClip();NSColor.black.withAlphaComponent(opacity).setFill()
+            NSBezierPath(rect:NSRect(x:rect.minX,y:rect.minY,width:rect.width,height:rect.height*remaining)).fill();NSGraphicsContext.restoreGraphicsState()
+        }
+        outline.lineWidth=0.65;NSColor.black.withAlphaComponent(opacity*0.4).setStroke();outline.stroke()
     }
-    bolt.lineWidth=1.1;bolt.lineJoinStyle = .round
-    if remaining == nil{bolt.setLineDash([1.4,1.4],count:2,phase:0)}
-    NSColor.black.withAlphaComponent(alpha).setStroke();bolt.stroke()
+    let label=remaining.map{String(format:"%.0f%%",$0*100)} ?? "—"
+    let font=NSFont.monospacedDigitSystemFont(ofSize:9,weight:.semibold)
+    let attributes:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:NSColor.black]
+    let text=label as NSString,measured=text.size(withAttributes:attributes)
+    let badge=NSRect(x:21,y:1.5,width:26,height:12)
+    NSColor.black.withAlphaComponent(opacity).setFill();NSBezierPath(roundedRect:badge,xRadius:3,yRadius:3).fill()
+    let glyph=NSImage(size:measured);glyph.lockFocus();text.draw(at:.zero,withAttributes:attributes);glyph.unlockFocus()
+    glyph.draw(in:NSRect(x:badge.midX-measured.width/2,y:badge.midY-measured.height/2,width:measured.width,height:measured.height),from:.zero,operation:.destinationOut,fraction:1)
     image.unlockFocus();image.isTemplate=true;return image
 }
 
