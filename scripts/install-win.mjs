@@ -23,7 +23,7 @@ if(args.includes('--uninstall')){
   await stopMenuBarEntry();
   const ownedRegistration=readJSON(path.join(root,'automatic-startup.json'));
   if(!args.includes('--no-auto-start'))disableAutomaticStartup();
-  atomicJSON(path.join(root,'integration.json'),{...readJSON(path.join(root,'integration.json'),{}),enabled:false});
+  atomicJSON(path.join(root,'integration.json'),{...readJSON(path.join(root,'integration.json'),{}),enabled:false,explicit:false});
   if(previous.hookCommand&&fs.existsSync(hooksFile))editOwnedHook({file:hooksFile,home:root,command:previous.hookCommand,remove:true});
   let retained=false;
   try{
@@ -71,13 +71,24 @@ const beforeHooks=fs.existsSync(hooksFile)?fs.readFileSync(hooksFile):null;
 const beforeStartup=readJSON(path.join(root,'automatic-startup.json'));
 const upgrade=prepareUpgrade({home:root,version:pkg.version,previousVersion:previous.productVersion});
 const installedApp=path.join(target,'ContextManager.exe'),hookCommand=`"${shim}" --hook`;
+let integrationWarning=null;
 try{
   await stopMenuBarEntry();
   atomicJSON(path.join(root,'settings.json'),inheritedSettings(previous,{version:1,productVersion:pkg.version,platform:'win32',arch:manifest.arch,realBinary:binary,desktopExecutable:installation?.executable||previous.desktopExecutable,node,codeRoot:code,installedApp,installBase:base,shim,hookCommand:previous.hookCommand||null,uninstalled:false,pendingUninstall:false}));
-  // Installing the UI never opts a user into intercepting desktop startup.
-  // Only a preference explicitly saved from Settings can survive an update.
-  const optedIn=readJSON(path.join(root,'integration.json'),{}).enabled===true;
-  if(!args.includes('--no-auto-start'))await setWindowsIntegration(optedIn);
+  // Enable by default; preserve a choice explicitly saved in Settings.
+  const integrationPreference=readJSON(path.join(root,'integration.json'),{});
+  const optedIn=integrationPreference.explicit===true?integrationPreference.enabled===true:true;
+  if(!args.includes('--no-auto-start')){
+    try{await setWindowsIntegration(optedIn,{origin:'installer'});}
+    catch(error){
+      if(!optedIn)throw error;
+      // Keep the UI usable and restore native startup if the launch probe or
+      // registration fails. A failed automatic attempt is visible in Settings.
+      await setWindowsIntegration(false,{origin:'installer'});
+      integrationWarning=error.message;
+      atomicJSON(path.join(root,'integration.json'),{...readJSON(path.join(root,'integration.json'),{}),explicit:false,requestedEnabled:true,lastError:integrationWarning});
+    }
+  }
   else{
     atomicJSON(path.join(root,'settings.json'),{...readJSON(path.join(root,'settings.json')),hookCommand:null});
     atomicJSON(path.join(root,'integration.json'),{...readJSON(path.join(root,'integration.json'),{}),enabled:false});
@@ -95,4 +106,5 @@ if(!args.includes('--no-shortcut')){
   powershell('$s=New-Object -ComObject WScript.Shell;$folder=Join-Path ([Environment]::GetFolderPath("Programs")) "Context Manager";[void][IO.Directory]::CreateDirectory($folder);$l=$s.CreateShortcut((Join-Path $folder "Context Manager.lnk"));$l.TargetPath=$env:CONTEXT_CONTROL_UI_EXE;$l.WorkingDirectory=[IO.Path]::GetDirectoryName($env:CONTEXT_CONTROL_UI_EXE);$l.Save();$key="HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\CodexContextControl";[void](New-Item -Path $key -Force);$values=@{DisplayName="Context Manager";DisplayVersion=$env:CONTEXT_CONTROL_INSTALL_VERSION;Publisher="Fandy-ust";InstallLocation=$env:CONTEXT_CONTROL_INSTALL_BASE;UninstallString=$env:CONTEXT_CONTROL_UNINSTALL;NoModify=1;NoRepair=1};foreach($name in $values.Keys){Set-ItemProperty -LiteralPath $key -Name $name -Value $values[$name]}',{CONTEXT_CONTROL_UI_EXE:installedApp,CONTEXT_CONTROL_INSTALL_BASE:base,CONTEXT_CONTROL_INSTALL_VERSION:pkg.version,CONTEXT_CONTROL_UNINSTALL:`"${node}" "${path.join(code,'scripts/install-win.mjs')}" --uninstall`});
 }
 if(!args.includes('--no-open'))ensureMenuBarEntry(installedApp);
-console.log('Windows 安装完成。默认只安装管理界面和托盘，不接管 Codex 启动。\n需要实时预算控制时，在设置中手动启用接入；关闭主窗口后入口保留在系统托盘。');
+console.log('Windows 安装完成。接入默认开启；请在当前工作结束后完整退出并重开 Codex。\n可在设置中关闭接入；关闭主窗口后入口保留在系统托盘。');
+if(integrationWarning)console.log('本次接入未启用，已保留原生启动入口。请在设置中查看日志并重试：'+integrationWarning);

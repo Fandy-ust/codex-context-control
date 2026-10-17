@@ -1,5 +1,13 @@
 # Changes
 
+## 0.17.4 — Window toggle, slider motion and Windows history paths
+
+- Toggle the main window with the configured global shortcut, including Ctrl+Shift+M by default.
+- Increase slider particle count and speed with 80% compaction-threshold and 20% context-window weighting, updating live while dragging.
+- Resolve Windows extended-length rollout paths through the native filesystem API and normalize drive/UNC namespaces for local-history containment checks.
+- Enable integration by default after its startup check; retain explicit user choices and preserve native startup if automatic activation fails.
+- Explain the disabled legacy early-compaction patch while retaining native automatic compaction and configurable thresholds.
+
 ## 0.17.3 — Windows sidebar and launch diagnostics
 
 - Display native chat names in the sidebar, budget view, statistics and tray instead of falling back to IDs.

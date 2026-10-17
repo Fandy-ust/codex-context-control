@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import path from 'node:path';
+import {canonicalLocalPath,pathInside} from './local-path.mjs';
 
 // Native session headers are immutable after creation. Read only the bounded
 // first record, never the conversation or the history_base ancestor (which can
@@ -7,8 +7,8 @@ import path from 'node:path';
 export function readForkParent(home,id,file,cache){
   if(typeof file!=='string')return null;
   try{
-    const real=fs.realpathSync(file);
-    if(!real.startsWith(fs.realpathSync(home)+path.sep)||!real.endsWith('.jsonl'))return null;
+    const real=canonicalLocalPath(file);
+    if(!pathInside(canonicalLocalPath(home),real)||!real.endsWith('.jsonl'))return null;
     const stat=fs.statSync(real),key=`${real}:${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;
     const previous=cache.get(id);
     if(previous?.key===key&&stat.size>=previous.bytes)return previous.parent;

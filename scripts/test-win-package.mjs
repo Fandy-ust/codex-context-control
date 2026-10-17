@@ -25,7 +25,7 @@ const uiSettings={version:3,shortcut:{accelerator:'Control+Alt+K',enabled:true},
 fs.writeFileSync(path.join(home,'settings.json'),JSON.stringify({version:7,futurePreference:{keep:true}}));fs.writeFileSync(path.join(home,'state.json'),JSON.stringify(state));fs.writeFileSync(path.join(home,'language.json'),JSON.stringify({selection:'zh'}));fs.writeFileSync(path.join(codex,'hooks.json'),JSON.stringify({hooks:{Stop:[other]}}));
 function install(extra=[],source=payload){
   const script=source===payload?path.join(repo,'scripts/install-win.mjs'):path.join(source,'resources/app/scripts/install-win.mjs');
-  const flags=['--no-open','--no-shortcut'];
+  const flags=['--no-auto-start','--no-open','--no-shortcut'];
   const command=standalone?(source===payload?setup:upgradeSetup):process.execPath;
   const args=standalone?[extra.includes('--uninstall')?'--uninstall':'--install',...flags]:[script,'--payload',source,...flags,...extra];
   const r=spawnSync(command,args,{env,encoding:'utf8',windowsHide:true,timeout:120000});assert.equal(r.status,0,r.stdout+r.stderr);

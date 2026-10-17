@@ -9,9 +9,9 @@ import {integrationLog,integrationLogDirectory} from './diagnostic-log.mjs';
 const preferenceFile=()=>path.join(root,'integration.json');
 export function windowsIntegrationStatus(){
   const pref=readJSON(preferenceFile(),{}),config=settings(),registration=readJSON(path.join(root,'automatic-startup.json'));
-  return {enabled:pref.enabled===true,available:config.uninstalled!==true&&!!config.shim&&fs.existsSync(config.shim),registered:pref.enabled===true&&!!config.shim&&registration?.value===config.shim&&fs.existsSync(config.shim),pendingRestart:pref.enabled===true,logDirectory:integrationLogDirectory};
+  return {enabled:pref.enabled===true,available:config.uninstalled!==true&&!!config.shim&&fs.existsSync(config.shim),registered:pref.enabled===true&&!!config.shim&&registration?.value===config.shim&&fs.existsSync(config.shim),pendingRestart:pref.enabled===true,error:pref.lastError||null,logDirectory:integrationLogDirectory};
 }
-export async function setWindowsIntegration(enabled,{probe=probeWindowsLauncher,...startupOptions}={}){
+export async function setWindowsIntegration(enabled,{probe=probeWindowsLauncher,origin='user',...startupOptions}={}){
   if(typeof enabled!=='boolean')throw Error('Invalid integration preference');
   const config=settings(),hooks=path.join(codexHome,'hooks.json'),recordFile=startupOptions.recordFile||path.join(root,'automatic-startup.json');
   const previousRecord=readJSON(recordFile),previousPreference=readJSON(preferenceFile(),{}),beforeHooks=fs.existsSync(hooks)?fs.readFileSync(hooks):null;
@@ -31,7 +31,7 @@ export async function setWindowsIntegration(enabled,{probe=probeWindowsLauncher,
       if(config.hookCommand&&fs.existsSync(hooks))editOwnedHook({file:hooks,home:root,command:config.hookCommand,remove:true});
     }
     atomicJSON(path.join(root,'settings.json'),{...config,hookCommand:enabled?command:null});
-    atomicJSON(preferenceFile(),{...previousPreference,version:Math.max(previousPreference.version||1,1),enabled});
+    atomicJSON(preferenceFile(),{...previousPreference,version:Math.max(previousPreference.version||1,1),enabled,explicit:origin==='user'||previousPreference.explicit===true,lastError:null});
     integrationLog('integration.preference_saved',{enabled});
   }catch(error){
     atomicJSON(path.join(root,'settings.json'),config);
