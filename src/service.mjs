@@ -29,7 +29,7 @@ export async function ensureDaemon(){
   }
   ensureRoot();const log=fs.openSync(path.join(root,'service.log'),'a',0o600);
   const node=process.env.CONTEXT_CONTROL_NODE||settings().node||process.execPath;
-  const p=spawn(node,[fileURLToPath(new URL('./daemon.mjs',import.meta.url))],{detached:true,windowsHide:true,stdio:['ignore',log,log],env:process.env});p.on('error',()=>{});p.unref();fs.closeSync(log);
+  const p=spawn(node,[fileURLToPath(new URL('./daemon.mjs',import.meta.url))],{cwd:fileURLToPath(new URL('./',import.meta.url)),detached:true,windowsHide:true,stdio:['ignore',log,log],env:process.env});p.on('error',()=>{});p.unref();fs.closeSync(log);
   for(let i=0;i<60;i++){await new Promise(r=>setTimeout(r,50));try{return await request('ping',{},500);}catch{}}
   throw new Error('本地控制服务未能启动，请运行 doctor。');
 }

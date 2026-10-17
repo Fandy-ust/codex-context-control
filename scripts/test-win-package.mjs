@@ -24,7 +24,7 @@ const uiSettings={version:3,shortcut:{accelerator:'Control+Alt+K',enabled:true},
 fs.writeFileSync(path.join(home,'settings.json'),JSON.stringify({version:7,futurePreference:{keep:true}}));fs.writeFileSync(path.join(home,'state.json'),JSON.stringify(state));fs.writeFileSync(path.join(home,'language.json'),JSON.stringify({selection:'zh'}));fs.writeFileSync(path.join(codex,'hooks.json'),JSON.stringify({hooks:{Stop:[other]}}));
 function install(extra=[],source=payload){
   const script=source===payload?path.join(repo,'scripts/install-win.mjs'):path.join(source,'resources/app/scripts/install-win.mjs');
-  const flags=['--no-auto-start','--no-open','--no-shortcut'];
+  const flags=['--no-open','--no-shortcut'];
   const command=standalone?(source===payload?setup:upgradeSetup):process.execPath;
   const args=standalone?[extra.includes('--uninstall')?'--uninstall':'--install',...flags]:[script,'--payload',source,...flags,...extra];
   const r=spawnSync(command,args,{env,encoding:'utf8',windowsHide:true,timeout:120000});assert.equal(r.status,0,r.stdout+r.stderr);
@@ -33,6 +33,7 @@ function install(extra=[],source=payload){
 }
 try{
   let s=install();assert.equal(s.version,7);assert.deepEqual(s.futurePreference,{keep:true});assert.equal(fs.existsSync(s.installedApp),true);assert.equal(path.extname(s.node),'.exe');
+  assert.equal(s.hookCommand,null);assert.equal(fs.existsSync(path.join(home,'automatic-startup.json')),false);assert.equal(JSON.parse(fs.readFileSync(path.join(home,'integration.json'))).enabled,false);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home,'state.json'),'utf8')),state);
   const version=spawnSync(s.shim,['--version'],{env,encoding:'utf8',windowsHide:true,timeout:15000});assert.equal(version.status,0,version.stderr);assert.match(version.stdout,/^codex-cli /);
   const hook=spawnSync(s.shim,['--hook'],{env,input:'{"hook_event_name":"Stop","session_id":"unknown"}',encoding:'utf8',windowsHide:true,timeout:10000});assert.equal(hook.status,0,hook.stderr);assert.deepEqual(JSON.parse(hook.stdout),{});
@@ -41,7 +42,7 @@ try{
     fs.unlinkSync(setup);
     const installed=spawnSync(s.shim,['--version'],{env,encoding:'utf8',windowsHide:true,timeout:15000});assert.equal(installed.status,0,installed.stderr);assert.match(installed.stdout,/^codex-cli /);
   }
-  let hooks=JSON.parse(fs.readFileSync(path.join(codex,'hooks.json'),'utf8')).hooks.Stop;assert.equal(hooks.length,2);assert.deepEqual(hooks[0],other);
+  let hooks=JSON.parse(fs.readFileSync(path.join(codex,'hooks.json'),'utf8')).hooks.Stop;assert.deepEqual(hooks,[other]);
   const start=()=>{const r=spawnSync(s.node,[path.join(s.codeRoot,'src/cli.mjs'),'start'],{env,encoding:'utf8',windowsHide:true,timeout:15000});assert.equal(r.status,0,r.stdout+r.stderr);return JSON.parse(fs.readFileSync(path.join(home,'connection.json'),'utf8'));};
   const oldService=start();
   const upgraded=path.join(temp,'upgrade-payload');fs.cpSync(payload,upgraded,{recursive:true});

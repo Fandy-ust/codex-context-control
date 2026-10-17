@@ -24,7 +24,7 @@ export function menuBarStatus(){
   return {running:pid!=null,created:current&&status.menuReady===true,ready:current&&status.menuReady===true&&status.menuWindowVisible===true&&status.menuOnScreen===true,windowVisible:current&&status.windowVisible===true,bundleIdentifier:current?status.bundleIdentifier:null,menuFrame:current?status.menuFrame:null};
 }
 export function ensureMenuBarEntry(app=settings().installedApp,controlHome=root){
-  if(windows){if(!app||!fs.existsSync(app))return {started:false};if(menuBarProcess(app))return {started:false,alreadyRunning:true};const p=spawn(app,['--background'],{windowsHide:true,detached:true,stdio:'ignore',env:{...process.env,CONTEXT_CONTROL_HOME:controlHome}});p.on('error',()=>{});p.unref();return {started:true};}
+  if(windows){if(!app||!fs.existsSync(app))return {started:false};if(menuBarProcess(app))return {started:false,alreadyRunning:true};const p=spawn(app,['--background'],{cwd:path.dirname(app),windowsHide:true,detached:true,stdio:'ignore',env:{...process.env,CONTEXT_CONTROL_HOME:controlHome}});p.on('error',()=>{});p.unref();return {started:true};}
   if(process.platform!=='darwin'||!app||!fs.existsSync(app))return {started:false};
   if(menuBarProcess(app))return {started:false,alreadyRunning:true};
   // Wait for Launch Services to accept the request before a short-lived

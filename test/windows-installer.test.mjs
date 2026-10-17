@@ -32,9 +32,9 @@ test('self-contained Windows installer extracts without siblings, forwards optio
     compile();
     const invoked=run();assert.equal(invoked.status,7,invoked.stdout+invoked.stderr);assert.match(invoked.stdout,/中文输出/);
     const recorded=JSON.parse(fs.readFileSync(meta,'utf8'));
-    assert.deepEqual(recorded.args.slice(1),['--payload',path.dirname(path.dirname(recorded.cwd)),'--no-auto-start','--no-open','--no-shortcut']);
-    assert.equal(recorded.args[0],path.join(recorded.cwd,'scripts/install-win.mjs'));
-    assert.ok(recorded.cwd.startsWith(extraction+path.sep));assert.deepEqual(fs.readdirSync(extraction),[]);
+    const extractedCode=path.dirname(path.dirname(recorded.args[0]));
+    assert.deepEqual(recorded.args.slice(1),['--payload',path.dirname(path.dirname(extractedCode)),'--no-auto-start','--no-open','--no-shortcut']);
+    assert.equal(recorded.cwd,extraction);assert.ok(extractedCode.startsWith(extraction+path.sep));assert.deepEqual(fs.readdirSync(extraction),[]);
     fs.unlinkSync(meta);
     const invalid=run(['--unexpected']);assert.equal(invalid.status,1);assert.equal(fs.existsSync(meta),false);assert.deepEqual(fs.readdirSync(extraction),[]);
     fs.writeFileSync(checksum,'0'.repeat(64));compile();

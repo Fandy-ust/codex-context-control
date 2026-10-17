@@ -8,12 +8,14 @@ import {trayState} from '../src/tray-state.mjs';
 import {defaultRoot} from '../src/platform/index.mjs';
 import {createShortcutManager} from '../src/ui-shortcut.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url)),repo=path.dirname(here),args=process.argv;
+if(app.isPackaged)process.chdir(repo);
 if(fs.existsSync(path.join(repo,'vendor/node.exe')))process.env.CONTEXT_CONTROL_NODE=path.join(repo,'vendor/node.exe');
 const demo=args.includes('--demo'),smoke=args.includes('--smoke-test');
 const liveHome=process.env.CONTEXT_CONTROL_LIVE_HOME||defaultRoot();
 if(smoke)setTimeout(()=>{console.error('UI_SMOKE_FAILED startup timeout');app.exit(1);},30000).unref();
 if(demo&&!process.env.CONTEXT_CONTROL_HOME)process.env.CONTEXT_CONTROL_HOME=path.join(os.tmpdir(),'context-manager-demo');
 const {root,readJSON,atomicJSON,ensureRoot,settings}=await import('../src/paths.mjs');
+const {windowsIntegrationStatus,setWindowsIntegration,codexLaunchEnvironment}=await import('../src/windows-integration.mjs');
 const {ensureDaemon}=await import('../src/service.mjs');
 const {resolveLanguage,languagePreference,localize}=await import('../src/localization.mjs');
 const {demoState,demoStatistics}=await import('./demo.mjs');
@@ -88,7 +90,11 @@ function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口
 ipcMain.handle('context-manager',async(event,action,params)=>{
   if(![main?.webContents.id,trayWindow?.webContents.id].includes(event.sender.id)||event.senderFrame!==event.sender.mainFrame)throw Error('Unknown UI sender');
   if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>65536)throw Error('Invalid UI request');
-  if(action==='preferences')return {selection:languagePreference(),language:resolveLanguage(languagePreference()),english:JSON.parse(fs.readFileSync(path.join(repo,'src/locales/en.json'),'utf8')),version:pkg.version,demo,shortcut:shortcutManager.status()};
+  if(action==='preferences')return {selection:languagePreference(),language:resolveLanguage(languagePreference()),english:JSON.parse(fs.readFileSync(path.join(repo,'src/locales/en.json'),'utf8')),version:pkg.version,demo,shortcut:shortcutManager.status(),integration:demo?{enabled:false,registered:false,available:false,inactive:true}:windowsIntegrationStatus()};
+  if(action==='integration-set'){
+    if(demo||smoke)throw Error('预览模式不修改 Codex 接入。');
+    return setWindowsIntegration(params.enabled);
+  }
   if(action==='shortcut-save'){if(typeof params.enabled!=='boolean')throw Error('Invalid shortcut setting');globalShortcut.setSuspended(false);const result=shortcutManager.set(params);publish();return result;}
   if(action==='shortcut-recording'){if(event.sender===main?.webContents)globalShortcut.setSuspended(params.active===true&&!smoke);return {ok:true};}
   if(action==='open-live'){
@@ -102,7 +108,7 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
   if(action==='hide'){BrowserWindow.fromWebContents(event.sender)?.hide();return {ok:true};}
   if(action==='interaction'){if(event.sender===trayWindow?.webContents){menuDragging=params.dragging===true;if(!menuDragging&&!trayWindow.isFocused())trayWindow.hide();}return {ok:true};}
   if(action==='quit'){app.quit();return {ok:true};}
-  if(action==='open-codex'){const executable=settings().desktopExecutable;if(!executable||!fs.existsSync(executable))throw Error(label('请先安装或运行诊断以识别 Codex','Install first to discover the Codex application'));const p=spawn(executable,[],{detached:true,windowsHide:true,stdio:'ignore'});p.on('error',()=>{});p.unref();return {ok:true};}
+  if(action==='open-codex'){const executable=settings().desktopExecutable;if(!executable||!fs.existsSync(executable))throw Error(label('请先安装或运行诊断以识别 Codex','Install first to discover the Codex application'));const p=spawn(executable,[],{cwd:path.dirname(executable),env:codexLaunchEnvironment(),detached:true,windowsHide:true,stdio:'ignore'});p.on('error',()=>{});p.unref();return {ok:true};}
   if(action==='diagnostics')return {version:pkg.version,platform:process.platform,arch:process.arch,serviceVersion:lastState?.version??null,loadedBridgeVersions:lastState?.bridges?.map(b=>b.version)??[],connectedBridges:lastState?.bridgeCount??0};
   const result=await api(action,params);if(action==='state'){lastState=result;updateTray();}return result;
 });

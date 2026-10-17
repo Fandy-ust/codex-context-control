@@ -2,6 +2,10 @@
 
 ## Unreleased — Windows UI refinements
 
+- Install only the tray and interface by default; make desktop integration an explicit Settings action, with a startup probe before registration and restoration on disable.
+- Give the installer, tray and service stable working directories so launched processes do not hold the extracted payload directory open.
+- Prevent a late service attachment from keeping an already-closed runtime wrapper alive.
+
 - Align trend cursors, selected points, event markers and pointer hit testing with one padded horizontal scale.
 - Add configurable global show-window shortcut, defaulting to Ctrl+Shift+M, with recording, conflict handling and saved preferences.
 - Unify control corners at 10px and prevent the information button from stretching with the heading.
