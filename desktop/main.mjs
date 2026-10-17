@@ -7,6 +7,8 @@ import {spawn} from 'node:child_process';
 import {trayState} from '../src/tray-state.mjs';
 import {defaultRoot} from '../src/platform/index.mjs';
 import {createShortcutManager} from '../src/ui-shortcut.mjs';
+import {selectedQuota,quotaRemaining,quotaWindows,quotaStale} from '../src/quota-display.mjs';
+import {quotaIconBitmap} from './quota-icon.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url)),repo=path.dirname(here),args=process.argv;
 if(app.isPackaged)process.chdir(repo);
 if(fs.existsSync(path.join(repo,'vendor/node.exe')))process.env.CONTEXT_CONTROL_NODE=path.join(repo,'vendor/node.exe');
@@ -24,7 +26,7 @@ const pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
 app.setName('Context Manager');app.setAppUserModelId('io.github.codex-context-control');
 app.setPath('userData',path.join(root,'ui-profile'));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
-let main,trayWindow,tray,quitting=false,lastState=null,ready=false,timer,lastIcon='',menuDragging=false,lastServiceAttempt=Date.now();
+let main,trayWindow,tray,quitting=false,lastState=null,serviceOnline=false,ready=false,timer,lastIcon='',menuDragging=false,lastServiceAttempt=Date.now();
 const shortcutManager=createShortcutManager({read:()=>readJSON(path.join(root,'ui-settings.json'),{}),write:doc=>atomicJSON(path.join(root,'ui-settings.json'),doc),register:(key,callback)=>globalShortcut.register(key,callback),unregister:key=>globalShortcut.unregister(key),onTrigger:()=>toggleMain(),inactive:smoke});
 const zh=()=>resolveLanguage(languagePreference())==='zh';
 const label=(a,b)=>zh()?a:b;
@@ -36,13 +38,14 @@ async function api(action,params={}){
   if(demo){
     if(action==='state')return structuredClone(demoState);
     if(action==='statistics')return structuredClone(demoStatistics);
+    if(action==='quota-refresh')return structuredClone(demoState.quota);
     if(action==='policy'){const t=demoState.threads.find(t=>t.id===params.id);if(t){t.policy={...params.policy,enabled:true,revision:(t.policy?.revision||0)+1};t.phase='saved';}return {ok:true};}
     if(action==='defaults'){Object.assign(demoState.newChatDefaults,params);return demoState.newChatDefaults;}
     if(action==='extension'){demoState.contextExtension.enabled=params.enabled;return demoState.contextExtension;}
     if(action==='preflight')return {allowed:true,code:'ready',message:'Demo'};
     return {ok:true};
   }
-  const routes={state:['GET','/state'],statistics:['POST','/context-stats'],preflight:['POST','/preflight'],policy:['POST','/policy'],clear:['POST','/clear'],compact:['POST','/compact'],defaults:['POST','/new-chat-defaults'],extension:['POST','/context-extension'],scan:['POST','/scan'],'check-update':['POST','/updates/check'],'install-update':['POST','/updates/install']};
+  const routes={state:['GET','/state'],statistics:['POST','/context-stats'],preflight:['POST','/preflight'],policy:['POST','/policy'],clear:['POST','/clear'],compact:['POST','/compact'],defaults:['POST','/new-chat-defaults'],extension:['POST','/context-extension'],scan:['POST','/scan'],'quota-refresh':['POST','/quota'],'check-update':['POST','/updates/check'],'install-update':['POST','/updates/install']};
   const route=routes[action];if(!route)throw Error('Unknown action');
   const connection=readJSON(path.join(root,'connection.json'));
   if(!Number.isSafeInteger(connection?.port)||connection.port<1||connection.port>65535||!/^[a-f0-9]{64}$/.test(connection.token||''))throw Error('Local service connection is unavailable');
@@ -69,30 +72,28 @@ function showSettings(){showMain();if(main.webContents.isLoading())main.webConte
 function placeMenu(){
   const bounds=tray.getBounds(),cursor=screen.getCursorScreenPoint(),display=screen.getDisplayNearestPoint(bounds.width?{x:bounds.x,y:bounds.y}:cursor),area=display.workArea;
   const sections=trayState(lastState?.threads),count=sections.running.length+sections.recent.length;
-  const height=Math.min(area.height-16,Math.max(220,175+Math.min(count,10)*52));
+  const height=Math.min(area.height-16,Math.max(360,320+Math.min(count,8)*52));
   const width=Math.min(400,area.width-16),x=Math.max(area.x+8,Math.min((bounds.width?bounds.x+Math.floor(bounds.width/2):cursor.x)-width/2,area.x+area.width-width-8));
   const anchorY=bounds.height?bounds.y:cursor.y;
   const y=anchorY>area.y+area.height/2?Math.max(area.y+8,area.y+area.height-height-8):Math.min(area.y+area.height-height-8,area.y+8);
   trayWindow.setBounds({x:Math.round(x),y:Math.round(y),width,height:Math.round(height)});
 }
 function toggleMenu(){if(trayWindow?.isVisible()){trayWindow.hide();return;}if(!trayWindow)trayWindow=createWindow(true);placeMenu();trayWindow.show();trayWindow.focus();publish();}
-function icon(progress){
-  // NativeImage uses a BGRA bitmap; render a crisp ring without shipping a
-  // remote image or changing the application icon. Also supports dark taskbars.
-  const n=32,b=Buffer.alloc(n*n*4),light=nativeTheme.shouldUseDarkColors?235:45;
-  for(let y=0;y<n;y++)for(let x=0;x<n;x++){const dx=x-15.5,dy=y-15.5,r=Math.hypot(dx,dy),angle=(Math.atan2(dy,dx)+Math.PI/2+Math.PI*2)%(Math.PI*2);let value=0,alpha=0;if(r>=12&&r<=14.4){value=progress!=null&&angle<=Math.PI*2*Math.min(1,progress)?light:light*.38;alpha=255;}if(x>=10&&x<=21&&[11,15,19].includes(y)){value=light;alpha=255;}const at=(y*n+x)*4;b[at]=b[at+1]=b[at+2]=value;b[at+3]=alpha;}
-  return nativeImage.createFromBitmap(b,{width:n,height:n,scaleFactor:1});
+function icon(remaining,stale=false){
+  const {bitmap,width,height}=quotaIconBitmap(remaining,{dark:nativeTheme.shouldUseDarkColors,stale});
+  return nativeImage.createFromBitmap(bitmap,{width,height,scaleFactor:1});
 }
 function updateTray(){
-  const {running:active,fraction}=trayState(lastState?.threads);
-  const key=(fraction==null?'unknown':Math.round(fraction*100))+'-'+nativeTheme.shouldUseDarkColors;if(lastIcon!==key){tray.setImage(icon(fraction));lastIcon=key;}
-  tray.setToolTip(`Context Manager · ${active.length} ${label('个运行中','running')}${fraction==null?'':` · ${Math.round(fraction*100)}%`}`);
+  const {running:active}=trayState(lastState?.threads),bucket=selectedQuota(lastState?.quota,readJSON(path.join(root,'ui-settings.json'),{}).quotaPool),remaining=quotaRemaining(bucket),stale=quotaStale(lastState?.quota,serviceOnline);
+  const key=(remaining==null?'unknown':Math.round(remaining))+'-'+stale+'-'+nativeTheme.shouldUseDarkColors;if(lastIcon!==key){tray.setImage(icon(remaining,stale));lastIcon=key;}
+  const reset=quotaWindows(bucket).filter(window=>window.resetsAt).map(window=>new Date(window.resetsAt*1000).toLocaleString(zh()?'zh-CN':'en-US')).join(' / ');
+  tray.setToolTip((`Context Manager · ${label('剩余额度','Quota remaining')} ${remaining==null?'—':Math.round(remaining)+'%'}${stale?' · '+label('待刷新','stale'):''}\n${active.length} ${label('个运行中','running')}${reset?' · '+label('重置','Reset')+' '+reset:''}`).slice(0,127));
 }
-function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口','Open main window'),click:()=>showMain()},{label:label('设置','Settings'),click:showSettings},{label:label('检查更新','Check for updates'),click:async()=>{try{await api('check-update');showMain();main.webContents.send('refresh');}catch(e){console.error(e.message);}}},{type:'separator'},{label:label('退出管理界面','Quit manager UI'),click:()=>app.quit()}]);}
+function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口','Open main window'),click:()=>showMain()},{label:label('设置','Settings'),click:showSettings},{label:label('刷新额度','Refresh quota'),click:async()=>{try{const quota=await api('quota-refresh');lastState={...lastState,quota};updateTray();main?.webContents.send('refresh');trayWindow?.webContents.send('refresh');}catch(e){console.error(e.message);}}},{label:label('检查更新','Check for updates'),click:async()=>{try{await api('check-update');showMain();main.webContents.send('refresh');}catch(e){console.error(e.message);}}},{type:'separator'},{label:label('退出管理界面','Quit manager UI'),click:()=>app.quit()}]);}
 ipcMain.handle('context-manager',async(event,action,params)=>{
   if(![main?.webContents.id,trayWindow?.webContents.id].includes(event.sender.id)||event.senderFrame!==event.sender.mainFrame)throw Error('Unknown UI sender');
   if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>65536)throw Error('Invalid UI request');
-  if(action==='preferences')return {selection:languagePreference(),language:resolveLanguage(languagePreference()),english:JSON.parse(fs.readFileSync(path.join(repo,'src/locales/en.json'),'utf8')),version:pkg.version,demo,shortcut:shortcutManager.status(),integration:demo?{enabled:false,registered:false,available:false,inactive:true}:windowsIntegrationStatus()};
+  if(action==='preferences')return {selection:languagePreference(),language:resolveLanguage(languagePreference()),english:JSON.parse(fs.readFileSync(path.join(repo,'src/locales/en.json'),'utf8')),version:pkg.version,demo,quotaPool:readJSON(path.join(root,'ui-settings.json'),{}).quotaPool||null,shortcut:shortcutManager.status(),integration:demo?{enabled:false,registered:false,available:false,inactive:true}:windowsIntegrationStatus()};
   if(action==='integration-set'){
     if(demo||smoke)throw Error('预览模式不修改 Codex 接入。');
     return setWindowsIntegration(params.enabled);
@@ -100,6 +101,10 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
   if(action==='open-logs'){
     if(smoke)throw Error('Opening log folders is disabled during smoke tests');
     fs.mkdirSync(integrationLogDirectory,{recursive:true});const error=await shell.openPath(integrationLogDirectory);if(error)throw Error(error);return {ok:true};
+  }
+  if(action==='quota-select'){
+    if(typeof params.id!=='string'||!lastState?.quota?.buckets?.some(bucket=>bucket.id===params.id))throw Error('Unknown quota pool');
+    const file=path.join(root,'ui-settings.json');atomicJSON(file,{...readJSON(file,{}),quotaPool:params.id});updateTray();return {id:params.id};
   }
   if(action==='shortcut-save'){if(typeof params.enabled!=='boolean')throw Error('Invalid shortcut setting');globalShortcut.setSuspended(false);const result=shortcutManager.set(params);publish();return result;}
   if(action==='shortcut-recording'){if(event.sender===main?.webContents)globalShortcut.setSuspended(params.active===true&&!smoke);return {ok:true};}
@@ -116,7 +121,7 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
   if(action==='quit'){app.quit();return {ok:true};}
   if(action==='open-codex'){const executable=settings().desktopExecutable;if(!executable||!fs.existsSync(executable))throw Error(label('请先安装或运行诊断以识别 Codex','Install first to discover the Codex application'));const p=spawn(executable,[],{cwd:path.dirname(executable),env:codexLaunchEnvironment(),detached:true,windowsHide:true,stdio:'ignore'});p.on('error',()=>{});p.unref();return {ok:true};}
   if(action==='diagnostics')return {version:pkg.version,platform:process.platform,arch:process.arch,serviceVersion:lastState?.version??null,loadedBridgeVersions:lastState?.bridges?.map(b=>b.version)??[],connectedBridges:lastState?.bridgeCount??0,logDirectory:integrationLogDirectory};
-  const result=await api(action,params);if(action==='state'){lastState=result;updateTray();}return result;
+  const result=await api(action,params);if(action==='state'){lastState=result;serviceOnline=true;updateTray();}if(action==='quota-refresh'){lastState={...lastState,quota:result};updateTray();}return result;
 });
 app.whenReady().then(async()=>{ensureRoot();ready=true;
 tray=new Tray(icon(null));tray.on('click',toggleMenu);tray.on('double-click',()=>showMain());tray.on('right-click',()=>tray.popUpContextMenu(trayMenu()));nativeTheme.on('updated',()=>updateTray());
@@ -125,7 +130,7 @@ if(args.includes('--quit')){app.quit();}else{
   main=createWindow();trayWindow=createWindow(true);
   shortcutManager.start();
   if(!args.includes('--background')&&!smoke)main.once('ready-to-show',()=>showMain());
-  const refresh=async()=>{try{lastState=await api('state');updateTray();}catch{if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};updateTray();}if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting)timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
+  const refresh=async()=>{try{lastState=await api('state');serviceOnline=true;updateTray();}catch{serviceOnline=false;if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};updateTray();}if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting)timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
   if(smoke){
     const loaded=win=>new Promise((resolve,reject)=>{if(!win.webContents.isLoading())resolve();else{win.webContents.once('did-finish-load',resolve);win.webContents.once('did-fail-load',(_e,code,message)=>reject(Error(`${code}: ${message}`)));}});
     try{

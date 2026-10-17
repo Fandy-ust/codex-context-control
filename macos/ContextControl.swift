@@ -27,7 +27,10 @@ struct NewChatDefaultsState:Decodable,Equatable {let usableWindow:Int;let compac
 struct ContextExtensionState:Decodable,Equatable {let enabled:Bool;let effective:Bool;let pending:Bool;let activeCount:Int;let connectedCount:Int;let compatible:Bool;let available:Bool;let message:String}
 struct NewChatDefaultsLimits:Decodable,Equatable {let maximumUsableWindow:Int;let effectivePercent:Int;let extended:Bool}
 struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:Bool;let version:String?;let phase:String;let error:String?}
-struct RuntimeState: Decodable {let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPercent:Double;let windowDurationMins:Int?;let resetsAt:Int?}
+struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?}
+struct QuotaState:Decodable,Equatable {let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
+struct RuntimeState: Decodable {let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -49,6 +52,10 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var selectedID:String?
     @Published var updateState:UpdateState?
     @Published var checkingUpdates=false
+    @Published var quota:QuotaState?
+    @Published var quotaRefreshing=false
+    @Published var selectedQuotaID="codex"
+    var selectedQuota:QuotaBucket? {quota?.buckets.first{$0.id==selectedQuotaID} ?? quota?.buckets.first}
     @Published var bridgeCount=0
     @Published var contextCeilingPending=false
     @Published var contextExtension:ContextExtensionState?
@@ -96,6 +103,7 @@ struct ServiceSettings: Decodable {let node:String}
         if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"))
             guard !menuDragInProgress else{return}
+            if quota != state.quota{acceptQuota(state.quota)}
             if updateState != state.update{updateState=state.update;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
             if chats != state.threads{chats=state.threads}
             if bridgeCount != state.bridgeCount{bridgeCount=state.bridgeCount}
@@ -111,6 +119,14 @@ struct ServiceSettings: Decodable {let node:String}
             else if !budgetEdited,editingRevision != (selected?.policy?.revision ?? 0){fill()}
             if Localization.canonical(notice)=="正在读取本地状态…"||Localization.canonical(notice).hasPrefix("读取失败："){notice=bridgeCount>0 ? L("已接入 Codex。") : L("已加载本地聊天；打开聊天后实时同步。")}
         }catch{serviceAvailable=false;notice=L("读取失败：{0}", error.localizedDescription)}
+    }
+    func acceptQuota(_ value:QuotaState?){
+        quota=value
+        if value?.buckets.contains(where:{$0.id==selectedQuotaID}) != true,let first=value?.buckets.first{selectedQuotaID=first.id}
+    }
+    func refreshQuota() async {
+        guard !quotaRefreshing else{return};quotaRefreshing=true;defer{quotaRefreshing=false}
+        do{acceptQuota(try JSONDecoder().decode(QuotaState.self,from:await api("/quota",body:[:])))}catch{notice=L("暂时无法读取额度")}
     }
     func updateApp(install:Bool=false) async {
         checkingUpdates=true;defer{checkingUpdates=false}
@@ -410,7 +426,7 @@ struct RuntimeFixControl:View {
 struct ContentView: View {
     @ObservedObject var model:Controller
     @State private var confirmCompact=false
-    @State private var showNewChatDefaults=false
+    @State private var showControlPanel=false
     @State private var selectedThumb:BudgetThumb = .window
     private var maxMode:Bool {model.selected?.modelMetadata?.context_ceiling==920000 && Int(model.windowK)==920}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -437,27 +453,10 @@ struct ContentView: View {
                         }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
                     }}
                 }.frame(maxHeight:.infinity)
-                VStack(alignment:.leading,spacing:5){
-                    Picker(L("语言"),selection:Binding(get:{model.languageSelection},set:{model.setLanguage($0)})){
-                        Text(L("自动（按时区）")).tag(LanguageChoice.auto)
-                        Text("中文").tag(LanguageChoice.zh)
-                        Text("English").tag(LanguageChoice.en)
-                    }.pickerStyle(.menu).accessibilityIdentifier("language-picker").help(L("自动按时区选择：中国大陆、香港、澳门、台湾使用中文，其他时区使用 English。手动选择优先。"))
-                    Text(model.languageSelection == .auto ? L("自动：{0}",Localization.language == .zh ? "中文":"English") : L("自动按时区选择，手动选择优先。"))
-                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
-                }
-                Button(L("同步本地聊天"),systemImage:"arrow.clockwise"){Task{await model.scanChats()}}.buttonStyle(.bordered).disabled(model.working)
-                Button(L("全局默认"),systemImage:"slider.horizontal.3"){showNewChatDefaults=true}.buttonStyle(.bordered)
-                Text(L("额外功能")).font(.caption).foregroundStyle(.secondary)
-                ContextExtensionControl(model:model)
-                if let update=model.updateState {
-                    if update.phase=="downloading" || update.phase=="installing" {
-                        Label(L("正在更新…"),systemImage:"arrow.down.circle")
-                    } else {
-                        Button(update.available ? L("安装更新 {0}",update.version ?? ""):L("检查更新"),systemImage:"arrow.down.circle"){Task{await model.updateApp(install:update.available)}}.buttonStyle(.bordered).disabled(model.checkingUpdates)
-                    }
-                }
-                Button(L("打开 Codex"),systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
+                Button{showControlPanel.toggle()} label:{
+                    Image(systemName:"gearshape").font(.system(size:20)).frame(width:44,height:44)
+                        .background(.regularMaterial,in:RoundedRectangle(cornerRadius:12,style:.continuous))
+                }.buttonStyle(.plain).help(L("设置")).accessibilityLabel(L("设置")).accessibilityIdentifier("control-panel-button")
             }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
@@ -490,11 +489,19 @@ struct ContentView: View {
                 }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity)
             }.frame(minWidth:650).background(PanelStyle.background)
         }
+        .disabled(showControlPanel)
         .frame(minWidth:960,minHeight:670)
+        .overlay {
+            if showControlPanel {
+                ZStack {
+                    Color.black.opacity(0.28).ignoresSafeArea().onTapGesture{showControlPanel=false}
+                    MainControlPanelView(model:model,close:{showControlPanel=false})
+                }.transition(.opacity)
+            }
+        }
         .background(PanelStyle.background)
         .preferredColorScheme(.dark).tint(PanelStyle.blue).environment(\.locale,Localization.locale)
         .onChange(of:model.selectedID){_,_ in model.fill()}
-        .sheet(isPresented:$showNewChatDefaults){NewChatDefaultsView(model:model)}
         .confirmationDialog(L("请求 Codex 原生压缩？"),isPresented:$confirmCompact,titleVisibility:.visible){Button(L("请求压缩")){Task{await model.act("compact")}};Button(L("取消"),role:.cancel){}}message:{Text(L("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。"))}
     }
     func budgetEditor()->some View {
@@ -576,6 +583,9 @@ struct ContentView: View {
 
 @main @MainActor final class ContextControlApp:NSObject,NSApplicationDelegate,NSWindowDelegate {
     private let model=Controller()
+    private var lastQuotaIcon:QuotaState?
+    private var lastQuotaID:String?
+    private var lastQuotaStale:Bool?
     private var statusItem:NSStatusItem?
     private var statusHighlight:StatusItemHighlight?
     private var settingsWindow:NSWindow?
@@ -588,7 +598,6 @@ struct ContentView: View {
     private var menuPanel:ContextMenuPanel?
     private var localMenuMonitor:Any?
     private var globalMenuMonitor:Any?
-    private var lastIconPercentage:Int?
     private var iconInitialized=false
     private let background=CommandLine.arguments.contains("--background")
     private var lastStatus:Data?
@@ -608,7 +617,7 @@ struct ContentView: View {
                 Task{@MainActor [weak self] in self?.installMainMenu();self?.updateStatusIcon()}
             })
         }
-        let item=NSStatusBar.system.statusItem(withLength:30)
+        let item=NSStatusBar.system.statusItem(withLength:56)
         item.button?.title=""
         item.button?.imagePosition = .imageOnly
         item.button?.setButtonType(.pushOnPushOff)
@@ -642,21 +651,25 @@ struct ContentView: View {
     }
     func applicationDidBecomeActive(_ notification:Notification){refreshNow()}
     private func updateStatusIcon(){
+        let quotaSummary=model.selectedQuota.map{bucket in [bucket.primary,bucket.secondary].compactMap{$0}.map{L("{0}剩余 {1}%",quotaPeriod($0),Int($0.remainingPercent.rounded()))}.joined(separator:" · ")} ?? L("额度暂不可用")
+        let quotaStale = !model.serviceAvailable || model.quota?.stale != false
+        let quotaTooltip=quotaStale ? L("上次记录，待刷新")+" · "+quotaSummary:quotaSummary
         statusHighlight?.refresh()
         let busiest=model.busiestContext
-        let percentage=busiest?.contextFraction.map{Int(($0*100).rounded())}
-        if !iconInitialized || percentage != lastIconPercentage {
-            statusItem?.button?.image=managerStatusImage(progress:busiest?.contextFraction)
-            lastIconPercentage=percentage;iconInitialized=true
+        if !iconInitialized || lastQuotaIcon != model.quota || lastQuotaID != model.selectedQuota?.id || lastQuotaStale != quotaStale {
+            statusItem?.button?.image=quotaBarsStatusImage(bucket:model.selectedQuota,stale:quotaStale)
+            lastQuotaIcon=model.quota;lastQuotaID=model.selectedQuota?.id;lastQuotaStale=quotaStale
+            iconInitialized=true
         }
         let summary=model.runningChats.isEmpty ? (model.serviceAvailable ? L("暂无运行中的聊天"):L("等待连接")) : L("{0} 个运行中 · {1}", model.runningChats.count, busiest.map{L("最高占用 {0}", $0.contextPercentage)} ?? L("等待用量读回"))
-        statusItem?.button?.toolTip="Context Manager · \(summary)"
-        statusItem?.button?.setAccessibilityLabel(L("Context Manager，{0}，打开聊天概览", summary))
+        statusItem?.button?.toolTip=L("Codex 额度 · {0}",quotaTooltip)+"\nContext Manager · \(summary)"
+        statusItem?.button?.setAccessibilityLabel(L("Codex 额度 · {0}",quotaTooltip))
     }
     @objc private func toggleContextPopover(){
         refreshNow()
         if menuPanel?.isVisible==true{closeContextMenu();return}
         guard statusItem?.button != nil else{return}
+        Task{await model.refreshQuota();updateStatusIcon()}
         if menuPanel==nil{
             let panel=ContextMenuPanel(contentRect:.zero,styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
             panel.isReleasedWhenClosed=false;panel.isFloatingPanel=true;panel.hidesOnDeactivate=false;panel.delegate=self
@@ -715,13 +728,16 @@ struct ContentView: View {
     }
     private func installMainMenu(){
         let bar=NSMenu(),appItem=NSMenuItem(),appMenu=NSMenu()
-        appMenu.addItem(withTitle:L("打开主窗口"),action:#selector(showSettings),keyEquivalent:"m").target=self
+        appMenu.addItem(withTitle:L("打开主窗口"),action:#selector(toggleSettingsWindow),keyEquivalent:"m").target=self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle:L("退出 Context Manager"),action:#selector(quitEntry),keyEquivalent:"q").target=self
         appItem.submenu=appMenu;bar.addItem(appItem)
         let editItem=NSMenuItem(title:L("编辑"),action:nil,keyEquivalent:""),edit=NSMenu(title:L("编辑"))
         for (title,action,key) in [(L("撤销"),"undo:","z"),(L("重做"),"redo:","Z"),(L("剪切"),"cut:","x"),(L("复制"),"copy:","c"),(L("粘贴"),"paste:","v"),(L("全选"),"selectAll:","a")]{edit.addItem(withTitle:title,action:Selector(action),keyEquivalent:key)}
         editItem.submenu=edit;bar.addItem(editItem);NSApplication.shared.mainMenu=bar
+    }
+    @objc private func toggleSettingsWindow(){
+        if let window=settingsWindow,window.isVisible,!window.isMiniaturized{window.orderOut(nil);publishStatus()}else{showSettings()}
     }
     @objc private func showSettings(){
         closeContextMenu()
@@ -751,7 +767,7 @@ struct ContentView: View {
         let menuWindow=statusItem?.button?.window
         let frame=menuWindow?.frame ?? .zero
         let onScreen=frame.width>0 && frame.height>0 && NSScreen.screens.contains{$0.frame.intersects(frame)}
-        let state:[String:Any]=["pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"menuWindowVisible":menuWindow?.isVisible==true,"menuOnScreen":onScreen,"menuFrame":["x":frame.origin.x,"y":frame.origin.y,"width":frame.width,"height":frame.height],"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background,"statusTitle":statusItem?.button?.title ?? "","runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()]
+        let state:[String:Any]=["quotaIntegrated":true,"pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"menuWindowVisible":menuWindow?.isVisible==true,"menuOnScreen":onScreen,"menuFrame":["x":frame.origin.x,"y":frame.origin.y,"width":frame.width,"height":frame.height],"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background,"statusTitle":statusItem?.button?.title ?? "","runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()]
         guard let data=try? JSONSerialization.data(withJSONObject:state,options:.sortedKeys),data != lastStatus else{return}
         do {
             try FileManager.default.createDirectory(at:model.home,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])

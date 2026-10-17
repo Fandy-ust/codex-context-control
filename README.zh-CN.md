@@ -1,10 +1,12 @@
 # Context Manager
 
+本整合分支统一为 **0.19.0**，共用业务核心，分别构建 Windows 原生安装 EXE 与 macOS SwiftUI 安装包。[双平台构建说明](docs/CROSS_PLATFORM_BUILD.md)。两端使用相同设置结构，Mac 保留 Apple 原生材质。
+
 本适配分支新增 **Windows 11 x64 系统托盘预览版**，共用现有预算与统计核心。[安装与构建](docs/INSTALL_WINDOWS.md) · [验证结果](docs/WINDOWS_COMPATIBILITY.md) · [UI 验收](docs/WINDOWS_UI_CHECKLIST.md)。Windows 包目前在本地构建，下面的公开下载仍为 macOS 版本。
 
 在 Mac 菜单栏管理每个 Codex 聊天的上下文，最高 **920K**。
 
-## [下载 Mac 最新版 0.17.2 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.17.2-preview.1/Context-Manager-0.17.2-macos-arm64.dmg)
+## [下载 Mac 最新版 0.18.0 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.0-preview.1/Context-Manager-0.18.0-macos-arm64.dmg)
 
 Apple Silicon · macOS 14+ · DMG，45 MB · 中文 / English
 
@@ -23,6 +25,10 @@ Apple Silicon · macOS 14+ · DMG，45 MB · 中文 / English
 https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 ## 功能
+
+- **主控制面板**：左下角一键展开设置浮窗，点击外部收起。
+
+- **额度指示**：阶梯条形随额度减少变空心，右下角直接显示剩余百分比。
 
 - **本地缓存**：启动即显示聊天和最近用量，后台增量同步。
 - **在线更新**：自动检查，点击后下载安装。

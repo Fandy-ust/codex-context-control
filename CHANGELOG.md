@@ -1,5 +1,13 @@
 # Changes
 
+## 0.19.0 — Unified Windows and macOS codebase
+
+- Merge upstream 0.18 quota support with the Windows adaptation and keep both platform shells on one shared core and product version.
+- Standardize floating settings into General, Global defaults, Account quota, Codex integration and Shortcut sections, opened by a bottom-left gear.
+- Keep native SwiftUI/AppKit controls and materials on macOS, including Liquid Glass on supported SDKs and systems.
+- Add Windows quota bars and percentage, remaining amounts, reset times, multiple quota pools, stale states and manual refresh.
+- Package nested platform modules in the macOS installer and provide one workflow that builds Windows x64 and macOS arm64 from the same commit.
+
 ## 0.17.4 — Window toggle, slider motion and Windows history paths
 
 - Toggle the main window with the configured global shortcut, including Ctrl+Shift+M by default.
@@ -23,6 +31,16 @@
 - Unify control corners at 10px and prevent the information button from stretching with the heading.
 - Make the three-chat synthetic preview explicit and add an entry to open real local chats.
 - Package Windows as a self-contained Setup.exe with an embedded, checksum-verified payload and automatic temporary-file cleanup, reusing the existing installation and upgrade flow.
+
+
+## 0.18.0 — Quota indicator and floating control panel
+
+- Consolidate sidebar settings in a bottom-left floating control panel, including inline navigation to global defaults.
+- Replace the old menu-bar logo with stepped bars and a remaining-percentage label. Bars progressively become hollow as quota decreases.
+- Integrate remaining quota and reset times into the existing chat menu; no extra quota window or ring.
+- Show extra-credit availability separately from periodic quota percentages.
+- Support multiple usage pools without inventing missing values; unavailable and stale observations are labeled.
+- Read quotas through the official runtime without opening chats or generating model output. Cache for five minutes and offer manual refresh.
 
 
 ## 0.17.2 — Complete OTA cleanup

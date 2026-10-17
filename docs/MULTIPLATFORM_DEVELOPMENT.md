@@ -1,10 +1,10 @@
 # 多平台开发与版本管理
 
-状态：Windows 适配期间的开发约定，2026-10-17。当前产品版本 `0.17.4`；Windows x64 构建入口与本地预览包已实现，尚未公开发布。
+状态：Windows 适配期间的开发约定，2026-10-17。当前产品版本 `0.19.0`；Windows x64 构建入口与本地预览包已实现，尚未公开发布。
 
 ## 一个仓库，一套产品版本
 
-macOS 和 Windows 使用同一个仓库、同一份业务核心与统一产品版本。Windows 适配暂时在 `codex/windows-adaptation` 开发，完成验收后合并主分支。不要长期维护互不合并的 macOS / Windows 产品分支，也不要把 `src/` 复制到 Windows 目录再各自修改。
+macOS 和 Windows 使用同一个仓库、同一份业务核心与统一产品版本。Windows 适配暂时在 `codex/cross-platform-0.19` 开发，完成验收后合并主分支。不要长期维护互不合并的 macOS / Windows 产品分支，也不要把 `src/` 复制到 Windows 目录再各自修改。
 
 产品版本以根目录 `package.json` 为唯一来源。原生 UI、Electron UI、安装器、doctor、更新元数据和资源清单在构建时读取该版本，不各自手工填写。后续新增 npm workspace 时，内部包保持 private，产品发布版本仍取根配置。
 
@@ -14,13 +14,15 @@ macOS 和 Windows 使用同一个仓库、同一份业务核心与统一产品�
 | --- | --- | --- |
 | 业务核心 | `src/` 中的预算、策略、桥接事务、确认、默认值、fork、统计缓存和费用计算 | 不因平台分叉；所有平台复用同一份实现 |
 | OS 接入 | 对外提供一致的路径、IPC、进程身份、生命周期、启动登记和运行时发现接口 | 逐步抽取到 `src/platform/`；darwin / win32 实现分别维护 |
-| UI | 文案、数据契约、设计参数、合成状态和可共享的纯计算 | 现有 `macos/` 保留 SwiftUI；拟新增 `desktop/` 实现 Windows Electron UI |
+| UI | 文案、数据契约、设计参数、合成状态和可共享的纯计算 | 现有 `macos/` 保留 SwiftUI；`desktop/` 提供 Windows Electron UI |
 | 打包 | 版本来源、资源清单、校验原则及配置迁移语义 | macOS 包签名/DMG 与 Windows 签名/安装器分别实现 |
 | 测试 | 预算/统计 fixtures、协议行为与状态断言 | 原生窗口、托盘、权限、进程与安装流程分别验收 |
 
 UI 无法直接共用 SwiftUI 源码。现阶段保留 macOS 原生 UI，只维护两份表现层；业务计算不能在新 UI 中重写第二份。仅在 Swift 中存在的纯 UI 计算先提取规则和对照案例，再为共享 JS 实现建立一致性验证。
 
 以后如需最大化 UI 源码复用，可单独评估让 macOS 使用同一个 Electron renderer；这属于后续产品决策，需要重新验证原生行为、体积和性能，不与首轮 Windows 适配绑定。
+
+统一构建入口及平台 runner 说明见 [0.19 双平台构建](CROSS_PLATFORM_BUILD.md)。
 
 ## 构建与发布
 

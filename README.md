@@ -1,10 +1,12 @@
 # Context Manager
 
+This integration branch targets **0.19.0** with one shared core, native SwiftUI on macOS, and the Windows tray application. [Build both platforms](docs/CROSS_PLATFORM_BUILD.md).
+
 This branch adds a **Windows 11 x64 system-tray preview**, sharing the existing budget and statistics core. [Build and installation](docs/INSTALL_WINDOWS.md) · [Validation](docs/WINDOWS_COMPATIBILITY.md) · [UI checklist](docs/WINDOWS_UI_CHECKLIST.md). Windows packages are currently local previews; the public downloads below remain macOS releases.
 
 Manage each Codex chat’s context from your Mac menu bar. Up to **920K**.
 
-## [Download 0.17.2 for Mac ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.17.2-preview.1/Context-Manager-0.17.2-macos-arm64.dmg)
+## [Download 0.18.0 for Mac ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.0-preview.1/Context-Manager-0.18.0-macos-arm64.dmg)
 
 Apple Silicon · macOS 14+ · DMG, 45 MB · English / 中文
 
@@ -23,6 +25,10 @@ Apple Silicon · macOS 14+ · DMG, 45 MB · English / 中文
 https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 ## Features
+
+- **Control panel:** settings open from one compact button at the bottom left.
+
+- **Quota indicator:** stepped bars gradually empty beside a remaining-percentage label.
 
 - **Local cache:** chats and recent usage appear at startup, with incremental background sync.
 - **Updates:** automatic checks; install only when you click.
