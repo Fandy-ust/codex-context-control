@@ -437,7 +437,6 @@ struct ContentView: View {
                 Button(L("全局默认"),systemImage:"slider.horizontal.3"){showNewChatDefaults=true}.buttonStyle(.bordered)
                 Text(L("额外功能")).font(.caption).foregroundStyle(.secondary)
                 ContextExtensionControl(model:model)
-                RuntimeFixControl(model:model)
                 Button(L("打开 Codex"),systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
             }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
             ScrollView {

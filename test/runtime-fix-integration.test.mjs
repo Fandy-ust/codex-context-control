@@ -13,7 +13,7 @@ const original='/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn){for(let n=0;n<150;n++){try{const value=await fn();if(value)return value;}catch{}await sleep(50);}throw Error('Runtime activation timed out');}
 
-test('actual wrapper selects the installed fix only after opt-in and rolls back on the next launch',{
+test('lightweight wrapper never selects a previously enabled patched runtime',{
   skip:!pack||process.platform!=='darwin'||!fs.existsSync(original),timeout:45000
 },async()=>{
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-fix-live-')),control=path.join(temp,'control'),home=path.join(temp,'codex');
@@ -48,15 +48,12 @@ test('actual wrapper selects the installed fix only after opt-in and rolls back 
   try{
     const first=await start();let state=await request('state');
     assert.equal(state.runtimeFix.enabled,false);assert.equal(state.bridges.find(b=>b.pid===first.pid).runtimeFixId,null);
-    const enabled=await toggle(true);assert.equal(enabled.pending,true);
+    await assert.rejects(toggle(true));
+    fs.writeFileSync(path.join(control,'runtime-fix.json'),JSON.stringify({enabled:true}));
     const second=await start();state=await request('state');
-    assert.equal(state.bridges.find(b=>b.pid===second.pid).runtimeFixId,runtimeFixPin.id);
-    assert.equal(state.bridges.find(b=>b.pid===first.pid).runtimeFixId,null);
-    const disabled=await toggle(false);assert.equal(disabled.pending,true);
-    const third=await start();state=await request('state');
-    assert.equal(state.bridges.find(b=>b.pid===third.pid).runtimeFixId,null);
-    assert.equal(state.bridges.find(b=>b.pid===second.pid).runtimeFixId,runtimeFixPin.id);
+    assert.equal(state.bridges.find(b=>b.pid===second.pid).runtimeFixId,null);
     assert.equal(state.runtimeFix.enabled,false);
+
   }finally{
     for(const child of children)child.kill('SIGTERM');
     await sleep(250);

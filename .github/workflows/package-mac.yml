@@ -25,13 +25,13 @@ jobs:
       - run: npm run package:mac -- --release
       - name: Validate installation without developer tools
         run: |
-          archive=$(find "$PWD/build/distribution" -maxdepth 1 -name '*.zip' -print -quit)
-          CONTEXT_CONTROL_TEST_INSTALLER_ZIP="$archive" npm run test:distribution
+          CONTEXT_CONTROL_TEST_INSTALLER_APP="$PWD/build/distribution/Install Context Manager.app" npm run test:distribution
+          hdiutil verify build/distribution/*.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: context-manager-apple-silicon-preview
           path: |
-            build/distribution/*.zip
+            build/distribution/*.dmg
             build/distribution/*.sha256
             build/distribution/package-info.json
           retention-days: 30

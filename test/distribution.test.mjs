@@ -1,10 +1,13 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
 const archive=process.env.CONTEXT_CONTROL_TEST_INSTALLER_ZIP;
-test('downloaded installer validates payload, installs with empty PATH, and survives deletion of the download',{skip:!archive||process.platform!=='darwin'||process.arch!=='arm64',timeout:120000},()=>{
+const installer=process.env.CONTEXT_CONTROL_TEST_INSTALLER_APP;
+test('downloaded installer validates payload, installs with empty PATH, and survives deletion of the download',{skip:(!archive&&!installer)||process.platform!=='darwin'||process.arch!=='arm64',timeout:120000},()=>{
  const repo=fileURLToPath(new URL('../',import.meta.url)),temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-distribution-')),unpacked=path.join(temp,'download'),control=path.join(temp,'support'),home=path.join(temp,'codex');fs.mkdirSync(unpacked);fs.mkdirSync(home);
  const run=(cmd,args,env=process.env)=>spawnSync(cmd,args,{env,encoding:'utf8',timeout:60000});
  try{
-  let r=run('/usr/bin/ditto',['-x','-k',path.resolve(archive),unpacked]);assert.equal(r.status,0,r.stderr);
+  let r;
+  if(installer)fs.cpSync(path.resolve(installer),path.join(unpacked,'Install Context Manager.app'),{recursive:true});
+  else{r=run('/usr/bin/ditto',['-x','-k',path.resolve(archive),unpacked]);assert.equal(r.status,0,r.stderr);}
   const app=path.join(unpacked,'Install Context Manager.app'),resources=path.join(app,'Contents/Resources'),payload=path.join(resources,'payload');
   const manifest=JSON.parse(fs.readFileSync(path.join(resources,'payload-manifest.json')));assert.equal(manifest.arch,'arm64');assert.ok(!Object.keys(manifest.files).some(f=>f.startsWith('test/')||f.includes('auth.json')||f.includes('patched-runtime/codex')));
   r=run('/usr/bin/codesign',['--verify','--strict','--deep',app]);assert.equal(r.status,0,r.stderr);
@@ -15,6 +18,9 @@ test('downloaded installer validates payload, installs with empty PATH, and surv
   assert.equal(installerIcon,panelIcon);
   assert.deepEqual(fs.readFileSync(path.join(resources,'localization-en.json')),fs.readFileSync(path.join(panel,'Contents/Resources/localization-en.json')));
   assert.ok(manifest.files['src/locales/en.json']);
+  assert.ok(!manifest.files['node_modules/js-tiktoken/dist/index.js']);
+  assert.ok(manifest.files['node_modules/js-tiktoken/dist/ranks/o200k_base.js']);
+  r=run(path.join(payload,'vendor/node'),['--input-type=module','-e',`const {Bridge}=await import(${JSON.stringify('file://'+path.join(payload,'src/bridge.mjs'))}); const {Tiktoken}=await import(${JSON.stringify('file://'+path.join(payload,'node_modules/js-tiktoken/dist/lite.js'))}); const {default:ranks}=await import(${JSON.stringify('file://'+path.join(payload,'node_modules/js-tiktoken/dist/ranks/o200k_base.js'))}); if(new Tiktoken(ranks).encode('你好 world').length<1)process.exit(1);`]);assert.equal(r.status,0,r.stderr);
   assert.ok(manifest.files['THIRD_PARTY_NOTICES.md']);
   assert.ok(manifest.files['third-party-licenses/js-tiktoken.txt']);
   assert.deepEqual(fs.readFileSync(path.join(resources,installerIcon+'.icns')),fs.readFileSync(path.join(panel,'Contents/Resources',panelIcon+'.icns')));

@@ -24,7 +24,7 @@ export function validateRuntimePackage(directory,{platform=process.platform,arch
   return {manifest,binary};
 }
 
-export function createRuntimeFixManager({home=root,platform=process.platform,arch=process.arch,versionOf,versionRetryMs=10000}={}){
+export function createRuntimeFixManager({home=root,platform=process.platform,arch=process.arch,versionOf,versionRetryMs=10000,allowPatchedRuntime=false}={}){
   const versionCache=new Map();
   const version=file=>{
     if(!file)return null;
@@ -34,7 +34,7 @@ export function createRuntimeFixManager({home=root,platform=process.platform,arc
     const key=fingerprint(file)+':'+fingerprint(companion),previous=versionCache.get(file);
     if(previous?.key===key&&(previous.value!=null||Date.now()-previous.at<versionRetryMs))return previous.value;
     const r=spawnSync(file,['--version'],{encoding:'utf8',timeout:5000});
-    const value=r.status===0?r.stdout.trim().match(/^codex-cli (\d+\.\d+\.\d+)$/)?.[1]??null:null;
+    const value=r.status===0?r.stdout.trim().match(/^codex-cli (\d+\.\d+\.\d+(?:[-+][\w.-]+)?)$/)?.[1]??null:null;
     versionCache.set(file,{key,value,at:Date.now()});return value;
   };
   const file=path.join(home,'runtime-fix.json'),directory=path.join(home,'runtimes',runtimeFixPin.id);
@@ -54,6 +54,10 @@ export function createRuntimeFixManager({home=root,platform=process.platform,arc
   }
   function status(original,bridges=[]){
     if(!original){try{original=realBinary();}catch{original=null;}}
+    if(!allowPatchedRuntime){
+      const activeCount=bridges.filter(b=>b.runtimeFixId===runtimeFixPin.id).length;
+      return {enabled:false,available:false,compatible:false,baseVersion:runtimeFixPin.baseVersion,originalVersion:version(original),activeCount,pending:activeCount>0,message:activeCount?'已关闭，退出并重开 Codex 后恢复原版':'已关闭'};
+    }
     let enabled=false;try{enabled=readJSON(file,{})?.enabled===true;}catch{}
     const pack=packageStatus(),originalVersion=version(original);
     const compatible=platform==='darwin'&&arch==='arm64'&&originalVersion===runtimeFixPin.baseVersion;

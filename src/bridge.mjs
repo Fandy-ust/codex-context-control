@@ -1,6 +1,7 @@
 import readline from 'node:readline';
 import {randomUUID} from 'node:crypto';
-import {getEncoding} from 'js-tiktoken';
+import {Tiktoken} from 'js-tiktoken/lite';
+import ranks from 'js-tiktoken/ranks/o200k_base';
 import {ceilingConfig,ceilingModel,migrateCeilingPolicy,policyForModel,MAX_CONTEXT_INPUT,MAX_CONTEXT_COMPACT,MIN_CONTEXT_RESERVE} from './context-ceiling.mjs';
 import {isNewUserChat} from './new-chat-defaults.mjs';
 import {timestampMs} from './thread-activity.mjs';
@@ -13,7 +14,7 @@ const stickyFields=['model','effort','summary','serviceTier','cwd','sandboxPolic
 const pick=(value,keys)=>Object.fromEntries(keys.filter(k=>Object.hasOwn(value,k)).map(k=>[k,value[k]]));
 const key=id=>JSON.stringify(id);
 let inputEncoder;
-function incomingTokens(input=[]){if(!Array.isArray(input)||input.some(item=>!item||typeof item!=='object'||typeof item.type!=='string'||(item.type==='text'&&typeof item.text!=='string')))return null;inputEncoder??=getEncoding('o200k_base');return input.reduce((n,item)=>n+(item.type==='text'?inputEncoder.encode(item.text??'').length:16000),0);}
+function incomingTokens(input=[]){if(!Array.isArray(input)||input.some(item=>!item||typeof item!=='object'||typeof item.type!=='string'||(item.type==='text'&&typeof item.text!=='string')))return null;inputEncoder??=new Tiktoken(ranks);return input.reduce((n,item)=>n+(item.type==='text'?inputEncoder.encode(item.text??'').length:16000),0);}
 
 export class Bridge {
   constructor(child,input,output,publish=async()=>({}),resolveFork=async()=>null,options={}) {

@@ -6,7 +6,7 @@ import {spawnSync} from 'node:child_process';
 import {request} from './ipc.mjs';
 import {root,realBinary,readJSON} from './paths.mjs';
 import {ensureDaemon} from './service.mjs';
-import {runtimeSupported,verifiedVersions} from './compatibility.mjs';
+import {runtimeSupported} from './compatibility.mjs';
 import {automaticStartupStatus} from './automatic-startup.mjs';
 import {calculateBudget} from './budget.mjs';
 import {menuBarStatus} from './menu-bar.mjs';
@@ -35,7 +35,7 @@ try{
     let version='unavailable';try{version=spawnSync(realBinary(),['--version'],{encoding:'utf8'}).stdout.trim();}catch{}
     const state=service?await request('state'):{bridgeCount:0,threads:[]};
     const settings=readJSON(path.join(root,'settings.json'),{});
-    console.log(JSON.stringify({version:'0.16.0',node:process.version,runtime:version,runtimeSupported:runtimeSupported(version),verifiedVersions,service,connectedBridges:state.bridgeCount,serviceVersion:state.version??null,loadedBridgeVersions:(state.bridges||[]).map(b=>b.version),automaticStartup:process.platform==='darwin'?automaticStartupStatus():null,
+    console.log(JSON.stringify({version:'0.16.2',node:process.version,runtime:version,runtimeSupported:runtimeSupported(version),service,connectedBridges:state.bridgeCount,serviceVersion:state.version??null,loadedBridgeVersions:(state.bridges||[]).map(b=>b.version),automaticStartup:process.platform==='darwin'?automaticStartupStatus():null,
       runtimeFix:state.runtimeFix??null,contextExtension:state.contextExtension??null,newChatDefaults:state.newChatDefaults??null,newChatDefaultsPending:state.newChatDefaultsPending??null,observedChats:state.threads.length,installRoot:root,hookInstalled:!!settings.hookCommand,menuBar:menuBarStatus(),
       activation:state.bridgeCount?'connected':L('照常打开 Codex；首次安装或更新后请正常重开一次客户端。')},null,2));
   }else throw new Error('支持 doctor、start、list、set-usable、set（底层配置）、hook');

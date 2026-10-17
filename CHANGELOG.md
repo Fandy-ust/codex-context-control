@@ -1,5 +1,14 @@
 # Changes
 
+
+## 0.16.2 — Forward-compatible 920K and lightweight distribution
+
+- Remove app-name and runtime-version allowlists; retain runtime identity checks and per-chat window readback.
+- Enable 920K with the native 0.163.0-alpha.10.2 runtime; verify compaction guards, native/extended transitions, defaults, and forks using local integration fixtures.
+- Recognize prerelease runtime versions without selecting a patched runtime.
+- Disable the optional early-compaction runtime fix, including previously enabled preferences. The early-compaction fix is disabled because it replaces the Codex core with a modified binary lacking the official Codex signing identity, which can prevent Computer Use from working. The 920K extension only changes configuration and keeps the official runtime.
+- Ship a DMG with only the o200k tokenizer dictionary, preserving standalone installation.
+
 ## 0.16.0 — 2026-10-17
 
 - Add English and Chinese UI across the menu bar, main settings, context details, charts, runtime notices, hooks, and installer.

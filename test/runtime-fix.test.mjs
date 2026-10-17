@@ -18,7 +18,7 @@ function fixture(){
   fs.writeFileSync(path.join(directory,'codex-package.json'),'{}');
   fs.writeFileSync(path.join(directory,'helpers.json'),JSON.stringify({baseVersion:runtimeFixPin.baseVersion,files:Object.fromEntries(['bin/codex-code-mode-host','codex-path/rg','codex-package.json'].map(name=>[name,fileSHA256(path.join(directory,name))]))}));
   let originalVersion='0.160.0';
-  const manager=createRuntimeFixManager({home,platform:'darwin',arch:'arm64',versionOf:file=>file===original?originalVersion:'0.160.0'});
+  const manager=createRuntimeFixManager({allowPatchedRuntime:true,home,platform:'darwin',arch:'arm64',versionOf:file=>file===original?originalVersion:'0.160.0'});
   return {home,directory,binary,original,manifest,manager,upgrade:()=>{originalVersion='0.162.1';},close:()=>fs.rmSync(home,{recursive:true,force:true})};
 }
 
@@ -70,7 +70,7 @@ test('runtime packages require pinned sources, matching architecture, validation
 test('broken preference files fail closed and enabled state survives a manager restart',()=>{
   const f=fixture();try{
     f.manager.setEnabled(true,f.original);
-    const restarted=createRuntimeFixManager({home:f.home,platform:'darwin',arch:'arm64',versionOf:()=>runtimeFixPin.baseVersion});
+    const restarted=createRuntimeFixManager({allowPatchedRuntime:true,home:f.home,platform:'darwin',arch:'arm64',versionOf:()=>runtimeFixPin.baseVersion});
     assert.equal(restarted.select(f.original).binary,f.binary);
     fs.writeFileSync(path.join(f.home,'runtime-fix.json'),'{broken');
     assert.equal(restarted.select(f.original).binary,f.original);
@@ -86,7 +86,7 @@ test('a nested desktop executable update invalidates version checks even when it
     fs.mkdirSync(path.dirname(launcher),{recursive:true});fs.mkdirSync(path.dirname(actual),{recursive:true});
     fs.writeFileSync(launcher,'#!/bin/sh\nexec "$(dirname "$0")/../CodexCLI.app/Contents/MacOS/codex" "$@"\n',{mode:0o755});
     fs.writeFileSync(actual,"#!/bin/sh\nprintf 'codex-cli 0.160.0\\n'\n",{mode:0o755});
-    const manager=createRuntimeFixManager({home,platform:'darwin',arch:'arm64',versionRetryMs:0});
+    const manager=createRuntimeFixManager({allowPatchedRuntime:true,home,platform:'darwin',arch:'arm64',versionRetryMs:0});
     // Fresh executable fixtures can hit the OS's first-launch check under load.
     // Retry only a missing probe; a reported wrong version must fail immediately.
     const observed=()=>{const first=manager.status(launcher);return first.originalVersion==null?manager.status(launcher):first;};
@@ -142,7 +142,7 @@ test('transient version probe failures are retried without modifying the executa
  try{
   const binary=path.join(home,'codex');
   fs.writeFileSync(binary,'#!/bin/sh\nif [ -f "'+home+'/ready" ]; then printf "codex-cli 0.160.0\\n"; else exit 1; fi\n',{mode:0o755});
-  const manager=createRuntimeFixManager({home,platform:'darwin',arch:'arm64',versionRetryMs:0});
+  const manager=createRuntimeFixManager({allowPatchedRuntime:true,home,platform:'darwin',arch:'arm64',versionRetryMs:0});
   assert.equal(manager.status(binary).compatible,false);
   fs.writeFileSync(path.join(home,'ready'),'ready');assert.equal(manager.status(binary).compatible,true);
  }finally{fs.rmSync(home,{recursive:true,force:true});}
@@ -151,8 +151,17 @@ test('transient version probe failures are retried without modifying the executa
 test('temporary fixed-runtime version failures do not permanently poison package availability',()=>{
  const f=fixture();let ready=false;
  try{
-  const manager=createRuntimeFixManager({home:f.home,platform:'darwin',arch:'arm64',versionRetryMs:0,versionOf:file=>file===f.binary&&!ready?null:runtimeFixPin.baseVersion});
+  const manager=createRuntimeFixManager({allowPatchedRuntime:true,home:f.home,platform:'darwin',arch:'arm64',versionRetryMs:0,versionOf:file=>file===f.binary&&!ready?null:runtimeFixPin.baseVersion});
   assert.equal(manager.status(f.original).available,false);ready=true;
   assert.equal(manager.status(f.original).available,true);
  }finally{f.close();}
 });
+
+ test('lightweight default ignores a previously enabled patched runtime',()=>{
+ const f=fixture();try{f.manager.setEnabled(true,f.original);const manager=createRuntimeFixManager({home:f.home,versionOf:()=>runtimeFixPin.baseVersion});assert.equal(manager.select(f.original).binary,f.original);assert.equal(manager.status(f.original).enabled,false);assert.throws(()=>manager.setEnabled(true,f.original));}finally{f.close();}
+ });
+
+ test('lightweight runtime status recognizes prerelease versions without enabling the patch',()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-prerelease-'));
+ try{const binary=path.join(home,'codex');fs.writeFileSync(binary,'#!/bin/sh\nprintf "codex-cli 0.163.0-alpha.10.2\\n"\n',{mode:0o755});const manager=createRuntimeFixManager({home});const state=manager.status(binary);assert.equal(state.originalVersion,'0.163.0-alpha.10.2');assert.equal(state.enabled,false);assert.equal(manager.select(binary).binary,binary);}finally{fs.rmSync(home,{recursive:true,force:true});}
+ });

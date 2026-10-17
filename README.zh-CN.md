@@ -1,12 +1,18 @@
 # Context Manager
 
+提前压缩修复已停用：它需要替换 Codex 核心，修改版缺少 Codex 官方签名身份，会导致 Computer Use 无法使用。920K 扩展仅调整配置，继续使用官方运行时，无需修改核心。
+
+920K 扩展已通过原生 0.163.0-alpha.10.2 运行时的本地集成测试，覆盖窗口读回、压缩保护与开关切换；不再要求精确匹配旧版本。提前压缩修复运行时仍保持关闭。
+
+0.16.2 改用 DMG 安装文件，仅保留 o200k 分词词表。不设置 app 名称或运行时版本白名单；无法识别的运行时直接透传。未来接口变化仍可能需要适配，每个聊天的窗口以运行时实际读回为准。
+
 [English](README.md) | **简体中文**
 
 <img src="macos/Assets/ContextManager.png" width="112" alt="Context Manager 图标">
 
 macOS 菜单栏里的 Codex 上下文管理器：按聊天调整预算，查看用量、缓存与费用估算。
 
-**0.16.0 · Apple Silicon · macOS 14+ · 测试版**
+**0.16.2 · Apple Silicon · macOS 14+ · 测试版**
 
 ## 演示视频
 
@@ -20,16 +26,16 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 [GitHub Releases / 测试包](https://github.com/Fandy-ust/codex-context-control/releases) · [完整安装指南](docs/INSTALL_MAC.md) · [更新记录](CHANGELOG.md)
 
-**[下载 0.16.0 中英版 · Apple Silicon（ZIP，约 49 MB）](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.16.0-preview.1/Context-Manager-0.16.0-macos-arm64.zip)** · [版本说明](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.16.0-preview.1)
+**[下载 0.16.2 中英版 · Apple Silicon（DMG，约 45 MB）](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.16.2-preview.1/Context-Manager-0.16.2-macos-arm64.dmg)** · [版本说明](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.16.2-preview.1)
 
 仓库与中英版预览安装包均已公开，可直接下载。演示视频在单独的发布页；安装 App 请使用上方链接。
 
-1. 获取 `Context-Manager-0.16.0-macos-arm64.zip` 并解压。
+1. 获取 `Context-Manager-0.16.2-macos-arm64.dmg` 并打开。
 2. 打开 **Install Context Manager.app**，点击「安装 / 更新」。
 3. 首次安装后完整退出并重开 Codex；菜单栏出现圆环图标。
 4. 点击圆环即可查看聊天或打开主窗口。Hook stats 可另外在 Codex 的 `/hooks` 中审核启用。
 
-无需安装 Node、npm、Homebrew 或 Xcode。需要事先安装 Codex / ChatGPT 桌面客户端；目前完整验证的 Codex 运行时是 **0.160.0**。
+无需安装 Node、npm、Homebrew 或 Xcode。需要事先安装 Codex / ChatGPT 桌面客户端；920K 已通过 **Codex 0.163.0-alpha.10.2** 运行时的本地集成测试。
 
 测试包尚未使用 Developer ID 签名与 Apple 公证。确认来源后，按 macOS「隐私与安全」提示允许打开；使用者无需购买开发者会员。[系统提示与兼容性](docs/INSTALL_MAC.md)
 

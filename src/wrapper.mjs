@@ -13,13 +13,13 @@ const desktop=caller.desktop,originalBinary=caller.binary;
 const runtime=desktop&&isStdioServer(args)?createRuntimeFixManager().select(originalBinary):{binary:originalBinary,runtimeFixId:null};
 const binary=runtime.binary;
 const bridgeVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
-const nativeVersion=isStdioServer(args)?spawnSync(binary,['--version'],{encoding:'utf8'}).stdout||'':'';
+const nativeVersion=isStdioServer(args)?spawnSync(binary,['--version'],{encoding:'utf8',timeout:5000}).stdout||'':'';
 const supported=!isStdioServer(args)||runtimeSupported(nativeVersion);
 if(!desktop||!isStdioServer(args)||!supported){
-  if(!supported)process.stderr.write('Context Control: 当前运行时版本未经验证，本次仅透传。\n');
+  if(!supported)process.stderr.write('Context Control: 无法识别 Codex 运行时，本次仅透传。\n');
   const p=spawn(binary,args,{stdio:'inherit',env:process.env});p.on('exit',(code,signal)=>signal?process.kill(process.pid,signal):process.exit(code??1));
 }else{
-  const ceiling=nativeVersion.trim()==='codex-cli 0.160.0'?prepareContextCatalog():null;
+  const ceiling=prepareContextCatalog();
   const child=spawn(binary,contextCeilingLaunchArgs(args,ceiling),{stdio:['pipe','pipe','inherit'],env:process.env});
   let peer,closed=false,bridge;
   bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{

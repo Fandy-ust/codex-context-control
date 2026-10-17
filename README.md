@@ -1,12 +1,18 @@
 # Context Manager
 
+The early-compaction fix is disabled because it replaces the Codex core with a modified binary lacking the official Codex signing identity, which can prevent Computer Use from working. The 920K extension only changes configuration and keeps the official runtime.
+
+920K extension is verified against the native 0.163.0-alpha.10.2 runtime using local integration fixtures (window readback, compaction guards, and off/on transitions). It no longer requires an exact runtime version. The optional early-compaction patched runtime remains disabled.
+
+0.16.2 uses a DMG installer and ships only the o200k tokenizer dictionary. App names and runtime versions are not allowlisted; unrecognized runtimes pass through. Future protocol changes may still require adaptation; each chat’s window is confirmed from runtime readback.
+
 **English** | [简体中文](README.zh-CN.md)
 
 <img src="macos/Assets/ContextManager.png" width="112" alt="Context Manager icon">
 
 Manage Codex context budgets from the macOS menu bar. Adjust each chat’s usable window, inspect input and cache usage, and review estimated API costs.
 
-**0.16.0 · Apple Silicon · macOS 14+ · English / 中文 · MIT**
+**0.16.2 · Apple Silicon · macOS 14+ · English / 中文 · MIT**
 
 ## Demo
 
@@ -20,16 +26,16 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 [Releases](https://github.com/Fandy-ust/codex-context-control/releases) · [Installation guide](docs/en/INSTALL_MAC.md) · [Changes](CHANGELOG.md)
 
-**[Download 0.16.0 for Apple Silicon (ZIP, about 49 MB)](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.16.0-preview.1/Context-Manager-0.16.0-macos-arm64.zip)** · [Release notes](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.16.0-preview.1)
+**[Download 0.16.2 for Apple Silicon (DMG, about 45 MB)](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.16.2-preview.1/Context-Manager-0.16.2-macos-arm64.dmg)** · [Release notes](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.16.2-preview.1)
 
 The English / Chinese preview installer is publicly available. The demo release contains the video; use the app download above to install Context Manager.
 
-1. Obtain `Context-Manager-0.16.0-macos-arm64.zip` and extract it.
+1. Obtain `Context-Manager-0.16.2-macos-arm64.dmg` and open it.
 2. Open **Install Context Manager.app** and choose **Install / Update**.
 3. Fully quit and reopen Codex after the first installation or a bridge upgrade.
 4. Click the ring icon in the menu bar to open your chats and settings. Optionally review the Stop hook in Codex’s `/hooks` for Hook stats.
 
-No Node, npm, Homebrew, or Xcode is needed to use the installer. Install the Codex / ChatGPT desktop client first. Full integration is currently verified with **Codex 0.160.0**.
+No Node, npm, Homebrew, or Xcode is needed to use the installer. Install the Codex / ChatGPT desktop client first. 920K integration is verified with **Codex 0.163.0-alpha.10.2** using local test fixtures.
 
 Preview packages are locally signed and are **not Developer ID signed or Apple notarized**. On a trusted preview, follow the macOS Privacy & Security prompt to allow opening. Users do not need a developer membership. [Installation details](docs/en/INSTALL_MAC.md)
 

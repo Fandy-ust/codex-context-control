@@ -1,5 +1,5 @@
-export const verifiedVersions=['0.159.2','0.160.0'];
-export function runtimeSupported(text){return verifiedVersions.includes(text.match(/codex-cli\s+([0-9.]+)/)?.[1]);}
+// Recognize the runtime, without maintaining a version allowlist.
+export function runtimeSupported(text=''){return /^codex-cli\s+\d+\.\d+\.\d+(?:[-+][\w.-]+)?\s*$/.test(text.trim());}
 export function isStdioServer(args){
   if(!args.includes('app-server')||['generate-json-schema','generate-ts','daemon'].some(x=>args.includes(x)))return false;
   const at=args.indexOf('--listen');const inline=args.find(x=>x.startsWith('--listen='));

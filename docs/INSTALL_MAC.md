@@ -2,18 +2,18 @@
 
 [English](en/INSTALL_MAC.md) | **简体中文** · [首页](../README.zh-CN.md)
 
-首发测试包支持 Apple Silicon（M 系列）、macOS 14 或更新版本。需要已安装 Codex / ChatGPT 桌面客户端；完整功能在 Codex 0.160.0 验证。Intel 暂不包含在首发包内。
+首发测试包支持 Apple Silicon（M 系列）、macOS 14 或更新版本。需要已安装 Codex / ChatGPT 桌面客户端；920K 已通过 Codex 0.163.0-alpha.10.2 运行时的本地集成测试。Intel 暂不包含在首发包内。
 
 ## 普通使用者
 
-1. [下载 0.16.0 中英版 Apple Silicon ZIP](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.16.0-preview.1/Context-Manager-0.16.0-macos-arm64.zip)，然后解压。
+1. [下载 0.16.2 中英版 Apple Silicon DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.16.2-preview.1/Context-Manager-0.16.2-macos-arm64.dmg)，然后打开。
 2. 打开 `Install Context Manager.app`，点击「安装 / 更新」。
 3. 完整退出并重开 Codex。菜单栏自动出现 Context Manager 的圆环与三条横线图标。
 4. 若需要 Hook stats，在 Codex 的 `/hooks` 审核新增 hook。主面板和预算控制不依赖 hook 信任。
 
 无需安装开发工具，无需申请 Developer ID。安装器把运行环境复制到稳定的本地支持目录；删掉安装器不会影响使用。不会把签名的 Codex 应用改成修改版。
 
-当前私有测试包使用本地签名，**尚未 Developer ID 签名、公证**。如果 macOS 阻止打开，确认包来自项目所有者、校验文件匹配后，先尝试打开，再去「系统设置 → 隐私与安全 → 仍要打开」。受管理的 Mac 可能限制这种例外；遵守该设备的管理策略。[Apple 官方说明](https://support.apple.com/en-us/102445)
+当前公开预览包使用本地签名，**尚未 Developer ID 签名、公证**。如果 macOS 阻止打开，确认包来自项目所有者、校验文件匹配后，先尝试打开，再去「系统设置 → 隐私与安全 → 仍要打开」。受管理的 Mac 可能限制这种例外；遵守该设备的管理策略。[Apple 官方说明](https://support.apple.com/en-us/102445)
 
 不要运行关闭 Gatekeeper 的全局命令。校验和只能发现传输损坏或与发布文件不一致，不能代替发布者身份验证。
 
@@ -28,7 +28,7 @@
 
 ## 获取、更新与移除
 
-仓库及 0.16.0 中英版预览安装包均已公开，可直接下载。较早的草稿仍供维护者复核，视频发布不包含安装器。
+仓库及 0.16.2 中英版预览安装包均已公开，可直接下载。较早的草稿仍供维护者复核，视频发布不包含安装器。
 
 更新：打开新版安装器，选择「安装 / 更新」。连接桥接升级后需重开 Codex；界面会保留实际状态与等待生效的区别。
 
@@ -45,3 +45,7 @@
 ## 语言
 
 安装器与 App 均可选择「自动（按时区）／中文／English」，立即生效并保存在本机，更新时保留。自动模式对中国大陆、香港、澳门、台湾时区使用中文，其余使用英文；手动选择优先。[语言说明](LOCALIZATION.md)
+
+## 920K / Computer Use
+
+在设置中开启上下文拓展，可设置最高 920K；切换后重开 Codex。提前压缩修复需要替换核心，修改版缺少 Codex 官方签名身份，会导致 Computer Use 无法使用，因此已停用。920K 仅调整配置，保留官方运行时。更新会保留预算和语言，但关闭旧的提前压缩修复。

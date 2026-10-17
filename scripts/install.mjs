@@ -60,6 +60,8 @@ if(process.argv.includes('--uninstall')){
   const oldVersion=readJSON(path.join(root,'code/package.json'),{})?.version;
   const extensionFile=path.join(root,'context-extension.json');
   if(!fs.existsSync(extensionFile)&&/^0\.(12|13)\./.test(oldVersion??''))atomicJSON(extensionFile,{enabled:true,migratedFrom:oldVersion,updatedAt:Date.now()});
+  // The lightweight release always uses the original desktop runtime.
+  atomicJSON(path.join(root,'runtime-fix.json'),{enabled:false,updatedAt:Date.now()});
   const code=path.join(root,'code');
   replaceDirectory(code,stage=>{
     for(const dir of ['src','scripts','runtime-patches'])fs.cpSync(path.join(repo,dir),path.join(stage,dir),{recursive:true});
