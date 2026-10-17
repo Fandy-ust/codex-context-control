@@ -9,7 +9,7 @@ import {timelinePlot,timelineX,timelinePosition} from '../../src/timeline-scale.
 import {DEFAULT_SHORTCUT,shortcutLabel,shortcutFromEvent,normalizeShortcut} from '../../src/ui-shortcut.mjs';
 import {sliderMotion} from '../../src/slider-motion.mjs';
 import {selectedQuota,quotaWindows,quotaStale} from '../../src/quota-display.mjs';
-import {budgetView,chatView,detailsView,statisticsView,chartDetailView,rawRecordsView,trayChatView} from './apple-view.mjs';
+import {budgetView,chatView,detailsView,statisticsView,chartDetailView,chartTooltipView,rawRecordsView,trayChatView} from './apple-view.mjs';
 
 const api=window.contextManager,root=document.querySelector('#app'),mode=new URLSearchParams(location.search).get('mode')||'main';
 let state=null,preferences={language:'zh',selection:'auto',english:{}},selected=null,view='chat',draft=null,dirty=false,dragging=false,busy=false,stats=null,statsJSON='',timeline=null,period=0,hover=null,pinned=null,page=0,auto=true,lastStats=0,toastTimer,refreshing=false,interactionId=null;
@@ -20,6 +20,7 @@ let detailsOpen=false,detailsSnapshot=null,detailsUnderlay='',statsLoading=false
 let mainNotice='',mainNoticeError=false;
 let budgetInputError='',detailsEpoch=0,serviceAvailable=false,smoothingInteracting=false;
 let budgetText={};
+let chartPointer=null,chartTooltipBucket=null;
 const trayFeedback=new Map(),traySaving=new Set();
 const editingDefaults=()=>settingsOpen?settingsTab==='defaults':view==='defaults';
 const useLegacyBudget=()=>editingDefaults();
@@ -138,6 +139,7 @@ function updateTrayAvailability(){
   }
 }
 function render(){
+  hideChartTooltip();
   if(mode==='tray'){renderTray();return;}
   if(!settingsOpen&&shortcutRecording)finishShortcutRecording();
   const oldMain=root.querySelector('.main'),same=oldMain?.dataset.view===view,open=same?[...oldMain.querySelectorAll('details')].map((d,i)=>d.open?i:-1).filter(i=>i>=0):[],scroll=same?oldMain.scrollTop:0;
@@ -281,13 +283,15 @@ function drawCharts(){
     // Connect available measurements visually without synthesizing samples.
     const paths=series.map(s=>`<path data-series="${s.key}" stroke="${s.color}" d="${s.points.map((point,i)=>(i?'L':'M')+timelineX(point.position,timeline.upperBound).toFixed(2)+','+(h-20-point.value/max*(h-30)).toFixed(2)).join(' ')}"/>`).join('');
     const dots=series.map(s=>`<circle class="chart-selection-point" data-measure="${s.key}" r="3.5" stroke="${s.color}" visibility="hidden"/>`).join('');
-    return `<div class="plot" data-plot="${name}" data-maximum="${max}"><span class="axis">${e(name==='speed'?t('生成速度 · tokens/s','Generation · tokens/s'):t('输入与缓存 · tokens','Input and cache · tokens'))} · ${e(k(max))}</span><svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="${e(name==='speed'?t('生成速度趋势','Generation speed trend'):t('输入和缓存趋势','Input and cache trend'))}" role="img">${[30,65,100].map(y=>`<line class="chart-grid" x1="${padding}" y1="${y}" x2="${w-padding}" y2="${y}"/>`).join('')}${paths}${dots}</svg><i class="chart-cursor"></i></div>`;
+    const ticks=[1,.5,0].map(ratio=>({y:h-20-ratio*(h-30),value:ratio*max}));
+    const tickLabels=ticks.map(tick=>`<span class="chart-y-tick num" style="top:${tick.y/h*100}%">${e(name==='speed'?amount(tick.value):k(tick.value))}</span>`).join('');
+    return `<div class="plot" data-plot="${name}" data-maximum="${max}"><span class="axis">${e(name==='speed'?t('生成速度 · tokens/s','Generation · tokens/s'):t('输入与缓存 · tokens','Input and cache · tokens'))}</span>${tickLabels}<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="${e(name==='speed'?t('生成速度趋势','Generation speed trend'):t('输入和缓存趋势','Input and cache trend'))}" role="img">${ticks.map(tick=>`<line class="chart-grid" x1="${padding}" y1="${tick.y}" x2="${w-padding}" y2="${tick.y}"/>`).join('')}${paths}${dots}</svg><i class="chart-cursor"></i></div>`;
   };
-  container.innerHTML=plot('speed',[{key:'speed',points:timeline.speed,color:'#6d9dff'}])+plot('cache',[{key:'input',points:timeline.input,color:'#aaa'},{key:'cache',points:timeline.cache,color:'#78b8cf'}])+`<div class="chart-label"><span>● ${e(t('输入','Input'))}</span><span style="color:#78b8cf">● ${e(t('缓存读取','Cached reads'))}</span></div><div class="plot events-plot" data-plot="events">${timeline.buckets.flatMap(bucket=>[['user_input',bucket.users,6],['final',bucket.finals,20],['compaction',bucket.compactions,10]].filter(([,count])=>count>0).map(([type,count,top])=>`<i class="event-marker ${type}" data-bucket="${bucket.id}" style="left:${timelineX(bucket.position,timeline.upperBound,100)}%;top:${top}px" title="${e(type)} · ${count}"></i>`)).join('')}<i class="chart-cursor"></i></div>`;
+  container.innerHTML=plot('speed',[{key:'speed',points:timeline.speed,color:'#6d9dff'}])+`<div class="chart-label chart-legend"><span style="color:#6d9dff">● ${e(t('生成速度','Generation speed'))}</span></div>`+plot('cache',[{key:'input',points:timeline.input,color:'#aaa'},{key:'cache',points:timeline.cache,color:'#78b8cf'}])+`<div class="chart-label chart-legend"><span>● ${e(t('输入','Input'))}</span><span style="color:#78b8cf">● ${e(t('缓存读取','Cached reads'))}</span></div><div class="plot events-plot" data-plot="events">${timeline.buckets.flatMap(bucket=>[['user_input',bucket.users,6],['final',bucket.finals,20],['compaction',bucket.compactions,10]].filter(([,count])=>count>0).map(([type,count,top])=>`<i class="event-marker ${type}" data-bucket="${bucket.id}" style="left:${timelineX(bucket.position,timeline.upperBound,100)}%;top:${top}px" title="${e(type)} · ${count}"></i>`)).join('')}<i class="chart-cursor"></i></div><div class="chart-label chart-legend event-legend"><span style="color:#79c890">● ${e(t('用户输入','User input'))}</span><span style="color:#6899ff">● ${e(t('最终回复','Final reply'))}</span><span style="color:#b488e5">● ${e(t('压缩','Compaction'))}</span></div>`;
   let pending=null,frame=null;
   const select=(plot,event)=>{
     const rect=plot.getBoundingClientRect(),position=timelinePosition(event.clientX-rect.left,timeline.upperBound,rect.width);
-    hover=position==null?null:nearestBucket(timeline,position);updateChartSelection();
+    chartPointer={x:event.clientX,y:event.clientY};hover=position==null?null:nearestBucket(timeline,position);updateChartSelection();
   };
   for(const plot of container.querySelectorAll('[data-plot]')){
     plot.addEventListener('pointermove',event=>{pending={plot,event};if(frame==null)frame=requestAnimationFrame(()=>{frame=null;if(pending)select(pending.plot,pending.event);pending=null;});});
@@ -310,7 +314,24 @@ function updateChartSelection(){
   detail.innerHTML=chartDetailView({bucket:focused,pinned:pinned!=null&&hover==null,e,t,k,amount,modelName:modelDisplayName});
   const summary=document.getElementById('raw-summary');if(summary)summary.textContent=t('原始记录（{0} 条）','Raw records ({0})',focused?focused.end-focused.start:0);
   if(document.querySelector('#raw-records')?.open)renderRaw();
+  updateChartTooltip(hover!=null?focused:null);
 }
+
+function hideChartTooltip(){document.getElementById('chart-hover-tooltip')?.setAttribute('hidden','');chartPointer=null;chartTooltipBucket=null;}
+function updateChartTooltip(bucket){
+  if(!bucket||!chartPointer||!detailsOpen){hideChartTooltip();return;}
+  let node=document.getElementById('chart-hover-tooltip');
+  if(!node){node=document.createElement('div');node.id='chart-hover-tooltip';node.className='chart-hover-tooltip';node.setAttribute('aria-hidden','true');document.body.append(node);}
+  if(chartTooltipBucket!==bucket.id){node.innerHTML=chartTooltipView({bucket,e,t,k,amount});chartTooltipBucket=bucket.id;}
+  node.hidden=false;
+  const {width,height}=node.getBoundingClientRect(),gap=18,pad=12;
+  const left=chartPointer.x+gap+width<=innerWidth-pad?chartPointer.x+gap:chartPointer.x-gap-width;
+  const top=chartPointer.y+gap+height<=innerHeight-pad?chartPointer.y+gap:chartPointer.y-gap-height;
+  node.style.left=Math.max(pad,Math.min(left,innerWidth-width-pad))+'px';node.style.top=Math.max(pad,Math.min(top,innerHeight-height-pad))+'px';
+}
+window.addEventListener('blur',hideChartTooltip);
+window.addEventListener('resize',hideChartTooltip);
+document.addEventListener('scroll',()=>{if(hover!=null){hover=null;updateChartSelection();queueMicrotask(applyDeferredStats);}else hideChartTooltip();},true);
 
 function renderRaw(){
   const node=document.querySelector('#raw-page');if(!node||!timeline)return;

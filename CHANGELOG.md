@@ -1,8 +1,9 @@
 # Changes
 
-## 0.19.4 — Connect missing trend intervals
+## 0.19.4 — Continuous trends and inline chart values
 
 - Join available chart measurements across missing intervals with straight lines on Windows and macOS.
+- Add left-axis values, compact color legends and a pointer-following Windows data card so interval values can be read without scrolling down.
 - Keep missing values, interval statistics, EMA resets and raw-record details unchanged; preserve native Apple chart rendering within measured intervals.
 
 ## 0.19.3 — One-command Windows EXE build

@@ -31,6 +31,12 @@ export function chartDetailView({bucket:b,pinned,e,t,k,amount,modelName}){
   return `<div class="row between"><h3>${e(b.firstResponse==null?t('对话事件','Conversation events'):t('响应 #{0}–#{1}','Responses #{0}–#{1}',b.firstResponse,b.lastResponse))}${pinned?' ⌖':''}</h3><span class="tiny muted">${e(t('{0} 次响应','{0} responses',b.responses))}</span></div><div class="chart-detail-metrics">${metric(t('区间均速','Interval average speed'),b.speed==null?'—':amount(b.speed)+' t/s')}${metric(t('输入均量','Mean input'),k(b.inputMean))}${metric(t('缓存均量','Mean cache'),k(b.cacheMean))}${metric(t('输出合计','Total output'),k(b.outputSamples?b.output:null))}</div><p class="tiny muted">${e(t('用户输入 {0} · 最终回复 {1} · 压缩 {2}','User input {0} · final responses {1} · compactions {2}',b.users,b.finals,b.compactions))}</p><p class="tiny muted">${e(b.models.map(modelName).join(' · '))}</p>${b.measured<b.responses||b.inputCount<b.responses||b.cacheCount<b.responses?`<p class="tiny muted">${e(t('缺少记录：计时 {0} · 输入 {1} · 缓存 {2}','Missing records: timing {0} · input {1} · cache {2}',b.responses-b.measured,b.responses-b.inputCount,b.responses-b.cacheCount))}</p>`:''}${b.zeros?`<p class="tiny error">${e(t('日志零缓存值未独立证实','Zero cache values are unverified'))}</p>`:''}`;
 }
 
+export function chartTooltipView({bucket:b,e,t,k,amount}){
+  if(!b)return '';
+  const metric=(label,value)=>`<div><span>${e(label)}</span><strong>${e(value)}</strong></div>`;
+  return `<strong>${e(b.firstResponse==null?t('对话事件','Conversation events'):t('响应 #{0}–#{1}','Responses #{0}–#{1}',b.firstResponse,b.lastResponse))}</strong><div class="chart-tooltip-metrics">${metric(t('区间均速','Interval speed'),b.speed==null?'—':amount(b.speed)+' t/s')}${metric(t('输入均量','Mean input'),k(b.inputMean))}${metric(t('缓存均量','Mean cache'),k(b.cacheMean))}${metric(t('输出合计','Total output'),k(b.outputSamples?b.output:null))}</div><p>${e(t('输入 {0} · 回复 {1} · 压缩 {2}','Inputs {0} · replies {1} · compactions {2}',b.users,b.finals,b.compactions))}</p>`;
+}
+
 export function rawRecordsView({entries,page,pages,selectedID,e,t,amount,k,modelName}){
   const active=entries.find(entry=>entry.id===selectedID),visible=entries.slice(page*20,page*20+20);
   const row=entry=>`<button class="raw-record-row ${entry.id===selectedID?'selected':''}" data-action="raw-select" data-id="${e(entry.id)}"><span>${e(t(entry.response?.kind||entry.event?.kind||entry.eventType))}</span><span class="muted">${entry.response?.tokensPerSecond==null?e(t('无计时','No timing')):amount(entry.response.tokensPerSecond)+' t/s'}</span></button>`;
