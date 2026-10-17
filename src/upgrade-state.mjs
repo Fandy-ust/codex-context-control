@@ -21,7 +21,7 @@ export function prepareUpgrade({home,version}){
  atomicJSON(recordFile,{from:previous,to:version,phase:'prepared',preparedAt:Date.now()});
  return {from:previous,to:version};
 }
-export function inheritedSettings(previous,installation){return {...previous,...installation};}
+export function inheritedSettings(previous,installation){const merged={...previous,...installation};if(Number.isSafeInteger(previous.version)&&Number.isSafeInteger(installation.version))merged.version=Math.max(previous.version,installation.version);return merged;}
 export function completeUpgrade({home,from,to}){
  atomicJSON(path.join(home,'upgrade.json'),{from,to,phase:'complete',completedAt:Date.now()});
 }
