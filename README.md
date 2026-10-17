@@ -4,13 +4,19 @@
 
 macOS 菜单栏里的 Codex 上下文管理器：按聊天调整预算，查看用量、缓存与费用估算。
 
-**0.15.6 · Apple Silicon · macOS 14+ · 私有测试版**
+**0.15.6 · Apple Silicon · macOS 14+ · 测试版**
+
+## 演示视频
+
+[下载 1080p 演示视频（MP4，约 175 MB）](https://github.com/Fandy-ust/codex-context-control/releases/download/demo-2026-10-17/context-manager-demo-1080p.mp4) · [演示发布页](https://github.com/Fandy-ust/codex-context-control/releases/tag/demo-2026-10-17)
+
+1920 × 1080 · 4 分 27 秒，展示菜单栏控制与上下文管理操作。
 
 ## 下载与安装
 
 [GitHub Releases / 测试包](https://github.com/Fandy-ust/codex-context-control/releases) · [完整安装指南](docs/INSTALL_MAC.md) · [更新记录](CHANGELOG.md)
 
-仓库目前私有，安装包以草稿供维护者检查，**尚未公开发布，也未上架 Mac App Store**。草稿不等于对所有协作者开放下载。授权测试者由维护者提供 ZIP；发布后的私有 Release 仍需要仓库访问权限。
+仓库现已公开，演示视频可直接下载。应用安装包目前仍以 Release 草稿供维护者检查，**尚未发布可公开下载的安装包，也未上架 Mac App Store**；视频发布不包含安装器。
 
 1. 获取 `Context-Manager-0.15.6-macos-arm64.zip` 并解压。
 2. 打开 **Install Context Manager.app**，点击「安装 / 更新」。
