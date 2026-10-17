@@ -491,5 +491,20 @@
   "安装应用签名校验失败：": "Installed app signature verification failed: ",
   "已安装：{0}\n菜单栏 Context Manager 圆环图标提供聊天概览和设置入口。照常打开原来的 Codex，预算控制会自动接入；首次安装后请正常重开一次客户端。\n请在 Codex 的 /hooks 中审核并信任新增 hook；安装程序不会生成信任记录。": "Installed: {0}\nThe Context Manager ring icon in the menu bar opens chat overview and settings. Open Codex normally to connect; restart the client once after the first installation.\nReview and trust the new hook in Codex’s /hooks. The installer does not create trust records.",
   "修复包已安装；开关设置保持原值，首次安装默认关闭。": "Patched runtime installed. Your existing toggle preference was preserved; the default is off for a first installation.",
-  "自动按时区选择，手动选择优先。": "Automatic uses your time zone; a manual choice takes priority."
+  "自动按时区选择，手动选择优先。": "Automatic uses your time zone; a manual choice takes priority.",
+  "已缓存": "Cached",
+  "本地聊天": "Local chat",
+  "同步本地聊天": "Sync local chats",
+  "本地聊天已更新": "Local chats updated",
+  "已加载本地聊天；打开聊天后实时同步。": "Local chats loaded. Open a chat for live updates.",
+  "已显示本地缓存；打开聊天后实时同步。": "Showing local cache. Open the chat for live updates.",
+  "已发现本地聊天；打开后实时同步。": "Local chat discovered. Open it for live updates.",
+  "正在下载更新，安装后请重开 Codex": "Downloading update. Restart Codex after installation.",
+  "发现新版本": "Update available",
+  "已是最新版本": "You are up to date",
+  "正在更新…": "Updating…",
+  "安装更新 {0}": "Install update {0}",
+  "检查更新": "Check for updates",
+  "更新已安装，请重开 Codex": "Update installed. Restart Codex.",
+  "更新失败：{0}": "Update failed: {0}"
 }

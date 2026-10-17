@@ -2,7 +2,7 @@
 
 在 Mac 菜单栏管理每个 Codex 聊天的上下文，最高 **920K**。
 
-## [下载 Mac 最新版 0.16.2 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.16.2-preview.1/Context-Manager-0.16.2-macos-arm64.dmg)
+## [下载 Mac 最新版 0.17.0 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.17.0-preview.1/Context-Manager-0.17.0-macos-arm64.dmg)
 
 Apple Silicon · macOS 14+ · DMG，45 MB · 中文 / English
 
@@ -21,6 +21,9 @@ Apple Silicon · macOS 14+ · DMG，45 MB · 中文 / English
 https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 ## 功能
+
+- **本地缓存**：启动即显示聊天和最近用量，后台增量同步。
+- **在线更新**：自动检查，点击后下载安装。
 
 - 按聊天调整上下文窗口和压缩阈值。
 - 设置新聊天默认预算，分支继承父聊天预算。

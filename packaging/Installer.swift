@@ -29,7 +29,7 @@ enum InstallFailure:LocalizedError {
             if !output.isEmpty && uninstall{detail+="\n"+output}
         }catch{status=L("未能完成");detail=error.localizedDescription}
     }
-    nonisolated static func execute(resources:URL,uninstall:Bool) throws -> String {
+    nonisolated static func execute(resources:URL,uninstall:Bool,noAutoStart:Bool=false) throws -> String {
         let payload=resources.appendingPathComponent("payload").resolvingSymlinksInPath().standardizedFileURL,manifest=try JSONDecoder().decode(PayloadManifest.self,from:Data(contentsOf:resources.appendingPathComponent("payload-manifest.json")))
         guard manifest.arch=="arm64" else{throw InstallFailure.message(L("此安装包不适用于这台 Mac"))}
         var actual=Set<String>()
@@ -51,7 +51,7 @@ enum InstallFailure:LocalizedError {
         FileManager.default.createFile(atPath:log.path,contents:nil,attributes:[.posixPermissions:0o600])
         let handle=try FileHandle(forWritingTo:log);defer{try? handle.close();try? FileManager.default.removeItem(at:log)}
         let process=Process();process.executableURL=payload.appendingPathComponent("vendor/node");process.currentDirectoryURL=payload
-        process.arguments=[payload.appendingPathComponent("scripts/install.mjs").path]+(uninstall ? ["--uninstall"]:["--use-built-panel","--bundled-node","--require-supported-runtime"])
+        process.arguments=[payload.appendingPathComponent("scripts/install.mjs").path]+(uninstall ? ["--uninstall"]:["--use-built-panel","--bundled-node","--require-supported-runtime"])+(noAutoStart ? ["--no-auto-start"]:[])
         process.standardOutput=handle;process.standardError=handle
         try process.run();process.waitUntilExit();try handle.synchronize()
         let output=(try? String(contentsOf:log,encoding:.utf8)) ?? ""
@@ -83,6 +83,15 @@ struct InstallerView:View {
 }
 #if !INSTALLER_TESTING
 @main struct ContextManagerInstaller:App {
+    init(){
+        if CommandLine.arguments.contains("--install-update") {
+            do {
+                guard let resources=Bundle.main.resourceURL else{throw InstallFailure.message("Missing installer resources")}
+                _ = try InstallerModel.execute(resources:resources,uninstall:false,noAutoStart:CommandLine.arguments.contains("--no-auto-start"))
+                exit(0)
+            } catch {fputs(error.localizedDescription+"\n",stderr);exit(1)}
+        }
+    }
     var body:some Scene {WindowGroup("Context Manager"){InstallerView()}.windowResizability(.contentSize)}
 }
 

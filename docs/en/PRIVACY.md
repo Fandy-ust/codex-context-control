@@ -23,3 +23,7 @@ The UI uses an authenticated loopback controller and local IPC. The connection f
 App installers include only allowed production code, dependencies, compiled UI, the pinned Node runtime, and notices. They exclude the author’s credentials, chat history, live state, research probes, test data, and the large optional patched Codex core.
 
 The original signed Codex app is preserved. Installation backs up hook configuration and does not create fake hook trust records. Uninstall preserves budgets and backups unless you remove those files separately.
+
+## Update checks and summary cache
+
+Automatic update checks contact this public GitHub repository for release metadata; downloads occur only after clicking Install update. No chat content or credentials are sent. The persistent thread cache stores local file fingerprints, read offsets, model names, last reported usage, and window capacity. It contains no message bodies. Initial history reads use a bounded 256 KiB tail; subsequent reads process complete appended records and reuse unchanged files.

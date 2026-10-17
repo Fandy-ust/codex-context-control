@@ -26,7 +26,8 @@ struct RuntimeFixState:Decodable,Equatable {let enabled:Bool;let available:Bool;
 struct NewChatDefaultsState:Decodable,Equatable {let usableWindow:Int;let compact:Int;let revision:Int}
 struct ContextExtensionState:Decodable,Equatable {let enabled:Bool;let effective:Bool;let pending:Bool;let activeCount:Int;let connectedCount:Int;let compatible:Bool;let available:Bool;let message:String}
 struct NewChatDefaultsLimits:Decodable,Equatable {let maximumUsableWindow:Int;let effectivePercent:Int;let extended:Bool}
-struct RuntimeState: Decodable {let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:Bool;let version:String?;let phase:String;let error:String?}
+struct RuntimeState: Decodable {let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -46,6 +47,8 @@ struct ServiceSettings: Decodable {let node:String}
     func setLanguage(_ value:LanguageChoice){do{try Localization.setChoice(value)}catch{notice=L("无法保存语言设置：{0}",error.localizedDescription)}}
     @Published var chats:[Chat]=[]
     @Published var selectedID:String?
+    @Published var updateState:UpdateState?
+    @Published var checkingUpdates=false
     @Published var bridgeCount=0
     @Published var contextCeilingPending=false
     @Published var contextExtension:ContextExtensionState?
@@ -93,6 +96,7 @@ struct ServiceSettings: Decodable {let node:String}
         if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"))
             guard !menuDragInProgress else{return}
+            if updateState != state.update{updateState=state.update;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
             if chats != state.threads{chats=state.threads}
             if bridgeCount != state.bridgeCount{bridgeCount=state.bridgeCount}
             if runtimeFix != state.runtimeFix{runtimeFix=state.runtimeFix}
@@ -105,8 +109,16 @@ struct ServiceSettings: Decodable {let node:String}
             if selectedID==nil{selectedID=chats.first?.id;fill()}
             else if waitingForModel,let metadata=selected?.modelMetadata,metadata.effective_context_window_percent != nil,metadata.max_context_window != nil{fill()}
             else if !budgetEdited,editingRevision != (selected?.policy?.revision ?? 0){fill()}
-            if Localization.canonical(notice)=="正在读取本地状态…"||Localization.canonical(notice).hasPrefix("读取失败："){notice=bridgeCount>0 ? L("已接入 Codex。") : L("照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。")}
+            if Localization.canonical(notice)=="正在读取本地状态…"||Localization.canonical(notice).hasPrefix("读取失败："){notice=bridgeCount>0 ? L("已接入 Codex。") : L("已加载本地聊天；打开聊天后实时同步。")}
         }catch{serviceAvailable=false;notice=L("读取失败：{0}", error.localizedDescription)}
+    }
+    func updateApp(install:Bool=false) async {
+        checkingUpdates=true;defer{checkingUpdates=false}
+        do{updateState=try JSONDecoder().decode(UpdateState.self,from:await api(install ? "/updates/install":"/updates/check",body:[:]));if let error=updateState?.error{notice=error}else{notice=install ? L("正在下载更新，安装后请重开 Codex"):L(updateState?.available == true ? "发现新版本":"已是最新版本")}}catch{notice=error.localizedDescription}
+    }
+    func scanChats() async {
+        working=true;defer{working=false}
+        do{_ = try await api("/scan",body:[:]);await refresh();notice=L("本地聊天已更新")}catch{notice=error.localizedDescription}
     }
     func setContextExtension(_ enabled:Bool) async {
         changingContextExtension=true;defer{changingContextExtension=false}
@@ -418,7 +430,7 @@ struct ContentView: View {
                 ScrollView {
                     LazyVStack(spacing:4){ForEach(model.chats){chat in
                         Button {model.selectedID=chat.id} label:{
-                            VStack(alignment:.leading,spacing:5){Text(chat.title).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle);Text(chat.connected ? phaseName(chat.phase):L("尚未接入")).font(.system(size:11)).foregroundStyle(.secondary)}
+                            VStack(alignment:.leading,spacing:5){Text(chat.title).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle);Text(chat.connected ? phaseName(chat.phase):L(chat.lastUsage != nil ? "已缓存":"本地聊天")).font(.system(size:11)).foregroundStyle(.secondary)}
                                 .frame(maxWidth:.infinity,alignment:.leading).padding(12)
                                 .background(model.selectedID==chat.id ? Color.white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:12))
                                 .contentShape(Rectangle())
@@ -434,9 +446,17 @@ struct ContentView: View {
                     Text(model.languageSelection == .auto ? L("自动：{0}",Localization.language == .zh ? "中文":"English") : L("自动按时区选择，手动选择优先。"))
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 }
+                Button(L("同步本地聊天"),systemImage:"arrow.clockwise"){Task{await model.scanChats()}}.buttonStyle(.bordered).disabled(model.working)
                 Button(L("全局默认"),systemImage:"slider.horizontal.3"){showNewChatDefaults=true}.buttonStyle(.bordered)
                 Text(L("额外功能")).font(.caption).foregroundStyle(.secondary)
                 ContextExtensionControl(model:model)
+                if let update=model.updateState {
+                    if update.phase=="downloading" || update.phase=="installing" {
+                        Label(L("正在更新…"),systemImage:"arrow.down.circle")
+                    } else {
+                        Button(update.available ? L("安装更新 {0}",update.version ?? ""):L("检查更新"),systemImage:"arrow.down.circle"){Task{await model.updateApp(install:update.available)}}.buttonStyle(.bordered).disabled(model.checkingUpdates)
+                    }
+                }
                 Button(L("打开 Codex"),systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
             }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
             ScrollView {

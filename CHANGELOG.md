@@ -1,6 +1,15 @@
 # Changes
 
 
+## 0.17.0 — Local chat cache and click-to-install updates
+
+- Discover local chats at startup without the 30-chat discovery limit; restore last usage from a persistent, bounded-tail cache.
+- Skip unchanged files and read appended records only; refresh in the background or with Sync local chats.
+- Show cached chats separately from live connections; preserve live readback and compaction safeguards.
+- Check GitHub for updates automatically every six hours. Download and install only after an explicit click, verifying checksums and native installer payload integrity.
+- Preserve budgets, language, and caches during updates. Keep the official Codex runtime and 920K support.
+
+
 ## 0.16.2 — Forward-compatible 920K and lightweight distribution
 
 - Remove app-name and runtime-version allowlists; retain runtime identity checks and per-chat window readback.

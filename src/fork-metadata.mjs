@@ -26,7 +26,7 @@ export function readForkParent(home,id,file,cache){
         const userOwned=event.payload.thread_source==null||event.payload.thread_source==='user';
         const parent=userOwned&&typeof value==='string'&&/^[a-f\d-]{36}$/i.test(value)&&value!==id?value:null;
         cache.set(id,{key,bytes:Buffer.concat(chunks).length+1,parent});
-        if(cache.size>128)cache.delete(cache.keys().next().value);
+        if(cache.size>4096)cache.delete(cache.keys().next().value);
         return parent;
       }
     }finally{fs.closeSync(fd);}

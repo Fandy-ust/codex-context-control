@@ -37,6 +37,11 @@ test('downloaded installer validates payload, installs with empty PATH, and surv
   const changed=path.join(payload,'src/cli.mjs'),old=fs.readFileSync(changed);fs.appendFileSync(changed,'\n// tampered');r=run(verifier,[resources],env);assert.notEqual(r.status,0);assert.match(r.stdout,/校验失败/);assert.equal(fs.existsSync(path.join(control,'settings.json')),false);fs.writeFileSync(changed,old);
   r=run(verifier,[resources],env);assert.equal(r.status,0,r.stdout+r.stderr);
   const settings=JSON.parse(fs.readFileSync(path.join(control,'settings.json')));assert.ok(settings.node.startsWith(path.join(control,'runtime')));assert.ok(!settings.node.startsWith(unpacked));assert.ok(fs.existsSync(path.join(control,'runtime/Node-'+manifest.nodeVersion+'-LICENSE.txt')));
+  fs.writeFileSync(path.join(control,'thread-cache.json'),JSON.stringify({version:1,entries:{cached:{summary:{lastUsage:{totalTokens:123}}}}}));
+  const retainedState={version:2,threads:{},policies:{saved:{window:400000,compact:360000,revision:3}}};fs.writeFileSync(path.join(control,'state.json'),JSON.stringify(retainedState));
+  r=run(path.join(app,'Contents/MacOS/Installer'),['--install-update','--no-auto-start'],env);assert.equal(r.status,0,r.stdout+r.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(control,'state.json'))),retainedState);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(control,'thread-cache.json'))).entries.cached.summary.lastUsage.totalTokens,123);
   fs.rmSync(unpacked,{recursive:true,force:true});
   r=run(settings.node,['-e','const {DatabaseSync}=require("node:sqlite"); const db=new DatabaseSync(":memory:"); db.close(); console.log(process.version)'],env);assert.equal(r.status,0,r.stderr);assert.equal(r.stdout.trim(),manifest.nodeVersion);
   r=run(path.join(control,'bin/codex-context'),['--version'],env);assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/0.160.0/);
