@@ -9,6 +9,7 @@ import {powershell} from '../src/platform/index.mjs';
 import {compileWindowsInstaller} from './windows-installer.mjs';
 const repo=fileURLToPath(new URL('../',import.meta.url)),pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
 const payload=path.join(repo,'build',`Context-Manager-${pkg.version}-windows-${process.arch}`,'payload');
+const nextVersion=pkg.version.split('.').map((part,index)=>Number(part)+(index===2?1:0)).join('.');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-win-install-测试-')),home=path.join(temp,'control'),codex=path.join(temp,'codex'),apps=path.join(temp,'apps');
 const standalone=process.argv.includes('--standalone'),download=path.join(temp,'download'),extraction=path.join(temp,'extraction');
 let setup,upgradeSetup;
@@ -46,14 +47,14 @@ try{
   const start=()=>{const r=spawnSync(s.node,[path.join(s.codeRoot,'src/cli.mjs'),'start'],{env,encoding:'utf8',windowsHide:true,timeout:15000});assert.equal(r.status,0,r.stdout+r.stderr);return JSON.parse(fs.readFileSync(path.join(home,'connection.json'),'utf8'));};
   const oldService=start();
   const upgraded=path.join(temp,'upgrade-payload');fs.cpSync(payload,upgraded,{recursive:true});
-  const packageFile=path.join(upgraded,'resources/app/package.json'),metadata=JSON.parse(fs.readFileSync(packageFile,'utf8'));metadata.version='0.17.3';metadata.buildId='windows-upgrade-test';fs.writeFileSync(packageFile,JSON.stringify(metadata));
-  const manifestFile=path.join(upgraded,'payload-manifest.json'),manifest=JSON.parse(fs.readFileSync(manifestFile,'utf8'));manifest.version='0.17.3';manifest.buildId=metadata.buildId;manifest.files['resources/app/package.json']=sha(packageFile);fs.writeFileSync(manifestFile,JSON.stringify(manifest));
+  const packageFile=path.join(upgraded,'resources/app/package.json'),metadata=JSON.parse(fs.readFileSync(packageFile,'utf8'));metadata.version=nextVersion;metadata.buildId='windows-upgrade-test';fs.writeFileSync(packageFile,JSON.stringify(metadata));
+  const manifestFile=path.join(upgraded,'payload-manifest.json'),manifest=JSON.parse(fs.readFileSync(manifestFile,'utf8'));manifest.version=nextVersion;manifest.buildId=metadata.buildId;manifest.files['resources/app/package.json']=sha(packageFile);fs.writeFileSync(manifestFile,JSON.stringify(manifest));
   if(standalone){
     const archive=path.join(temp,'upgrade.zip'),checksum=archive+'.sha256';upgradeSetup=path.join(download,'新版 安装器.exe');
     powershell('Add-Type -AssemblyName System.IO.Compression.FileSystem;[IO.Compression.ZipFile]::CreateFromDirectory($env:CTC_SOURCE,$env:CTC_ZIP)',{CTC_SOURCE:upgraded,CTC_ZIP:archive},{timeout:180000});
     fs.writeFileSync(checksum,sha(archive));compileWindowsInstaller({output:upgradeSetup,icon:path.join(repo,'build/windows-native/ContextManager.ico'),archive,checksum});
   }
-  s=install([],upgraded);assert.equal(s.productVersion,'0.17.3');assert.deepEqual(s.futurePreference,{keep:true});assert.equal(JSON.parse(fs.readFileSync(path.join(home,'upgrade-backup/manifest.json'),'utf8')).from,'0.17.2');
+  s=install([],upgraded);assert.equal(s.productVersion,nextVersion);assert.deepEqual(s.futurePreference,{keep:true});assert.equal(JSON.parse(fs.readFileSync(path.join(home,'upgrade-backup/manifest.json'),'utf8')).from,pkg.version);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home,'ui-settings.json'),'utf8')),uiSettings);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home,'upgrade-backup/ui-settings.json'),'utf8')),uiSettings);
   const newService=start();assert.notEqual(newService.pid,oldService.pid);assert.equal(newService.buildId,'windows-upgrade-test');
   const uninstall=install(['--uninstall'],standalone?upgraded:payload);assert.equal(uninstall.uninstalled,true);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home,'state.json'),'utf8')),state);

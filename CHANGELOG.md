@@ -1,6 +1,10 @@
 # Changes
 
-## Unreleased — Windows UI refinements
+## 0.17.3 — Windows sidebar and launch diagnostics
+
+- Display native chat names in the sidebar, budget view, statistics and tray instead of falling back to IDs.
+- Move sidebar controls into a floating Settings dialog opened by a bottom-left gear, with general, defaults, integration and shortcut tabs.
+- Flush each native stdio write so short initialization messages reach Node before EOF; add rotating stage/timing/byte-count logs and an Open integration logs action.
 
 - Install only the tray and interface by default; make desktop integration an explicit Settings action, with a startup probe before registration and restoration on disable.
 - Give the installer, tray and service stable working directories so launched processes do not hold the extracted payload directory open.

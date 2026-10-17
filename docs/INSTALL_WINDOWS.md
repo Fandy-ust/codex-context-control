@@ -1,10 +1,10 @@
 # Windows 安装与开发
 
-当前分支提供 Windows 11 x64 本地预览版，产品基线为 0.17.2。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，也尚未发布到 GitHub Releases。
+当前分支提供 Windows 11 x64 本地预览版，当前版本为 0.17.3。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，也尚未发布到 GitHub Releases。
 
 ## 安装
 
-1. 下载 `Context-Manager-0.17.2-windows-x64-Setup.exe`，只需要这一个文件，不需要旁边放 `payload/`。
+1. 下载 `Context-Manager-0.17.3-windows-x64-Setup.exe`，只需要这一个文件，不需要旁边放 `payload/`。
 2. 双击 `Setup.exe`，选择「安装 / 更新」。安装器先校验并解压内置程序，再安装到当前用户；完成后自动清理临时解压目录，不需要修改 Codex 安装文件。安装成功后可以删除下载的 EXE。
 3. 默认只安装界面与托盘，**不接管 Codex 启动，也不需要重开 Codex**。本地聊天和历史用量可直接查看；实时预算控制需要在管理器「设置 → Codex 接入」中手动启用，再在工作结束后重开 Codex。
 4. 在右下角系统托盘点击圆环图标。Windows 可能把它收在 `^` 折叠区，可在系统任务栏设置中选择显示。
@@ -22,7 +22,11 @@
 
 主窗口提供双滑块、1K 微调、容量/比例预设、预检、逐聊天应用、停止自动应用、原生压缩、全局默认、上下文拓展和统计图。关闭主窗口保留托盘；退出管理界面不会结束 Codex 或正在生成的请求。
 
-在侧栏或托盘右键菜单打开「设置」，可自定义唤起主窗口的全局快捷键，默认 **Ctrl + Shift + M**。支持录制按键、直接输入、恢复默认和禁用；组合被其他程序占用时会提示，并保留原来可用的快捷键。管理器驻留托盘时生效，完全退出后不再响应。快捷键偏好单独保存在数据目录的 `ui-settings.json`，更新时保留。
+点击左下角悬浮齿轮，或从托盘右键菜单打开「设置」。设置以悬浮弹层显示，语言、同步聊天、上下文拓展、更新和诊断集中在「通用」，另有「全局默认」「Codex 接入」「快捷键」分类；聊天列表使用侧栏其余空间。点击遮罩、关闭按钮或按 Esc 关闭弹层。
+
+「快捷键」可自定义唤起主窗口的全局快捷键，默认 **Ctrl + Shift + M**。支持录制按键、直接输入、恢复默认和禁用；组合被其他程序占用时会提示，并保留原来可用的快捷键。管理器驻留托盘时生效，完全退出后不再响应。快捷键偏好单独保存在数据目录的 `ui-settings.json`，更新时保留。
+
+接入启动异常时，在「通用」或「Codex 接入」点击「打开接入日志」。默认目录为 `%LOCALAPPDATA%\CodexContextControl\logs`，`integration.jsonl` 记录检查阶段、耗时、进程及收发字节数，`launcher.jsonl` 记录原生启动器的首次刷新、EOF 和退出阶段。每个日志达到约 1 MB 后轮换一份备份；不记录 RPC 正文、聊天文本或初始化消息内容。检查失败不会登记接入，失败提示保留在设置中。
 
 「合成数据预览」只显示三个示例聊天，不代表聊天数量限制。正常使用运行 `npm run dev:win`（不带 `--demo`），或在预览顶部点击「查看真实聊天」。预览与本地模式使用独立偏好；切换到真实模式后再保存日常使用的快捷键。
 
@@ -60,7 +64,7 @@ npm run build:win
 npm run package:win
 ```
 
-`build:win` 输出 `build/Context-Manager-0.17.2-windows-x64/`。`package:win` 输出独立的 `build/Context-Manager-0.17.2-windows-x64-Setup.exe`、同名 `.sha256`，以及更新器使用的 ZIP 和校验文件。分发给使用者时只需发送 `Setup.exe`。构建包含应用图标和版本信息，沿用已有品牌源图。
+`build:win` 输出 `build/Context-Manager-0.17.3-windows-x64/`。`package:win` 输出独立的 `build/Context-Manager-0.17.3-windows-x64-Setup.exe`、同名 `.sha256`，以及更新器使用的 ZIP 和校验文件。分发给使用者时只需发送 `Setup.exe`。构建包含应用图标和版本信息，沿用已有品牌源图。
 
 单文件安装器使用系统 .NET Framework 的[程序集内置资源](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/compiler-options/resources)封装压缩包，运行时通过[资源流](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.assembly.getmanifestresourcestream)读取。解压前验证 SHA-256，解压时拒绝越界路径和符号链接；内部仍复用同一套安装/升级脚本。
 

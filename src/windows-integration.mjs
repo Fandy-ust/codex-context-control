@@ -4,11 +4,12 @@ import {root,codexHome,settings,readJSON,atomicJSON} from './paths.mjs';
 import {enableWindowsStartup,disableWindowsStartup} from './platform/windows-startup.mjs';
 import {probeWindowsLauncher} from './platform/windows-probe.mjs';
 import {editOwnedHook} from './hooks.mjs';
+import {integrationLog,integrationLogDirectory} from './diagnostic-log.mjs';
 
 const preferenceFile=()=>path.join(root,'integration.json');
 export function windowsIntegrationStatus(){
   const pref=readJSON(preferenceFile(),{}),config=settings(),registration=readJSON(path.join(root,'automatic-startup.json'));
-  return {enabled:pref.enabled===true,available:config.uninstalled!==true&&!!config.shim&&fs.existsSync(config.shim),registered:pref.enabled===true&&!!config.shim&&registration?.value===config.shim&&fs.existsSync(config.shim),pendingRestart:pref.enabled===true};
+  return {enabled:pref.enabled===true,available:config.uninstalled!==true&&!!config.shim&&fs.existsSync(config.shim),registered:pref.enabled===true&&!!config.shim&&registration?.value===config.shim&&fs.existsSync(config.shim),pendingRestart:pref.enabled===true,logDirectory:integrationLogDirectory};
 }
 export async function setWindowsIntegration(enabled,{probe=probeWindowsLauncher,...startupOptions}={}){
   if(typeof enabled!=='boolean')throw Error('Invalid integration preference');
@@ -17,7 +18,8 @@ export async function setWindowsIntegration(enabled,{probe=probeWindowsLauncher,
   const command=config.shim?`"${config.shim}" --hook`:null;
   if(enabled){
     if(config.uninstalled===true||!config.shim||!fs.existsSync(config.shim))throw Error('请先安装管理器，再手动启用接入。');
-    await probe(config.shim,config.realBinary);
+    integrationLog('integration.enable_requested',{shim:config.shim,binary:config.realBinary});
+    try{await probe(config.shim,config.realBinary);}catch(error){integrationLog('integration.probe_failed',{message:error.message});throw error;}
   }
   let startupChanged=false;
   try{
@@ -30,6 +32,7 @@ export async function setWindowsIntegration(enabled,{probe=probeWindowsLauncher,
     }
     atomicJSON(path.join(root,'settings.json'),{...config,hookCommand:enabled?command:null});
     atomicJSON(preferenceFile(),{...previousPreference,version:Math.max(previousPreference.version||1,1),enabled});
+    integrationLog('integration.preference_saved',{enabled});
   }catch(error){
     atomicJSON(path.join(root,'settings.json'),config);
     if(beforeHooks)fs.writeFileSync(hooks,beforeHooks);else fs.rmSync(hooks,{force:true});

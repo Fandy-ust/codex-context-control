@@ -1,4 +1,4 @@
-import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut} from 'electron';
+import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell} from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -16,6 +16,7 @@ if(smoke)setTimeout(()=>{console.error('UI_SMOKE_FAILED startup timeout');app.ex
 if(demo&&!process.env.CONTEXT_CONTROL_HOME)process.env.CONTEXT_CONTROL_HOME=path.join(os.tmpdir(),'context-manager-demo');
 const {root,readJSON,atomicJSON,ensureRoot,settings}=await import('../src/paths.mjs');
 const {windowsIntegrationStatus,setWindowsIntegration,codexLaunchEnvironment}=await import('../src/windows-integration.mjs');
+const {integrationLogDirectory}=await import('../src/diagnostic-log.mjs');
 const {ensureDaemon}=await import('../src/service.mjs');
 const {resolveLanguage,languagePreference,localize}=await import('../src/localization.mjs');
 const {demoState,demoStatistics}=await import('./demo.mjs');
@@ -95,6 +96,10 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
     if(demo||smoke)throw Error('预览模式不修改 Codex 接入。');
     return setWindowsIntegration(params.enabled);
   }
+  if(action==='open-logs'){
+    if(smoke)throw Error('Opening log folders is disabled during smoke tests');
+    fs.mkdirSync(integrationLogDirectory,{recursive:true});const error=await shell.openPath(integrationLogDirectory);if(error)throw Error(error);return {ok:true};
+  }
   if(action==='shortcut-save'){if(typeof params.enabled!=='boolean')throw Error('Invalid shortcut setting');globalShortcut.setSuspended(false);const result=shortcutManager.set(params);publish();return result;}
   if(action==='shortcut-recording'){if(event.sender===main?.webContents)globalShortcut.setSuspended(params.active===true&&!smoke);return {ok:true};}
   if(action==='open-live'){
@@ -109,7 +114,7 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
   if(action==='interaction'){if(event.sender===trayWindow?.webContents){menuDragging=params.dragging===true;if(!menuDragging&&!trayWindow.isFocused())trayWindow.hide();}return {ok:true};}
   if(action==='quit'){app.quit();return {ok:true};}
   if(action==='open-codex'){const executable=settings().desktopExecutable;if(!executable||!fs.existsSync(executable))throw Error(label('请先安装或运行诊断以识别 Codex','Install first to discover the Codex application'));const p=spawn(executable,[],{cwd:path.dirname(executable),env:codexLaunchEnvironment(),detached:true,windowsHide:true,stdio:'ignore'});p.on('error',()=>{});p.unref();return {ok:true};}
-  if(action==='diagnostics')return {version:pkg.version,platform:process.platform,arch:process.arch,serviceVersion:lastState?.version??null,loadedBridgeVersions:lastState?.bridges?.map(b=>b.version)??[],connectedBridges:lastState?.bridgeCount??0};
+  if(action==='diagnostics')return {version:pkg.version,platform:process.platform,arch:process.arch,serviceVersion:lastState?.version??null,loadedBridgeVersions:lastState?.bridges?.map(b=>b.version)??[],connectedBridges:lastState?.bridgeCount??0,logDirectory:integrationLogDirectory};
   const result=await api(action,params);if(action==='state'){lastState=result;updateTray();}return result;
 });
 app.whenReady().then(async()=>{ensureRoot();ready=true;
