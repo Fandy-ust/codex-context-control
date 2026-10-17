@@ -14,7 +14,7 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 [下载 1080p 演示视频（MP4，约 175 MB）](https://github.com/Fandy-ust/codex-context-control/releases/download/demo-2026-10-17/context-manager-demo-1080p.mp4) · [演示发布页](https://github.com/Fandy-ust/codex-context-control/releases/tag/demo-2026-10-17)
 
-1920 × 1080 · 4 分 27 秒，展示菜单栏控制与上下文管理操作。
+1920 × 1080 · 4 分 27 秒，展示菜单栏控制与上下文管理操作。[观看英文演示](README.md#demo)。
 
 ## 下载与安装
 

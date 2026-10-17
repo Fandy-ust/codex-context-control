@@ -10,11 +10,11 @@ Manage Codex context budgets from the macOS menu bar. Adjust each chat’s usabl
 
 ## Demo
 
-https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
+https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
-[Download the original 1080p demo (MP4, about 175 MB)](https://github.com/Fandy-ust/codex-context-control/releases/download/demo-2026-10-17/context-manager-demo-1080p.mp4) · [Demo release](https://github.com/Fandy-ust/codex-context-control/releases/tag/demo-2026-10-17)
+[Download the original English 1080p demo (MP4, about 137 MB)](https://github.com/Fandy-ust/codex-context-control/releases/download/demo-2026-10-17/context-manager-demo-en-1080p.mp4) · [Demo release](https://github.com/Fandy-ust/codex-context-control/releases/tag/demo-2026-10-17)
 
-1920 × 1080 · 4 min 27 sec. The inline player uses a smaller full-length 1080p encode. The video narration and captions are Chinese.
+1920 × 1080 · 4 min 6 sec · English narration and captions. The inline player uses a smaller full-length 1080p encode. [Watch the Chinese demo](README.zh-CN.md#演示视频).
 
 ## Install
 
