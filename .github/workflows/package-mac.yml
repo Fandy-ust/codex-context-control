@@ -1,6 +1,11 @@
 name: macOS installer
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the existing draft release after validation
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -34,4 +39,28 @@ jobs:
             build/distribution/*.dmg
             build/distribution/*.sha256
             build/distribution/package-info.json
+            build/distribution/README-FIRST.txt
           retention-days: 30
+
+  publish:
+    if: ${{ inputs.publish_release }}
+    needs: apple-silicon
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: context-manager-apple-silicon-preview
+          path: release
+      - name: Publish validated installer to its draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version=$(node -p "require('./release/package-info.json').version")
+          tag="v${version}-preview.1"
+          test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
+          gh release edit "$tag" --target "$GITHUB_SHA"
+          gh release upload "$tag" release/*.dmg release/*.sha256 release/package-info.json release/README-FIRST.txt --clobber
+          gh release edit "$tag" --draft=false --latest
