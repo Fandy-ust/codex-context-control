@@ -1,10 +1,11 @@
+import os from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
 test('legacy SQLite prompt titles are not imported and preview caches are migrated',async()=>{
-  const temp=fs.mkdtempSync('/tmp/ctc-privacy-');const home=path.join(temp,'codex');const root=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(root);
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-privacy-'));const home=path.join(temp,'codex');const root=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(root);
   process.env.CONTEXT_CONTROL_HOME=root;process.env.CONTEXT_CONTROL_CODEX_HOME=home;
   try{
     const {DatabaseSync}=await import('node:sqlite');const db=new DatabaseSync(path.join(home,'state_5.sqlite'));

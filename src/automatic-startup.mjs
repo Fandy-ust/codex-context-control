@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {root,readJSON,atomicJSON} from './paths.mjs';
+import {userEnvironment,windowsStartupStatus,enableWindowsStartup,disableWindowsStartup} from './platform/windows-startup.mjs';
 
 const label='io.github.codex-context-control.environment';
 const key='CODEX_CLI_PATH';
@@ -14,7 +15,7 @@ function launchctl(args,required=true){
   if(required&&(result.error||result.status!==0))throw new Error(`自动接入设置失败：${result.error?.message||result.stderr.trim()||args[0]}`);
   return result;
 }
-export function guiEnvironment(name=key){return launchctl(['getenv',name]).stdout.replace(/\n$/,'');}
+export function guiEnvironment(name=key){return process.platform==='win32'?userEnvironment(name):launchctl(['getenv',name]).stdout.replace(/\n$/,'');}
 function restoreEnvironment(name,value){launchctl(value?['setenv',name,value]:['unsetenv',name]);}
 function locations(options={}){
   const directory=options.directory||path.join(os.homedir(),'Library/LaunchAgents');
@@ -22,12 +23,14 @@ function locations(options={}){
   return {recordFile:options.recordFile||path.join(root,'automatic-startup.json'),plist:path.join(directory,name+'.plist'),label:name,key:options.key||key,domain:`gui/${process.getuid()}`};
 }
 export function automaticStartupStatus(options={}){
+  if(process.platform==='win32')return windowsStartupStatus(options);
   const record=readJSON(locations(options).recordFile);
   if(!record)return {installed:false,environmentActive:false,loginJobLoaded:false};
   return {installed:fs.existsSync(record.plist),environmentActive:guiEnvironment(record.key)===record.value,
     loginJobLoaded:launchctl(['print',`${record.domain}/${record.label}`],false).status===0};
 }
 export function enableAutomaticStartup(shim,options={}){
+  if(process.platform==='win32')return enableWindowsStartup(shim,options);
   if(process.platform!=='darwin')throw new Error('自动桌面接入仅支持 macOS');
   const loc=locations(options);const previous=readJSON(loc.recordFile);
   const before=guiEnvironment(loc.key);
@@ -64,6 +67,7 @@ export function enableAutomaticStartup(shim,options={}){
   return automaticStartupStatus(options);
 }
 export function disableAutomaticStartup(options={}){
+  if(process.platform==='win32')return disableWindowsStartup(options);
   const loc=locations(options);const record=readJSON(loc.recordFile);if(!record)return {removed:false};
   if(fs.existsSync(record.plist)&&digest(fs.readFileSync(record.plist,'utf8'))!==record.plistHash)throw new Error('自动接入的登录项已被修改；为保留你的设置，未自动删除。');
   launchctl(['bootout',`${record.domain}/${record.label}`],false);

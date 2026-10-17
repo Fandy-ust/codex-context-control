@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {root,readJSON,atomicJSON} from './paths.mjs';
-const nodeName=/^node-(v\d+\.\d+\.\d+)-(arm64|x64)-[a-f0-9]{12}$/;
+const nodeName=/^node-(v\d+\.\d+\.\d+)-(arm64|x64)-[a-f0-9]{12}(?:\.exe)?$/;
 const licenseName=/^Node-(v\d+\.\d+\.\d+)-LICENSE\.txt$/;
 const pin=JSON.parse(fs.readFileSync(new URL('../runtime-patches/manifest.json',import.meta.url)));
 export function processExecutables(){

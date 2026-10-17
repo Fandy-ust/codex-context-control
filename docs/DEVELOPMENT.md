@@ -2,6 +2,8 @@
 
 [English](en/DEVELOPMENT.md) | **简体中文** · [首页](../README.zh-CN.md)
 
+Windows 适配见 [安装与构建](INSTALL_WINDOWS.md)、[实施方案](WINDOWS_ADAPTATION_PLAN.md) 和 [兼容性记录](WINDOWS_COMPATIBILITY.md)；共享代码、分支及构建版本约定见 [多平台开发与版本管理](MULTIPLATFORM_DEVELOPMENT.md)。当前分支可构建 Windows x64 本地预览包，人工 UI 验收见 [检查清单](WINDOWS_UI_CHECKLIST.md)。
+
 ## 目录
 
 ```

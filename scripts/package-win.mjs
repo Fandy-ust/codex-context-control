@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {powershell} from '../src/platform/index.mjs';
+const repo=fileURLToPath(new URL('../',import.meta.url)),pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
+const name=`Context-Manager-${pkg.version}-windows-${process.arch}`,folder=path.join(repo,'build',name),zip=folder+'.zip';
+if(!fs.existsSync(path.join(folder,'payload/payload-manifest.json')))throw Error('Run npm run build:win first');
+powershell('Add-Type -AssemblyName System.IO.Compression.FileSystem;if(Test-Path -LiteralPath $env:CONTEXT_CONTROL_ZIP){Remove-Item -LiteralPath $env:CONTEXT_CONTROL_ZIP};[System.IO.Compression.ZipFile]::CreateFromDirectory($env:CONTEXT_CONTROL_PACKAGE,$env:CONTEXT_CONTROL_ZIP)',{CONTEXT_CONTROL_PACKAGE:folder,CONTEXT_CONTROL_ZIP:zip},{timeout:180000});
+fs.writeFileSync(zip+'.sha256',crypto.createHash('sha256').update(fs.readFileSync(zip)).digest('hex')+'  '+path.basename(zip)+'\n');console.log(zip);

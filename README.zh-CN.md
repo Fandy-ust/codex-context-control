@@ -1,5 +1,7 @@
 # Context Manager
 
+本适配分支新增 **Windows 11 x64 系统托盘预览版**，共用现有预算与统计核心。[安装与构建](docs/INSTALL_WINDOWS.md) · [验证结果](docs/WINDOWS_COMPATIBILITY.md) · [UI 验收](docs/WINDOWS_UI_CHECKLIST.md)。Windows 包目前在本地构建，下面的公开下载仍为 macOS 版本。
+
 在 Mac 菜单栏管理每个 Codex 聊天的上下文，最高 **920K**。
 
 ## [下载 Mac 最新版 0.17.2 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.17.2-preview.1/Context-Manager-0.17.2-macos-arm64.dmg)

@@ -3,6 +3,21 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:win
+      - run: npm run test:win:ui-smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: context-manager-windows-x64
+          path: build/Context-Manager-*-windows-x64/
   node:
     runs-on: ubuntu-latest
     steps:

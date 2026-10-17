@@ -1,4 +1,5 @@
 import net from 'node:net';
+import {version,buildId} from './version.mjs';
 import {cleanupOldRuntimes} from './runtime-cleanup.mjs';
 import os from 'node:os';
 import {createUpdateManager} from './updates.mjs';
@@ -6,9 +7,12 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {defaultRoot,prepareEndpoint,secureEndpoint,windows} from './platform/index.mjs';
+import {authenticateServer} from './ipc-auth.mjs';
 import {L} from './localization.mjs';
 import {Peer,request} from './ipc.mjs';
-import {root,socketPath,ensureRoot,atomicJSON} from './paths.mjs';
+import {root,socketPath,ensureRoot,atomicJSON,ipcKey} from './paths.mjs';
 import {compareThreadActivity,mergeActivity} from './thread-activity.mjs';
 import {Store} from './store.mjs';
 import {normalizePolicy,preflight} from './policy.mjs';
@@ -37,13 +41,13 @@ export async function startDaemon() {
     fs.unlinkSync(lockFile);fs.writeFileSync(lockFile,JSON.stringify({pid:process.pid}),{flag:'wx',mode:0o600});
   }
   process.once('exit',()=>{try{if(JSON.parse(fs.readFileSync(lockFile,'utf8')).pid===process.pid)fs.unlinkSync(lockFile);}catch{}});
-  try {fs.unlinkSync(socketPath);}catch(error){if(error.code!=='ENOENT')throw error;}
+  prepareEndpoint(socketPath);
   const store=new Store();await store.seedRecentMetadata();
   for(const t of Object.values(store.data.threads)){t.freshUsage=false;t.usageFresh=false;t.phase='disconnected';}
   store.save();
   const bridges=new Map();const owners=new Map();
   const updater=createUpdateManager({current:JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url))).version});
-  if(root===path.join(os.homedir(),'Library/Application Support/CodexContextControl')){const timer=setTimeout(()=>updater.check().catch(()=>{}),5000);timer.unref();const interval=setInterval(()=>updater.check().catch(()=>{}),6*60*60*1000);interval.unref();}
+  if(root===defaultRoot()){const timer=setTimeout(()=>updater.check().catch(()=>{}),5000);timer.unref();const interval=setInterval(()=>updater.check().catch(()=>{}),6*60*60*1000);interval.unref();}
   const contextStatistics=createContextStatisticsService();
   const statisticsJSON=new WeakMap();
   const runtimeFix=createRuntimeFixManager();
@@ -57,9 +61,9 @@ export async function startDaemon() {
   function extensionState(fix=runtimeFix.status()){return extension.status([...bridges.values()],{compatible:!!fix.originalVersion,available:!!nativeDefaultModel()});}
   function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===0?!!m:peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:'extension_pending',message:(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
   function newChatDefaults(){return clampNewChatDefaults(store.data.newChatDefaults||(extension.enabled()?initialNewChatDefaults:nativeNewChatDefaults),defaultModel());}
-  function state(){store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version:'0.17.2',bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity)};}
+  function state(){store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity)};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.17.2'};
+    if(op==='ping')return {ok:true,version,buildId};
     if(op==='state')return state();
     if(op==='newChatBudget'){const m=runtimeModel(null,p.model,p.contextCeiling??true);if(!m)throw Error('等待当前模型的原生窗口信息');return {policy:policyForNewChat(newChatDefaults(),m)};}
     if(op==='setNewChatDefaults'){
@@ -152,8 +156,9 @@ export async function startDaemon() {
     }
     throw new Error('不支持的操作');
   }
-  const ipcServer=net.createServer(socket=>{let peer;peer=new Peer(socket,(op,p)=>handle(peer,op,p));});
-  await new Promise((resolve,reject)=>{ipcServer.once('error',reject);ipcServer.listen(socketPath,resolve);});fs.chmodSync(socketPath,0o600);
+  const key=ipcKey(true);
+  const ipcServer=net.createServer(async socket=>{try{if(key)await authenticateServer(socket,key);let peer;peer=new Peer(socket,(op,p)=>handle(peer,op,p));}catch{socket.destroy();}});
+  await new Promise((resolve,reject)=>{ipcServer.once('error',reject);ipcServer.listen(socketPath,resolve);});secureEndpoint(socketPath);
   const token=crypto.randomBytes(32).toString('hex');
   const web=http.createServer(async(req,res)=>{
     res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
@@ -164,6 +169,7 @@ export async function startDaemon() {
       const params=body?JSON.parse(body):{};const route=req.url;
       let answer;
       if(req.method==='GET'&&route==='/state')answer=state();
+      else if(req.method==='POST'&&route==='/shutdown'){if(Object.values(store.data.threads).some(t=>t.phase==='reloading'))throw Error('A budget transaction is still active');answer={ok:true};setTimeout(shutdown,100).unref();}
       else if(req.method==='POST'&&route==='/updates/check')answer=await updater.check(true);
       else if(req.method==='POST'&&route==='/updates/install')answer=await updater.install();
       else if(req.method==='POST'&&route==='/scan'){await store.scanLocal();answer=state();}
@@ -187,13 +193,13 @@ export async function startDaemon() {
     }catch(error){res.writeHead(400,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify({error:error.message}));}
   });
   await new Promise((resolve,reject)=>{web.once('error',reject);web.listen(0,'127.0.0.1',resolve);});
-  atomicJSON(path.join(root,'connection.json'),{port:web.address().port,token,pid:process.pid});
+  atomicJSON(path.join(root,'connection.json'),{port:web.address().port,token,pid:process.pid,script:fileURLToPath(import.meta.url),executable:process.execPath,buildId});
   const cleanup=()=>{try{cleanupOldRuntimes();}catch{}};
   const cleanupStart=setTimeout(cleanup,30000);cleanupStart.unref();
   const cleanupTimer=setInterval(cleanup,5*60*1000);cleanupTimer.unref();
   const scanTimer=setInterval(()=>store.refreshMetadata(),15000);scanTimer.unref();
-  const shutdown=()=>{try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{fs.unlinkSync(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
+  const shutdown=()=>{try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};
 }
-if(process.argv[1]&&import.meta.url===new URL(`file://${process.argv[1]}`).href)startDaemon().catch(error=>{process.stderr.write(error.message+'\n');process.exitCode=1;});
+if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1]))startDaemon().catch(error=>{process.stderr.write(error.message+'\n');process.exitCode=1;});

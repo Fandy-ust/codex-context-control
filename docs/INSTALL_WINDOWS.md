@@ -1,0 +1,75 @@
+# Windows 安装与开发
+
+当前分支提供 Windows 11 x64 本地预览版，产品基线为 0.17.2。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，也尚未发布到 GitHub Releases。
+
+## 安装
+
+1. 将整个 ZIP 解压到普通本地目录，保留 `Install Context Manager.exe` 与同级 `payload/`。
+2. 双击 `Install Context Manager.exe`，选择「安装 / 更新」。安装到当前用户，不需要修改 Codex 安装文件。
+3. 当前工作结束后，**完整退出并重新打开 Codex**。已经运行的桌面进程不会因为安装完成就自动更换运行时。
+4. 在右下角系统托盘点击圆环图标。Windows 可能把它收在 `^` 折叠区，可在系统任务栏设置中选择显示。
+5. 进入聊天，观察连接状态与实际用量。需要 Hook stats 时，在 Codex 自己的 `/hooks` 中审核本项目新增的 Hook。
+
+首次激活时，若正常重开仍未读到新的用户环境，退出并重新登录 Windows 后再打开。诊断中应区分用户环境已登记、桥接已连接和下一轮窗口已确认；这些不是同一个状态。
+
+安装器创建用户级 `CODEX_CLI_PATH` 登记、开始菜单入口和卸载信息。已有其他自定义 `CODEX_CLI_PATH` 时会保留并报告冲突。它追加自己的 Stop hook，不修改其他 hooks，也不代写信任记录。
+
+## 使用
+
+左键托盘打开紧凑聊天概览，右键打开主窗口或退出管理界面。悬停聊天行可直接调整容量；拖动不保存，点击应用才提交。移出行、取消或关闭小面板会丢弃草稿。
+
+主窗口提供双滑块、1K 微调、容量/比例预设、预检、逐聊天应用、停止自动应用、原生压缩、全局默认、上下文拓展和统计图。关闭主窗口保留托盘；退出管理界面不会结束 Codex 或正在生成的请求。
+
+实际窗口和草稿分开显示。生成中的预算调整等待轮次结束，之后还需一次正常请求读回才能确认。新聊天使用全局默认，fork 继承父聊天预算。上下文拓展开关沿用当前上游实现；920K 不代表所有模型服务端都保证接受相同容量。
+
+## 安装目录
+
+| 内容 | 默认目录 |
+| --- | --- |
+| 不可变程序版本 | `%LOCALAPPDATA%\Programs\ContextManager\versions\<version>-<hash>` |
+| 预算、缓存、偏好与诊断 | `%LOCALAPPDATA%\CodexContextControl` |
+| 原生启动器及配置 | 数据目录的 `bin\<hash>\` |
+| Codex 数据 | 沿用 `CODEX_HOME`；默认 `%USERPROFILE%\.codex` |
+
+支持现有 `CONTEXT_CONTROL_HOME`、`CONTEXT_CONTROL_CODEX_HOME`、`CONTEXT_CONTROL_REAL_CODEX` 覆盖。`CONTEXT_CONTROL_APPLICATIONS` 可覆盖程序安装目录，主要用于隔离测试。
+
+数据目录使用当前用户/SYSTEM 的 Windows ACL。本地管道进行双向随机挑战认证；UI 的后端请求由 Electron 主进程发出，凭据不传给 renderer。
+
+## 更新与卸载
+
+「检查更新」只选择 Windows 当前架构的包；上游只有 macOS 包时不会下载它。安装更新需要用户点击，下载后检查字节数、SHA-256、版本、架构和完整文件清单。
+
+在「设置 → 应用」或原安装器中卸载。卸载只撤销自己的环境登记和 Hook，保留预算、缓存、偏好与备份。仍有 Codex 进程或桥接使用程序时，保留对应文件；完整退出 Codex 后可再次执行卸载以清理。卸载后残留进程若仍继承旧入口，新调用只透传原版运行时。
+
+程序按不可变目录安装，升级前保留一份轻量配置快照。不要手动删除正在使用的版本目录；回退时同样使用安装器并核对数据 schema。
+
+## 从源码构建
+
+需要 Windows 11 x64、Node 22.13+（本机测试为 24.18.0）以及系统自带的 .NET Framework C# 编译器。需要与目标架构匹配的 Node/Electron。构建会取得当前 Node 对应的 LICENSE，并缓存在 `build/licenses/`。
+
+```powershell
+npm ci
+npm test
+npm run build:win
+npm run package:win
+```
+
+输出：`build/Context-Manager-0.17.2-windows-x64/`、同名 ZIP 和 `.sha256`。构建包含应用图标和版本信息，沿用已有品牌源图。
+
+```powershell
+# 使用合成状态查看 UI；不登记接入，不修改真实预算
+npm run dev:win -- --demo
+
+# 隐藏窗口加载检查，不代替视觉验收
+npm run test:win:ui-smoke
+
+# 构建后，在隔离目录检查安装/跨版本服务替换/卸载
+node scripts/test-win-package.mjs
+
+# 打 ZIP 后，用本地模拟下载检查更新全流程和坏包拒绝
+node scripts/test-win-update.mjs
+```
+
+运行真实 Windows 内核的本地集成测试时，显式设置 `CONTEXT_CONTROL_TEST_CODEX` 为目标 `codex.exe` 后执行 `npm test`。测试使用隔离 Codex home 和回环模拟模型服务，不使用真实模型额度。
+
+ARM64 产物需要在相应环境单独构建验证；WSL、远程宿主和 macOS 原生编译不属于本次 Windows x64 本机验证结果。完整证据见 [兼容性记录](WINDOWS_COMPATIBILITY.md)。UI 人工验收见 [Windows UI 检查清单](WINDOWS_UI_CHECKLIST.md)。

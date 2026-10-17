@@ -8,7 +8,7 @@ test('updates accept only newer complete releases and assets from this repositor
 });
 test('automatic checks reuse cache and never launch an installation until explicitly requested',async()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-updates-'));let fetched=0,launched=0;
- try{const manager=createUpdateManager({home,current:'0.16.2',fetcher:async()=>{fetched++;return {ok:true,json:async()=>release()};},launch:()=>{launched++;return {pid:process.pid,unref(){}};}});
+ try{const manager=createUpdateManager({platform:"darwin",home,current:'0.16.2',fetcher:async()=>{fetched++;return {ok:true,json:async()=>release()};},launch:()=>{launched++;return {pid:process.pid,unref(){}};}});
  await manager.check();await manager.check();assert.equal(fetched,1);assert.equal(launched,0);assert.equal(manager.status().available,true);
  await manager.install();await manager.install();assert.equal(launched,1);
  }finally{fs.rmSync(home,{recursive:true,force:true});}
@@ -24,10 +24,19 @@ test('downloads require matching byte size, checksum, and exact filename; corrup
 
 test('failed worker launch leaves a retryable error rather than a permanent updating state',async()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-update-failure-'));
- try{const manager=createUpdateManager({home,current:'0.16.2',fetcher:async()=>({ok:true,json:async()=>release()}),launch:()=>{throw Error('launch failed');}});await manager.check();await assert.rejects(manager.install(),/launch failed/);assert.equal(manager.status().phase,'error');assert.equal(manager.status().available,true);}finally{fs.rmSync(home,{recursive:true,force:true});}
+ try{const manager=createUpdateManager({platform:"darwin",home,current:'0.16.2',fetcher:async()=>({ok:true,json:async()=>release()}),launch:()=>{throw Error('launch failed');}});await manager.check();await assert.rejects(manager.install(),/launch failed/);assert.equal(manager.status().phase,'error');assert.equal(manager.status().available,true);}finally{fs.rmSync(home,{recursive:true,force:true});}
 });
 
 test('busy installer volumes retry detach and retain files if still mounted',async()=>{
  let attempts=0;assert.equal(await detachUpdateMount('/mount',{run:async()=>{if(++attempts<3)throw Error('busy');},pause:async()=>{}}),true);assert.equal(attempts,3);
  assert.equal(await detachUpdateMount('/mount',{run:async()=>{throw Error('busy');},pause:async()=>{}}),false);
+});
+
+test('Windows updates select matching architecture and never offer a Mac-only release',()=>{
+ const options={platform:'win32',arch:'x64'};
+ assert.equal(releaseUpdate(release(),'0.16.2',options),null);
+ const windows=release();for(const asset of windows.assets){asset.name=asset.name.replace('macos-arm64.dmg','windows-x64.zip');asset.browser_download_url=asset.browser_download_url.replace('macos-arm64.dmg','windows-x64.zip');}
+ assert.equal(releaseUpdate(windows,'0.16.2',options).filename,'Context-Manager-0.17.0-windows-x64.zip');
+ assert.equal(releaseUpdate(windows,'0.16.2',{platform:'win32',arch:'arm64'}),null);
+ const incomplete={...windows,assets:windows.assets.slice(0,1)};assert.throws(()=>releaseUpdate(incomplete,'0.16.2',options));
 });

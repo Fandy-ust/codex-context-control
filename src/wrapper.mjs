@@ -7,13 +7,14 @@ import {ensureDaemon} from './service.mjs';
 import {createRuntimeFixManager} from './runtime-fix.mjs';
 import {prepareContextCatalog,contextCeilingLaunchArgs} from './context-ceiling.mjs';
 import {runtimeSupported,isStdioServer} from './compatibility.mjs';
+import {settings} from './paths.mjs';
 
 const args=process.argv.slice(2);const caller=callerRuntime();
-const desktop=caller.desktop,originalBinary=caller.binary;
+const desktop=caller.desktop&&settings().uninstalled!==true,originalBinary=caller.binary;
 const runtime=desktop&&isStdioServer(args)?createRuntimeFixManager().select(originalBinary):{binary:originalBinary,runtimeFixId:null};
 const binary=runtime.binary;
 const bridgeVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
-const nativeVersion=isStdioServer(args)?spawnSync(binary,['--version'],{encoding:'utf8',timeout:5000}).stdout||'':'';
+const nativeVersion=isStdioServer(args)?spawnSync(binary,['--version'],{windowsHide:true,encoding:'utf8',timeout:5000}).stdout||'':'';
 const supported=!isStdioServer(args)||runtimeSupported(nativeVersion);
 if(!desktop||!isStdioServer(args)||!supported){
   if(!supported)process.stderr.write('Context Control: 无法识别 Codex 运行时，本次仅透传。\n');

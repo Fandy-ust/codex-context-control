@@ -5,8 +5,8 @@ import {replaceDirectory} from './install-layout.mjs';
 const configurationFiles=['settings.json','state.json','language.json','context-extension.json','new-chat-defaults.json','runtime-fix.json','automatic-startup.json'];
 // Keep one lightweight configuration snapshot, not another copy of the app,
 // Node runtime, histories, or caches. Reinstalling the same version is a no-op.
-export function prepareUpgrade({home,version}){
- const previous=readJSON(path.join(home,'code/package.json'),{})?.version??null;
+export function prepareUpgrade({home,version,previousVersion}){
+ const previous=previousVersion??readJSON(path.join(home,'code/package.json'),{})?.version??null;
  if(previous===version||!previous)return {from:previous,to:version};
  const recordFile=path.join(home,'upgrade.json'),record=readJSON(recordFile,{});
  if(record.from===previous&&record.to===version&&record.phase==='prepared')return {from:previous,to:version};

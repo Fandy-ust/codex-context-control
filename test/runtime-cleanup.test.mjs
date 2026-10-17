@@ -17,7 +17,7 @@ test('cleanup removes only unused installation-owned runtimes and preserves curr
 });
 test('unknown process state and symlink directories prevent cleanup',()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-cleanup-safe-')),outside=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-outside-'));try{
- const current=path.join(home,'current');fs.writeFileSync(current,'current');const file=path.join(outside,'node-v22.22.0-arm64-bbbbbbbbbbbb');fs.writeFileSync(file,'keep');fs.symlinkSync(outside,path.join(home,'runtime'));
+ const current=path.join(home,'current');fs.writeFileSync(current,'current');const file=path.join(outside,'node-v22.22.0-arm64-bbbbbbbbbbbb');fs.writeFileSync(file,'keep');fs.symlinkSync(outside,path.join(home,'runtime'),process.platform==='win32'?'junction':'dir');
  cleanupOldRuntimes({home,currentNode:current,activeExecutables:[]});assert.ok(fs.existsSync(file));
  fs.unlinkSync(path.join(home,'runtime'));fs.mkdirSync(path.join(home,'runtime'));const local=path.join(home,'runtime',path.basename(file));fs.writeFileSync(local,'keep');cleanupOldRuntimes({home,currentNode:current,activeExecutables:null});assert.ok(fs.existsSync(local));
  }finally{fs.rmSync(home,{recursive:true,force:true});fs.rmSync(outside,{recursive:true,force:true});}

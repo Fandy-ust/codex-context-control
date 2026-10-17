@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {version as productVersion} from './version.mjs';
 import fs from 'node:fs';
 import {L} from './localization.mjs';
 import path from 'node:path';
@@ -32,10 +33,10 @@ try{
     const answer=await request('setPolicy',{id,policy:{window,compact},apply:true});process.stdout.write(JSON.stringify(answer,null,2)+'\n');
   }else if(command==='doctor'){
     let service=false;try{service=(await request('ping',{},500)).ok;}catch{}
-    let version='unavailable';try{version=spawnSync(realBinary(),['--version'],{encoding:'utf8'}).stdout.trim();}catch{}
+    let version='unavailable';try{version=spawnSync(realBinary(),['--version'],{windowsHide:true,encoding:'utf8'}).stdout.trim();}catch{}
     const state=service?await request('state'):{bridgeCount:0,threads:[]};
     const settings=readJSON(path.join(root,'settings.json'),{});
-    console.log(JSON.stringify({version:'0.17.2',node:process.version,runtime:version,runtimeSupported:runtimeSupported(version),service,connectedBridges:state.bridgeCount,serviceVersion:state.version??null,loadedBridgeVersions:(state.bridges||[]).map(b=>b.version),automaticStartup:process.platform==='darwin'?automaticStartupStatus():null,
+    console.log(JSON.stringify({version:productVersion,node:process.version,runtime:version,runtimeSupported:runtimeSupported(version),service,connectedBridges:state.bridgeCount,serviceVersion:state.version??null,loadedBridgeVersions:(state.bridges||[]).map(b=>b.version),automaticStartup:['darwin','win32'].includes(process.platform)?automaticStartupStatus():null,
       runtimeFix:state.runtimeFix??null,contextExtension:state.contextExtension??null,newChatDefaults:state.newChatDefaults??null,newChatDefaultsPending:state.newChatDefaultsPending??null,observedChats:state.threads.length,installRoot:root,hookInstalled:!!settings.hookCommand,menuBar:menuBarStatus(),
       activation:state.bridgeCount?'connected':L('照常打开 Codex；首次安装或更新后请正常重开一次客户端。')},null,2));
   }else throw new Error('支持 doctor、start、list、set-usable、set（底层配置）、hook');

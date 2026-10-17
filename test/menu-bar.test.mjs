@@ -1,3 +1,4 @@
+import os from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,7 +10,7 @@ import {randomUUID} from 'node:crypto';
 test('a desktop connection automatically creates a menu entry without opening a window or duplicating on reconnect',{
   skip:process.platform!=='darwin'||process.env.CONTEXT_CONTROL_TEST_UI!=='1',timeout:30000
 },async()=>{
-  const temp=fs.mkdtempSync('/tmp/ctc-menu-'),control=path.join(temp,'control');
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-menu-')),control=path.join(temp,'control');
   process.env.CONTEXT_CONTROL_HOME=control;process.env.CONTEXT_CONTROL_CODEX_HOME=path.join(temp,'codex');
   const repo=fileURLToPath(new URL('../',import.meta.url)),app=path.join(temp,'Menu Probe.app');
   fs.mkdirSync(control);fs.mkdirSync(process.env.CONTEXT_CONTROL_CODEX_HOME);

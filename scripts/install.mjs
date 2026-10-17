@@ -1,3 +1,4 @@
+import {editOwnedHook} from '../src/hooks.mjs';
 import fs from 'node:fs';
 import {prepareUpgrade,inheritedSettings,completeUpgrade} from '../src/upgrade-state.mjs';
 import {cleanupOldRuntimes} from '../src/runtime-cleanup.mjs';
@@ -21,20 +22,7 @@ let nodeBinary=(process.env.PATH||'').split(path.delimiter).map(dir=>path.join(d
 const hooksFile=path.join(codexHome,'hooks.json');
 const installedApp=path.join(applications,'Codex Context Control.app');
 const launcherApp=path.join(applications,'Codex Context Launcher.app');
-function editHook(command,remove=false){
-  const before=fs.existsSync(hooksFile)?fs.readFileSync(hooksFile):null;
-  const doc=before?JSON.parse(before):{};if(!doc||typeof doc!=='object'||Array.isArray(doc))throw new Error('hooks.json 根节点无效');
-  if(doc.hooks!=null&&(typeof doc.hooks!=='object'||Array.isArray(doc.hooks)))throw new Error('hooks 配置无效');
-  const groups=doc.hooks?.Stop||[];if(!Array.isArray(groups))throw new Error('Stop hooks 配置无效');
-  const own=group=>group?.hooks?.some(h=>h.type==='command'&&h.command===command);
-  const kept=groups.flatMap(group=>{if(!own(group))return [group];const hooks=group.hooks.filter(h=>h.command!==command);return hooks.length?[{...group,hooks}]:[];});
-  if(!remove)kept.push({hooks:[{type:'command',command,timeout:2,statusMessage:'Context Control: reading this chat budget'}]});
-  doc.hooks={...doc.hooks,Stop:kept};
-  const backup=path.join(root,'backups',new Date().toISOString().replaceAll(':','-')+'-'+crypto.randomBytes(3).toString('hex'));fs.mkdirSync(backup,{recursive:true,mode:0o700});
-  if(before)fs.writeFileSync(path.join(backup,'hooks.json'),before,{mode:0o600});
-  if((fs.existsSync(hooksFile)?fs.readFileSync(hooksFile).toString('base64'):null)!==(before?before.toString('base64'):null))throw new Error('hooks.json 在安装期间变化，已取消写入');
-  atomicJSON(hooksFile,doc);
-}
+function editHook(command,remove=false){return editOwnedHook({file:hooksFile,home:root,command,remove});}
 function shellFile(file,body){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'#!/bin/sh\nset -eu\n'+body+'\n',{mode:0o700});fs.chmodSync(file,0o700);}
 ensureRoot();
 if(process.argv.includes('--uninstall')){

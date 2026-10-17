@@ -1,3 +1,4 @@
+import os from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,7 +7,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 
 test('starting an upgraded controller replaces only its identified older service',{timeout:15000,skip:process.platform==='win32'},async()=>{
-  const root=fs.mkdtempSync('/tmp/ctc-upgrade-');const file=path.join(root,'code/src/daemon.mjs');fs.mkdirSync(path.dirname(file),{recursive:true});
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-upgrade-'));const file=path.join(root,'code/src/daemon.mjs');fs.mkdirSync(path.dirname(file),{recursive:true});
   process.env.CONTEXT_CONTROL_HOME=root;process.env.CONTEXT_CONTROL_CODEX_HOME=path.join(root,'codex');
   fs.writeFileSync(file,`import net from 'node:net';import fs from 'node:fs';import readline from 'node:readline';import path from 'node:path';
 const root=process.env.CONTEXT_CONTROL_HOME;

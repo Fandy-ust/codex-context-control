@@ -1,5 +1,7 @@
 # Context Manager
 
+This branch adds a **Windows 11 x64 system-tray preview**, sharing the existing budget and statistics core. [Build and installation](docs/INSTALL_WINDOWS.md) · [Validation](docs/WINDOWS_COMPATIBILITY.md) · [UI checklist](docs/WINDOWS_UI_CHECKLIST.md). Windows packages are currently local previews; the public downloads below remain macOS releases.
+
 Manage each Codex chat’s context from your Mac menu bar. Up to **920K**.
 
 ## [Download 0.17.2 for Mac ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.17.2-preview.1/Context-Manager-0.17.2-macos-arm64.dmg)

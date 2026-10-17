@@ -62,7 +62,7 @@ test('runtime packages require pinned sources, matching architecture, validation
       assert.throws(()=>validateRuntimePackage(f.directory,{platform:'darwin',arch:'arm64'}));
     }
     fs.writeFileSync(path.join(f.directory,'runtime.json'),JSON.stringify(f.manifest));
-    fs.unlinkSync(f.binary);fs.symlinkSync(f.original,f.binary);
+    fs.unlinkSync(f.binary);fs.symlinkSync(process.platform==='win32'?f.home:f.original,f.binary,process.platform==='win32'?'junction':'file');
     assert.throws(()=>validateRuntimePackage(f.directory,{platform:'darwin',arch:'arm64'}),/文件无效/);
   }finally{f.close();}
 });
@@ -161,7 +161,7 @@ test('temporary fixed-runtime version failures do not permanently poison package
  const f=fixture();try{f.manager.setEnabled(true,f.original);const manager=createRuntimeFixManager({home:f.home,versionOf:()=>runtimeFixPin.baseVersion});assert.equal(manager.select(f.original).binary,f.original);assert.equal(manager.status(f.original).enabled,false);assert.throws(()=>manager.setEnabled(true,f.original));}finally{f.close();}
  });
 
- test('lightweight runtime status recognizes prerelease versions without enabling the patch',()=>{
+ test('lightweight runtime status recognizes prerelease versions without enabling the patch',{skip:process.platform==='win32'},()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-prerelease-'));
  try{const binary=path.join(home,'codex');fs.writeFileSync(binary,'#!/bin/sh\nprintf "codex-cli 0.163.0-alpha.10.2\\n"\n',{mode:0o755});const manager=createRuntimeFixManager({home});const state=manager.status(binary);assert.equal(state.originalVersion,'0.163.0-alpha.10.2');assert.equal(state.enabled,false);assert.equal(manager.select(binary).binary,binary);}finally{fs.rmSync(home,{recursive:true,force:true});}
  });
