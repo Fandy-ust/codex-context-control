@@ -22,12 +22,13 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npm test
+      - run: npm run build:mac
+      - run: node --test --test-concurrency=2 test/*.test.mjs
       - uses: actions/cache@v4
         with:
           path: build/vendor
           key: macos-node-${{ hashFiles('packaging/node-runtime.json') }}
-      - run: npm run package:mac -- --release
+      - run: npm run package:mac -- --release --use-built-panel
       - name: Validate installation without developer tools
         run: |
           CONTEXT_CONTROL_TEST_INSTALLER_APP="$PWD/build/distribution/Install Context Manager.app" npm run test:distribution

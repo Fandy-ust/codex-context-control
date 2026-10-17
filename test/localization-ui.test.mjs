@@ -3,6 +3,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 test('the actual native settings view switches English and Chinese without changing a chat budget',{skip:process.platform!=='darwin',timeout:120000},()=>{
  const repo=fileURLToPath(new URL('../',import.meta.url)),temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-language-ui-'));
  try{
+  fs.mkdirSync(path.join(repo,'build'),{recursive:true});
   fs.writeFileSync(path.join(temp,'Control.swift'),fs.readFileSync(path.join(repo,'macos/ContextControl.swift'),'utf8').replace('@main @MainActor final class ContextControlApp','@MainActor final class ContextControlApp'));
   fs.writeFileSync(path.join(temp,'Main.swift'),String.raw`
 import SwiftUI
