@@ -20,7 +20,9 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 [Releases](https://github.com/Fandy-ust/codex-context-control/releases) · [Installation guide](docs/en/INSTALL_MAC.md) · [Changes](CHANGELOG.md)
 
-The repository is public. App installers are still prepared as maintainer-review drafts; a demo release is not an app installer. Draft assets are not public downloads. Build from source below or obtain a preview ZIP from the maintainer until an installer release is published.
+**[Download 0.16.0 for Apple Silicon (ZIP, about 49 MB)](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.16.0-preview.1/Context-Manager-0.16.0-macos-arm64.zip)** · [Release notes](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.16.0-preview.1)
+
+The English / Chinese preview installer is publicly available. The demo release contains the video; use the app download above to install Context Manager.
 
 1. Obtain `Context-Manager-0.16.0-macos-arm64.zip` and extract it.
 2. Open **Install Context Manager.app** and choose **Install / Update**.

@@ -6,7 +6,7 @@ The preview targets Apple Silicon (M-series) Macs with macOS 14 or later. Instal
 
 ## Install or update
 
-1. Obtain the versioned Apple Silicon ZIP and extract it.
+1. [Download the 0.16.0 Apple Silicon ZIP](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.16.0-preview.1/Context-Manager-0.16.0-macos-arm64.zip) and extract it.
 2. Open **Install Context Manager.app**.
 3. Select **Automatic (time zone)**, **中文**, or **English** if desired.
 4. Choose **Install / Update**.
@@ -15,7 +15,7 @@ The preview targets Apple Silicon (M-series) Macs with macOS 14 or later. Instal
 
 Users do not need Node, npm, Homebrew, Xcode, an administrator password, or an Apple developer membership. The installer copies the runtime to a stable user support directory, so deleting the downloaded installer does not break the app.
 
-The repository is public, but drafts are still maintainer review artifacts. Only published app releases offer public installer downloads. The demo release contains a video, not an installer.
+The 0.16.0 English / Chinese preview is published and publicly downloadable. The demo release contains a video, not an installer. Older drafts remain maintainer review artifacts.
 
 ## Opening a preview
 

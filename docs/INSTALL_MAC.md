@@ -6,7 +6,7 @@
 
 ## 普通使用者
 
-1. 从[GitHub Releases](https://github.com/Fandy-ust/codex-context-control/releases)取得有权访问的版本，或向项目所有者取得 ZIP，然后解压。草稿仅供维护者复核，尚未公开发布。
+1. [下载 0.16.0 中英版 Apple Silicon ZIP](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.16.0-preview.1/Context-Manager-0.16.0-macos-arm64.zip)，然后解压。
 2. 打开 `Install Context Manager.app`，点击「安装 / 更新」。
 3. 完整退出并重开 Codex。菜单栏自动出现 Context Manager 的圆环与三条横线图标。
 4. 若需要 Hook stats，在 Codex 的 `/hooks` 审核新增 hook。主面板和预算控制不依赖 hook 信任。
@@ -28,7 +28,7 @@
 
 ## 获取、更新与移除
 
-仓库已公开；安装包草稿仅供维护者复核。发布后的安装包可公开下载，视频发布不包含安装器。
+仓库及 0.16.0 中英版预览安装包均已公开，可直接下载。较早的草稿仍供维护者复核，视频发布不包含安装器。
 
 更新：打开新版安装器，选择「安装 / 更新」。连接桥接升级后需重开 Codex；界面会保留实际状态与等待生效的区别。
 
