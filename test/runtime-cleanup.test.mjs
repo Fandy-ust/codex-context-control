@@ -9,7 +9,7 @@ test('cleanup removes only unused installation-owned runtimes and preserves curr
  for(const v of ['v22.23.3','v22.22.0','v22.21.0'])fs.writeFileSync(path.join(dir,'Node-'+v+'-LICENSE.txt'),'license');
  fs.writeFileSync(path.join(dir,'my-node'),'personal');fs.writeFileSync(path.join(home,'state.json'),'budget');fs.writeFileSync(path.join(home,'thread-cache.json'),'cache');fs.mkdirSync(path.join(home,'backups'));
  const legacy=path.join(home,'runtimes',pin.id);fs.mkdirSync(legacy,{recursive:true});fs.writeFileSync(path.join(legacy,'runtime.json'),JSON.stringify({id:pin.id}));fs.writeFileSync(path.join(legacy,'codex'),'old core');fs.writeFileSync(path.join(home,'runtime-fix.json'),JSON.stringify({enabled:false}));
- const options={home,currentNode:current,activeExecutables:[running,path.join(legacy,'codex')]};
+ const options={home,currentNode:current,inUse:()=>false,activeExecutables:[running,path.join(legacy,'codex')]};
  let result=cleanupOldRuntimes(options);assert.ok(result.removed.includes(old));assert.ok(fs.existsSync(current)&&fs.existsSync(running)&&fs.existsSync(legacy));assert.ok(!fs.existsSync(path.join(dir,'Node-v22.22.0-LICENSE.txt')));
  result=cleanupOldRuntimes({...options,activeExecutables:[]});assert.ok(result.removed.includes(running)&&result.removed.includes(legacy));assert.ok(fs.existsSync(current));assert.ok(fs.existsSync(path.join(dir,'Node-v22.23.3-LICENSE.txt')));
  for(const file of ['state.json','thread-cache.json','backups','runtime/my-node'])assert.ok(fs.existsSync(path.join(home,file)));

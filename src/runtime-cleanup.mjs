@@ -10,9 +10,14 @@ export function processExecutables(){
  if(r.error||r.status!==0||!r.stdout.trim())return null;
  return r.stdout.split('\n').map(s=>s.trim()).filter(Boolean);
 }
+function resourceInUse(file,directory=false){
+ const r=spawnSync('/usr/sbin/lsof',['-n','-P','-F','n',...(directory?['+D',file]:[file])],{encoding:'utf8',timeout:10000,maxBuffer:8*1024*1024});
+ // lsof exits 1 with no output when no process has this resource open.
+ return !!r.error||r.status!==1||!!r.stdout.trim()||!!r.stderr.trim();
+}
 // Only remove installation-owned files after a successful update. Running
 // binaries and their resources remain until a later cleanup pass.
-export function cleanupOldRuntimes({home=root,activeExecutables=processExecutables(),currentNode=readJSON(path.join(home,'settings.json'),{})?.node}={}){
+export function cleanupOldRuntimes({home=root,activeExecutables=processExecutables(),inUse=resourceInUse,currentNode=readJSON(path.join(home,'settings.json'),{})?.node}={}){
  const result={removed:[],deferred:[]};
  if(!Array.isArray(activeExecutables)||!currentNode||!fs.existsSync(currentNode))return result;
  const canonical=p=>{try{return fs.realpathSync(p);}catch{return p;}};
@@ -23,7 +28,7 @@ export function cleanupOldRuntimes({home=root,activeExecutables=processExecutabl
   for(const entry of fs.readdirSync(directory,{withFileTypes:true})){
    if(!entry.isFile()||!nodeName.test(entry.name))continue;
    const file=path.join(directory,entry.name);
-   if(active.has(canonical(file))||active.has('node')){if(canonical(file)!==canonical(currentNode))result.deferred.push(file);continue;}
+   if(active.has(canonical(file))||inUse(file)){if(canonical(file)!==canonical(currentNode))result.deferred.push(file);continue;}
    try{fs.unlinkSync(file);result.removed.push(file);}catch{/* Retry next time. */}
   }
   const keptVersions=new Set(fs.readdirSync(directory).map(n=>n.match(nodeName)?.[1]).filter(Boolean));
@@ -37,7 +42,7 @@ export function cleanupOldRuntimes({home=root,activeExecutables=processExecutabl
  if(readJSON(path.join(home,'runtime-fix.json'),{})?.enabled===false&&ordinaryDirectory(legacyRoot)&&ordinaryDirectory(legacy)){
   const manifest=readJSON(path.join(legacy,'runtime.json'),{});
   if(manifest.id===pin.id){
-   if(['codex','codex-cli','codex-code-mode-host'].some(name=>active.has(name))||[...active].some(p=>p===canonical(legacy)||p.startsWith(canonical(legacy)+path.sep)))result.deferred.push(legacy);
+   if([...active].some(p=>p===canonical(legacy)||p.startsWith(canonical(legacy)+path.sep))||inUse(legacy,true))result.deferred.push(legacy);
    else{try{fs.rmSync(legacy,{recursive:true,force:false});result.removed.push(legacy);}catch{}}
   }
  }
