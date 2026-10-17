@@ -1,10 +1,10 @@
 # Windows 安装与开发
 
-当前分支提供 Windows 11 x64 本地预览版，当前版本为 0.19.0。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，也尚未发布到 GitHub Releases。
+当前分支提供 Windows 11 x64 本地预览版，当前版本为 0.19.1。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，也尚未发布到 GitHub Releases。
 
 ## 安装
 
-1. 下载 `Context-Manager-0.19.0-windows-x64-Setup.exe`，只需要这一个文件，不需要旁边放 `payload/`。
+1. 下载 `Context-Manager-0.19.1-windows-x64-Setup.exe`，只需要这一个文件，不需要旁边放 `payload/`。
 2. 双击 `Setup.exe`，选择「安装 / 更新」。安装器先校验并解压内置程序，再安装到当前用户；完成后自动清理临时解压目录，不需要修改 Codex 安装文件。安装成功后可以删除下载的 EXE。
 3. **默认接入 Codex**：启动检查通过后自动登记接入，安装完成后在工作结束时完整退出并重开 Codex。若检查失败，仍完成界面安装并保留原生启动入口；在「设置 → Codex 接入」查看错误或重试。
 4. 在右下角系统托盘点击圆环图标。Windows 可能把它收在 `^` 折叠区，可在系统任务栏设置中选择显示。
@@ -53,7 +53,7 @@
 
 在「设置 → 应用」或原安装器中卸载。卸载只撤销自己的环境登记和 Hook，保留预算、缓存、偏好与备份。仍有 Codex 进程或桥接使用程序时，保留对应文件；完整退出 Codex 后可再次执行卸载以清理。卸载后残留进程若仍继承旧入口，新调用只透传原版运行时。
 
-直接运行新版 `Setup.exe` 即可更新，无需先卸载。开始菜单和管理器入口切到新版，预算、快捷键与其他偏好保留。0.19.0 默认尝试开启接入；之后在设置里明确关闭的选择会在后续更新中保留。程序按不可变目录安装，升级前保留一份轻量配置快照；升级时目前不自动删除旧版目录，以免影响仍在使用的桥接。不要手动删除正在使用的版本目录；回退时同样使用安装器并核对数据 schema。
+直接运行新版 `Setup.exe` 即可更新，无需先卸载。开始菜单和管理器入口切到新版，预算、快捷键与其他偏好保留。0.19.1 默认尝试开启接入；之后在设置里明确关闭的选择会在后续更新中保留。程序按不可变目录安装，升级前保留一份轻量配置快照；升级时目前不自动删除旧版目录，以免影响仍在使用的桥接。不要手动删除正在使用的版本目录；回退时同样使用安装器并核对数据 schema。
 
 ## 从源码构建
 
@@ -66,7 +66,7 @@ npm run build:win
 npm run package:win
 ```
 
-`build:win` 输出 `build/Context-Manager-0.19.0-windows-x64/`。`package:win` 输出独立的 `build/Context-Manager-0.19.0-windows-x64-Setup.exe`、同名 `.sha256`，以及更新器使用的 ZIP 和校验文件。分发给使用者时只需发送 `Setup.exe`。构建包含应用图标和版本信息，沿用已有品牌源图。
+`build:win` 输出 `build/Context-Manager-0.19.1-windows-x64/`。`package:win` 输出独立的 `build/Context-Manager-0.19.1-windows-x64-Setup.exe`、同名 `.sha256`，以及更新器使用的 ZIP 和校验文件。分发给使用者时只需发送 `Setup.exe`。构建包含应用图标和版本信息，沿用已有品牌源图。
 
 单文件安装器使用系统 .NET Framework 的[程序集内置资源](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/compiler-options/resources)封装压缩包，运行时通过[资源流](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.assembly.getmanifestresourcestream)读取。解压前验证 SHA-256，解压时拒绝越界路径和符号链接；内部仍复用同一套安装/升级脚本。
 

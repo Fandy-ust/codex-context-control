@@ -1,6 +1,6 @@
 # Context Manager
 
-This integration branch targets **0.19.0** with one shared core, native SwiftUI on macOS, and the Windows tray application. [Build both platforms](docs/CROSS_PLATFORM_BUILD.md).
+This integration branch targets **0.19.1** with one shared core, native SwiftUI on macOS, and the Windows tray application. [Build both platforms](docs/CROSS_PLATFORM_BUILD.md).
 
 This branch adds a **Windows 11 x64 system-tray preview**, sharing the existing budget and statistics core. [Build and installation](docs/INSTALL_WINDOWS.md) · [Validation](docs/WINDOWS_COMPATIBILITY.md) · [UI checklist](docs/WINDOWS_UI_CHECKLIST.md). Windows packages are currently local previews; the public downloads below remain macOS releases.
 

@@ -1,4 +1,4 @@
-# 0.19.0：一个代码库构建两个系统
+# 0.19.x：一个代码库构建两个系统
 
 整合分支：`codex/cross-platform-0.19`。包含上游 0.18.0 的账户额度与 macOS 更新，以及 Windows 0.17.4 的系统适配、设置、快捷键、动画与路径修复。产品版本统一来自根目录 `package.json`。
 
@@ -28,7 +28,7 @@ npm run build
 npm run package
 ```
 
-输出 `build/Context-Manager-0.19.0-windows-x64-Setup.exe`、ZIP 和 SHA-256。只分发 Setup.exe 即可。
+输出 `build/Context-Manager-0.19.1-windows-x64-Setup.exe`、ZIP 和 SHA-256。只分发 Setup.exe 即可。
 
 Apple Silicon Mac 上：
 
@@ -54,9 +54,9 @@ macOS job 使用官方 [macos-26 Apple Silicon runner](https://docs.github.com/e
 
 继续在同一代码库合并上游：先保存当前修改，再合并朋友的新提交，解决共享接口差异，分别适配界面。不要用上游整个目录覆盖 Windows 分支。每次正式构建记录产品版本、源提交及平台；只修改某个平台时也保留另一端的构建入口。
 
-## 0.19.1 待办（本轮不执行）
+## 0.19.1 操作统一
 
 - 以 Apple 端为基准，统一两端整体的操作顺序、命名、状态反馈和主要快捷操作，减少切换系统时的学习成本。
 - 保留本轮设置面板的分类与悬浮形式，以及主页面左侧留出更多聊天空间的布局。
 - Windows 向 Apple 的行为靠拢；macOS 继续使用原生 SwiftUI/AppKit、Liquid Glass、系统材质和可访问性，不把原生 UI 改成网页，也不移除平台渲染特性。
-- 先完成并交付 0.19.0，再单独开展这项工作。
+- 0.19.0 已交付。0.19.1 的实现范围及 Apple/Windows 行为对照见 [UI 操作统一](UI_PARITY.md)。

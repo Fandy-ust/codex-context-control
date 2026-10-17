@@ -1,4 +1,4 @@
-import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell} from 'electron';
+import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell,dialog} from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -101,6 +101,14 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
   if(action==='open-logs'){
     if(smoke)throw Error('Opening log folders is disabled during smoke tests');
     fs.mkdirSync(integrationLogDirectory,{recursive:true});const error=await shell.openPath(integrationLogDirectory);if(error)throw Error(error);return {ok:true};
+  }
+  if(action==='confirm-compact'){
+    if(smoke)throw Error('Compaction is disabled during smoke tests');
+    const answer=await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender),{type:'question',title:label('请求 Codex 原生压缩？','Request native Codex compaction?'),message:label('请求 Codex 原生压缩？','Request native Codex compaction?'),detail:label('压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。','Compaction may use your existing model allowance. Retained length is not guaranteed and must be measured again afterwards.'),buttons:[label('取消','Cancel'),label('请求压缩','Request compaction')],defaultId:0,cancelId:0,noLink:true});return {confirmed:answer.response===1};
+  }
+  if(action==='open-reference'){
+    const urls={pricing:'https://openai.com/api/pricing/',caching:'https://developers.openai.com/api/docs/guides/prompt-caching#monitor-cache-performance',compaction:'https://developers.openai.com/api/docs/guides/compaction'};
+    if(smoke||!Object.hasOwn(urls,params.id))throw Error('Unknown reference');await shell.openExternal(urls[params.id]);return {ok:true};
   }
   if(action==='quota-select'){
     if(typeof params.id!=='string'||!lastState?.quota?.buckets?.some(bucket=>bucket.id===params.id))throw Error('Unknown quota pool');

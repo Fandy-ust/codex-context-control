@@ -1,4 +1,6 @@
-import {threadDraft,draftLimits,resizeDraft,policyForDraft} from '../../src/ui-budget.mjs';
+import {threadDraft as legacyThreadDraft,draftLimits as legacyDraftLimits,resizeDraft as legacyResizeDraft,policyForDraft as legacyPolicyForDraft} from '../../src/ui-budget.mjs';
+import {appleThreadDraft,appleDraftLimits,appleResizeDraft,applePolicyForDraft,windowConfirmed,observedWindowTitle,modelDisplayName} from '../../src/apple-ui.mjs';
+import {tokenNumber} from '../../src/policy.mjs';
 import {savedBudget} from '../../src/budget.mjs';
 import {timelineData,nearestBucket} from '../../src/timeline-data.mjs';
 import {translate} from '../../src/localization-core.mjs';
@@ -7,25 +9,37 @@ import {timelinePlot,timelineX,timelinePosition} from '../../src/timeline-scale.
 import {DEFAULT_SHORTCUT,shortcutLabel,shortcutFromEvent,normalizeShortcut} from '../../src/ui-shortcut.mjs';
 import {sliderMotion} from '../../src/slider-motion.mjs';
 import {selectedQuota,quotaWindows,quotaStale} from '../../src/quota-display.mjs';
+import {budgetView,chatView,detailsView,statisticsView,chartDetailView,rawRecordsView,trayChatView} from './apple-view.mjs';
 
 const api=window.contextManager,root=document.querySelector('#app'),mode=new URLSearchParams(location.search).get('mode')||'main';
 let state=null,preferences={language:'zh',selection:'auto',english:{}},selected=null,view='chat',draft=null,dirty=false,dragging=false,busy=false,stats=null,statsJSON='',timeline=null,period=0,hover=null,pinned=null,page=0,auto=true,lastStats=0,toastTimer,refreshing=false,interactionId=null;
 let shortcutDraft=DEFAULT_SHORTCUT,shortcutEnabled=true,shortcutRecording=false,shortcutDirty=false;
 let settingsOpen=false,settingsTab='general',settingsSnapshot=null,settingsUnderlay='';
 let integrationError='',integrationPending=false;
+let detailsOpen=false,detailsSnapshot=null,detailsUnderlay='',statsLoading=false,statsError='',rawSelectedID=null,lastDetailBucket=null,smoothingTimer,deferredStats=null;
+let mainNotice='',mainNoticeError=false;
+let budgetInputError='',detailsEpoch=0,serviceAvailable=false,smoothingInteracting=false;
+const trayFeedback=new Map(),traySaving=new Set();
 const editingDefaults=()=>settingsOpen?settingsTab==='defaults':view==='defaults';
+const useLegacyBudget=()=>editingDefaults();
+const modelSignature=chat=>JSON.stringify([chat?.model,chat?.modelMetadata?.max_context_window,chat?.modelMetadata?.effective_context_window_percent,chat?.modelMetadata?.context_ceiling,chat?.modelMetadata?.context_catalog_ready]);
+const threadDraft=chat=>{const value=appleThreadDraft(chat);return mode==='tray'&&value?{...value,baseWindow:value.window,baseCompact:value.compact,baseEnabled:!!chat.policy&&chat.policy.enabled!==false,modelKey:modelSignature(chat)}:value;};
+const draftLimits=(...args)=>(useLegacyBudget()?legacyDraftLimits:appleDraftLimits)(...args);
+const resizeDraft=(...args)=>(useLegacyBudget()?legacyResizeDraft:appleResizeDraft)(...args);
+const policyForDraft=(...args)=>(useLegacyBudget()?legacyPolicyForDraft:applePolicyForDraft)(...args);
 const editorRoot=()=>settingsOpen?root.querySelector('.settings-body'):root.querySelector('.main');
-const chatName=chat=>chat?.name||chat?.title||chat?.id||t('未命名聊天','Untitled chat');
+const chatName=chat=>chat?.name||chat?.title||chat?.cwd?.split(/[\\/]/).filter(Boolean).at(-1)||chat?.id?.slice(0,12)||t('未命名聊天','Untitled chat');
 const trayDrafts=new Map();
 let sidebarWidth=Number(localStorage.getItem('sidebar-width'))||270;
 const visibleSidebarWidth=()=>Math.max(235,Math.min(sidebarWidth,340,window.innerWidth-650));
 const e=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 function t(zh,en,...args){const translated=translate(zh,preferences.english,preferences.language);let value=preferences.language==='zh'?zh:translated===zh?(en||zh):translated;return String(value??'').replace(/\{(\d+)\}/g,(_,n)=>String(args[n]??''));}
 const amount=value=>value==null?'—':Number(value).toLocaleString(preferences.language==='zh'?'zh-CN':'en-US',{maximumFractionDigits:1});
-const k=value=>value==null?'—':value>=1000000?(value/1000000).toFixed(2).replace(/0+$/,'')+'M':value>=1000?Number((value/1000).toFixed(1))+'K':amount(value);
+const k=value=>value==null?'—':value>=1000000?(value/1000000).toFixed(2).replace(/\.?0+$/,'')+'M':value>=1000?Number((value/1000).toFixed(1))+'K':amount(value);
 const money=value=>value==null?'—':'$'+Number(value).toFixed(2);
+const tokens=value=>value==null?t('待观测','Unobserved'):amount(value)+' tokens';
 const current=()=>state?.threads.find(t=>t.id===selected);
-const phaseNames={extension_pending:['等待重开 Codex','Restart Codex'],compacting:['正在保护性压缩','Compacting'],confirmed:['窗口已确认','Window confirmed'],awaiting_runtime_confirmation:['等待下一轮确认','Awaiting next-turn confirmation'],reloading:['正在应用','Applying'],waiting_for_idle:['等待轮次结束','Waiting for turn end'],queued:['等待轮次结束','Queued'],needs_compaction:['需要先压缩','Compaction needed'],needs_observation:['等待用量记录','Waiting for usage'],error:['需要处理','Needs attention'],mismatch:['需要处理','Readback mismatch'],saved:['已保存','Saved'],waiting_bridge:['等待接入 Codex 的连接。','Waiting for a bridge connection'],disconnected:['连接已断开','Disconnected']};
+const phaseNames={extension_pending:['等待重开 Codex','Restart Codex'],compacting:['正在保护性压缩','Compacting'],confirmed:['窗口已确认','Window confirmed'],awaiting_runtime_confirmation:['等待下一轮确认','Awaiting next-turn confirmation'],reloading:['正在应用','Applying'],waiting_for_idle:['等待轮次结束','Waiting for turn end'],queued:['等待轮次结束','Queued'],needs_compaction:['需要先压缩','Compaction needed'],needs_observation:['等待用量记录','Waiting for usage'],error:['需要处理','Needs attention'],mismatch:['需要处理','Readback mismatch'],saved:['已保存','Saved']};
 const phase=thread=>{const names=phaseNames[thread?.phase];return names?t(...names):t('尚未接入','Not connected');};
 function notify(message){const node=document.querySelector('#toast');node.textContent=t(message);node.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.style.display='none',6500);}
 async function run(action,params={},message){if(busy)return;busy=true;document.body.classList.add('busy');try{const result=await api.invoke(action,params);if(message)notify(message);return result;}catch(error){notify(error.message);throw error;}finally{busy=false;document.body.classList.remove('busy');}}
@@ -39,7 +53,7 @@ function sidebar(){
 function slider(value,model,{single=false,id='main'}={}){
   const limit=draftLimits(model,value.window,value.reserve),max=limit?.maximum||1,white=value.window/max*100,blue=value.compact/max*100;
   const maxMode=model.context_ceiling===920000&&value.window===920000;
-  return `<div class="slider" data-slider="${e(id)}" data-single="${single}" style="--motion-duration:${sliderMotion(value,max).duration.toFixed(3)}s"><div class="track"><div class="fill ${maxMode?'max-flow':''}" style="width:${single?white:blue}%"></div>${single?'':`<div class="headroom-fill" style="left:${blue}%;width:${Math.max(0,white-blue)}%"></div>`}<span class="particles">${single?'':particleMarkup(value,max)}</span></div>${single?'':`<i class="thumb compact ${interactionId==='compact'?'selected':''}" style="left:${blue}%"></i>`}<i class="thumb ${interactionId!=='compact'?'selected':''}" style="left:${white}%"></i>${single?'':`<input class="a11y-range" data-range="compact" aria-label="${e(t('压缩触发','Compression trigger'))}" aria-valuetext="${k(value.compact)}" type="range" min="1000" max="${Math.max(1000,limit.compact)}" step="1000" value="${value.compact}">`}<input class="a11y-range" data-range="window" aria-label="${e(t('上下文窗口','Context window'))}" aria-valuetext="${k(value.window)}" type="range" min="${single?17000:1000}" max="${max}" step="1000" value="${value.window}"><span class="keyboard-focus">${e(t('使用左右方向键调节','Use arrow keys to adjust'))}</span></div>`;
+  return `<div class="slider" data-slider="${e(id)}" data-single="${single}" style="--motion-duration:${sliderMotion(value,max).duration.toFixed(3)}s"><div class="track"><div class="fill ${maxMode?'max-flow':''}" style="width:${single?white:blue}%"></div>${single?'':`<div class="headroom-fill" style="left:${blue}%;width:${Math.max(0,white-blue)}%"></div>`}<span class="particles">${single?'':particleMarkup(value,max)}</span></div>${single?'':`<i class="thumb compact ${interactionId==='compact'?'selected':''}" style="left:${blue}%"></i>`}<i class="thumb ${interactionId!=='compact'?'selected':''}" style="left:${white}%"></i>${single?'':`<input class="a11y-range" data-range="compact" aria-label="${e(t('压缩触发','Compression trigger'))}" aria-valuetext="${k(value.compact)}" type="range" min="1000" max="${Math.max(1000,limit.compact)}" step="1000" value="${value.compact}">`}<input class="a11y-range" data-range="window" aria-label="${e(t('上下文窗口','Context window'))}" aria-valuetext="${k(value.window)}" type="range" min="${single?2000:1000}" max="${max}" step="1000" value="${value.window}"><span class="keyboard-focus">${e(t('使用左右方向键调节','Use arrow keys to adjust'))}</span></div>`;
 }
 function particleMarkup(value,maximum){
   const motion=sliderMotion(value,maximum);
@@ -55,28 +69,75 @@ function updateParticles(slider,value,maximum){
     particle.style.animationDelay=-(i*motion.duration/motion.count).toFixed(3)+'s';particle.style.top=(5+i%14)+'px';
   }
 }
-function budgetCard(value,model,{defaults=false}={}){
+function budgetCard(value,model,options={}){
+  if(options.defaults)return settingsBudgetCard(value,model,options);
+  return budgetView({value,model,limit:value?draftLimits(model,value.window,value.reserve):null,slider,selection:interactionId||'window',e,t,k,amount});
+}
+function settingsBudgetCard(value,model,{defaults=false}={}){
   if(!value||!model)return `<div class="state-card muted">${e(t('等待当前模型的原生窗口信息','Waiting for model window metadata'))}</div>`;
   const limit=draftLimits(model,value.window,value.reserve),maxMode=model.context_ceiling===920000&&value.window===920000;
   return `<div class="card draft-card"><div class="range-values"><button class="range-value compact ${interactionId==='compact'?'selected':''}" data-action="target" data-target="compact"><strong class="num" id="compact-value">${e(k(value.compact))}</strong><span>${e(t('压缩触发','Compression trigger'))}</span></button><div class="headroom"><strong class="num" id="headroom-value">${e(k(Math.max(0,value.window-value.compact)))}</strong><div class="tiny muted">${e(t('压缩窗口余量','Compression headroom'))}</div></div><button class="range-value ${interactionId!=='compact'?'selected':''}" data-action="target" data-target="window"><strong class="num" id="window-value">${e(k(value.window))}</strong><span>${e(t('上下文窗口','Context window'))}</span></button><button class="flat" data-action="reload" title="${e(t('重新载入已保存预算','Reload saved budget'))}" aria-label="${e(t('重新载入已保存预算','Reload saved budget'))}">↶</button></div>${slider(value,model)}<div class="scale"><span>0</span><span id="max-label">${maxMode?'MAX CONTEXT · ':''}${e(k(limit.maximum))}</span></div><div class="adjust row between"><div class="adjust-group"><span class="tiny muted">${e(t('压缩','Compression'))}</span><button data-action="step" data-target="compact" data-step="-1000" aria-label="${e(t('压缩减少 1K','Decrease compression by 1K'))}">−</button><button data-action="step" data-target="compact" data-step="1000" aria-label="${e(t('压缩增加 1K','Increase compression by 1K'))}">+</button></div><div class="adjust-group"><span class="tiny muted">${e(t('窗口','Window'))}</span><button data-action="step" data-target="window" data-step="-1000" aria-label="${e(t('窗口减少 1K','Decrease window by 1K'))}">−</button><button data-action="step" data-target="window" data-step="1000" aria-label="${e(t('窗口增加 1K','Increase window by 1K'))}">+</button></div></div><div class="row wrap">${[200000,400000,700000].filter(n=>n<=limit.maximum).map(n=>`<button class="pill ${value.window===n?'active':''}" data-action="preset-window" data-value="${n}">${k(n)}</button>`).join('')}<button class="pill ${value.window===limit.maximum?'active':''}" data-action="preset-window" data-value="${limit.maximum}">MAX</button><span class="grow"></span>${[80,85,90].map(n=>`<button class="pill" data-action="preset-ratio" data-value="${n}">${n}%</button>`).join('')}</div>${defaults?'':`<details class="advanced"><summary>${e(t('高级设置','Advanced settings'))}</summary><div class="advanced-content"><label class="tiny muted">${e(t('下一轮预留','Next-turn reserve'))}<input type="number" id="reserve" min="0" step="1000" value="${value.reserve}"></label><label class="tiny muted">${e(t('手动保留下限','Retained floor'))}<input type="number" id="retained" min="0" step="1000" value="${value.retainedFloor}"></label></div><p class="tiny muted">${e(t('底层窗口','Raw window'))}: <span id="raw-window">${amount(Math.ceil(value.window*100/model.effective_context_window_percent))}</span> · ${e(t('可用比例','Effective percentage'))}: ${model.effective_context_window_percent}%</p></details>`}</div>`;
 }
 function chatPage(){
-  const chat=current();if(!chat)return `<div class="empty"><h2>${e(t('Context Manager','Context Manager'))}</h2><p>${e(t('选择一个聊天以查看上下文。','Select a chat to view its context.'))}</p><p>${e(t('安装后请正常重开 Codex 以载入连接。','After installation, restart Codex normally to load the bridge.'))}</p></div>`;
-  const fraction=observed(chat),budget=savedBudget(chat.policy,chat.modelMetadata),maxMode=chat.observedWindow===920000;
-  return `<div class="content"><div class="heading"><div><h1>${e(chatName(chat))}</h1><p class="muted">${e(chat.model||t('模型将在接入后识别','Model will be detected on connection'))}</p></div><button class="small" data-action="stats">${e(t('更多信息','More information'))} ↗</button></div><div class="metrics"><div class="metric"><div class="label">${e(t(chat.freshUsage?'实际可用窗口':'上次读回窗口',chat.freshUsage?'Actual usable window':'Last observed window'))}</div><div class="value">${e(k(chat.observedWindow))}</div></div><div class="metric"><div class="label">${e(t('最近请求用量','Last request usage'))}</div><div class="value">${e(k(chat.lastUsage?.totalTokens))}</div></div></div>${fraction==null?'':`<div><div class="row between tiny muted"><span>${e(t('上下文占用','Context usage'))}</span><span>${Math.round(fraction*100)}% ${maxMode?'<span class="badge">MAX CONTEXT</span>':''}</span></div><div class="progress" style="margin-top:8px"><div class="${maxMode?'max-flow':''}" style="width:${Math.min(100,fraction*100)}%"></div></div></div>`}<div class="saved-line">${budget?e(t('已保存：可用窗口 {0} · 压缩阈值 {1}','Saved: usable window {0} · compression {1}',k(budget.usableWindow),k(budget.compact))):e(t('未设置该聊天的独立预算。','No per-chat budget saved.'))}</div>${budgetCard(draft,chat.modelMetadata)}<div class="actions"><button class="primary" data-action="apply" ${!draft?'disabled':''}>${e(t('应用','Apply'))}</button><button data-action="preflight" ${!draft?'disabled':''}>${e(t('预检','Preflight'))}</button><button class="flat" data-action="reload">${e(t('取消','Cancel'))}</button><span class="grow"></span><button class="small" data-action="clear">${e(t('停止自动应用','Stop auto apply'))}</button></div><div class="state-card"><strong id="phase">${e(phase(chat))}</strong><p id="phase-message" class="muted tiny">${e(t(chat.message||'接入后，设置会在轮次之间应用。','Settings apply between turns after connection.'))}</p></div><div id="preflight-result"></div><div class="row between"><p class="tiny muted">${e(t('最近请求用量是占用估算；不会为确认预算额外发送模型请求。','Last request usage is an estimate. Budget confirmation does not send extra model requests.'))}</p><button class="small" data-action="compact">${e(t('立即压缩','Compact now'))}</button></div></div>`;
+  const chat=current();let previewError=budgetInputError;
+  if(chat&&!previewError){try{if(!draft)throw Error('等待当前模型的原生窗口信息');applePolicyForDraft(draft,chat.modelMetadata);}catch(error){previewError=error.message;}}
+  return chatView({chat:chat?{...chat,name:chatName(chat)}:null,draft,budget:savedBudget(chat?.policy,chat?.modelMetadata),confirmed:windowConfirmed(chat),observedTitle:observedWindowTitle(chat),modelName:modelDisplayName(chat?.model||''),canEdit:!!draft&&chat?.modelMetadata?.context_catalog_ready!==false,previewError,budgetCard,notice:mainNotice,noticeError:mainNoticeError,e,t,tokens});
 }
+
 function defaultModel(){const l=state?.newChatDefaultsLimits;return l?{max_context_window:Math.ceil(l.maximumUsableWindow*100/l.effectivePercent),effective_context_window_percent:l.effectivePercent,...(l.extended?{context_ceiling:920000,context_compact_ceiling:904000}:{})}:null;}
 function defaultsPage(){return `<div class="content"><div><h1>${e(t('全局默认','Global defaults'))}</h1><p class="muted">${e(t('只影响之后创建的新聊天；分支继续继承父聊天预算。','Only affects new chats. Forks continue to inherit their parent budget.'))}</p></div>${budgetCard(draft,defaultModel(),{defaults:true})}<div class="actions"><button class="primary" data-action="save-defaults" ${!draft?'disabled':''}>${e(t('保存默认值','Save defaults'))}</button><button data-action="copy-current" ${!current()?'disabled':''}>${e(t('使用当前聊天设置','Use current chat settings'))}</button><button class="flat" data-action="reload">${e(t('取消','Cancel'))}</button></div>${state.newChatDefaultsPending?`<div class="state-card">${e(t('已有连接需要重开 Codex 才能加载新聊天默认功能。','Restart Codex to load defaults support in older connections.'))}</div>`:''}</div>`;}
+function setNotice(message,error=false){mainNotice=message||'';mainNoticeError=error;const node=document.getElementById('main-notice');if(node){node.textContent=t(mainNotice);node.classList.toggle('error',error);node.classList.toggle('muted',!error);}}
+function refreshBudgetValidity(){
+  if(editingDefaults()||mode==='tray')return;
+  let error=budgetInputError;try{if(!error){if(!draft)throw Error('等待当前模型的原生窗口信息');applePolicyForDraft(draft,current()?.modelMetadata);}}catch(failure){error=failure.message;}
+  const fieldset=editorRoot()?.querySelector('.budget-editor');if(fieldset)fieldset.disabled=!draft||current()?.modelMetadata?.context_catalog_ready===false;
+  const node=editorRoot()?.querySelector('#budget-error');if(node){node.textContent=t(error||'');node.hidden=!error;}
+  for(const action of ['apply','preflight']){const button=editorRoot()?.querySelector(`[data-action="${action}"]`);if(button)button.disabled=!!error||!draft;}
+}
+function openDetails(){
+  if(!current())return;
+  detailsSnapshot={draft:draft?{...draft}:null,dirty,scroll:root.querySelector('.main')?.scrollTop||0};detailsUnderlay=root.querySelector('.main')?.innerHTML||'';
+  detailsOpen=true;detailsEpoch++;view='stats';stats=null;statsJSON='';statsError='';statsLoading=false;deferredStats=null;rawSelectedID=null;lastDetailBucket=null;hover=pinned=null;page=0;auto=true;
+  render();document.getElementById('details-close')?.focus();void loadStats(true);
+}
+function closeDetails(){
+  if(!detailsOpen)return;const snapshot=detailsSnapshot;
+  detailsOpen=false;smoothingInteracting=false;detailsEpoch++;view='chat';statsLoading=false;deferredStats=null;hover=pinned=null;clearTimeout(smoothingTimer);
+  if(snapshot){draft=snapshot.draft;dirty=snapshot.dirty;}detailsSnapshot=null;detailsUnderlay='';if(!dirty)loadDraft();render();
+  if(snapshot)root.querySelector('.main').scrollTop=snapshot.scroll;root.querySelector('[data-action="stats"]')?.focus();
+}
+function acceptStats(result){const json=JSON.stringify(result);if(json===statsJSON)return false;statsJSON=json;stats=result;return true;}
+function applyDeferredStats(){if(deferredStats&&detailsOpen&&hover==null&&!smoothingInteracting){const result=deferredStats;deferredStats=null;if(acceptStats(result))render();}}
+function trayEdited(value){return !!value&&(value.window!==value.baseWindow||value.compact!==value.baseCompact);}
+function trayChanged(value){return !!value&&(trayEdited(value)||!value.baseEnabled);}
+function trayTarget(chat,value){
+  if(trayFeedback.has(chat.id))return trayFeedback.get(chat.id).message;
+  if(chat.observedWindow!=null&&Math.floor(chat.observedWindow/1000)!==Math.floor(value.window/1000))return t('目标 {0}K · {1} {2}K','Target {0}K · {1} {2}K',Math.floor(value.window/1000),chat.connected&&chat.freshUsage?t('实际','Actual'):t('上次','Last'),Math.floor(chat.observedWindow/1000));
+  return value.window===draftLimits(chat.modelMetadata,value.window,value.reserve).maximum?'MAX':t('上下文 {0}K','Context {0}K',Math.floor(value.window/1000));
+}
+function updateTrayAvailability(){
+  if(mode!=='tray')return;
+  for(const row of root.querySelectorAll('.tray-row')){
+    const chat=state?.threads.find(item=>item.id===row.dataset.id);if(!chat)continue;
+    let value=trayDrafts.get(chat.id);
+    if(value&&!traySaving.has(chat.id)&&(value.modelKey!==modelSignature(chat)||(!trayEdited(value)&&value.expectedRevision!==(chat.policy?.revision??0)))){value=threadDraft(chat);if(value)trayDrafts.set(chat.id,value);}
+    if(value)updateTrayDraft(chat.id,value,chat.modelMetadata);
+  }
+}
 function render(){
   if(mode==='tray'){renderTray();return;}
   if(!settingsOpen&&shortcutRecording)finishShortcutRecording();
   const oldMain=root.querySelector('.main'),same=oldMain?.dataset.view===view,open=same?[...oldMain.querySelectorAll('details')].map((d,i)=>d.open?i:-1).filter(i=>i>=0):[],scroll=same?oldMain.scrollTop:0;
   const settingsScroll=root.querySelector('.settings-body')?.scrollTop||0;
-  const body=settingsOpen?settingsUnderlay:`${preferences.demo?demoBanner():''}${view==='stats'?statsPage():editingDefaults()?defaultsPage():chatPage()}`;
-  root.innerHTML=`<div class="shell" style="--sidebar-width:${visibleSidebarWidth()}px" ${settingsOpen?'inert':''}>${sidebar()}<main class="main" id="main-content" data-view="${view}">${body}</main></div>${settingsOpen?settingsDialog():''}`;
-  const newMain=root.querySelector('.main');for(const [i,d]of [...newMain.querySelectorAll('details')].entries())if(open.includes(i))d.open=true;newMain.scrollTop=scroll;
+  const detailScroll=root.querySelector('.details-body')?.scrollTop||0,disclosures=[...root.querySelectorAll('.details-dialog details[open]')].map(node=>node.dataset.disclosure),focusID=document.activeElement?.closest('.details-dialog')?document.activeElement.id:null;
+  const body=settingsOpen?settingsUnderlay:detailsOpen?detailsUnderlay:`${preferences.demo?demoBanner():''}${editingDefaults()?defaultsPage():chatPage()}`;
+  root.innerHTML=`<div class="shell" style="--sidebar-width:${visibleSidebarWidth()}px" ${settingsOpen||detailsOpen?'inert':''}>${sidebar()}<main class="main" id="main-content" data-view="${view}">${body}</main></div>${settingsOpen?settingsDialog():detailsOpen?detailsDialog():''}`;
+  const newMain=root.querySelector('.main');for(const [i,d]of [...newMain.querySelectorAll('details')].entries())if(open.includes(i))d.open=true;newMain.scrollTop=detailsOpen?(detailsSnapshot?.scroll||0):scroll;
+  if(newMain.querySelector('#phase')){newMain.querySelector('#phase').textContent=phase(current());newMain.querySelector('#phase-message').textContent=t(current()?.message||'接入后，设置会在轮次之间应用。');}
   if(settingsOpen)root.querySelector('.settings-body').scrollTop=settingsScroll;
-  bindSliders();bindSidebar();if(!settingsOpen&&view==='stats'&&stats)drawCharts();
+  if(detailsOpen){for(const node of root.querySelectorAll('.details-dialog details'))if(disclosures.includes(node.dataset.disclosure))node.open=true;root.querySelector('.details-body').scrollTop=detailScroll;}
+  bindSliders();bindSidebar();if(detailsOpen&&stats)drawCharts();
+  if(focusID)document.getElementById(focusID)?.focus({preventScroll:true});
 }
 function demoBanner(){return `<div class="demo-banner row between"><div><strong>${e(t('合成数据预览 · 3 个示例聊天','Preview · 3 sample chats'))}</strong><p class="tiny">${e(t('这里不读取真实聊天；切换到本地模式可查看你的聊天。','Preview does not read real chats. Switch to local mode to see your chats.'))}</p></div><button class="small" data-action="open-live">${e(t('查看真实聊天','View real chats'))} ↗</button></div>`;}
 function integrationSettings(){
@@ -102,6 +163,7 @@ function settingsDialog(){
   return `<div class="settings-backdrop" data-action="settings-dismiss"><section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><header class="settings-header row between"><h1 id="settings-title">${e(t('设置','Settings'))}</h1><button class="settings-close flat" data-action="settings-close" aria-label="${e(t('关闭设置','Close settings'))}">×</button></header><nav class="settings-tabs" role="tablist" aria-label="${e(t('设置分类','Settings sections'))}">${tabs.map(([id,label])=>`<button role="tab" id="settings-tab-${id}" aria-controls="settings-panel" aria-selected="${id===settingsTab}" class="${id===settingsTab?'active':''}" data-action="settings-tab" data-tab="${id}">${e(label)}</button>`).join('')}</nav><div class="settings-body" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab-${settingsTab}">${content}</div></section></div>`;
 }
 function openSettings(tab='general'){
+  if(detailsOpen)closeDetails();
   if(!settingsOpen){settingsSnapshot={draft:draft?{...draft}:null,dirty};settingsUnderlay=root.querySelector('.main')?.innerHTML||'';}
   if(shortcutRecording)finishShortcutRecording();
   settingsOpen=true;settingsTab=tab;hover=pinned=null;
@@ -134,7 +196,7 @@ function bindSidebar(){
 function setDraft(which,value,model=current()?.modelMetadata){
   if(!draft||!model)return;const limit=draftLimits(model,draft.window,draft.reserve);
   value=Math.round(value/1000)*1000;
-  if(which==='window')draft=resizeDraft(draft,Math.max(editingDefaults()?34000:1000,Math.min(value,limit.maximum)),model);
+  if(which==='window')draft=resizeDraft(draft,Math.max(editingDefaults()?34000:2000,Math.min(value,limit.maximum)),model);
   else {const compact=Math.max(editingDefaults()?17000:1000,Math.min(value,limit.compact));draft={...draft,compact,ratioCompact:compact,ratioWindow:draft.window};}
   interactionId=which;dirty=true;updateDraftDOM();
 }
@@ -148,6 +210,16 @@ function updateDraftDOM(){
   updateParticles(s,draft,limit.maximum);
   for(const which of ['compact','window']){const input=s.querySelector(`[data-range="${which}"]`);input.value=draft[which];input.max=which==='window'?limit.maximum:Math.max(1000,limit.compact);input.setAttribute('aria-valuetext',k(draft[which]));s.querySelector(`.thumb${which==='compact'?'.compact':':not(.compact)'}`).classList.toggle('selected',interactionId===which);}
   for(const [id,value]of [['compact-value',k(draft.compact)],['window-value',k(draft.window)],['headroom-value',k(Math.max(0,draft.window-draft.compact))],['raw-window',amount(Math.ceil(draft.window*100/model.effective_context_window_percent))],['max-label',(maxMode?'MAX CONTEXT · ':'')+k(limit.maximum)]]){const n=editorRoot()?.querySelector('#'+id);if(n)n.textContent=value;}
+  if(!editingDefaults()){
+    const editor=editorRoot(),ratio=draft.compact/draft.window*100;
+    editor.querySelector('#max-label').textContent=t('模型上限 {0}K','Model limit {0}K',Math.floor(limit.maximum/1000));
+    editor.querySelector('#compact-ratio').textContent=amount(ratio)+'%';
+    for(const button of editor.querySelectorAll('[data-action="preset-window"]'))button.classList.toggle('active',Number(button.dataset.value)===draft.window);
+    for(const button of editor.querySelectorAll('[data-action="preset-ratio"]'))button.classList.toggle('active',Math.abs(Number(button.dataset.value)-ratio)<.2);
+    editor.querySelector('[data-action="preset-compact-max"]')?.classList.toggle('active',draft.compact===limit.compact);
+    for(const button of editor.querySelectorAll('[data-action="step"]')){const target=button.dataset.target;button.disabled=Number(button.dataset.step)<0?draft[target]<=(target==='window'?2000:1000):draft[target]>=(target==='window'?limit.maximum:limit.compact);}
+  }
+  refreshBudgetValidity();
 }
 function bindSliders(){
   for(const slider of (settingsOpen?editorRoot():document).querySelectorAll('[data-slider]')){
@@ -155,7 +227,7 @@ function bindSliders(){
     const data=()=>id==='main'?{value:draft,model:editingDefaults()?defaultModel():current()?.modelMetadata}: {value:trayDrafts.get(id),model:state.threads.find(t=>t.id===id)?.modelMetadata};
     const move=event=>{const {value,model}=data();if(!value||!model)return;const rect=slider.getBoundingClientRect(),maximum=draftLimits(model,value.window,value.reserve).maximum,n=Math.round(Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width))*maximum/1000)*1000;
       if(!target){target=single?'window':Math.abs(n-value.compact)<Math.abs(n-value.window)?'compact':Math.abs(n-value.compact)===Math.abs(n-value.window)?interactionId||'window':'window';}
-      if(id==='main')setDraft(target,n,model);else{const next=resizeDraft(value,Math.max(17000,Math.min(maximum,n)),model);trayDrafts.set(id,next);updateTrayDraft(id,next,model);}
+      if(id==='main')setDraft(target,n,model);else{const next=resizeDraft(value,Math.max(2000,Math.min(maximum,n)),model);trayDrafts.set(id,next);updateTrayDraft(id,next,model);}
     };
     slider.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();dragging=true;if(mode==='tray')api.invoke('interaction',{dragging:true});target=null;slider.setPointerCapture(event.pointerId);slider.closest('.tray-row')?.classList.add('editing');move(event);});
     let pending=null,frame=null;
@@ -165,17 +237,30 @@ function bindSliders(){
     for(const input of slider.querySelectorAll('[data-range]'))input.addEventListener('input',()=>{if(id==='main')setDraft(input.dataset.range,Number(input.value),data().model);else{const next=resizeDraft(data().value,Number(input.value),data().model);trayDrafts.set(id,next);updateTrayDraft(id,next,data().model);}});
   }
 }
-function updateTrayDraft(id,value,model){const row=[...document.querySelectorAll('.tray-row')].find(row=>row.dataset.id===id);if(!row)return;const maximum=draftLimits(model,value.window,value.reserve).maximum,percentage=value.window/maximum*100;row.querySelector('.fill').style.width=percentage+'%';row.querySelector('.fill').classList.toggle('max-flow',model.context_ceiling===920000&&value.window===920000);row.querySelector('.thumb').style.left=percentage+'%';row.querySelector('.tray-value').textContent=percentage===100?'MAX':k(value.window);updateParticles(row.querySelector('.slider'),value,maximum);}
-function trayRow(chat){
-  const editable=chat.connected&&chat.modelMetadata?.context_catalog_ready!==false&&threadDraft(chat),d=trayDrafts.get(chat.id)||editable,fraction=observed(chat);if(d&&!trayDrafts.has(chat.id))trayDrafts.set(chat.id,{...d});
-  return `<div class="tray-row ${editable?'':'disabled'}" data-id="${e(chat.id)}" tabindex="0" aria-label="${e((chatName(chat))+' · '+statusText(chat))}"><div class="row-info"><h3 class="truncate grow">${e(chatName(chat))}</h3>${ring(chat)}<div class="usage">${fraction==null?e(t('待观测','Unobserved')):Math.round(fraction*100)+'%'}<div class="muted tiny">${e(k(chat.lastUsage?.totalTokens))} / ${e(k(chat.observedWindow))}${!chat.freshUsage?' · '+e(t('上次','Last')):''}</div></div></div>${editable?`<div class="row-editor"><span class="tray-value num">${d.window===draftLimits(chat.modelMetadata,d.window,d.reserve).maximum?'MAX':e(k(d.window))}</span>${slider(d,chat.modelMetadata,{single:true,id:chat.id})}<button class="primary small" data-action="tray-apply" data-id="${e(chat.id)}">${e(t('应用','Apply'))}</button><button class="flat small" data-action="tray-cancel" data-id="${e(chat.id)}" aria-label="${e(t('取消','Cancel'))}">×</button></div>`:''}</div>`;
+function updateTrayDraft(id,value,model){
+  const row=[...document.querySelectorAll('.tray-row')].find(row=>row.dataset.id===id),chat=state?.threads.find(chat=>chat.id===id);if(!row||!value||!model||!row.querySelector('.slider'))return;
+  const maximum=draftLimits(model,value.window,value.reserve).maximum,percentage=value.window/maximum*100;
+  row.querySelector('.fill').style.width=percentage+'%';row.querySelector('.fill').classList.toggle('max-flow',model.context_ceiling===920000&&value.window===920000);row.querySelector('.thumb').style.left=percentage+'%';
+  const label=row.querySelector('.tray-value');label.textContent=trayTarget(chat,value);label.classList.toggle('error',trayFeedback.get(id)?.error===true);
+  row.querySelector('[data-action="tray-apply"]').disabled=!serviceAvailable||chat.modelMetadata?.context_catalog_ready===false||!trayChanged(value)||traySaving.has(id)||value.modelKey!==modelSignature(chat);row.querySelector('[data-action="tray-cancel"]').disabled=traySaving.has(id);
+  for(const input of row.querySelectorAll('input'))input.disabled=!serviceAvailable||chat.modelMetadata?.context_catalog_ready===false||traySaving.has(id);
+  updateParticles(row.querySelector('.slider'),value,maximum);
 }
-function renderTray(force=false){if(!force&&(dragging||document.querySelector('.tray-row:hover,.tray-row:focus-within')))return;trayDrafts.clear();const {running,recent}=trayState(state?.threads);root.innerHTML=`<div class="tray-shell"><button class="tray-top" data-action="open-main">${e(t('打开主窗口','Open main window'))}<span style="float:right" class="muted">↗</span></button>${quotaPanel(true)}<div class="tray-list"><div class="tray-section row between"><span>${e(t('正在运行','Running'))}</span><span>${running.length}</span></div>${running.map(trayRow).join('')||`<p class="tiny muted" style="padding:0 10px">${e(t('暂无运行中的聊天','No running chats'))}</p>`}${recent.length?`<div class="tray-section row between"><span>${e(t('近期聊天','Recent chats'))}</span><span>${recent.length}</span></div>${recent.map(trayRow).join('')}`:''}</div><div class="tray-footer"><span class="row"><span class="dot ${state?.bridgeCount?'on':''}"></span>Context Manager</span><button class="flat" data-action="quit">${e(t('退出','Quit'))}</button></div></div>`;bindSliders();for(const row of document.querySelectorAll('.tray-row')){row.addEventListener('mouseleave',()=>{if(dragging)return;const chat=state.threads.find(t=>t.id===row.dataset.id),d=threadDraft(chat);if(d){trayDrafts.set(chat.id,d);updateTrayDraft(chat.id,d,chat.modelMetadata);}});row.addEventListener('click',event=>{if(!event.target.closest('button,.slider'))api.invoke('open-main',{id:row.dataset.id});});row.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target===row)api.invoke('open-main',{id:row.dataset.id});});}}
-function statsPage(){const chat=current();return `<div class="content"><div class="heading"><div><button class="flat small" data-action="back">← ${e(t('返回预算','Back to budget'))}</button><h1 style="margin-top:12px">${e(chatName(chat))} · ${e(t('上下文详情','Context details'))}</h1></div><div class="row"><label class="tiny"><input type="checkbox" id="auto-stats" ${auto?'checked':''}> ${e(t('自动刷新','Auto refresh'))}</label><button class="small" data-action="refresh-stats">↻</button></div></div><div id="stats-body">${stats?statsBody():`<p class="muted">${e(t('正在读取本地统计…','Loading local statistics…'))}</p>`}</div></div>`;}
-function statsBody(){const cost=stats.cost||{},max=Math.max(1,stats.inputTokens||0),colors=['#5286ef','#71b2be','#7fb488','#a27fd4','#b59c77','#8b91a8'];return `<div class="stack">${snapshotInfo()}<div class="metrics"><div class="metric"><div class="label">${e(t('活跃上下文','Active context'))}</div><div class="value">${e(k(stats.inputTokens))}</div></div><div class="metric"><div class="label">${e(t('缓存命中','Cache hits'))}</div><div class="value">${e(k(stats.cachedInputTokens))}</div></div></div><div class="card"><div class="row between"><h3>${e(t('本聊天费用 · API 估算','Chat cost · API estimate'))}</h3><strong class="cost-total num">${cost.usd==null?'—':'≈ '+money(cost.usd)}</strong></div><p class="tiny muted">${e(t('Standard 单价 · 已估 {0}/{1} 次 · 非实际账单','Standard rates · {0}/{1} priced requests · Not an actual bill',cost.pricedRequests??0,cost.totalRequests??0))}</p><div class="cost-breakdown">${(cost.breakdown||[]).map(part=>`<div class="tiny muted">${e(t(part.label))}${part.category==='cache_write'?' · '+e(t('估算','Estimate')):''}<strong class="num">${e(k(part.tokens))}</strong><span>${money(part.usd)}</span></div>`).join('')}</div><details><summary>${e(t('官方公式与计价明细','Formula and pricing details'))}</summary><p class="tiny muted">${e(t('普通输入 = 总输入 − 缓存读取 − 缓存写入','Ordinary input = total input − cached reads − cache writes'))}</p><p class="tiny muted">${e(t('费用 =（普通输入 × 输入价 + 缓存读取 × 读取价 + 缓存写入 × 写入价 + 输出 × 输出价）÷ 1,000,000','Cost = (ordinary input × input rate + reads × read rate + writes × write rate + output × output rate) / 1,000,000'))}</p><div class="table-scroll"><table><thead><tr><th>${e(t('模型','Model'))}</th><th>${e(t('请求','Requests'))}</th><th>USD</th></tr></thead><tbody>${(cost.groups||[]).map(g=>`<tr><td>${e(g.model)} · ${e(g.tier)}</td><td>${g.requests}</td><td>${money(g.usd)}</td></tr>`).join('')}</tbody></table></div><p class="tiny muted">${e(t('未知用量或未支持价格不计作零费用。缓存写入估算与实际账单可能不同。','Unknown usage or unsupported pricing is not zero cost. Estimated cache writes can differ from billing.'))}</p></details></div><div class="card"><h3>${e(t('上下文构成','Context composition'))}</h3>${(stats.categories||[]).map((c,i)=>`<div class="category"><span>${e(t(c.label))}<span class="muted tiny"> · ${amount(c.items)}</span></span><div class="bar"><i style="width:${Math.min(100,(c.tokensEstimate??0)/max*100)}%;background:${colors[i%colors.length]}"></i></div><span class="num">${e(k(c.tokensEstimate))}</span></div>`).join('')}<div class="category"><span>${e(t('其他／未分项','Other / unattributed'))}</span><div class="bar"><i style="width:${Math.min(100,Math.max(0,stats.unclassified?.tokensEstimate??0)/max*100)}%;background:#888"></i></div><span>${e(k(stats.unclassified?.tokensEstimate))}</span></div><p class="tiny muted">${e(stats.tokenizer||'o200k_base')} · ${e(t('可见文本估算','Visible text estimate'))}</p><details><summary>${e(t('工具调用','Tool calls'))}</summary>${(stats.toolCalls||[]).map(tool=>`<p class="row between tiny"><span>${e(tool.name)}</span><span>${amount(tool.count)}</span></p>`).join('')}</details></div><div class="card chart-card"><div class="row between"><h3>${e(t('响应趋势','Response trends'))}</h3><label class="tiny muted">EMA <select id="smoothing">${Array.from({length:41},(_,n)=>n).map(n=>`<option value="${n}" ${period===n?'selected':''}>${n||t('原始','Raw')}</option>`).join('')}</select></label></div><p class="tiny muted">${e(t('生成速度不含生成前的等待；缺失记录保留断点。','Generation speed excludes waiting before generation. Missing measurements remain gaps.'))}</p><div id="charts"></div><div class="chart-detail" id="chart-detail"><span class="muted">${e(t('悬停查看，点击固定','Hover to inspect; click to pin'))}</span></div><details id="raw-records"><summary>${e(t('原始记录','Raw records'))}</summary><div id="raw-page"></div></details></div><div class="notes">${(stats.notes||[]).map(note=>`<p>${e(t(note))}</p>`).join('')}<p>${e(t('文字估算不等于内核运行时的精确上下文计数。','Text estimates are not an exact measurement of runtime context.'))}</p></div></div>`;}
+
+function trayRow(chat){
+  let value=trayDrafts.get(chat.id);if(!value){value=threadDraft(chat);if(value)trayDrafts.set(chat.id,value);}
+  const editable=!!value&&chat.modelMetadata?.context_catalog_ready!==false;
+  return trayChatView({chat,title:chatName(chat),status:statusText(chat),draft:value,editable,changed:serviceAvailable&&trayChanged(value),saving:traySaving.has(chat.id),target:value?trayTarget(chat,value):'',fraction:observed(chat),slider,ring,e,t});
+}
+
+function renderTray(force=false){if(!force&&(dragging||document.querySelector('.tray-row:hover,.tray-row:focus-within')))return;trayDrafts.clear();const {running,recent}=trayState(state?.threads);root.innerHTML=`<div class="tray-shell"><button class="tray-top" data-action="open-main">${e(t('打开主窗口','Open main window'))}<span style="float:right" class="muted tiny">${e(preferences.shortcut?.enabled?shortcutLabel(preferences.shortcut.accelerator):'↗')}</span></button>${quotaPanel(true)}<div class="tray-list"><div class="tray-section row between"><span>${e(t('正在运行','Running'))}</span><span>${running.length}</span></div>${running.map(trayRow).join('')||`<p class="tiny muted" style="padding:0 10px">${e(t('暂无运行中的聊天','No running chats'))}</p>`}${recent.length?`<div class="tray-section row between"><span>${e(t('近期聊天','Recent chats'))}</span><span>${recent.length}</span></div>${recent.map(trayRow).join('')}`:''}</div><div class="tray-footer"><span class="row"><span class="dot ${state?.bridgeCount?'on':''}"></span>Context Manager</span><button class="flat" data-action="quit">${e(t('退出','Quit'))}</button></div></div>`;bindSliders();for(const row of document.querySelectorAll('.tray-row')){row.addEventListener('mouseleave',()=>{if(dragging||traySaving.has(row.dataset.id))return;trayFeedback.delete(row.dataset.id);row.classList.remove('canceled');const chat=state.threads.find(t=>t.id===row.dataset.id),d=threadDraft(chat);if(d){trayDrafts.set(chat.id,d);updateTrayDraft(chat.id,d,chat.modelMetadata);}});row.addEventListener('click',event=>{if(!event.target.closest('button,.slider'))api.invoke('open-main',{id:row.dataset.id});});row.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target===row)api.invoke('open-main',{id:row.dataset.id});});}}
+function detailsDialog(){return detailsView({title:chatName(current()),stats,content:stats?statsBody():statsLoading?statsBody():'<div class="empty">'+e(t('暂无上下文统计','No context statistics'))+'</div>',loading:statsLoading,error:statsError,auto,e,t});}
+
+function statsBody(){return statisticsView({stats,period,e,t,k,amount,money,modelName:modelDisplayName});}
+
 function drawCharts(){
   const container=document.querySelector('#charts');if(!container||!stats)return;
-  timeline=timelineData(stats.responses||[],stats.timelineEvents||[],{period});
+  const pinPosition=timeline?.buckets[pinned]?.position;timeline=timelineData(stats.responses||[],stats.timelineEvents||[],{period});if(pinPosition!=null)pinned=nearestBucket(timeline,pinPosition);
   const {width:w,height:h,padding}=timelinePlot;
   const plot=(name,series)=>{
     const max=Math.max(1,...series.flatMap(s=>s.points.map(p=>p.value)));
@@ -190,47 +275,62 @@ function drawCharts(){
   let pending=null,frame=null;
   const select=(plot,event)=>{
     const rect=plot.getBoundingClientRect(),position=timelinePosition(event.clientX-rect.left,timeline.upperBound,rect.width);
-    if(pinned==null){hover=position==null?null:nearestBucket(timeline,position);updateChartSelection();}
+    hover=position==null?null:nearestBucket(timeline,position);updateChartSelection();
   };
   for(const plot of container.querySelectorAll('[data-plot]')){
     plot.addEventListener('pointermove',event=>{pending={plot,event};if(frame==null)frame=requestAnimationFrame(()=>{frame=null;if(pending)select(pending.plot,pending.event);pending=null;});});
-    plot.addEventListener('pointerleave',()=>{if(frame!=null)cancelAnimationFrame(frame);frame=null;pending=null;hover=null;if(pinned==null)updateChartSelection();});
-    plot.addEventListener('click',event=>{select(plot,event);pinned=pinned==null?hover:null;page=0;updateChartSelection();});
+    plot.addEventListener('pointerleave',()=>{if(frame!=null)cancelAnimationFrame(frame);frame=null;pending=null;hover=null;updateChartSelection();queueMicrotask(applyDeferredStats);});
+    plot.addEventListener('click',event=>{select(plot,event);if(hover!=null)pinned=hover;hover=null;page=0;updateChartSelection();});
   }
   document.querySelector('#raw-records')?.addEventListener('toggle',()=>renderRaw());updateChartSelection();
 }
 function updateChartSelection(){
-  const bucket=pinned??hover,b=timeline?.buckets[bucket],detail=document.querySelector('#chart-detail');
-  for(const cursor of document.querySelectorAll('.chart-cursor')){
-    cursor.style.display=b?'block':'none';if(b)cursor.style.left=timelineX(b.position,timeline.upperBound,100)+'%';
-  }
+  const selectedBucket=timeline?.buckets[hover??pinned],focused=selectedBucket||timeline?.buckets.at(-1),detail=document.querySelector('#chart-detail');
+  for(const cursor of document.querySelectorAll('.chart-cursor')){cursor.style.display=selectedBucket?'block':'none';if(selectedBucket)cursor.style.left=timelineX(selectedBucket.position,timeline.upperBound,100)+'%';}
   for(const circle of document.querySelectorAll('.chart-selection-point')){
-    const point=b?timeline[circle.dataset.measure]?.find(point=>point.id===b.id):null;
+    const point=selectedBucket?timeline[circle.dataset.measure]?.find(point=>point.id===selectedBucket.id):null;
     circle.setAttribute('visibility',point?'visible':'hidden');if(!point)continue;
     const maximum=Number(circle.closest('[data-plot]').dataset.maximum),h=timelinePlot.height;
-    circle.setAttribute('cx',String(timelineX(point.position,timeline.upperBound)));
-    circle.setAttribute('cy',String(h-20-point.value/maximum*(h-30)));
+    circle.setAttribute('cx',String(timelineX(point.position,timeline.upperBound)));circle.setAttribute('cy',String(h-20-point.value/maximum*(h-30)));
   }
   if(!detail)return;
-  if(!b){detail.innerHTML=`<span class="muted">${e(t('悬停查看，点击固定','Hover to inspect; click to pin'))}</span>`;return;}
-  detail.innerHTML=`<h3>${e(b.firstResponse==null?t('对话事件','Conversation events'):t('响应 #{0}–#{1}','Responses #{0}–#{1}',b.firstResponse,b.lastResponse))} ${pinned!=null?'⌖':''}</h3><div class="row wrap tiny"><span>${e(t('生成速度','Generation speed'))}: ${b.speed==null?'—':amount(b.speed)} t/s</span><span>${e(t('输入','Input'))}: ${e(k(b.inputMean))}</span><span>${e(t('缓存读取','Cached reads'))}: ${e(k(b.cacheMean))}</span><span>${e(t('输出','Output'))}: ${e(k(b.outputSamples?b.output:null))}</span><span>${e(t('压缩','Compactions'))}: ${b.compactions}</span></div><p class="tiny muted">${e(b.models.join(' · '))}${b.zeros?' · '+e(t('日志零缓存值未独立证实','Zero cache values are unverified')):''}</p>`;
+  if(focused?.id!==lastDetailBucket){page=0;lastDetailBucket=focused?.id;}
+  detail.innerHTML=chartDetailView({bucket:focused,pinned:pinned!=null&&hover==null,e,t,k,amount,modelName:modelDisplayName});
+  const summary=document.getElementById('raw-summary');if(summary)summary.textContent=t('原始记录（{0} 条）','Raw records ({0})',focused?focused.end-focused.start:0);
   if(document.querySelector('#raw-records')?.open)renderRaw();
 }
-function renderRaw(){const node=document.querySelector('#raw-page');if(!node||!timeline)return;const bucket=pinned??hover??0,b=timeline.buckets[bucket];if(!b){node.textContent=t('暂无记录','No records');return;}const entries=timeline.entries.slice(b.start,b.end),total=Math.ceil(entries.length/20);page=Math.max(0,Math.min(page,total-1));node.innerHTML=entries.slice(page*20,page*20+20).map(entry=>`<details class="raw-entry"><summary>${e(entry.response?t('响应 #{0}','Response #{0}',entry.response.index):t(entry.event.kind))} · ${e(entry.response?.config?.model||entry.eventType)}</summary><pre>${e(JSON.stringify(entry.response||entry.event,null,2))}</pre></details>`).join('')+`<div class="row between"><button class="small" data-action="raw-prev" ${page===0?'disabled':''}>←</button><span class="tiny muted">${page+1} / ${Math.max(1,total)}</span><button class="small" data-action="raw-next" ${page+1>=total?'disabled':''}>→</button></div>`;}
+
+function renderRaw(){
+  const node=document.querySelector('#raw-page');if(!node||!timeline)return;
+  const bucket=timeline.buckets[hover??pinned]||timeline.buckets.at(-1);if(!bucket){node.textContent=t('暂无记录','No records');return;}
+  const entries=timeline.entries.slice(bucket.start,bucket.end),pages=Math.max(1,Math.ceil(entries.length/20));page=Math.max(0,Math.min(page,pages-1));
+  node.innerHTML=rawRecordsView({entries,page,pages,selectedID:rawSelectedID,e,t,amount,k,modelName:modelDisplayName});
+}
+
 function snapshotInfo(){
   const u=stats.unclassified||{},at=stats.snapshotAt?new Date(stats.snapshotAt).toLocaleString(preferences.language==='zh'?'zh-CN':'en-US'):'';
   return `<div class="notes"><p>${e(stats.snapshotKind==='last_request'?t('最近请求快照 · {0}','Last request snapshot · {0}',at):t('本地保留历史 · 尚无可对齐用量','Retained local history · No aligned usage yet'))}</p><details><summary>${e(t('推理生成统计与统计口径','Reasoning generation and methodology'))}</summary><p>${e(t('本次压缩后、快照之前记录了 {0} 次响应，生成推理 {1}。这是生成量，不是当前保留的推理占用。','{0} responses and {1} generated reasoning tokens since compaction and before the snapshot. This is generation, not retained reasoning usage.',stats.sampledResponses??0,k(stats.reasoningGenerated)))}</p><p>${e(t('* 已识别 {0} 个推理项目、{1} 个不透明压缩项目；另有 {2} 张图片（已包含在消息内）。','{0} reasoning items, {1} opaque compaction items, and {2} images included in messages.',u.reasoningItems??0,u.compactionItems??0,u.images??0))}</p><p>${e(t('普通文本摘要已并入文本，只计一次；不透明压缩内容已合并到其他。此快照包含 {0} 条普通文本摘要。','Plain-text summaries are counted once. Opaque compaction is included in other items. This snapshot has {0} plain-text summaries.',stats.plaintextSummaryItems??0))}</p></details>${u.status==='estimate_exceeds_input'?`<p class="error">${e(t('文本估算超过请求输入量，暂不显示差额；不会将它当作零占用。','Text estimates exceed input usage; the difference is unknown, not zero.'))}</p>`:''}</div>`;
 }
-async function loadStats(force=false){if(view!=='stats'||!selected||document.hidden&&!force)return;const id=selected;try{const result=await api.invoke('statistics',{id,refresh:force});if(id!==selected||view!=='stats'||(hover!=null||pinned!=null)&&!force)return;lastStats=Date.now();const json=JSON.stringify(result);if(json===statsJSON)return;statsJSON=json;stats=result;if(hover!=null||pinned!=null)return;render();}catch(error){notify(error.message);const node=document.querySelector('#stats-body');if(node&&!stats)node.innerHTML=`<div class="banner-error">${e(error.message)}</div>`;}}
-function selectChat(id){if(settingsOpen)closeSettings();selected=id;view='chat';draft=threadDraft(current());dirty=false;stats=null;statsJSON='';pinned=hover=null;render();}
+async function loadStats(force=false){
+  if(!detailsOpen||!selected||document.hidden&&!force||statsLoading||smoothingInteracting&&!force)return;
+  const id=selected,epoch=detailsEpoch;let repaint=force||!stats||!!statsError;statsLoading=true;lastStats=Date.now();if(force||!stats)render();
+  try{const result=await api.invoke('statistics',{id,refresh:force});if(id!==selected||!detailsOpen||epoch!==detailsEpoch)return;statsError='';if((hover!=null||smoothingInteracting)&&!force){deferredStats=result;return;}repaint=acceptStats(result)||repaint;}
+  catch(error){if(id===selected&&detailsOpen&&epoch===detailsEpoch){statsError=error.message;repaint=true;notify(error.message);}}
+  finally{if(epoch===detailsEpoch){statsLoading=false;if(detailsOpen&&id===selected&&hover==null&&!smoothingInteracting&&repaint)render();}}
+}
+
+function selectChat(id){if(detailsOpen)closeDetails();mainNotice='';budgetInputError='';if(settingsOpen)closeSettings();selected=id;view='chat';draft=threadDraft(current());dirty=false;stats=null;statsJSON='';pinned=hover=null;render();}
 function loadDraft(){if(editingDefaults()){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else draft=threadDraft(current());dirty=false;}
-async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');state=next;if(!selected||!current())selected=state.threads[0]?.id??null;if(!dirty)loadDraft();if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select')){if(view==='stats'&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(view==='stats'&&auto&&Date.now()-lastStats>10000&&hover==null&&pinned==null)await loadStats();}catch(error){if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
+async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');state=next;serviceAvailable=true;if(!selected||!current())selected=state.threads[0]?.id??null;if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen&&!detailsOpen)refreshBudgetValidity();if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select')){if(view==='stats'&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if((!dirty&&!detailsOpen)||mode==='tray')render();else{document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
   try{
     if(action==='settings'){openSettings();return;}
     if(action==='settings-close'){closeSettings();return;}
     if(action==='settings-dismiss'){if(event.target===button)closeSettings();return;}
     if(action==='settings-tab'){switchSettingsTab(button.dataset.tab);return;}
+    if(action==='details-close'){closeDetails();return;}
+    if(action==='details-dismiss'){if(event.target===button)closeDetails();return;}
+    if(action==='open-reference'){await api.invoke(action,{id:button.dataset.reference});return;}
     if(action==='quota-refresh'){await run('quota-refresh');await refresh();if(settingsOpen)render();return;}
     if(action==='integration-toggle'){
       const enabled=preferences.integration?.enabled!==true;
@@ -256,36 +356,64 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action==='step'){setDraft(button.dataset.target,draft[button.dataset.target]+Number(button.dataset.step),editingDefaults()?defaultModel():current()?.modelMetadata);return;}
     if(action==='preset-window'){setDraft('window',Number(button.dataset.value),editingDefaults()?defaultModel():current()?.modelMetadata);return;}
     if(action==='preset-ratio'){setDraft('compact',draft.window*Number(button.dataset.value)/100,editingDefaults()?defaultModel():current()?.modelMetadata);return;}
-    if(action==='reload'){loadDraft();render();return;}
+    if(action==='preset-compact-max'){setDraft('compact',draftLimits(current().modelMetadata,draft.window,draft.reserve).compact);return;}
+    if(action==='reload'){budgetInputError='';loadDraft();render();return;}
     if(action==='defaults'){openSettings('defaults');return;}
     if(action==='copy-current'){const d=threadDraft(current());if(d){draft={...d,expectedRevision:state.newChatDefaults.revision};const limit=draftLimits(defaultModel(),Math.min(d.window,defaultModel()?draftLimits(defaultModel(),d.window).maximum:d.window));draft.window=Math.min(d.window,limit.maximum);draft.compact=Math.min(d.compact,limit.compact);dirty=true;render();}return;}
     if(action==='save-defaults'){await run('defaults',{usableWindow:draft.window,compact:draft.compact,expectedRevision:draft.expectedRevision},t('默认值已保存','Defaults saved'));dirty=false;await refresh();if(settingsOpen)render();return;}
-    if(action==='preflight'||action==='apply'){const params={id:selected,policy:policyForDraft(draft,current().modelMetadata),expectedRevision:draft.expectedRevision,apply:true};if(action==='preflight'){const result=await run('preflight',params);document.querySelector('#preflight-result').innerHTML=`<div class="state-card ${result.allowed?'':'error'}">${e(t(result.message||result.code))}</div>`;}else{await run('policy',params,t('已保存；请查看运行时确认状态。','Saved; check runtime confirmation status.'));dirty=false;await refresh();}return;}
-    if(action==='clear'){await run('clear',{id:selected},t('已停止后续自动应用','Future auto apply stopped'));dirty=false;await refresh();return;}
-    if(action==='compact'){if(confirm(t('使用 Codex 原生压缩当前聊天？压缩会使用现有模型额度。','Compact this chat with Codex? This uses your existing model allowance.')))await run('compact',{id:selected});await refresh();return;}
+    if(action==='preflight'||action==='apply'){
+      if(budgetInputError)throw Error(budgetInputError);
+      const params={id:selected,policy:policyForDraft(draft,current().modelMetadata),...(action==='apply'?{expectedRevision:draft.expectedRevision,apply:true}:{})};
+      try{
+        if(action==='preflight'){const result=await run(action,params);setNotice([result.message||t('预检完成','Preflight completed'),...(result.notes||[])].join('\n'),result.allowed===false);}
+        else{await run('policy',params);dirty=false;setNotice(t('预算已保存。请查看下方应用状态；实际值将在正常下一轮请求后确认。','Budget saved. Check the application status; actual values are confirmed after the next normal request.'));await refresh();}
+      }catch(error){setNotice(error.message,true);throw error;}return;
+    }
+    if(action==='clear'){await run('clear',{id:selected});dirty=false;setNotice(t('操作已提交。','Operation submitted.'));await refresh();return;}
+    if(action==='compact'){if((await api.invoke('confirm-compact')).confirmed){await run('compact',{id:selected});setNotice(t('操作已提交。','Operation submitted.'));await refresh();}return;}
     if(action==='scan'){await run('scan');await refresh();if(settingsOpen)render();return;}
     if(action==='update'){await run(state.update?.available?'install-update':'check-update');await refresh();if(settingsOpen)render();return;}
-    if(action==='stats'){view='stats';dirty=false;hover=pinned=null;render();await loadStats(true);return;}
-    if(action==='back'){view='chat';hover=pinned=null;loadDraft();render();return;}
-    if(action==='refresh-stats'){pinned=hover=null;statsJSON='';await loadStats(true);return;}
+    if(action==='stats'){openDetails();return;}
+    if(action==='back'){if(detailsOpen)closeDetails();else{view='chat';hover=pinned=null;loadDraft();render();}return;}
+    if(action==='refresh-stats'){hover=null;await loadStats(true);return;}
     if(action==='raw-prev'||action==='raw-next'){page+=action==='raw-next'?1:-1;renderRaw();return;}
-    if(action==='tray-apply'){const chat=state.threads.find(t=>t.id===button.dataset.id),d=trayDrafts.get(chat.id);await run('policy',{id:chat.id,policy:policyForDraft(d,chat.modelMetadata),expectedRevision:d.expectedRevision,apply:true});await refresh();return;}
-    if(action==='tray-cancel'){const chat=state.threads.find(t=>t.id===button.dataset.id),d=threadDraft(chat);trayDrafts.set(chat.id,d);updateTrayDraft(chat.id,d,chat.modelMetadata);return;}
+    if(action==='raw-select'){const index=timeline?.byID.get(button.dataset.id);if(index!=null){rawSelectedID=button.dataset.id;pinned=timeline.mapping[index];hover=null;updateChartSelection();}return;}
+    if(action==='tray-apply'){
+      const chat=state.threads.find(t=>t.id===button.dataset.id),d=trayDrafts.get(chat?.id);if(!d||!serviceAvailable||traySaving.has(chat.id)||!trayChanged(d))return;
+      traySaving.add(chat.id);updateTrayDraft(chat.id,d,chat.modelMetadata);
+      try{
+        if(d.modelKey!==modelSignature(chat))throw Error(t('模型信息已变化，请取消后重新调整','Model metadata changed. Cancel and adjust again.'));
+        const result=await api.invoke('policy',{id:chat.id,policy:policyForDraft(d,chat.modelMetadata),expectedRevision:d.expectedRevision,apply:true});
+        if(result.thread){state.threads=state.threads.map(item=>item.id===chat.id?{...item,...result.thread}:item);}
+        const code=result.plan?.code,updated=state.threads.find(item=>item.id===chat.id),messages={waiting_for_idle:t('已保存 · 本轮结束后应用','Saved · apply after this turn'),needs_compaction:t('已保存 · 需先压缩再应用','Saved · compaction required'),needs_observation:t('已保存 · 等待用量读回','Saved · waiting for usage')};
+        trayFeedback.set(chat.id,{message:!updated.connected?t('已保存 · 接入后自动应用','Saved · apply when connected'):messages[code]||t('已提交 · 等待读回确认','Submitted · awaiting confirmation'),error:code==='needs_compaction'});
+        const next=threadDraft(updated);if(next)trayDrafts.set(chat.id,next);
+      }catch(error){trayFeedback.set(chat.id,{message:error.message,error:true});}
+      finally{traySaving.delete(chat.id);const updated=state.threads.find(item=>item.id===chat.id);updateTrayDraft(chat.id,trayDrafts.get(chat.id),updated.modelMetadata);}
+      return;
+    }
+    if(action==='tray-cancel'){const chat=state.threads.find(t=>t.id===button.dataset.id),d=threadDraft(chat);trayFeedback.delete(chat.id);trayDrafts.set(chat.id,d);updateTrayDraft(chat.id,d,chat.modelMetadata);button.closest('.tray-row').classList.add('canceled');return;}
     if(action==='diagnostics'){const data=await api.invoke('diagnostics');notify(JSON.stringify(data));return;}
     if(action==='retry'){await refresh();return;}
     if(['open-main','open-codex','quit','open-live','open-logs'].includes(action))await api.invoke(action);
-  }catch(error){notify(error.message);}
+  }catch(error){if(['preflight','apply','clear','compact'].includes(action)&&!settingsOpen)setNotice(error.message,true);notify(error.message);}
 });
+root.addEventListener('pointerdown',event=>{if(event.target.id==='smoothing')smoothingInteracting=true;});
+window.addEventListener('pointerup',()=>{if(smoothingInteracting){smoothingInteracting=false;queueMicrotask(applyDeferredStats);}});
+window.addEventListener('pointercancel',()=>{smoothingInteracting=false;});
 root.addEventListener('change',async event=>{const target=event.target;try{
   if(target.id==='language'){await api.invoke('language',{selection:target.value});preferences=await api.invoke('preferences');render();}
   if(target.id==='quota-pool'){await api.invoke('quota-select',{id:target.value});preferences.quotaPool=target.value;render();}
   if(target.id==='shortcut-enabled'){shortcutEnabled=target.checked;shortcutDirty=true;}
   if(target.id==='extension'){await run('extension',{enabled:target.checked});dirty=false;await refresh();render();}
-  if(target.id==='reserve'||target.id==='retained'){draft={...draft,[target.id==='reserve'?'reserve':'retainedFloor']:Math.max(0,Number(target.value)||0)};dirty=true;updateDraftDOM();}
+  if(target.id==='reserve'||target.id==='retained'){
+    try{const value=tokenNumber(target.value,target.id==='reserve'?'下一轮预留':'必须保留量');draft={...draft,[target.id==='reserve'?'reserve':'retainedFloor']:value};dirty=true;budgetInputError='';updateDraftDOM();}
+    catch(error){budgetInputError=error.message;refreshBudgetValidity();setNotice(error.message,true);}
+  }
   if(target.id==='auto-stats')auto=target.checked;
-  if(target.id==='smoothing'){period=Number(target.value);hover=pinned=null;drawCharts();}
+  if(target.id==='smoothing'){clearTimeout(smoothingTimer);period=Number(target.value);hover=null;drawCharts();}
 }catch{await refresh();}});
-root.addEventListener('input',event=>{if(event.target.id==='shortcut-input'&&!shortcutRecording){shortcutDraft=event.target.value;shortcutDirty=true;}});
+root.addEventListener('input',event=>{if(event.target.id==='shortcut-input'&&!shortcutRecording){shortcutDraft=event.target.value;shortcutDirty=true;}if(event.target.id==='smoothing'){period=Number(event.target.value);document.getElementById('smoothing-label').textContent=period<2?t('关闭','Off'):'EMA '+period;clearTimeout(smoothingTimer);smoothingTimer=setTimeout(()=>{hover=null;if(detailsOpen)drawCharts();},120);}});
 document.addEventListener('keydown',event=>{
   if(!shortcutRecording)return;event.preventDefault();event.stopImmediatePropagation();
   if(event.key==='Escape'){finishShortcutRecording();return;}
@@ -293,10 +421,10 @@ document.addEventListener('keydown',event=>{
 },true);
 
 document.addEventListener('keydown',event=>{
-  if(!settingsOpen)return;
-  if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();closeSettings();return;}
+  if(!settingsOpen&&!detailsOpen)return;
+  if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();if(detailsOpen)closeDetails();else closeSettings();return;}
   if(event.key!=='Tab')return;
-  const fields=[...root.querySelectorAll('.settings-dialog button:not(:disabled),.settings-dialog input:not(:disabled),.settings-dialog select:not(:disabled),.settings-dialog [tabindex="0"]')];
+  const modal=root.querySelector(detailsOpen?'.details-dialog':'.settings-dialog'),fields=[...modal.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]')];
   const first=fields[0],last=fields.at(-1);
   if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
   else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}

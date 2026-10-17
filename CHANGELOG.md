@@ -1,5 +1,12 @@
 # Changes
 
+## 0.19.1 — Apple-led cross-platform interaction
+
+- Align Windows budget control order, percentage/window preset rows, model readiness, minimums and strict readback confirmation with the native Apple interface.
+- Open context details in a modal sheet with preserved budget drafts, matching summary/chart/category ordering, smoothing controls and record selection.
+- Match hover-versus-pin behavior, stale-request handling and inline tray save/cancel feedback; keep floating settings and the larger chat sidebar.
+- Preserve all Apple native view sources, materials and Liquid Glass; retain the shared core and dual-platform build workflow.
+
 ## 0.19.0 — Unified Windows and macOS codebase
 
 - Merge upstream 0.18 quota support with the Windows adaptation and keep both platform shells on one shared core and product version.
