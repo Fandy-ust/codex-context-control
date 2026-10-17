@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {readHistory,createHistoryCache,analyzeContext,analyzeEvents} from '../src/context-statistics.mjs';
+import {historySourcesUnchanged} from '../src/context-history.mjs';
 import {createContextStatisticsService} from '../src/context-statistics-service.mjs';
 const ids=['11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','33333333-3333-3333-3333-333333333333','44444444-4444-4444-4444-444444444444'];
 const event=(type,payload)=>({type,payload,timestamp:'2026-10-16T00:00:00Z'});
@@ -42,6 +43,7 @@ test('worker reuses tokenizer, avoids rereads, appends only new bytes, and serve
   await get(ids[2]);assert.equal(get.diagnostics().last.history.bytesRead,before.history.bytesRead);
   const append=encode([event('response_item',message('user','fresh increment')),event('response_item',message('assistant','later')),event('token_usage_record',{response_id:'new',usage:{input_tokens:120,cached_input_tokens:100,cache_write_input_tokens:0,output_tokens:1}})]);
   fs.appendFileSync(f.files[2],append);const changed=await get(ids[2]);const after=get.diagnostics().last;assert.equal(after.history.bytesRead-before.history.bytesRead,Buffer.byteLength(append));assert.ok(after.tokens.misses-before.tokens.misses<=3);assert.deepEqual(stable(changed),stable(analyzeContext(f.home,ids[2])));
+  assert.strictEqual(await get(ids[2]),changed);assert.equal(get.diagnostics().last.resultReused,true);
   const misses=after.tokens.misses;const refreshed=await get(ids[2],true);assert.equal(get.diagnostics().last.tokens.misses,misses);assert.equal(refreshed.generatedAt,changed.generatedAt);
  }finally{get.close();f.close();}
 });
@@ -63,4 +65,19 @@ test('statistics affinity reuses a chat cache even after the worker served anoth
  const f=fixture(),get=createContextStatisticsService(f.home,{cacheMs:0,idleMs:60000});
  try{await Promise.all([get(ids[0]),get(ids[1])]);await Promise.all([get(ids[2]),get(ids[3])]);await get(ids[1]);assert.equal(get.diagnostics().last.resultCacheHit,true);assert.equal(get.diagnostics().workerStarts,2);}
  finally{get.close();f.close();}
+});
+
+test('result dependencies survive parsed-history eviction and detect file or index changes',()=>{
+ const f=fixture(),cache=createHistoryCache({maxBytes:1,maxFiles:1});
+ try{
+  const first=readHistory(f.home,ids[0],cache);assert.equal(cache.files.size,0);
+  assert.equal(historySourcesUnchanged(f.home,first.sources),true);
+  fs.appendFileSync(f.files[0],encode([event('response_item',message('user','appended'))]));
+  assert.equal(historySourcesUnchanged(f.home,first.sources),false);
+  const next=readHistory(f.home,ids[0],cache);assert.equal(historySourcesUnchanged(f.home,next.sources),true);
+  const db=new DatabaseSync(path.join(f.home,'state_5.sqlite'));
+  try{db.prepare('UPDATE threads SET rollout_path=? WHERE id=?').run(f.files[1],ids[0]);}finally{db.close();}
+  assert.equal(historySourcesUnchanged(f.home,next.sources),false);
+  assert.equal(historySourcesUnchanged(f.home,[]),false);
+ }finally{f.close();}
 });

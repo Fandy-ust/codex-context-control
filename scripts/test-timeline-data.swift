@@ -33,7 +33,22 @@ import Foundation
         let zero=try TimelineData(responses:[response(0,cache:0),response(1)],events:[],revision:"zero")
         near(zero.cache[0].value,0);precondition(zero.cache[0].series==zero.cache[1].series)
         let empty=try TimelineData(responses:[],events:[],revision:"empty");precondition(empty.buckets.isEmpty && empty.bucket(at:1)==nil)
+        for count in [1,119,120,121,127,239,241,1001] {
+            let eventsOnly=try TimelineData(responses:[],events:(0..<count).map{event($0)},revision:"events-\(count)")
+            precondition(eventsOnly.buckets.count<=120)
+            precondition(eventsOnly.buckets.allSatisfy{!$0.entryRange.isEmpty})
+            precondition(eventsOnly.buckets.reduce(0){$0+$1.entryRange.count}==count)
+        }
         let onlyEvents=try TimelineData(responses:[],events:(0..<2400).map{event($0)},revision:"events");precondition(onlyEvents.buckets.count==120)
+        let sampleResponses=(0..<200).map{response($0)},sampleEvents=(0..<300).map{event($0)}
+        for seed in 0..<500 {
+            let r=seed*37%201,e=seed*71%301
+            let mixed=try TimelineData(responses:Array(sampleResponses.prefix(r)),events:Array(sampleEvents.prefix(e)),revision:"mixed-\(seed)",limit:1+seed%120)
+            precondition(mixed.buckets.count<=1+seed%120)
+            precondition(mixed.buckets.allSatisfy{!$0.entryRange.isEmpty})
+            precondition(mixed.buckets.reduce(0){$0+$1.entryRange.count}==r+e)
+            precondition(mixed.buckets.reduce(0){$0+$1.responses}==r)
+        }
         let responses=(0..<50000).map{response($0,speed:$0%31==0 ? nil:Double(20+$0%70),cache:$0%37==0 ? 0:50)}
         let events=(0..<50000).map{event($0,kind:$0%1000==0 ? "compaction":"user_input")}
         let begin=Date();let large=try TimelineData(responses:responses,events:events,revision:"large")

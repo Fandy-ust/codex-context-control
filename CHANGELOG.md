@@ -1,5 +1,16 @@
 # Changes
 
+## 0.15.5 — 2026-10-17
+
+- Prevent malformed IPC envelopes from terminating the service and bound frames before a newline arrives.
+- Fix event-only chart aggregation creating empty buckets and crashing on uneven record counts.
+- Select native metadata databases by numeric schema version.
+- Reuse statistics after parsed-history cache eviction by checking source file and index dependencies.
+- Avoid cloning unchanged worker results and reserializing unchanged HTTP statistics.
+- Retry transient runtime version checks instead of permanently caching an unavailable runtime.
+- Pause the MAX gradient when its main panel is inactive or its control is disabled.
+- Add regression coverage for corrupt frames, uneven event counts, cache eviction and repeated abrupt service restarts.
+
 ## 0.15.4 — 2026-10-17
 
 - Apply the new app icon to the app bundle and installer; match the menu-bar glyph to its ring and three bars while preserving live usage.

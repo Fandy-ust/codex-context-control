@@ -3,10 +3,11 @@ import SwiftUI
 /// Self-contained Canvas updates keep the rest of the panel out of the animation loop.
 struct MaxContextFlow:View {
     var vivid=false
+    var paused=false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var visible=false
     var body:some View {
-        TimelineView(.animation(minimumInterval:1.0/24,paused:reduceMotion || !visible)){timeline in
+        TimelineView(.animation(minimumInterval:1.0/24,paused:paused || reduceMotion || !visible)){timeline in
             let time=reduceMotion ? 0:timeline.date.timeIntervalSinceReferenceDate
             Canvas {context,size in
                 let rect=CGRect(origin:.zero,size:size)

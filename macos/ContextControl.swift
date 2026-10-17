@@ -293,7 +293,7 @@ enum BudgetThumb {case compact,window}
             ZStack(alignment:.leading){
                 ZStack(alignment:.leading){
                     Rectangle().fill(.white.opacity(0.10))
-                    if maximumWindow==920 && Int(window)==920 {MaxContextFlow(vivid:true).frame(width:fillX)}else{Rectangle().fill(PanelStyle.blue).frame(width:fillX)}
+                    if maximumWindow==920 && Int(window)==920 {MaxContextFlow(vivid:true,paused:(!compactStyle && !active) || !enabled).frame(width:fillX)}else{Rectangle().fill(PanelStyle.blue).frame(width:fillX)}
                     if !windowOnly{Rectangle().fill(PanelStyle.headroom.opacity(0.8)).frame(width:max(0,windowX-compactX)).offset(x:compactX)}
                     HStack {ForEach(0..<5){_ in Circle().fill(.white.opacity(0.18)).frame(width:3,height:3).frame(maxWidth:.infinity)}}.padding(.horizontal,diameter/2)
                     if !(maximumWindow==920 && Int(window)==920) {BudgetFlowParticles(intensity:(windowOnly ? window:compact)/Double(max(1,maximumWindow)),paused:reduceMotion || (!compactStyle && !active) || !enabled,reducedMotion:reduceMotion)

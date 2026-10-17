@@ -77,9 +77,9 @@ struct TimelineData:Sendable {
         let inputEvents=events.map{TimelineEntry(id:$0.id,position:$0.position,kind:$0.kind,eventType:$0.eventType,response:nil,event:$0)}
         let entries=(output+inputEvents).sorted{$0.position<$1.position};self.entries=entries
         bucketSize=max(1,Int(ceil(Double(max(responses.count,events.isEmpty ? 0:1))/Double(max(1,limit)))))
-        let count=responses.isEmpty ? min(max(1,limit),entries.count):Int(ceil(Double(responses.count)/Double(bucketSize)))
+        let eventBinSize=max(1,Int(ceil(Double(entries.count)/Double(max(1,limit)))))
+        let count=responses.isEmpty ? Int(ceil(Double(entries.count)/Double(eventBinSize))):Int(ceil(Double(responses.count)/Double(bucketSize)))
         guard !entries.isEmpty else{buckets=[];byID=[:];entryBuckets=[];speed=[];input=[];cache=[];return}
-        let eventBinSize=max(1,Int(ceil(Double(entries.count)/Double(max(1,count)))))
         var bins=Array(repeating:TimelineAccumulator(start:0,end:0),count:count)
         var speed=TimelineMetric(bins:Array(repeating:.init(),count:count)),input=TimelineMetric(bins:Array(repeating:.init(),count:count)),cache=TimelineMetric(bins:Array(repeating:.init(),count:count))
         var lookup:[String:Int]=[:],mapping:[Int]=[],responseIndex=0,seenBins=Set<Int>(),previousConfig:String?

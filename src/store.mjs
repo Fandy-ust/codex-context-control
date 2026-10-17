@@ -56,7 +56,7 @@ export class Store {
     if(!this.DatabaseSync||(!force&&Date.now()-this.metadataCheckedAt<2000))return;
     this.metadataCheckedAt=Date.now();
     try {
-      const files=fs.readdirSync(codexHome).filter(n=>/^state_\d+\.sqlite$/.test(n)).sort().reverse();
+      const files=fs.readdirSync(codexHome).filter(n=>/^state_\d+\.sqlite$/.test(n)).sort((a,b)=>Number(b.match(/\d+/)[0])-Number(a.match(/\d+/)[0]));
       if(!files.length)return;
       const db=new this.DatabaseSync(path.join(codexHome,files[0]),{readOnly:true});
       try {

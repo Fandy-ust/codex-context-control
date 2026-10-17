@@ -128,3 +128,23 @@ test('desktop helpers are copied independently, version checked and verified',{s
     assert.throws(()=>validateRuntimeHelpers(out,'0.160.0'),/校验/);
   }finally{fs.rmSync(home,{recursive:true,force:true});}
 });
+
+test('transient version probe failures are retried without modifying the executable',{skip:process.platform==='win32'},()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-retry-version-'));
+ try{
+  const binary=path.join(home,'codex');
+  fs.writeFileSync(binary,'#!/bin/sh\nif [ -f "'+home+'/ready" ]; then printf "codex-cli 0.160.0\\n"; else exit 1; fi\n',{mode:0o755});
+  const manager=createRuntimeFixManager({home,platform:'darwin',arch:'arm64',versionRetryMs:0});
+  assert.equal(manager.status(binary).compatible,false);
+  fs.writeFileSync(path.join(home,'ready'),'ready');assert.equal(manager.status(binary).compatible,true);
+ }finally{fs.rmSync(home,{recursive:true,force:true});}
+});
+
+test('temporary fixed-runtime version failures do not permanently poison package availability',()=>{
+ const f=fixture();let ready=false;
+ try{
+  const manager=createRuntimeFixManager({home:f.home,platform:'darwin',arch:'arm64',versionRetryMs:0,versionOf:file=>file===f.binary&&!ready?null:runtimeFixPin.baseVersion});
+  assert.equal(manager.status(f.original).available,false);ready=true;
+  assert.equal(manager.status(f.original).available,true);
+ }finally{f.close();}
+});

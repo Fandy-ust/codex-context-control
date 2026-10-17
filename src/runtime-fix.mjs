@@ -24,7 +24,7 @@ export function validateRuntimePackage(directory,{platform=process.platform,arch
   return {manifest,binary};
 }
 
-export function createRuntimeFixManager({home=root,platform=process.platform,arch=process.arch,versionOf}={}){
+export function createRuntimeFixManager({home=root,platform=process.platform,arch=process.arch,versionOf,versionRetryMs=10000}={}){
   const versionCache=new Map();
   const version=file=>{
     if(!file)return null;
@@ -32,22 +32,24 @@ export function createRuntimeFixManager({home=root,platform=process.platform,arc
     // Desktop distributions use a stable shell launcher next to a nested app.
     const companion=path.join(path.dirname(file),'../CodexCLI.app/Contents/MacOS/codex');
     const key=fingerprint(file)+':'+fingerprint(companion),previous=versionCache.get(file);
-    if(previous?.key===key)return previous.value;
+    if(previous?.key===key&&(previous.value!=null||Date.now()-previous.at<versionRetryMs))return previous.value;
     const r=spawnSync(file,['--version'],{encoding:'utf8',timeout:5000});
     const value=r.status===0?r.stdout.trim().match(/^codex-cli (\d+\.\d+\.\d+)$/)?.[1]??null:null;
-    versionCache.set(file,{key,value});return value;
+    versionCache.set(file,{key,value,at:Date.now()});return value;
   };
   const file=path.join(home,'runtime-fix.json'),directory=path.join(home,'runtimes',runtimeFixPin.id);
   let cachedPackage;
   function packageStatus(){
     const key=fingerprint(path.join(directory,'runtime.json'))+':'+fingerprint(path.join(directory,'codex'))+':'+fingerprint(path.join(directory,'bin/codex'))+':'+runtimeHelpersFingerprint(directory);
-    if(cachedPackage?.key===key)return cachedPackage;
+    if(cachedPackage?.key===key&&(!cachedPackage.retryAt||Date.now()<cachedPackage.retryAt))return cachedPackage;
     try{const result=validateRuntimePackage(directory,{platform,arch});
       if(result.manifest.entrypoint!=='bin/codex')throw Error('修复包尚未完成桌面安装');
       validateRuntimeHelpers(directory,runtimeFixPin.baseVersion);
-      if(version(result.binary)!==runtimeFixPin.baseVersion)throw Error('修复版运行时版本不符');
+      const installedVersion=version(result.binary);
+      if(installedVersion==null)throw Object.assign(Error('修复版版本检查暂时失败，请稍后重试'),{transient:true});
+      if(installedVersion!==runtimeFixPin.baseVersion)throw Error('修复版运行时版本不符');
       cachedPackage={key,available:true,...result};
-    }catch(error){cachedPackage={key,available:false,message:key.includes('missing')?'修复包尚未安装':error.message};}
+    }catch(error){cachedPackage={key,available:false,...(error.transient?{retryAt:Date.now()+versionRetryMs}:{}),message:key.includes('missing')?'修复包尚未安装':error.message};}
     return cachedPackage;
   }
   function status(original,bridges=[]){

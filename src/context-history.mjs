@@ -2,14 +2,31 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 
+const latestDatabase=home=>fs.readdirSync(home).filter(n=>/^state_\d+\.sqlite$/.test(n)).sort((a,b)=>Number(b.match(/\d+/)[0])-Number(a.match(/\d+/)[0]))[0];
+const fingerprint=stat=>`${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+// A small dependency list outlives the bounded parsed-history cache. Unchanged
+// large/forked histories must not be reparsed just because their events were evicted.
+export function historySourcesUnchanged(home,sources){
+  if(!sources?.length)return false;let db;
+  try{
+    const name=latestDatabase(home);if(!name)return false;
+    db=new DatabaseSync(path.join(home,name),{readOnly:true});
+    const query=db.prepare('SELECT rollout_path FROM threads WHERE id=?');
+    return sources.every(source=>{
+      const row=query.get(source.threadId);if(!row?.rollout_path)return false;
+      const file=fs.realpathSync(row.rollout_path);
+      return file===source.file&&fingerprint(fs.statSync(file))===source.fingerprint;
+    });
+  }catch{return false;}finally{db?.close();}
+}
 export function createHistoryCache({maxBytes=64*1024*1024,maxFiles=4}={}){
   return {files:new Map(),serial:0,maxBytes,maxFiles,metrics:{bytesRead:0,parsedLines:0,fullReads:0,appendReads:0,hits:0}};
 }
 export function readHistory(home,id,cache=null){
   if(!/^[a-f\d-]{36}$/i.test(id))throw new Error('聊天 ID 无效');
-  const databases=fs.readdirSync(home).filter(n=>/^state_\d+\.sqlite$/.test(n)).sort((a,b)=>Number(b.match(/\d+/)[0])-Number(a.match(/\d+/)[0]));
-  if(!databases.length)throw new Error('尚未找到本地聊天记录');
-  const db=new DatabaseSync(path.join(home,databases[0]),{readOnly:true});let bytes=0;const dependencies=[];
+  const database=latestDatabase(home);
+  if(!database)throw new Error('尚未找到本地聊天记录');
+  const db=new DatabaseSync(path.join(home,database),{readOnly:true});let bytes=0;const dependencies=[],sources=[];
   const root=fs.realpathSync(home)+path.sep;
   function load(threadId,limit=null,seen=[]){
     if(seen.includes(threadId)||seen.length>16)throw new Error('分支继承历史异常');
@@ -20,9 +37,9 @@ export function readHistory(home,id,cache=null){
     const stat=fs.statSync(file),size=stat.size,n=limit??size;
     if(!Number.isSafeInteger(n)||n<0||n>size||n>128*1024*1024||(bytes+=n)>256*1024*1024)throw new Error('历史大小或分支边界无法安全读取');
     const key=`${threadId}:${file}:${limit??'live'}`;
-    const fingerprint=`${stat.dev}:${stat.ino}:${size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    const stamp=fingerprint(stat);sources.push({threadId,file,fingerprint:stamp});
     const previous=cache?.files.get(key);let entry;
-    if(previous?.fingerprint===fingerprint){entry=previous;cache.metrics.hits++;}
+    if(previous?.fingerprint===stamp){entry=previous;cache.metrics.hits++;}
     else {
       // Native rollouts append complete records. Replacements, truncations and
       // same-size edits rebuild; explicit refresh clears this cache as well.
@@ -36,7 +53,7 @@ export function readHistory(home,id,cache=null){
       let added;try{added=buffer.subarray(0,complete).toString('utf8').split('\n').filter(Boolean).map(line=>({...JSON.parse(line),originThreadId:threadId}));}catch{throw new Error('本地历史记录解析失败');}
       const local=append?[...previous.events,...added]:added;
       if(local[0]?.type!=='session_meta')throw new Error('聊天元数据缺失');
-      entry={events:local,completeBytes:start+complete,size,ino:stat.ino,dev:stat.dev,fingerprint,revision:append&&added.length===0?previous.revision:cache?++cache.serial:0};
+      entry={events:local,completeBytes:start+complete,size,ino:stat.ino,dev:stat.dev,fingerprint:stamp,revision:append&&added.length===0?previous.revision:cache?++cache.serial:0};
       if(cache){cache.metrics.bytesRead+=buffer.length;cache.metrics.parsedLines+=added.length;cache.metrics[append?'appendReads':'fullReads']++;}
     }
     if(cache){
@@ -53,6 +70,6 @@ export function readHistory(home,id,cache=null){
     }
     return [...inherited,...entry.events];
   }
-  try {const events=load(id);Object.defineProperty(events,'revision',{value:JSON.stringify(dependencies)});return events;}
+  try {const events=load(id);Object.defineProperties(events,{revision:{value:JSON.stringify(dependencies)},sources:{value:sources}});return events;}
   finally {db.close();}
 }

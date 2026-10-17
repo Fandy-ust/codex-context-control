@@ -27,5 +27,11 @@ test('native fork names and archive state refresh without stale bridge titles or
     store.refreshMetadata(true);assert.equal(store.publicThread('second').name,null);
     store.save();assert.deepEqual(store.data.policies,policies);
     assert.ok(!fs.readFileSync(path.join(root,'state.json'),'utf8').includes('PRIVATE_'));
+    for(const version of [9,10]){
+      const newer=new DatabaseSync(path.join(home,`state_${version}.sqlite`));
+      try{newer.exec('CREATE TABLE threads(id TEXT PRIMARY KEY,name TEXT,archived INTEGER)');newer.prepare('INSERT INTO threads VALUES(?,?,0)').run('first','Schema '+version);}finally{newer.close();}
+    }
+    store.refreshMetadata(true);assert.equal(store.publicThread('first').name,'Schema 10');
+
   }finally{db.close();fs.rmSync(temp,{recursive:true,force:true});}
 });

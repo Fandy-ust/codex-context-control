@@ -15,7 +15,9 @@ export function createContextStatisticsService(home=codexHome,{idleMs=30000,cach
   function makeSlot(){
     const worker=new Worker(new URL('./context-statistics-worker.mjs',import.meta.url),{workerData:{home},resourceLimits:{maxOldGenerationSizeMb:384},execArgv:[]});
     const slot={worker,job:null,lastId:null,affinity:new Set()};slots.push(slot);workerStarts++;
-    worker.on('message',message=>{if(message.taskId!==slot.job?.taskId)return;lastDiagnostics=message.diagnostics??null;complete(slot,message.error?new Error(message.error):null,message.result);});
+    worker.on('message',message=>{if(message.taskId!==slot.job?.taskId)return;lastDiagnostics=message.diagnostics??null;const cached=slot.job.cached;
+      const invalidReuse=message.resultReused&&(!cached||cached.key!==message.resultKey);
+      complete(slot,message.error?new Error(message.error):invalidReuse?new Error('统计缓存已失效，请重试'):null,{data:message.resultReused?cached?.data:message.result,key:message.resultKey});});
     worker.on('error',()=>complete(slot,new Error('统计进程无法完成，请刷新重试')));
     worker.on('exit',()=>{clearTimeout(slot.idleTimer);if(slot.job)complete(slot,new Error('统计进程已退出，请重试'));else {const i=slots.indexOf(slot);if(i>=0)slots.splice(i,1);}});
     return slot;
@@ -27,7 +29,7 @@ export function createContextStatisticsService(home=codexHome,{idleMs=30000,cach
       if(!slot){if(slots.length>=workerLimit)return;try{slot=makeSlot();}catch{queue.shift().reject(new Error('无法启动统计进程'));continue;}}
       const job=queue.shift();clearTimeout(slot.idleTimer);slot.job=job;slot.lastId=job.id;slot.worker.ref();
       slot.timer=setTimeout(()=>complete(slot,new Error('统计耗时过长，请稍后刷新')),timeoutMs);
-      slot.worker.postMessage({taskId:job.taskId,id:job.id,refresh:job.refresh});
+      slot.worker.postMessage({taskId:job.taskId,id:job.id,refresh:job.refresh,knownResultKey:job.cached?.key});
     }
   }
   const get=async(id,refresh=false)=>{
@@ -36,8 +38,8 @@ export function createContextStatisticsService(home=codexHome,{idleMs=30000,cach
     if(pending.has(id))return pending.get(id);
     const found=cache.get(id);if(!refresh&&found&&Date.now()-found.at<cacheMs)return found.data;
     if(pending.size>=8)throw new Error('正在统计其他聊天，请稍后刷新');
-    const task=new Promise((resolve,reject)=>{queue.push({id,refresh,taskId:++sequence,resolve,reject});dispatch();})
-      .then(data=>{cache.delete(id);cache.set(id,{data,at:Date.now()});if(cache.size>12)cache.delete(cache.keys().next().value);return data;})
+    const task=new Promise((resolve,reject)=>{queue.push({id,refresh,cached:found,taskId:++sequence,resolve,reject});dispatch();})
+      .then(({data,key})=>{cache.delete(id);cache.set(id,{data,key,at:Date.now()});if(cache.size>12)cache.delete(cache.keys().next().value);return data;})
       .finally(()=>pending.delete(id));
     pending.set(id,task);return task;
   };
