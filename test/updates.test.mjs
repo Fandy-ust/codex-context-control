@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import crypto from 'node:crypto';
-import {createUpdateManager,releaseUpdate,newerVersion} from '../src/updates.mjs';import {downloadVerified,expectedChecksum} from '../src/update-worker.mjs';
+import {createUpdateManager,releaseUpdate,newerVersion} from '../src/updates.mjs';import {downloadVerified,expectedChecksum,detachUpdateMount} from '../src/update-worker.mjs';
 function release(version='0.17.0'){const tag='v'+version,filename=`Context-Manager-${version}-macos-arm64.dmg`;return {tag_name:tag,draft:false,prerelease:false,assets:[filename,filename+'.sha256'].map(name=>({name,state:'uploaded',size:4,browser_download_url:`https://github.com/Fandy-ust/codex-context-control/releases/download/${tag}/${name}`}))};}
 test('updates accept only newer complete releases and assets from this repository',()=>{
  assert.equal(newerVersion('0.17.0','0.16.2'),true);assert.equal(newerVersion('0.9.9','0.16.2'),false);assert.equal(newerVersion('0.17.0-beta','0.16.2'),false);
@@ -25,4 +25,9 @@ test('downloads require matching byte size, checksum, and exact filename; corrup
 test('failed worker launch leaves a retryable error rather than a permanent updating state',async()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-update-failure-'));
  try{const manager=createUpdateManager({home,current:'0.16.2',fetcher:async()=>({ok:true,json:async()=>release()}),launch:()=>{throw Error('launch failed');}});await manager.check();await assert.rejects(manager.install(),/launch failed/);assert.equal(manager.status().phase,'error');assert.equal(manager.status().available,true);}finally{fs.rmSync(home,{recursive:true,force:true});}
+});
+
+test('busy installer volumes retry detach and retain files if still mounted',async()=>{
+ let attempts=0;assert.equal(await detachUpdateMount('/mount',{run:async()=>{if(++attempts<3)throw Error('busy');},pause:async()=>{}}),true);assert.equal(attempts,3);
+ assert.equal(await detachUpdateMount('/mount',{run:async()=>{throw Error('busy');},pause:async()=>{}}),false);
 });

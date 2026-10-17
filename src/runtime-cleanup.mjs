@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {root,readJSON} from './paths.mjs';
+import {root,readJSON,atomicJSON} from './paths.mjs';
 const nodeName=/^node-(v\d+\.\d+\.\d+)-(arm64|x64)-[a-f0-9]{12}$/;
 const licenseName=/^Node-(v\d+\.\d+\.\d+)-LICENSE\.txt$/;
 const pin=JSON.parse(fs.readFileSync(new URL('../runtime-patches/manifest.json',import.meta.url)));
@@ -44,6 +44,15 @@ export function cleanupOldRuntimes({home=root,activeExecutables=processExecutabl
   if(manifest.id===pin.id){
    if([...active].some(p=>p===canonical(legacy)||p.startsWith(canonical(legacy)+path.sep))||inUse(legacy,true))result.deferred.push(legacy);
    else{try{fs.rmSync(legacy,{recursive:true,force:false});result.removed.push(legacy);}catch{}}
+  }
+ }
+ const updateFile=path.join(home,'updates.json'),update=readJSON(updateFile,{}),pending=update?.cleanupPending;
+ if(typeof pending==='string'&&path.dirname(pending)===home&&/^update-[A-Za-z0-9]{6}$/.test(path.basename(pending))&&ordinaryDirectory(pending)){
+  let busy=false;if(Number.isSafeInteger(update.pid)&&update.pid>0){try{process.kill(update.pid,0);busy=true;}catch{}}
+  if(!busy&&![...active].some(p=>p.startsWith(canonical(pending)+path.sep))){
+   const volume=path.join(pending,'volume');let removable=true;
+   if(ordinaryDirectory(volume)&&fs.statSync(volume).dev!==fs.statSync(pending).dev){const detached=spawnSync('/usr/bin/hdiutil',['detach',volume],{encoding:'utf8',timeout:10000});removable=!detached.error&&detached.status===0;}
+   if(removable){try{fs.rmSync(pending,{recursive:true,force:false});atomicJSON(updateFile,{...update,cleanupPending:null});result.removed.push(pending);}catch{}}
   }
  }
  return result;

@@ -1,6 +1,13 @@
 # Changes
 
 
+## 0.17.2 — Complete OTA cleanup
+
+- Retry delayed macOS disk-image detach operations before deleting downloaded files.
+- Record interrupted cleanup and retry after startup; never recursively remove a mounted installer volume.
+- Includes 0.17.1 upgrade inheritance, single configuration snapshot, and obsolete runtime cleanup.
+
+
 ## 0.17.1 — Upgrade inheritance and runtime cleanup
 
 - Preserve existing and unknown settings fields across upgrades; keep one lightweight pre-upgrade configuration snapshot without copying runtimes or chat caches. Same-version reinstalls do not duplicate snapshots.

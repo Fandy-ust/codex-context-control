@@ -23,6 +23,12 @@ export async function downloadVerified(update,directory,{fetcher=fetch}={}){
  }catch(error){await handle.close();await fsp.rm(stage,{force:true});throw error;}
  await handle.close();await fsp.rename(stage,target);return target;
 }
+export async function detachUpdateMount(mount,{run=execute,pause=ms=>new Promise(r=>setTimeout(r,ms))}={}){
+ for(let attempt=0;attempt<3;attempt++){
+  try{await run('/usr/bin/hdiutil',['detach',mount],{timeout:10000});return true;}catch{if(attempt<2)await pause(1500);}
+ }
+ return false;
+}
 async function main(){
  const stateFile=path.join(root,'updates.json');let mount,folder;
  const set=change=>atomicJSON(stateFile,{...readJSON(stateFile,{}),...change});
@@ -38,8 +44,12 @@ async function main(){
   set({phase:'installing'});
   // The native installer verifies every payload hash before replacing the app.
   await execute(path.join(installer,'Contents/MacOS/Installer'),['--install-update'],{timeout:180000});
-  set({phase:'installed',error:null,pid:null});
+  set({phase:'installed',error:null});
  }catch(error){set({phase:'error',error:error.message,pid:null});process.exitCode=1;}
- finally{if(mount)await execute('/usr/bin/hdiutil',['detach',mount],{timeout:30000}).catch(()=>{});if(folder)await fsp.rm(folder,{recursive:true,force:true}).catch(()=>{});}
+ finally{
+  const detached=!mount||await detachUpdateMount(mount);
+  if(folder&&detached){try{await fsp.rm(folder,{recursive:true,force:true});set({pid:null,cleanupPending:null});}catch{set({pid:null,cleanupPending:folder});}}
+  else set({pid:null,cleanupPending:folder??null});
+ }
 }
 if(process.argv[1]===fileURLToPath(import.meta.url))main();
