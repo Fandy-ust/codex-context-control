@@ -1,5 +1,10 @@
 # Changes
 
+## 0.19.4 — Connect missing trend intervals
+
+- Join available chart measurements across missing intervals with straight lines on Windows and macOS.
+- Keep missing values, interval statistics, EMA resets and raw-record details unchanged; preserve native Apple chart rendering within measured intervals.
+
 ## 0.19.3 — One-command Windows EXE build
 
 - Make build:win compile and compress the payload into a self-contained Setup.exe by default.

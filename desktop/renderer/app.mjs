@@ -278,10 +278,8 @@ function drawCharts(){
   const {width:w,height:h,padding}=timelinePlot;
   const plot=(name,series)=>{
     const max=Math.max(1,...series.flatMap(s=>s.points.map(p=>p.value)));
-    const paths=series.map(s=>{
-      const groups=new Map();for(const point of s.points){if(!groups.has(point.series))groups.set(point.series,[]);groups.get(point.series).push(point);}
-      return [...groups.values()].map(points=>`<path data-series="${s.key}" stroke="${s.color}" d="${points.map((point,i)=>(i?'L':'M')+timelineX(point.position,timeline.upperBound).toFixed(2)+','+(h-20-point.value/max*(h-30)).toFixed(2)).join(' ')}"/>`).join('');
-    }).join('');
+    // Connect available measurements visually without synthesizing samples.
+    const paths=series.map(s=>`<path data-series="${s.key}" stroke="${s.color}" d="${s.points.map((point,i)=>(i?'L':'M')+timelineX(point.position,timeline.upperBound).toFixed(2)+','+(h-20-point.value/max*(h-30)).toFixed(2)).join(' ')}"/>`).join('');
     const dots=series.map(s=>`<circle class="chart-selection-point" data-measure="${s.key}" r="3.5" stroke="${s.color}" visibility="hidden"/>`).join('');
     return `<div class="plot" data-plot="${name}" data-maximum="${max}"><span class="axis">${e(name==='speed'?t('生成速度 · tokens/s','Generation · tokens/s'):t('输入与缓存 · tokens','Input and cache · tokens'))} · ${e(k(max))}</span><svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="${e(name==='speed'?t('生成速度趋势','Generation speed trend'):t('输入和缓存趋势','Input and cache trend'))}" role="img">${[30,65,100].map(y=>`<line class="chart-grid" x1="${padding}" y1="${y}" x2="${w-padding}" y2="${y}"/>`).join('')}${paths}${dots}</svg><i class="chart-cursor"></i></div>`;
   };

@@ -27,7 +27,7 @@ npm ci
 npm run build:win
 ```
 
-输出 `build/Context-Manager-0.19.3-windows-x64-Setup.exe` 和 SHA-256。只分发 Setup.exe 即可。更新 ZIP 通过 `npm run package:win:update` 单独生成。
+输出 `build/Context-Manager-0.19.4-windows-x64-Setup.exe` 和 SHA-256。只分发 Setup.exe 即可。更新 ZIP 通过 `npm run package:win:update` 单独生成。
 
 Apple Silicon Mac 上：
 

@@ -227,7 +227,7 @@
   "最终": "Final",
   "零值": "Zero",
   "统计说明": "About these statistics",
-  "总览最多 120 个区间。平滑只改变趋势线；区间速度按输出量÷生成时间计算，输入和缓存取均值，输出取合计。区间有有效样本就连线，整段缺数据才断线；模型变化和压缩只重置 EMA，紫色标记表示压缩。缓存零值保留事件标记和区间最小值。展开区间可逐条查看原始记录，点击可固定。": "The overview contains up to 120 intervals. Smoothing affects trend lines only. Interval speed is output divided by generation time; input and cache use means, and output uses totals. Adjacent intervals connect when they have valid samples; entirely missing intervals break the line. Model changes and compaction reset EMA; purple marks indicate compaction. Zero-cache records retain event markers and interval minima. Expand an interval to inspect records; click to pin.",
+  "总览最多 120 个区间。平滑只改变趋势线；区间速度按输出量÷生成时间计算，输入和缓存取均值，输出取合计。缺失区间以两侧有效数据点之间的直线连接，仅作趋势参考，不填补原始数据或计入统计；模型变化和压缩只重置 EMA，紫色标记表示压缩。缓存零值保留事件标记和区间最小值。展开区间可逐条查看原始记录，点击可固定。": "The overview contains up to 120 intervals. Smoothing affects trend lines only. Interval speed is output divided by generation time; input and cache use means, and output uses totals. Missing intervals are bridged by straight lines between the nearest available measurements for visual reference only; no samples are filled or included in statistics. Model changes and compaction reset EMA; purple marks indicate compaction. Zero-cache records retain event markers and interval minima. Expand an interval to inspect records; click to pin.",
   "记录顺序": "Record order",
   "片段": "Segment",
   "事件": "Event",

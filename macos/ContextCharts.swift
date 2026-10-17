@@ -120,7 +120,7 @@ private enum TimelinePlotKind:String {case speed,cache,events}
             eventTrack
             if !data.buckets.isEmpty{TimelineBucketDetails(data:data,labels:labels,selection:selection)}
             DisclosureGroup(L("统计说明")){
-                Text(L("总览最多 120 个区间。平滑只改变趋势线；区间速度按输出量÷生成时间计算，输入和缓存取均值，输出取合计。区间有有效样本就连线，整段缺数据才断线；模型变化和压缩只重置 EMA，紫色标记表示压缩。缓存零值保留事件标记和区间最小值。展开区间可逐条查看原始记录，点击可固定。")).font(.caption).foregroundStyle(.secondary).padding(.top,5)
+                Text(L("总览最多 120 个区间。平滑只改变趋势线；区间速度按输出量÷生成时间计算，输入和缓存取均值，输出取合计。缺失区间以两侧有效数据点之间的直线连接，仅作趋势参考，不填补原始数据或计入统计；模型变化和压缩只重置 EMA，紫色标记表示压缩。缓存零值保留事件标记和区间最小值。展开区间可逐条查看原始记录，点击可固定。")).font(.caption).foregroundStyle(.secondary).padding(.top,5)
             }.font(.caption).foregroundStyle(.secondary)
         }.onHover{inside in if !inside{selection.endHover()}}
         .onAppear{selection.setActivityHandler(onInteractionChanged)}
@@ -128,12 +128,24 @@ private enum TimelinePlotKind:String {case speed,cache,events}
         .onChange(of:data.revision){_,_ in selection.rebind(data)}
     }
     private func legend(_ title:String,color:Color)->some View {HStack(spacing:4){Circle().fill(color).frame(width:5,height:5);Text(title)}.font(.caption2).foregroundStyle(.secondary)}
+    // Bridge only the drawing gap; missing buckets stay missing in accounting
+    // and in the pointer/record detail views. Each bridge is a straight line.
+    @ChartContentBuilder private func gapBridges(_ points:[TimelinePlotPoint],key:String,color:Color,unit:String="tokens",width:CGFloat=1)->some ChartContent {
+        ForEach(Array(points.indices.dropFirst()),id:\.self){index in
+            let before=points[index-1],after=points[index]
+            if before.series != after.series {
+                LineMark(x:.value(L("记录顺序"),before.position),y:.value(unit,before.value),series:.value(L("片段"),"\(key)-gap-\(index)")).interpolationMethod(.linear).foregroundStyle(color).lineStyle(StrokeStyle(lineWidth:width))
+                LineMark(x:.value(L("记录顺序"),after.position),y:.value(unit,after.value),series:.value(L("片段"),"\(key)-gap-\(index)")).interpolationMethod(.linear).foregroundStyle(color).lineStyle(StrokeStyle(lineWidth:width))
+            }
+        }
+    }
     private var speedChart:some View {
         Chart {
             ForEach(data.speed){point in
-                LineMark(x:.value(L("记录顺序"),point.position),y:.value("tokens/s",point.value),series:.value(L("片段"),point.series)).interpolationMethod(data.period<2 ? .linear:.monotone).foregroundStyle(.white.opacity(0.8)).lineStyle(StrokeStyle(lineWidth:1.8))
+                LineMark(x:.value(L("记录顺序"),point.position),y:.value("tokens/s",point.value),series:.value(L("片段"),"speed-\(point.series)")).interpolationMethod(data.period<2 ? .linear:.monotone).foregroundStyle(.white.opacity(0.8)).lineStyle(StrokeStyle(lineWidth:1.8))
                 PointMark(x:.value(L("记录顺序"),point.position),y:.value("tokens/s",point.value)).foregroundStyle(.white.opacity(0.35)).symbolSize(5)
             }
+            gapBridges(data.speed,key:"speed",color:.white.opacity(0.8),unit:"tokens/s",width:1.8)
             ForEach(data.buckets.filter{$0.compactions>0}){b in RuleMark(x:.value(L("记录顺序"),b.position)).foregroundStyle(.purple.opacity(0.35)).lineStyle(StrokeStyle(lineWidth:1,dash:[3,3]))}
         }.chartXScale(domain:0...data.upperBound)
         .chartYAxis{AxisMarks(position:.trailing){value in AxisGridLine();AxisValueLabel{if let n=value.as(Double.self){Text(n.formatted(.number.precision(.fractionLength(0...1)))).frame(width:50,alignment:.leading)}}}}
@@ -150,6 +162,8 @@ private enum TimelinePlotKind:String {case speed,cache,events}
                 LineMark(x:.value(L("记录顺序"),p.position),y:.value("tokens",p.value),series:.value(L("片段"),"cache-\(p.series)")).interpolationMethod(data.period<2 ? .linear:.monotone).foregroundStyle(.cyan)
                 PointMark(x:.value(L("记录顺序"),p.position),y:.value("tokens",p.value)).foregroundStyle(.cyan.opacity(0.4)).symbolSize(3)
             }
+            gapBridges(data.input,key:"input",color:.gray.opacity(0.6))
+            gapBridges(data.cache,key:"cache",color:.cyan)
             ForEach(data.buckets.filter{$0.compactions>0}){b in RuleMark(x:.value(L("记录顺序"),b.position)).foregroundStyle(.purple.opacity(0.5)).lineStyle(StrokeStyle(lineWidth:1,dash:[3,3]))}
         }.chartXScale(domain:0...data.upperBound)
         .chartYAxis{AxisMarks(position:.trailing){value in AxisGridLine();AxisValueLabel{if let n=value.as(Int.self){Text(n>=1000 ? "\(n/1000)K":"\(n)").frame(width:50,alignment:.leading)}}}}

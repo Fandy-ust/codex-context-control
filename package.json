@@ -1,6 +1,6 @@
 {
   "name": "codex-context-control",
-  "version": "0.19.3",
+  "version": "0.19.4",
   "private": true,
   "type": "module",
   "description": "Cross-platform per-chat context budgets and account quota for Codex Desktop",
