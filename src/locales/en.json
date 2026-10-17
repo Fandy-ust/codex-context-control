@@ -523,5 +523,7 @@
   "暂时无法读取额度": "Unable to read usage right now",
   "{0}剩余 {1}%": "{0}: {1}% remaining",
   "Codex 额度 · {0}": "Codex usage · {0}",
-  "额外额度可用": "Extra credits available"
+  "额外额度可用": "Extra credits available",
+  "主控制面板": "Control panel",
+  "返回": "Back"
 }

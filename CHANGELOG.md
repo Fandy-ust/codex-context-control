@@ -1,8 +1,9 @@
 # Changes
 
 
-## 0.18.0 — Account quota ring
+## 0.18.0 — Account quota ring and floating control panel
 
+- Consolidate sidebar settings in a bottom-left floating control panel, including inline navigation to global defaults.
 - Add a separate monochrome quota ring beside the context ring in the macOS menu bar.
 - Show actual remaining percentages and reset times; render two concentric rings only when two windows are available.
 - Show extra-credit availability separately from periodic quota percentages.

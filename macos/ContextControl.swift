@@ -426,7 +426,7 @@ struct RuntimeFixControl:View {
 struct ContentView: View {
     @ObservedObject var model:Controller
     @State private var confirmCompact=false
-    @State private var showNewChatDefaults=false
+    @State private var showControlPanel=false
     @State private var selectedThumb:BudgetThumb = .window
     private var maxMode:Bool {model.selected?.modelMetadata?.context_ceiling==920000 && Int(model.windowK)==920}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -453,27 +453,11 @@ struct ContentView: View {
                         }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
                     }}
                 }.frame(maxHeight:.infinity)
-                VStack(alignment:.leading,spacing:5){
-                    Picker(L("语言"),selection:Binding(get:{model.languageSelection},set:{model.setLanguage($0)})){
-                        Text(L("自动（按时区）")).tag(LanguageChoice.auto)
-                        Text("中文").tag(LanguageChoice.zh)
-                        Text("English").tag(LanguageChoice.en)
-                    }.pickerStyle(.menu).accessibilityIdentifier("language-picker").help(L("自动按时区选择：中国大陆、香港、澳门、台湾使用中文，其他时区使用 English。手动选择优先。"))
-                    Text(model.languageSelection == .auto ? L("自动：{0}",Localization.language == .zh ? "中文":"English") : L("自动按时区选择，手动选择优先。"))
-                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
-                }
-                Button(L("同步本地聊天"),systemImage:"arrow.clockwise"){Task{await model.scanChats()}}.buttonStyle(.bordered).disabled(model.working)
-                Button(L("全局默认"),systemImage:"slider.horizontal.3"){showNewChatDefaults=true}.buttonStyle(.bordered)
-                Text(L("额外功能")).font(.caption).foregroundStyle(.secondary)
-                ContextExtensionControl(model:model)
-                if let update=model.updateState {
-                    if update.phase=="downloading" || update.phase=="installing" {
-                        Label(L("正在更新…"),systemImage:"arrow.down.circle")
-                    } else {
-                        Button(update.available ? L("安装更新 {0}",update.version ?? ""):L("检查更新"),systemImage:"arrow.down.circle"){Task{await model.updateApp(install:update.available)}}.buttonStyle(.bordered).disabled(model.checkingUpdates)
-                    }
-                }
-                Button(L("打开 Codex"),systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
+                Button{showControlPanel.toggle()} label:{
+                    HStack(spacing:10){Image(systemName:"slider.horizontal.3");Text(L("主控制面板")).font(.system(size:13,weight:.medium));Spacer();Image(systemName:showControlPanel ? "chevron.down":"chevron.up").font(.system(size:10,weight:.semibold)).foregroundStyle(.secondary)}
+                        .padding(12).frame(maxWidth:.infinity).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:12)).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier("control-panel-button")
+                    .popover(isPresented:$showControlPanel,attachmentAnchor:.rect(.bounds),arrowEdge:.bottom){MainControlPanelView(model:model,close:{showControlPanel=false})}
             }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
@@ -510,7 +494,6 @@ struct ContentView: View {
         .background(PanelStyle.background)
         .preferredColorScheme(.dark).tint(PanelStyle.blue).environment(\.locale,Localization.locale)
         .onChange(of:model.selectedID){_,_ in model.fill()}
-        .sheet(isPresented:$showNewChatDefaults){NewChatDefaultsView(model:model)}
         .confirmationDialog(L("请求 Codex 原生压缩？"),isPresented:$confirmCompact,titleVisibility:.visible){Button(L("请求压缩")){Task{await model.act("compact")}};Button(L("取消"),role:.cancel){}}message:{Text(L("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。"))}
     }
     func budgetEditor()->some View {

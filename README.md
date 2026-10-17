@@ -22,6 +22,8 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 ## Features
 
+- **Control panel:** settings open from one compact button at the bottom left.
+
 - **Quota ring:** remaining account usage and reset times, beside the context ring.
 
 - **Local cache:** chats and recent usage appear at startup, with incremental background sync.
