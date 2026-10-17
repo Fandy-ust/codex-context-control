@@ -30,7 +30,15 @@ for(const [source,target,refs]of [['Launcher.cs','codex-context.exe',['System.We
 }
 compileWindowsInstaller({output:path.join(native,'Install Context Manager.exe'),icon});
 if(process.argv.includes('--native-only')){console.log(native);process.exit(0);}
-const electron=path.join(repo,'node_modules/electron/dist');if(!fs.existsSync(path.join(electron,'electron.exe')))throw Error('Run npm ci first to install Electron');
+const electron=path.join(repo,'node_modules/electron/dist');
+if(!fs.existsSync(path.join(electron,'electron.exe'))){
+  // Recent Electron packages defer the binary download until first launch.
+  // Packaging never launches the UI, so prepare the pinned binary explicitly.
+  const installer=path.join(repo,'node_modules/electron/install.js');
+  if(!fs.existsSync(installer))throw Error('Run npm ci first to install Electron');
+  const install=spawnSync(process.execPath,[installer],{cwd:repo,stdio:'inherit',windowsHide:true,timeout:300000,env:{...process.env,ELECTRON_INSTALL_ARCH:arch,ELECTRON_INSTALL_PLATFORM:'win32'}});
+  if(install.error||install.status!==0||!fs.existsSync(path.join(electron,'electron.exe')))throw Error(install.error?.message||'Electron binary preparation failed');
+}
 const payload=path.join(out,'payload');fs.mkdirSync(payload,{recursive:true});fs.cpSync(electron,payload,{recursive:true});
 fs.renameSync(path.join(payload,'electron.exe'),path.join(payload,'ContextManager.exe'));
 await rcedit(path.join(payload,'ContextManager.exe'),{icon,'file-version':pkg.version,'product-version':pkg.version,'version-string':{ProductName:'Context Manager',FileDescription:'Context Manager',CompanyName:'Fandy-ust',OriginalFilename:'ContextManager.exe',InternalName:'ContextManager'}});
