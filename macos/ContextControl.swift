@@ -27,7 +27,10 @@ struct NewChatDefaultsState:Decodable,Equatable {let usableWindow:Int;let compac
 struct ContextExtensionState:Decodable,Equatable {let enabled:Bool;let effective:Bool;let pending:Bool;let activeCount:Int;let connectedCount:Int;let compatible:Bool;let available:Bool;let message:String}
 struct NewChatDefaultsLimits:Decodable,Equatable {let maximumUsableWindow:Int;let effectivePercent:Int;let extended:Bool}
 struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:Bool;let version:String?;let phase:String;let error:String?}
-struct RuntimeState: Decodable {let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPercent:Double;let windowDurationMins:Int?;let resetsAt:Int?}
+struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?}
+struct QuotaState:Decodable,Equatable {let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
+struct RuntimeState: Decodable {let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -49,6 +52,10 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var selectedID:String?
     @Published var updateState:UpdateState?
     @Published var checkingUpdates=false
+    @Published var quota:QuotaState?
+    @Published var quotaRefreshing=false
+    @Published var selectedQuotaID="codex"
+    var selectedQuota:QuotaBucket? {quota?.buckets.first{$0.id==selectedQuotaID} ?? quota?.buckets.first}
     @Published var bridgeCount=0
     @Published var contextCeilingPending=false
     @Published var contextExtension:ContextExtensionState?
@@ -96,6 +103,7 @@ struct ServiceSettings: Decodable {let node:String}
         if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"))
             guard !menuDragInProgress else{return}
+            if quota != state.quota{acceptQuota(state.quota)}
             if updateState != state.update{updateState=state.update;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
             if chats != state.threads{chats=state.threads}
             if bridgeCount != state.bridgeCount{bridgeCount=state.bridgeCount}
@@ -111,6 +119,14 @@ struct ServiceSettings: Decodable {let node:String}
             else if !budgetEdited,editingRevision != (selected?.policy?.revision ?? 0){fill()}
             if Localization.canonical(notice)=="正在读取本地状态…"||Localization.canonical(notice).hasPrefix("读取失败："){notice=bridgeCount>0 ? L("已接入 Codex。") : L("已加载本地聊天；打开聊天后实时同步。")}
         }catch{serviceAvailable=false;notice=L("读取失败：{0}", error.localizedDescription)}
+    }
+    func acceptQuota(_ value:QuotaState?){
+        quota=value
+        if value?.buckets.contains(where:{$0.id==selectedQuotaID}) != true,let first=value?.buckets.first{selectedQuotaID=first.id}
+    }
+    func refreshQuota() async {
+        guard !quotaRefreshing else{return};quotaRefreshing=true;defer{quotaRefreshing=false}
+        do{acceptQuota(try JSONDecoder().decode(QuotaState.self,from:await api("/quota",body:[:])))}catch{notice=L("暂时无法读取额度")}
     }
     func updateApp(install:Bool=false) async {
         checkingUpdates=true;defer{checkingUpdates=false}
@@ -576,6 +592,10 @@ struct ContentView: View {
 
 @main @MainActor final class ContextControlApp:NSObject,NSApplicationDelegate,NSWindowDelegate {
     private let model=Controller()
+    private var quotaItem:NSStatusItem?
+    private let quotaPopover=NSPopover()
+    private var lastQuotaIcon:QuotaState?
+    private var lastQuotaID:String?
     private var statusItem:NSStatusItem?
     private var statusHighlight:StatusItemHighlight?
     private var settingsWindow:NSWindow?
@@ -614,6 +634,14 @@ struct ContentView: View {
         item.button?.setButtonType(.pushOnPushOff)
         item.button?.target=self;item.button?.action=#selector(toggleContextPopover)
         statusItem=item
+        let allowance=NSStatusBar.system.statusItem(withLength:28)
+        allowance.autosaveName="ContextManagerQuota"
+        allowance.button?.imagePosition = .imageOnly
+        allowance.button?.target=self;allowance.button?.action=#selector(toggleQuotaPopover)
+        allowance.button?.image=quotaStatusImage(bucket:nil,stale:true)
+        quotaItem=allowance;quotaPopover.behavior = .transient
+        quotaPopover.contentSize=NSSize(width:320,height:330)
+        quotaPopover.contentViewController=NSHostingController(rootView:QuotaPopoverView(model:model))
         if let button=item.button{statusHighlight=StatusItemHighlight(button:button,isOpen:{[weak self] in self?.menuPanel?.isVisible==true})}
         updateStatusIcon()
         if !background{showSettings()}
@@ -635,13 +663,21 @@ struct ContentView: View {
             refreshInProgress=false
             if refreshPending{refreshPending=false;refreshNow();return}
             let visible=settingsWindow.map{$0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible)} ?? false
-            let delay=RefreshSchedule.interval(menuVisible:menuPanel?.isVisible==true,settingsVisible:visible,runningChats:model.runningChats.count,connected:model.bridgeCount>0,serviceAvailable:model.serviceAvailable)
+            let delay=RefreshSchedule.interval(menuVisible:menuPanel?.isVisible==true || quotaPopover.isShown,settingsVisible:visible,runningChats:model.runningChats.count,connected:model.bridgeCount>0,serviceAvailable:model.serviceAvailable)
             let timer=Timer(timeInterval:delay,repeats:false){[weak self] _ in Task{@MainActor [weak self] in self?.refreshNow()}}
             timer.tolerance=RefreshSchedule.tolerance(for:delay);refreshTimer=timer;RunLoop.main.add(timer,forMode:.common)
         }
     }
     func applicationDidBecomeActive(_ notification:Notification){refreshNow()}
     private func updateStatusIcon(){
+        if lastQuotaIcon != model.quota || lastQuotaID != model.selectedQuota?.id {
+            quotaItem?.button?.image=quotaStatusImage(bucket:model.selectedQuota,stale:model.quota?.stale ?? true)
+            lastQuotaIcon=model.quota;lastQuotaID=model.selectedQuota?.id
+        }
+        let quotaSummary=model.selectedQuota.map{bucket in [bucket.primary,bucket.secondary].compactMap{$0}.map{L("{0}剩余 {1}%",quotaPeriod($0),Int($0.remainingPercent.rounded()))}.joined(separator:" · ")} ?? L("额度暂不可用")
+        let quotaTooltip=model.quota?.stale == true ? L("上次记录，待刷新")+" · "+quotaSummary:quotaSummary
+        quotaItem?.button?.toolTip=L("Codex 额度 · {0}",quotaTooltip)
+        quotaItem?.button?.setAccessibilityLabel(L("Codex 额度 · {0}",quotaSummary))
         statusHighlight?.refresh()
         let busiest=model.busiestContext
         let percentage=busiest?.contextFraction.map{Int(($0*100).rounded())}
@@ -653,7 +689,14 @@ struct ContentView: View {
         statusItem?.button?.toolTip="Context Manager · \(summary)"
         statusItem?.button?.setAccessibilityLabel(L("Context Manager，{0}，打开聊天概览", summary))
     }
+    @objc private func toggleQuotaPopover(){
+        if quotaPopover.isShown{quotaPopover.performClose(nil);return}
+        closeContextMenu();guard let button=quotaItem?.button else{return}
+        quotaPopover.show(relativeTo:button.bounds,of:button,preferredEdge:.minY)
+        Task{await model.refreshQuota();updateStatusIcon()};refreshNow()
+    }
     @objc private func toggleContextPopover(){
+        quotaPopover.performClose(nil)
         refreshNow()
         if menuPanel?.isVisible==true{closeContextMenu();return}
         guard statusItem?.button != nil else{return}
@@ -724,6 +767,7 @@ struct ContentView: View {
         editItem.submenu=edit;bar.addItem(editItem);NSApplication.shared.mainMenu=bar
     }
     @objc private func showSettings(){
+        quotaPopover.performClose(nil)
         closeContextMenu()
         if settingsWindow==nil{
             let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:760),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
@@ -751,7 +795,8 @@ struct ContentView: View {
         let menuWindow=statusItem?.button?.window
         let frame=menuWindow?.frame ?? .zero
         let onScreen=frame.width>0 && frame.height>0 && NSScreen.screens.contains{$0.frame.intersects(frame)}
-        let state:[String:Any]=["pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"menuWindowVisible":menuWindow?.isVisible==true,"menuOnScreen":onScreen,"menuFrame":["x":frame.origin.x,"y":frame.origin.y,"width":frame.width,"height":frame.height],"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background,"statusTitle":statusItem?.button?.title ?? "","runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()]
+        let quotaFrame=quotaItem?.button?.window?.frame ?? .zero
+        let state:[String:Any]=["quotaMenuReady":quotaItem?.isVisible==true,"quotaFrame":["x":quotaFrame.origin.x,"y":quotaFrame.origin.y,"width":quotaFrame.width,"height":quotaFrame.height],"pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"menuWindowVisible":menuWindow?.isVisible==true,"menuOnScreen":onScreen,"menuFrame":["x":frame.origin.x,"y":frame.origin.y,"width":frame.width,"height":frame.height],"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background,"statusTitle":statusItem?.button?.title ?? "","runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()]
         guard let data=try? JSONSerialization.data(withJSONObject:state,options:.sortedKeys),data != lastStatus else{return}
         do {
             try FileManager.default.createDirectory(at:model.home,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])

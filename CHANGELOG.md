@@ -1,6 +1,15 @@
 # Changes
 
 
+## 0.18.0 — Account quota ring
+
+- Add a separate monochrome quota ring beside the context ring in the macOS menu bar.
+- Show actual remaining percentages and reset times; render two concentric rings only when two windows are available.
+- Show extra-credit availability separately from periodic quota percentages.
+- Support multiple usage pools without inventing missing values; unavailable and stale observations are labeled.
+- Read quotas through the official runtime without opening chats or generating model output. Cache for five minutes and offer manual refresh.
+
+
 ## 0.17.2 — Complete OTA cleanup
 
 - Retry delayed macOS disk-image detach operations before deleting downloaded files.

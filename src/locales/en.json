@@ -506,5 +506,22 @@
   "安装更新 {0}": "Install update {0}",
   "检查更新": "Check for updates",
   "更新已安装，请重开 Codex": "Update installed. Restart Codex.",
-  "更新失败：{0}": "Update failed: {0}"
+  "更新失败：{0}": "Update failed: {0}",
+  "账户额度": "Account usage",
+  "刷新额度": "Refresh usage",
+  "额度类型": "Usage pool",
+  "额度周期": "Usage window",
+  "{0}天": "{0}d",
+  "{0}小时": "{0}h",
+  "{0}分钟": "{0}m",
+  "剩余": "remaining",
+  "重置时间": "Resets at",
+  "正在读取额度…": "Loading usage…",
+  "额度暂不可用": "Usage unavailable",
+  "上次记录，待刷新": "Last known usage · refresh needed",
+  "更新于": "Updated",
+  "暂时无法读取额度": "Unable to read usage right now",
+  "{0}剩余 {1}%": "{0}: {1}% remaining",
+  "Codex 额度 · {0}": "Codex usage · {0}",
+  "额外额度可用": "Extra credits available"
 }
