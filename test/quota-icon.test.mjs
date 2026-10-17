@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
-test('quota bars gradually empty and include a percentage badge',{skip:process.platform!=='darwin',timeout:90000},()=>{
+test('quota bars gradually empty and show a transparent percentage label',{skip:process.platform!=='darwin',timeout:90000},()=>{
  const repo=fileURLToPath(new URL('../',import.meta.url)),dir=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-bolt-'));
  try{
  fs.writeFileSync(path.join(dir,'Control.swift'),fs.readFileSync(path.join(repo,'macos/ContextControl.swift'),'utf8').replace('@main @MainActor final class ContextControlApp','@MainActor final class ContextControlApp'));
@@ -20,6 +20,7 @@ import AppKit
   let full=try image(100),half=try image(50),empty=try image(0)
   precondition(coverage(full,true)>coverage(half,true) && coverage(half,true)>coverage(empty,true))
   precondition(coverage(full,false)>0 && coverage(empty,false)>0)
+  precondition(coverage(full,false)<Double(full.pixelsWide*full.pixelsHigh)*0.15)
   if CommandLine.arguments.count>1 {
    let canvas=NSImage(size:NSSize(width:360,height:100));canvas.lockFocus();NSColor.black.setFill();NSBezierPath(rect:NSRect(x:0,y:0,width:360,height:100)).fill()
    for (index,entry) in [(full,"100%"),(half,"50%"),(empty,"0%")].enumerated(){
@@ -29,7 +30,7 @@ import AppKit
    }
    canvas.unlockFocus();let png=NSBitmapImageRep(data:canvas.tiffRepresentation!)!.representation(using:.png,properties:[:])!;try png.write(to:URL(fileURLWithPath:CommandLine.arguments[1]))
   }
-  print("bars full > half > hollow; percentage badge remains visible")
+  print("bars full > half > hollow; transparent percentage label remains visible")
  }
 }
 `);

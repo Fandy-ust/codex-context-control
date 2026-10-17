@@ -4,7 +4,7 @@
 ## 0.18.0 — Quota indicator and floating control panel
 
 - Consolidate sidebar settings in a bottom-left floating control panel, including inline navigation to global defaults.
-- Replace the old menu-bar logo with stepped bars and a remaining-percentage badge. Bars progressively become hollow as quota decreases.
+- Replace the old menu-bar logo with stepped bars and a remaining-percentage label. Bars progressively become hollow as quota decreases.
 - Integrate remaining quota and reset times into the existing chat menu; no extra quota window or ring.
 - Show extra-credit availability separately from periodic quota percentages.
 - Support multiple usage pools without inventing missing values; unavailable and stale observations are labeled.

@@ -26,10 +26,8 @@ func quotaPeriod(_ window:QuotaWindow)->String {
     let font=NSFont.monospacedDigitSystemFont(ofSize:9,weight:.semibold)
     let attributes:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:NSColor.black]
     let text=label as NSString,measured=text.size(withAttributes:attributes)
-    let badge=NSRect(x:21,y:1.5,width:26,height:12)
-    NSColor.black.withAlphaComponent(opacity).setFill();NSBezierPath(roundedRect:badge,xRadius:3,yRadius:3).fill()
-    let glyph=NSImage(size:measured);glyph.lockFocus();text.draw(at:.zero,withAttributes:attributes);glyph.unlockFocus()
-    glyph.draw(in:NSRect(x:badge.midX-measured.width/2,y:badge.midY-measured.height/2,width:measured.width,height:measured.height),from:.zero,operation:.destinationOut,fraction:1)
+    let x:CGFloat=24+(22-measured.width)/2
+    text.draw(at:NSPoint(x:x,y:0.5),withAttributes:[.font:font,.foregroundColor:NSColor.black.withAlphaComponent(opacity)])
     image.unlockFocus();image.isTemplate=true;return image
 }
 
