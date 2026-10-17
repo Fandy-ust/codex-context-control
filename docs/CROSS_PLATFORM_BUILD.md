@@ -24,11 +24,10 @@ Windows 上：
 
 ```powershell
 npm ci
-npm run build
-npm run package
+npm run build:win
 ```
 
-输出 `build/Context-Manager-0.19.2-windows-x64-Setup.exe`、ZIP 和 SHA-256。只分发 Setup.exe 即可。
+输出 `build/Context-Manager-0.19.3-windows-x64-Setup.exe` 和 SHA-256。只分发 Setup.exe 即可。更新 ZIP 通过 `npm run package:win:update` 单独生成。
 
 Apple Silicon Mac 上：
 
@@ -40,11 +39,11 @@ npm run package -- --use-built-panel
 
 输出 `build/distribution/` 下的 DMG 与校验文件。开发需要 Xcode 命令行工具。安装包仍支持 macOS 14+；实际能否编译和运行以 Mac 构建与验收结果为准。
 
-`build` / `package` 自动选择当前操作系统；原来的 `build:win`、`package:win`、`build:mac` 和 `package:mac` 入口继续保留。
+`build` / `package` 自动选择当前操作系统。Windows 的 `build` / `build:win` 默认直接输出单文件安装 EXE；`build:win:dir` 只生成中间目录，`package:win` 重新封装已有目录，`package:win:update` 显式生成更新 ZIP。macOS 的 `build:mac` / `package:mac` 入口继续保留。
 
 ## 一次同时构建两端
 
-推送 `codex/cross-platform-*` 整合分支，即触发 **Build Windows and macOS**，两个 job 并行构建同一份提交。也支持 `v*-desktop` 标签；工作流进入默认分支后，还可从 Actions 手动选择分支运行。构建分别上传两端安装包，不自动发布 Release。`run_tests` 默认关闭，只有手动勾选时才在这个构建工作流运行回归；常规检查仍保留在主分支、PR 和手动检查工作流中。
+推送 `codex/cross-platform-*` 整合分支，即触发 **Build Windows and macOS**，两个 job 并行构建同一份提交。也支持 `v*-desktop` 标签；工作流进入默认分支后，还可从 Actions 手动选择分支运行。构建分别上传两端安装包；Windows 安装 EXE 和更新 ZIP 分成两个 artifact，日常只下载 `context-manager-windows-x64`。不自动发布 Release。`run_tests` 默认关闭，只有手动勾选时才在这个构建工作流运行回归；常规检查仍保留在主分支、PR 和手动检查工作流中。
 
 macOS job 使用官方 [macos-26 Apple Silicon runner](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) 来获得现代 Apple SDK。Windows 本机无法直接调用 Apple 原生编译器，因此「同时构建」由两个操作系统的 runner 配合完成，不代表在 Windows 内交叉编译 SwiftUI。
 

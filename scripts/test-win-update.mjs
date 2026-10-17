@@ -8,7 +8,7 @@ import {spawnSync} from 'node:child_process';
 import {removeInstallationTree} from '../src/platform/windows-install.mjs';
 const repo=fileURLToPath(new URL('../',import.meta.url)),pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
 const filename=`Context-Manager-${pkg.version}-windows-${process.arch}.zip`,archive=path.join(repo,'build',filename);
-if(!fs.existsSync(archive))throw Error('Run npm run package:win first');
+if(!fs.existsSync(archive))throw Error('Run npm run package:win:update first');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-win-update-')),home=path.join(temp,'control'),codex=path.join(temp,'codex'),apps=path.join(temp,'apps');fs.mkdirSync(home);fs.mkdirSync(codex);
 Object.assign(process.env,{CONTEXT_CONTROL_HOME:home,CONTEXT_CONTROL_CODEX_HOME:codex,CONTEXT_CONTROL_APPLICATIONS:apps});
 const {applyWindowsUpdate}=await import('../src/windows-update-worker.mjs');

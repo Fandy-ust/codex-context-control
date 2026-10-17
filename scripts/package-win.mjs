@@ -7,8 +7,10 @@ import {verifyWindowsPayload} from '../src/platform/windows-install.mjs';
 import {compileWindowsInstaller} from './windows-installer.mjs';
 const repo=fileURLToPath(new URL('../',import.meta.url)),pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
 const name=`Context-Manager-${pkg.version}-windows-${process.arch}`,folder=path.join(repo,'build',name),zip=folder+'.zip';
-if(!fs.existsSync(path.join(folder,'payload/payload-manifest.json')))throw Error('Run npm run build:win first');
+if(!fs.existsSync(path.join(folder,'payload/payload-manifest.json')))throw Error('Run npm run build:win or npm run build:win:dir first');
 verifyWindowsPayload(path.join(folder,'payload'),{version:pkg.version});
+const updateOnly=process.argv.includes('--update-only');
+if(!updateOnly){
 const setupName=process.env.CONTEXT_CONTROL_SETUP_NAME||name+'-Setup.exe';
 if(path.basename(setupName)!==setupName||!setupName.endsWith('.exe'))throw Error('Setup output must be an .exe filename');
 const native=path.join(repo,'build/windows-native'),embedded=path.join(native,name+'-payload.zip'),setup=path.join(repo,'build',setupName);
@@ -17,5 +19,8 @@ fs.writeFileSync(embedded+'.sha256',crypto.createHash('sha256').update(fs.readFi
 compileWindowsInstaller({output:setup,icon:path.join(native,'ContextManager.ico'),archive:embedded,checksum:embedded+'.sha256'});
 fs.writeFileSync(setup+'.sha256',crypto.createHash('sha256').update(fs.readFileSync(setup)).digest('hex')+'  '+path.basename(setup)+'\n');
 console.log(setup);
+}
+if(updateOnly||process.argv.includes('--with-update-zip')){
 powershell('Add-Type -AssemblyName System.IO.Compression.FileSystem;if(Test-Path -LiteralPath $env:CONTEXT_CONTROL_ZIP){Remove-Item -LiteralPath $env:CONTEXT_CONTROL_ZIP};[System.IO.Compression.ZipFile]::CreateFromDirectory($env:CONTEXT_CONTROL_PACKAGE,$env:CONTEXT_CONTROL_ZIP)',{CONTEXT_CONTROL_PACKAGE:folder,CONTEXT_CONTROL_ZIP:zip},{timeout:180000});
 fs.writeFileSync(zip+'.sha256',crypto.createHash('sha256').update(fs.readFileSync(zip)).digest('hex')+'  '+path.basename(zip)+'\n');console.log(zip);
+}

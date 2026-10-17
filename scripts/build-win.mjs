@@ -69,3 +69,6 @@ visit(payload);
 const commit=spawnSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',windowsHide:true}).stdout?.trim()||'unknown';
 fs.writeFileSync(path.join(payload,'payload-manifest.json'),JSON.stringify({version:pkg.version,buildId,platform:'win32',arch,commit,files},null,2)+'\n');
 console.log(out);
+
+// The public build command produces the self-contained installer in one pass.
+if(!process.argv.includes('--directory-only'))await import('./package-win.mjs');

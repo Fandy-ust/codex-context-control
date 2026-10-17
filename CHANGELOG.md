@@ -1,5 +1,11 @@
 # Changes
 
+## 0.19.3 — One-command Windows EXE build
+
+- Make build:win compile and compress the payload into a self-contained Setup.exe by default.
+- Keep directory-only builds and explicit update-ZIP packaging available as separate commands.
+- Upload the Windows installer and update archive as separate Actions artifacts to avoid downloading two copies for installation.
+
 ## 0.19.2 — Compact Windows budget layout
 
 - Put context details beside the saved budget summary and remove the redundant instruction below the slider.

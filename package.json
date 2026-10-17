@@ -1,6 +1,6 @@
 {
   "name": "codex-context-control",
-  "version": "0.19.2",
+  "version": "0.19.3",
   "private": true,
   "type": "module",
   "description": "Cross-platform per-chat context budgets and account quota for Codex Desktop",
@@ -12,7 +12,9 @@
     "test:integration": "node --test test/integration.test.mjs",
     "build:mac": "node scripts/build-mac.mjs",
     "build:win": "node scripts/build-win.mjs",
+    "build:win:dir": "node scripts/build-win.mjs --directory-only",
     "package:win": "node scripts/package-win.mjs",
+    "package:win:update": "node scripts/package-win.mjs --update-only",
     "dev:win": "node scripts/dev-win.mjs",
     "test:win:ui-smoke": "node scripts/dev-win.mjs --demo --smoke-test",
     "test:win:package": "node scripts/test-win-package.mjs",
