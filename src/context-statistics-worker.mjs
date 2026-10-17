@@ -1,9 +1,10 @@
 import {parentPort,workerData} from 'node:worker_threads';
+import {statisticsEvent} from './statistics-events.mjs';
 import {randomUUID} from 'node:crypto';
 import {historySourcesUnchanged} from './context-history.mjs';
 import {performance} from 'node:perf_hooks';
 import {readHistory,createHistoryCache,analyzeEvents,tokenCacheStats} from './context-statistics.mjs';
-const history=createHistoryCache(),results=new Map();
+const history=createHistoryCache({projectEvent:statisticsEvent}),results=new Map();
 parentPort.on('message',({taskId,id,refresh,knownResultKey})=>{
   const start=performance.now();let resultCacheHit=false,resultUnchanged=false;
   try {

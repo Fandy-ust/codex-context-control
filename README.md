@@ -4,7 +4,7 @@
 
 macOS 菜单栏里的 Codex 上下文管理器：按聊天调整预算，查看用量、缓存与费用估算。
 
-**0.15.5 · Apple Silicon · macOS 14+ · 私有测试版**
+**0.15.6 · Apple Silicon · macOS 14+ · 私有测试版**
 
 ## 下载与安装
 
@@ -12,7 +12,7 @@ macOS 菜单栏里的 Codex 上下文管理器：按聊天调整预算，查看�
 
 仓库目前私有，安装包以草稿供维护者检查，**尚未公开发布，也未上架 Mac App Store**。草稿不等于对所有协作者开放下载。授权测试者由维护者提供 ZIP；发布后的私有 Release 仍需要仓库访问权限。
 
-1. 获取 `Context-Manager-0.15.5-macos-arm64.zip` 并解压。
+1. 获取 `Context-Manager-0.15.6-macos-arm64.zip` 并解压。
 2. 打开 **Install Context Manager.app**，点击「安装 / 更新」。
 3. 首次安装后完整退出并重开 Codex；菜单栏出现圆环图标。
 4. 点击圆环即可查看聊天或打开主窗口。Hook stats 可另外在 Codex 的 `/hooks` 中审核启用。

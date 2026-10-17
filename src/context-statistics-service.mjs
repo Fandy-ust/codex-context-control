@@ -43,7 +43,7 @@ export function createContextStatisticsService(home=codexHome,{idleMs=30000,cach
       .finally(()=>pending.delete(id));
     pending.set(id,task);return task;
   };
-  get.diagnostics=()=>({workerStarts,workers:slots.length,pending:pending.size,queued:queue.length,last:lastDiagnostics});
+  get.diagnostics=()=>({workerStarts,workers:slots.length,pending:pending.size,queued:queue.length,cachedResults:cache.size,last:lastDiagnostics});
   get.close=()=>{closed=true;for(const job of queue.splice(0))job.reject(new Error('统计服务已关闭'));for(const slot of [...slots]){const job=slot.job;slot.job=null;retire(slot);job?.reject(new Error('统计服务已关闭'));}cache.clear();};
   return get;
 }

@@ -117,6 +117,11 @@ test('desktop helpers are copied independently, version checked and verified',{s
     for(const name of ['bin/codex-code-mode-host','codex-path/rg'])fs.writeFileSync(path.join(source,name),'helper',{mode:0o755});
     fs.writeFileSync(path.join(source,'codex-resources/voice/data'),'original resource');
     installRuntimeHelpers(out,original,'0.160.0');validateRuntimeHelpers(out,'0.160.0');
+    let attempts=0;
+    installRuntimeHelpers(out,original,'0.160.0',{runVersion:()=>++attempts===1?{error:{code:'ETIMEDOUT'}}:{status:0,stdout:'codex-cli 0.160.0'}});
+    assert.equal(attempts,2);
+    attempts=0;assert.throws(()=>installRuntimeHelpers(out,original,'0.160.0',{runVersion:()=>{attempts++;return {error:{code:'ETIMEDOUT'}};}}),/检查超时/);assert.equal(attempts,2);
+    attempts=0;assert.throws(()=>installRuntimeHelpers(out,original,'0.160.0',{runVersion:()=>{attempts++;return {status:0,stdout:'codex-cli 0.999.0'};}}),/不匹配/);assert.equal(attempts,1);
     fs.writeFileSync(path.join(source,'codex-resources/voice/data'),'updated resource');
     assert.equal(fs.readFileSync(path.join(out,'codex-resources/voice/data'),'utf8'),'original resource');
     fs.writeFileSync(path.join(source,'codex-package.json'),JSON.stringify({...layout,version:'0.162.1'}));

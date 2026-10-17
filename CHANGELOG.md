@@ -1,5 +1,13 @@
 # Changes
 
+## 0.15.6 — 2026-10-17
+
+- Keep a statistics-only event projection in the bounded parser cache; omit duplicated tool-completion bodies, encrypted reasoning payloads and image data while preserving accounting fields and event ordinals.
+- Budget the parser cache by retained projected data, allowing large active histories to stay incremental without increasing its limit.
+- Add equivalence tests across timing, pricing, compaction, steering, images, rollback and fork boundaries.
+- Add a repeatable isolated append benchmark and 160-request multi-chat cache rotation/recovery test.
+- Retry a helper version-probe timeout once during installation; distinguish persistent timeouts from incompatible versions.
+
 ## 0.15.5 — 2026-10-17
 
 - Prevent malformed IPC envelopes from terminating the service and bound frames before a newline arrives.

@@ -19,8 +19,8 @@ export function historySourcesUnchanged(home,sources){
     });
   }catch{return false;}finally{db?.close();}
 }
-export function createHistoryCache({maxBytes=64*1024*1024,maxFiles=4}={}){
-  return {files:new Map(),serial:0,maxBytes,maxFiles,metrics:{bytesRead:0,parsedLines:0,fullReads:0,appendReads:0,hits:0}};
+export function createHistoryCache({maxBytes=64*1024*1024,maxFiles=4,projectEvent=null}={}){
+  return {files:new Map(),serial:0,maxBytes,maxFiles,projectEvent,metrics:{bytesRead:0,parsedLines:0,fullReads:0,appendReads:0,hits:0,retainedBytes:0}};
 }
 export function readHistory(home,id,cache=null){
   if(!/^[a-f\d-]{36}$/i.test(id))throw new Error('聊天 ID 无效');
@@ -50,16 +50,18 @@ export function readHistory(home,id,cache=null){
       finally {fs.closeSync(fd);}
       const complete=buffer.lastIndexOf(10)+1;
       if(limit!=null&&complete!==buffer.length)throw new Error('继承边界不是完整记录');
-      let added;try{added=buffer.subarray(0,complete).toString('utf8').split('\n').filter(Boolean).map(line=>({...JSON.parse(line),originThreadId:threadId}));}catch{throw new Error('本地历史记录解析失败');}
+      let added;try{added=buffer.subarray(0,complete).toString('utf8').split('\n').filter(Boolean).map(line=>{const event={...JSON.parse(line),originThreadId:threadId};return cache?.projectEvent?cache.projectEvent(event):event;});}catch{throw new Error('本地历史记录解析失败');}
       const local=append?[...previous.events,...added]:added;
       if(local[0]?.type!=='session_meta')throw new Error('聊天元数据缺失');
-      entry={events:local,completeBytes:start+complete,size,ino:stat.ino,dev:stat.dev,fingerprint:stamp,revision:append&&added.length===0?previous.revision:cache?++cache.serial:0};
+      const retainedBytes=(append?previous.retainedBytes:0)+(cache?.projectEvent?Buffer.byteLength(JSON.stringify(added)):complete);
+      entry={events:local,retainedBytes,completeBytes:start+complete,size,ino:stat.ino,dev:stat.dev,fingerprint:stamp,revision:append&&added.length===0?previous.revision:cache?++cache.serial:0};
       if(cache){cache.metrics.bytesRead+=buffer.length;cache.metrics.parsedLines+=added.length;cache.metrics[append?'appendReads':'fullReads']++;}
     }
     if(cache){
       cache.files.delete(key);cache.files.set(key,entry);
-      let retained=[...cache.files.values()].reduce((sum,x)=>sum+x.completeBytes,0);
-      while(cache.files.size>cache.maxFiles||retained>cache.maxBytes){const oldest=cache.files.keys().next().value;retained-=cache.files.get(oldest).completeBytes;cache.files.delete(oldest);}
+      let retained=[...cache.files.values()].reduce((sum,x)=>sum+x.retainedBytes,0);
+      while(cache.files.size>cache.maxFiles||retained>cache.maxBytes){const oldest=cache.files.keys().next().value;retained-=cache.files.get(oldest).retainedBytes;cache.files.delete(oldest);}
+      cache.metrics.retainedBytes=retained;
       dependencies.push([key,entry.revision]);
     }
     const base=entry.events[0].payload.history_base;let inherited=[];

@@ -14,9 +14,15 @@ function filesIn(directory,prefix=''){
   }
   return out;
 }
-export function installRuntimeHelpers(directory,original,baseVersion){
-  const version=spawnSync(original,['--version'],{encoding:'utf8',timeout:5000});
-  if(version.status!==0||version.stdout.trim()!==`codex-cli ${baseVersion}`)throw Error('辅助程序版本与修复包不匹配');
+export function installRuntimeHelpers(directory,original,baseVersion,{runVersion=spawnSync}={}){
+  const probe=()=>runVersion(original,['--version'],{encoding:'utf8',timeout:5000});
+  let version=probe();
+  // Installation may hit a transient process-launch delay. Retry timeouts once,
+  // never retry or reinterpret a successfully read, incompatible version.
+  if(version.error?.code==='ETIMEDOUT')version=probe();
+  if(version.error?.code==='ETIMEDOUT')throw Error('辅助程序版本检查超时，请稍后重试');
+  if(version.error||version.status!==0)throw Error('无法读取辅助程序版本，请稍后重试');
+  if(version.stdout?.trim()!==`codex-cli ${baseVersion}`)throw Error('辅助程序版本与修复包不匹配');
   const source=path.resolve(path.dirname(original),'..');
   if(!fs.existsSync(path.join(source,'codex-package.json')))throw Error('未找到桌面版 Codex 辅助程序目录');
   const layout=JSON.parse(fs.readFileSync(path.join(source,'codex-package.json'),'utf8'));

@@ -81,3 +81,17 @@ test('result dependencies survive parsed-history eviction and detect file or ind
   assert.equal(historySourcesUnchanged(f.home,[]),false);
  }finally{f.close();}
 });
+
+test('repeated chat switching beyond cache capacity stays bounded without cross-chat results',async()=>{
+ const f=fixture(),get=createContextStatisticsService(f.home,{cacheMs:0,idleMs:30}),many=Array.from({length:32},(_,i)=>i.toString(16).padStart(8,'0')+'-aaaa-bbbb-cccc-111111111111');
+ try{
+  const db=new DatabaseSync(path.join(f.home,'state_5.sqlite'));
+  try{for(const id of many){const file=path.join(f.home,id+'.jsonl');fs.writeFileSync(file,encode(initial('Unique input '+id)));db.prepare('INSERT INTO threads VALUES(?,?)').run(id,file);}}finally{db.close();}
+  for(let cycle=0;cycle<5;cycle++){
+   for(let offset=0;offset<many.length;offset+=4){const batch=many.slice(offset,offset+4);const results=await Promise.all(batch.map(id=>get(id)));for(let i=0;i<batch.length;i++)assert.equal(results[i].threadId,batch[i]);const d=get.diagnostics();assert.ok(d.workers<=2&&d.cachedResults<=12);assert.equal(d.pending,0);}
+  }
+  await new Promise(r=>setTimeout(r,150));assert.equal(get.diagnostics().workers,0);
+  const restored=await get(many[0]);assert.deepEqual(stable(restored),stable(analyzeContext(f.home,many[0])));
+  assert.ok(get.diagnostics().workerStarts>=3);get.close();assert.equal(get.diagnostics().cachedResults,0);
+ }finally{get.close();f.close();}
+});
