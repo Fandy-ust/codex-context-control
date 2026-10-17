@@ -575,10 +575,9 @@ struct ContentView: View {
 
 @main @MainActor final class ContextControlApp:NSObject,NSApplicationDelegate,NSWindowDelegate {
     private let model=Controller()
-    private var quotaItem:NSStatusItem?
-    private let quotaPopover=NSPopover()
     private var lastQuotaIcon:QuotaState?
     private var lastQuotaID:String?
+    private var lastQuotaStale:Bool?
     private var statusItem:NSStatusItem?
     private var statusHighlight:StatusItemHighlight?
     private var settingsWindow:NSWindow?
@@ -611,20 +610,12 @@ struct ContentView: View {
                 Task{@MainActor [weak self] in self?.installMainMenu();self?.updateStatusIcon()}
             })
         }
-        let item=NSStatusBar.system.statusItem(withLength:30)
+        let item=NSStatusBar.system.statusItem(withLength:44)
         item.button?.title=""
         item.button?.imagePosition = .imageOnly
         item.button?.setButtonType(.pushOnPushOff)
         item.button?.target=self;item.button?.action=#selector(toggleContextPopover)
         statusItem=item
-        let allowance=NSStatusBar.system.statusItem(withLength:28)
-        allowance.autosaveName="ContextManagerQuota"
-        allowance.button?.imagePosition = .imageOnly
-        allowance.button?.target=self;allowance.button?.action=#selector(toggleQuotaPopover)
-        allowance.button?.image=quotaStatusImage(bucket:nil,stale:true)
-        quotaItem=allowance;quotaPopover.behavior = .transient
-        quotaPopover.contentSize=NSSize(width:320,height:330)
-        quotaPopover.contentViewController=NSHostingController(rootView:QuotaPopoverView(model:model))
         if let button=item.button{statusHighlight=StatusItemHighlight(button:button,isOpen:{[weak self] in self?.menuPanel?.isVisible==true})}
         updateStatusIcon()
         if !background{showSettings()}
@@ -646,43 +637,33 @@ struct ContentView: View {
             refreshInProgress=false
             if refreshPending{refreshPending=false;refreshNow();return}
             let visible=settingsWindow.map{$0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible)} ?? false
-            let delay=RefreshSchedule.interval(menuVisible:menuPanel?.isVisible==true || quotaPopover.isShown,settingsVisible:visible,runningChats:model.runningChats.count,connected:model.bridgeCount>0,serviceAvailable:model.serviceAvailable)
+            let delay=RefreshSchedule.interval(menuVisible:menuPanel?.isVisible==true,settingsVisible:visible,runningChats:model.runningChats.count,connected:model.bridgeCount>0,serviceAvailable:model.serviceAvailable)
             let timer=Timer(timeInterval:delay,repeats:false){[weak self] _ in Task{@MainActor [weak self] in self?.refreshNow()}}
             timer.tolerance=RefreshSchedule.tolerance(for:delay);refreshTimer=timer;RunLoop.main.add(timer,forMode:.common)
         }
     }
     func applicationDidBecomeActive(_ notification:Notification){refreshNow()}
     private func updateStatusIcon(){
-        if lastQuotaIcon != model.quota || lastQuotaID != model.selectedQuota?.id {
-            quotaItem?.button?.image=quotaStatusImage(bucket:model.selectedQuota,stale:model.quota?.stale ?? true)
-            lastQuotaIcon=model.quota;lastQuotaID=model.selectedQuota?.id
-        }
         let quotaSummary=model.selectedQuota.map{bucket in [bucket.primary,bucket.secondary].compactMap{$0}.map{L("{0}剩余 {1}%",quotaPeriod($0),Int($0.remainingPercent.rounded()))}.joined(separator:" · ")} ?? L("额度暂不可用")
-        let quotaTooltip=model.quota?.stale == true ? L("上次记录，待刷新")+" · "+quotaSummary:quotaSummary
-        quotaItem?.button?.toolTip=L("Codex 额度 · {0}",quotaTooltip)
-        quotaItem?.button?.setAccessibilityLabel(L("Codex 额度 · {0}",quotaSummary))
+        let quotaStale = !model.serviceAvailable || model.quota?.stale != false
+        let quotaTooltip=quotaStale ? L("上次记录，待刷新")+" · "+quotaSummary:quotaSummary
         statusHighlight?.refresh()
         let busiest=model.busiestContext
         let percentage=busiest?.contextFraction.map{Int(($0*100).rounded())}
-        if !iconInitialized || percentage != lastIconPercentage {
-            statusItem?.button?.image=managerStatusImage(progress:busiest?.contextFraction)
+        if !iconInitialized || percentage != lastIconPercentage || lastQuotaIcon != model.quota || lastQuotaID != model.selectedQuota?.id || lastQuotaStale != quotaStale {
+            statusItem?.button?.image=combinedStatusImage(progress:busiest?.contextFraction,bucket:model.selectedQuota,stale:quotaStale)
+            lastQuotaIcon=model.quota;lastQuotaID=model.selectedQuota?.id;lastQuotaStale=quotaStale
             lastIconPercentage=percentage;iconInitialized=true
         }
         let summary=model.runningChats.isEmpty ? (model.serviceAvailable ? L("暂无运行中的聊天"):L("等待连接")) : L("{0} 个运行中 · {1}", model.runningChats.count, busiest.map{L("最高占用 {0}", $0.contextPercentage)} ?? L("等待用量读回"))
-        statusItem?.button?.toolTip="Context Manager · \(summary)"
+        statusItem?.button?.toolTip="Context Manager · \(summary)\n"+L("Codex 额度 · {0}",quotaTooltip)
         statusItem?.button?.setAccessibilityLabel(L("Context Manager，{0}，打开聊天概览", summary))
     }
-    @objc private func toggleQuotaPopover(){
-        if quotaPopover.isShown{quotaPopover.performClose(nil);return}
-        closeContextMenu();guard let button=quotaItem?.button else{return}
-        quotaPopover.show(relativeTo:button.bounds,of:button,preferredEdge:.minY)
-        Task{await model.refreshQuota();updateStatusIcon()};refreshNow()
-    }
     @objc private func toggleContextPopover(){
-        quotaPopover.performClose(nil)
         refreshNow()
         if menuPanel?.isVisible==true{closeContextMenu();return}
         guard statusItem?.button != nil else{return}
+        Task{await model.refreshQuota();updateStatusIcon()}
         if menuPanel==nil{
             let panel=ContextMenuPanel(contentRect:.zero,styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
             panel.isReleasedWhenClosed=false;panel.isFloatingPanel=true;panel.hidesOnDeactivate=false;panel.delegate=self
@@ -750,7 +731,6 @@ struct ContentView: View {
         editItem.submenu=edit;bar.addItem(editItem);NSApplication.shared.mainMenu=bar
     }
     @objc private func showSettings(){
-        quotaPopover.performClose(nil)
         closeContextMenu()
         if settingsWindow==nil{
             let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:760),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
@@ -778,8 +758,7 @@ struct ContentView: View {
         let menuWindow=statusItem?.button?.window
         let frame=menuWindow?.frame ?? .zero
         let onScreen=frame.width>0 && frame.height>0 && NSScreen.screens.contains{$0.frame.intersects(frame)}
-        let quotaFrame=quotaItem?.button?.window?.frame ?? .zero
-        let state:[String:Any]=["quotaMenuReady":quotaItem?.isVisible==true,"quotaFrame":["x":quotaFrame.origin.x,"y":quotaFrame.origin.y,"width":quotaFrame.width,"height":quotaFrame.height],"pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"menuWindowVisible":menuWindow?.isVisible==true,"menuOnScreen":onScreen,"menuFrame":["x":frame.origin.x,"y":frame.origin.y,"width":frame.width,"height":frame.height],"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background,"statusTitle":statusItem?.button?.title ?? "","runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()]
+        let state:[String:Any]=["quotaIntegrated":true,"pid":ProcessInfo.processInfo.processIdentifier,"menuReady":statusItem?.isVisible==true,"menuWindowVisible":menuWindow?.isVisible==true,"menuOnScreen":onScreen,"menuFrame":["x":frame.origin.x,"y":frame.origin.y,"width":frame.width,"height":frame.height],"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? settingsWindow?.isVisible ?? false,"bridgeCount":model.bridgeCount,"startedInBackground":background,"statusTitle":statusItem?.button?.title ?? "","runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()]
         guard let data=try? JSONSerialization.data(withJSONObject:state,options:.sortedKeys),data != lastStatus else{return}
         do {
             try FileManager.default.createDirectory(at:model.home,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])

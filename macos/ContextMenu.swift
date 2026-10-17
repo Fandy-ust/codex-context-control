@@ -16,7 +16,7 @@ extension Controller {
     var runningChats:[Chat] {serviceAvailable ? chats.filter(\.isRunning):[]}
     var recentChats:[Chat] {Array(chats.filter{$0.menuEligible && ($0.lastActivityAt ?? 0)>0 && (!serviceAvailable || !$0.isRunning)}.prefix(5))}
     var busiestContext:Chat? {runningChats.filter{$0.freshUsage==true && $0.contextFraction != nil}.max{($0.contextFraction ?? 0)<($1.contextFraction ?? 0)}}
-    var contextMenuHeight:CGFloat {min(menuHeightLimit,max(210,CGFloat(runningChats.count+recentChats.count)*52+175))}
+    var contextMenuHeight:CGFloat {min(menuHeightLimit,max(300,CGFloat(runningChats.count+recentChats.count)*52+295))}
 }
 
 @MainActor func managerStatusImage(progress:Double?)->NSImage {
@@ -75,6 +75,7 @@ private struct MenuRowFrames:PreferenceKey {
                 HStack{Text(L("打开主窗口"));Spacer();Text("⌘M").foregroundStyle(.tertiary)}
                     .font(.system(size:13)).padding(.horizontal,10).padding(.vertical,7).contentShape(Rectangle())
             }.buttonStyle(ContextMenuButtonStyle()).keyboardShortcut("m")
+            AccountQuotaSection(model:model)
             Divider().padding(.horizontal,8)
             ScrollView {
                 VStack(alignment:.leading,spacing:2){

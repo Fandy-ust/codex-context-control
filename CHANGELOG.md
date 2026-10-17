@@ -1,11 +1,11 @@
 # Changes
 
 
-## 0.18.0 — Account quota ring and floating control panel
+## 0.18.0 — Quota bolt and floating control panel
 
 - Consolidate sidebar settings in a bottom-left floating control panel, including inline navigation to global defaults.
-- Add a separate monochrome quota ring beside the context ring in the macOS menu bar.
-- Show actual remaining percentages and reset times; render two concentric rings only when two windows are available.
+- Keep one menu-bar control: the context ring plus a small lightning bolt on its right. The bolt empties as the tightest periodic quota is used.
+- Integrate remaining quota and reset times into the existing chat menu; no extra quota window or ring.
 - Show extra-credit availability separately from periodic quota percentages.
 - Support multiple usage pools without inventing missing values; unavailable and stale observations are labeled.
 - Read quotas through the official runtime without opening chats or generating model output. Cache for five minutes and offer manual refresh.

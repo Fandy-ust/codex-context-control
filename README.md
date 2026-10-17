@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 - **Control panel:** settings open from one compact button at the bottom left.
 
-- **Quota ring:** remaining account usage and reset times, beside the context ring.
+- **Quota bolt:** a lightning bolt gradually empties beside the context ring; both share one menu.
 
 - **Local cache:** chats and recent usage appear at startup, with incremental background sync.
 - **Updates:** automatic checks; install only when you click.

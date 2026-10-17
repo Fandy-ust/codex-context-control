@@ -8,68 +8,47 @@ func quotaPeriod(_ window:QuotaWindow)->String {
     return L("{0}分钟",minutes)
 }
 
-@MainActor func quotaStatusImage(bucket:QuotaBucket?,stale:Bool)->NSImage {
-    let image=NSImage(size:NSSize(width:22,height:22));image.lockFocus()
-    let windows=[bucket?.primary,bucket?.secondary].compactMap{$0}.sorted{($0.windowDurationMins ?? Int.max)<($1.windowDurationMins ?? Int.max)}
-    for index in 0..<max(1,windows.count) {
-        let radius:CGFloat=index==0 ? 9.25:6.2
-        let track=NSBezierPath(ovalIn:NSRect(x:11-radius,y:11-radius,width:radius*2,height:radius*2));track.lineWidth=1.6
-        if windows.isEmpty{track.setLineDash([2,2],count:2,phase:0)}
-        NSColor.black.withAlphaComponent(0.22).setStroke();track.stroke()
-        if index<windows.count,windows[index].remainingPercent>0 {
-            let arc=NSBezierPath();arc.lineWidth=1.6;arc.lineCapStyle = .round
-            arc.appendArc(withCenter:NSPoint(x:11,y:11),radius:radius,startAngle:90,endAngle:90-windows[index].remainingPercent*3.6,clockwise:true)
-            NSColor.black.withAlphaComponent(stale ? 0.45:1).setStroke();arc.stroke()
-        }
+@MainActor func combinedStatusImage(progress:Double?,bucket:QuotaBucket?,stale:Bool)->NSImage {
+    let image=NSImage(size:NSSize(width:36,height:22));image.lockFocus()
+    managerStatusImage(progress:progress).draw(in:NSRect(x:0,y:0,width:22,height:22))
+    let remaining=[bucket?.primary,bucket?.secondary].compactMap{$0?.remainingPercent}.min().map{max(0,min(1,$0/100))}
+    let bolt=NSBezierPath();bolt.move(to:NSPoint(x:32,y:18.5));bolt.line(to:NSPoint(x:26,y:10));bolt.line(to:NSPoint(x:29.5,y:10));bolt.line(to:NSPoint(x:28.5,y:3.5));bolt.line(to:NSPoint(x:35,y:12));bolt.line(to:NSPoint(x:31.5,y:12));bolt.close()
+    let alpha:CGFloat=remaining == nil ? 0.35:stale ? 0.45:1
+    if let remaining,remaining>0 {
+        NSGraphicsContext.saveGraphicsState();bolt.addClip();NSColor.black.withAlphaComponent(alpha).setFill()
+        NSBezierPath(rect:NSRect(x:25,y:3.5,width:11,height:15*remaining)).fill();NSGraphicsContext.restoreGraphicsState()
     }
-    let symbol=NSImage(systemSymbolName:windows.isEmpty ? "questionmark":"bolt.fill",accessibilityDescription:nil)?.withSymbolConfiguration(.init(pointSize:windows.count>1 ? 7:9,weight:.semibold))
-    symbol?.draw(in:NSRect(x:7.5,y:6.5,width:7,height:9))
+    bolt.lineWidth=1.1;bolt.lineJoinStyle = .round
+    if remaining == nil{bolt.setLineDash([1.4,1.4],count:2,phase:0)}
+    NSColor.black.withAlphaComponent(alpha).setStroke();bolt.stroke()
     image.unlockFocus();image.isTemplate=true;return image
 }
 
-struct QuotaPopoverView:View {
+struct AccountQuotaSection:View {
     @ObservedObject var model:Controller
+    private var stale:Bool {!model.serviceAvailable || model.quota?.stale == true}
     private var windows:[QuotaWindow] {[model.selectedQuota?.primary,model.selectedQuota?.secondary].compactMap{$0}.sorted{($0.windowDurationMins ?? Int.max)<($1.windowDurationMins ?? Int.max)}}
-    private func color(_ window:QuotaWindow,_ index:Int)->Color {model.quota?.stale == true ? .gray:window.remainingPercent<=5 ? .red:window.remainingPercent<=20 ? .orange:index==0 ? .cyan:.purple}
     var body:some View {
-        VStack(alignment:.leading,spacing:18){
-            HStack {
-                VStack(alignment:.leading,spacing:4){Text(L("账户额度")).font(.system(size:15,weight:.semibold));Text("Codex").font(.caption).foregroundStyle(.secondary)}
-                Spacer()
-                Button{Task{await model.refreshQuota()}} label:{Image(systemName:"arrow.clockwise")}.buttonStyle(.plain).disabled(model.quotaRefreshing).help(L("刷新额度"))
-            }
+        VStack(alignment:.leading,spacing:8){
+            HStack(spacing:6){Image(systemName:"bolt.fill");Text(L("账户额度")).fontWeight(.medium);Spacer();if model.quotaRefreshing{ProgressView().controlSize(.mini)};Button{Task{await model.refreshQuota()}} label:{Image(systemName:"arrow.clockwise")}.buttonStyle(.plain).disabled(model.quotaRefreshing).help(L("刷新额度"))}.font(.system(size:12)).foregroundStyle(.secondary)
             if (model.quota?.buckets.count ?? 0)>1 {
                 Picker(L("额度类型"),selection:$model.selectedQuotaID){ForEach(model.quota?.buckets ?? []){bucket in Text(bucket.name).tag(bucket.id)}}.labelsHidden()
             }
-            if !windows.isEmpty {
-                HStack(spacing:22){
-                    ZStack {
-                        ForEach(Array(windows.enumerated()),id:\.offset){index,window in
-                            let size:CGFloat=index==0 ? 84:66
-                            Circle().stroke(.primary.opacity(0.08),lineWidth:5).frame(width:size,height:size)
-                            Circle().trim(from:0,to:window.remainingPercent/100).stroke(color(window,index),style:StrokeStyle(lineWidth:5,lineCap:.round)).rotationEffect(.degrees(-90)).frame(width:size,height:size)
-                        }
-                        Image(systemName:"bolt.fill").font(.system(size:18,weight:.medium)).foregroundStyle(.secondary)
-                    }.frame(width:90,height:90)
-                    VStack(alignment:.leading,spacing:12){ForEach(Array(windows.enumerated()),id:\.offset){index,window in
-                        VStack(alignment:.leading,spacing:3){Text(quotaPeriod(window)).font(.caption).foregroundStyle(.secondary);HStack(alignment:.firstTextBaseline,spacing:5){Text("\(Int(window.remainingPercent.rounded()))%").font(.system(size:25,weight:.semibold,design:.rounded)).monospacedDigit().foregroundStyle(color(window,index));Text(L("剩余")).font(.caption).foregroundStyle(.secondary)}}
-                    }}
-                }
-                if model.selectedQuota?.hasCredits == true || model.selectedQuota?.unlimitedCredits == true {Label(L("额外额度可用"),systemImage:"plus.circle").font(.caption).foregroundStyle(.secondary)}
-                Divider()
-                Text(L("重置时间")).font(.caption).foregroundStyle(.secondary)
-                VStack(alignment:.leading,spacing:10){ForEach(Array(windows.enumerated()),id:\.offset){index,window in
-                    HStack{Circle().fill(color(window,index)).frame(width:5,height:5);Text(quotaPeriod(window)).font(.caption);Spacer();if let reset=window.resetsAt{Text(Date(timeIntervalSince1970:Double(reset)),format:.dateTime.month(.abbreviated).day().hour().minute()).font(.caption).foregroundStyle(.secondary)}else{Text("—").foregroundStyle(.secondary)}}
-                }}
+            if windows.isEmpty {
+                Text(L(model.quotaRefreshing || model.quota?.loading == true ? "正在读取额度…":"额度暂不可用")).font(.system(size:12)).foregroundStyle(.secondary)
             } else {
-                VStack(spacing:12){Image(systemName:"circle.dashed").font(.system(size:40,weight:.ultraLight)).foregroundStyle(.tertiary);Text(L(model.quotaRefreshing || model.quota?.loading == true ? "正在读取额度…":"额度暂不可用")).font(.callout).foregroundStyle(.secondary)}.frame(maxWidth:.infinity,minHeight:140)
+                ForEach(Array(windows.enumerated()),id:\.offset){_,window in
+                    HStack(alignment:.firstTextBaseline,spacing:8){
+                        Text(quotaPeriod(window)).foregroundStyle(.secondary)
+                        Text(L("剩余 {0}%",Int(window.remainingPercent.rounded()))).monospacedDigit().fontWeight(.medium)
+                            .foregroundStyle(stale ? Color.secondary:window.remainingPercent<=5 ? .red:window.remainingPercent<=20 ? .orange:.primary)
+                        Spacer()
+                        if let reset=window.resetsAt{Text(Date(timeIntervalSince1970:Double(reset)),format:.dateTime.month(.abbreviated).day().hour().minute()).foregroundStyle(.tertiary).help(L("重置时间"))}
+                    }.font(.system(size:12))
+                }
+                if model.selectedQuota?.hasCredits == true || model.selectedQuota?.unlimitedCredits == true {Text(L("额外额度可用")).font(.system(size:11)).foregroundStyle(.secondary)}
             }
-            HStack(spacing:5){
-                if model.quotaRefreshing{ProgressView().controlSize(.mini)}
-                if model.quota?.stale == true{Text(L("上次记录，待刷新")).foregroundStyle(.orange)}
-                else if let updated=model.quota?.updatedAt{Text(L("更新于"));Text(Date(timeIntervalSince1970:Double(updated)/1000),style:.time)}
-                Spacer()
-            }.font(.system(size:10)).foregroundStyle(.tertiary)
-        }.padding(20).frame(width:320).fixedSize(horizontal:false,vertical:true)
+            if stale{Text(L("上次记录，待刷新")).font(.system(size:11)).foregroundStyle(.orange)}
+        }.padding(10).frame(maxWidth:.infinity,alignment:.leading).background(.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:9)).padding(.horizontal,4)
     }
 }
