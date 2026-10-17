@@ -19,6 +19,7 @@ let integrationError='',integrationPending=false;
 let detailsOpen=false,detailsSnapshot=null,detailsUnderlay='',statsLoading=false,statsError='',rawSelectedID=null,lastDetailBucket=null,smoothingTimer,deferredStats=null;
 let mainNotice='',mainNoticeError=false;
 let budgetInputError='',detailsEpoch=0,serviceAvailable=false,smoothingInteracting=false;
+let budgetText={};
 const trayFeedback=new Map(),traySaving=new Set();
 const editingDefaults=()=>settingsOpen?settingsTab==='defaults':view==='defaults';
 const useLegacyBudget=()=>editingDefaults();
@@ -71,7 +72,7 @@ function updateParticles(slider,value,maximum){
 }
 function budgetCard(value,model,options={}){
   if(options.defaults)return settingsBudgetCard(value,model,options);
-  return budgetView({value,model,limit:value?draftLimits(model,value.window,value.reserve):null,slider,selection:interactionId||'window',e,t,k,amount});
+  return budgetView({value,model,limit:value?draftLimits(model,value.window,value.reserve):null,slider,selection:interactionId||'window',budgetText,e,t,k,amount});
 }
 function settingsBudgetCard(value,model,{defaults=false}={}){
   if(!value||!model)return `<div class="state-card muted">${e(t('等待当前模型的原生窗口信息','Waiting for model window metadata'))}</div>`;
@@ -319,8 +320,8 @@ async function loadStats(force=false){
   finally{if(epoch===detailsEpoch){statsLoading=false;if(detailsOpen&&id===selected&&hover==null&&!smoothingInteracting&&repaint)render();}}
 }
 
-function selectChat(id){if(detailsOpen)closeDetails();mainNotice='';budgetInputError='';if(settingsOpen)closeSettings();selected=id;view='chat';draft=threadDraft(current());dirty=false;stats=null;statsJSON='';pinned=hover=null;render();}
-function loadDraft(){if(editingDefaults()){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else draft=threadDraft(current());dirty=false;}
+function selectChat(id){if(detailsOpen)closeDetails();mainNotice='';budgetInputError='';budgetText={};if(settingsOpen)closeSettings();selected=id;view='chat';draft=threadDraft(current());dirty=false;stats=null;statsJSON='';pinned=hover=null;render();}
+function loadDraft(){if(editingDefaults()){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else{const next=threadDraft(current());if(draft?.expectedRevision!==next?.expectedRevision){budgetText={};budgetInputError='';}draft=next;}dirty=false;}
 async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');state=next;serviceAvailable=true;if(!selected||!current())selected=state.threads[0]?.id??null;if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen&&!detailsOpen)refreshBudgetValidity();if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select')){if(view==='stats'&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if((!dirty&&!detailsOpen)||mode==='tray')render();else{document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
   try{
@@ -357,7 +358,7 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action==='preset-window'){setDraft('window',Number(button.dataset.value),editingDefaults()?defaultModel():current()?.modelMetadata);return;}
     if(action==='preset-ratio'){setDraft('compact',draft.window*Number(button.dataset.value)/100,editingDefaults()?defaultModel():current()?.modelMetadata);return;}
     if(action==='preset-compact-max'){setDraft('compact',draftLimits(current().modelMetadata,draft.window,draft.reserve).compact);return;}
-    if(action==='reload'){budgetInputError='';loadDraft();render();return;}
+    if(action==='reload'){budgetInputError='';budgetText={};loadDraft();render();return;}
     if(action==='defaults'){openSettings('defaults');return;}
     if(action==='copy-current'){const d=threadDraft(current());if(d){draft={...d,expectedRevision:state.newChatDefaults.revision};const limit=draftLimits(defaultModel(),Math.min(d.window,defaultModel()?draftLimits(defaultModel(),d.window).maximum:d.window));draft.window=Math.min(d.window,limit.maximum);draft.compact=Math.min(d.compact,limit.compact);dirty=true;render();}return;}
     if(action==='save-defaults'){await run('defaults',{usableWindow:draft.window,compact:draft.compact,expectedRevision:draft.expectedRevision},t('默认值已保存','Defaults saved'));dirty=false;await refresh();if(settingsOpen)render();return;}
@@ -407,6 +408,7 @@ root.addEventListener('change',async event=>{const target=event.target;try{
   if(target.id==='shortcut-enabled'){shortcutEnabled=target.checked;shortcutDirty=true;}
   if(target.id==='extension'){await run('extension',{enabled:target.checked});dirty=false;await refresh();render();}
   if(target.id==='reserve'||target.id==='retained'){
+    budgetText[target.id]=target.value;
     try{const value=tokenNumber(target.value,target.id==='reserve'?'下一轮预留':'必须保留量');draft={...draft,[target.id==='reserve'?'reserve':'retainedFloor']:value};dirty=true;budgetInputError='';updateDraftDOM();}
     catch(error){budgetInputError=error.message;refreshBudgetValidity();setNotice(error.message,true);}
   }
