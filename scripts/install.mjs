@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {cleanupOldRuntimes} from '../src/runtime-cleanup.mjs';
 import {L} from '../src/localization.mjs';
 import path from 'node:path';
 import os from 'node:os';
@@ -96,5 +97,6 @@ if(process.argv.includes('--uninstall')){
     const entry=ensureMenuBarEntry(installedApp);
     if(entry.error)throw new Error(entry.error);
   }
+  try{cleanupOldRuntimes({home:root,currentNode:nodeBinary});}catch{/* Cleanup must not roll back a successful installation. */}
   console.log(L('已安装：{0}\n菜单栏 Context Manager 圆环图标提供聊天概览和设置入口。照常打开原来的 Codex，预算控制会自动接入；首次安装后请正常重开一次客户端。\n请在 Codex 的 /hooks 中审核并信任新增 hook；安装程序不会生成信任记录。',installedApp));
 }

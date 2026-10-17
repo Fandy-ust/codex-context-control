@@ -1,6 +1,14 @@
 # Changes
 
 
+## 0.17.1 — Remove obsolete runtime files after updates
+
+- Replace app/code as before; now remove unused older bundled Node binaries and their obsolete licenses after a successful install.
+- Remove the disabled legacy patched core when no process is using it.
+- Defer in-use runtime cleanup until processes exit; retry at startup and every five minutes.
+- Preserve budgets, language, chat caches, user backups, unknown files, and symlink targets.
+
+
 ## 0.17.0 — Local chat cache and click-to-install updates
 
 - Discover local chats at startup without the 30-chat discovery limit; restore last usage from a persistent, bounded-tail cache.
