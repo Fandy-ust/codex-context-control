@@ -1,66 +1,73 @@
 # Context Manager
 
-<img src="macos/Assets/ContextManager.png" width="112" alt="Context Manager 图标">
+**English** | [简体中文](README.zh-CN.md)
 
-macOS 菜单栏里的 Codex 上下文管理器：按聊天调整预算，查看用量、缓存与费用估算。
+<img src="macos/Assets/ContextManager.png" width="112" alt="Context Manager icon">
 
-**0.15.6 · Apple Silicon · macOS 14+ · 测试版**
+Manage Codex context budgets from the macOS menu bar. Adjust each chat’s usable window, inspect input and cache usage, and review estimated API costs.
 
-## 演示视频
+**0.16.0 · Apple Silicon · macOS 14+ · English / 中文 · MIT**
+
+## Demo
 
 https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
-[下载 1080p 演示视频（MP4，约 175 MB）](https://github.com/Fandy-ust/codex-context-control/releases/download/demo-2026-10-17/context-manager-demo-1080p.mp4) · [演示发布页](https://github.com/Fandy-ust/codex-context-control/releases/tag/demo-2026-10-17)
+[Download the original 1080p demo (MP4, about 175 MB)](https://github.com/Fandy-ust/codex-context-control/releases/download/demo-2026-10-17/context-manager-demo-1080p.mp4) · [Demo release](https://github.com/Fandy-ust/codex-context-control/releases/tag/demo-2026-10-17)
 
-1920 × 1080 · 4 分 27 秒，展示菜单栏控制与上下文管理操作。
+1920 × 1080 · 4 min 27 sec. The inline player uses a smaller full-length 1080p encode. The video narration and captions are Chinese.
 
-## 下载与安装
+## Install
 
-[GitHub Releases / 测试包](https://github.com/Fandy-ust/codex-context-control/releases) · [完整安装指南](docs/INSTALL_MAC.md) · [更新记录](CHANGELOG.md)
+[Releases](https://github.com/Fandy-ust/codex-context-control/releases) · [Installation guide](docs/en/INSTALL_MAC.md) · [Changes](CHANGELOG.md)
 
-仓库现已公开，演示视频可直接下载。应用安装包目前仍以 Release 草稿供维护者检查，**尚未发布可公开下载的安装包，也未上架 Mac App Store**；视频发布不包含安装器。
+The repository is public. App installers are still prepared as maintainer-review drafts; a demo release is not an app installer. Draft assets are not public downloads. Build from source below or obtain a preview ZIP from the maintainer until an installer release is published.
 
-1. 获取 `Context-Manager-0.15.6-macos-arm64.zip` 并解压。
-2. 打开 **Install Context Manager.app**，点击「安装 / 更新」。
-3. 首次安装后完整退出并重开 Codex；菜单栏出现圆环图标。
-4. 点击圆环即可查看聊天或打开主窗口。Hook stats 可另外在 Codex 的 `/hooks` 中审核启用。
+1. Obtain `Context-Manager-0.16.0-macos-arm64.zip` and extract it.
+2. Open **Install Context Manager.app** and choose **Install / Update**.
+3. Fully quit and reopen Codex after the first installation or a bridge upgrade.
+4. Click the ring icon in the menu bar to open your chats and settings. Optionally review the Stop hook in Codex’s `/hooks` for Hook stats.
 
-无需安装 Node、npm、Homebrew 或 Xcode。需要事先安装 Codex / ChatGPT 桌面客户端；目前完整验证的 Codex 运行时是 **0.160.0**。
+No Node, npm, Homebrew, or Xcode is needed to use the installer. Install the Codex / ChatGPT desktop client first. Full integration is currently verified with **Codex 0.160.0**.
 
-测试包尚未使用 Developer ID 签名与 Apple 公证。确认来源后，按 macOS「隐私与安全」提示允许打开；使用者无需购买开发者会员。[系统提示与兼容性](docs/INSTALL_MAC.md)
+Preview packages are locally signed and are **not Developer ID signed or Apple notarized**. On a trusted preview, follow the macOS Privacy & Security prompt to allow opening. Users do not need a developer membership. [Installation details](docs/en/INSTALL_MAC.md)
 
-## 功能
+## Language
 
-- **逐聊天预算**：1K 精度，区分实际读回值与待应用目标。
-- **全局默认**：新聊天沿用设置；fork 继承父聊天，已有聊天独立保存。
-- **可选上下文拓展**：最高 920K，最晚 904K 压缩；关闭则遵守原生上限。
-- **上下文详情**：输入、缓存、费用估算、响应速度与压缩事件，共享图表时间轴。
-- **流畅交互**：后台聚合、缓存复用、鼠标事件合并；悬停时延后刷新。
-- **聊天概览**：运行中优先，其余按真实活动时间排列，保留最近完成的聊天。
-- **可选提前压缩修复**：独立开关及额外运行时下载，不占主安装包体积。
+Choose **Automatic (time zone)**, **中文**, or **English** inside the app or installer. Changes apply immediately and are saved locally.
 
-新安装默认关闭拓展；升级保留预算与开关。920K 是本地控制上限，并非所有服务端模型的容量保证。切换已运行的核心模式后需重开 Codex。
+Automatic mode uses Chinese for mainland China, Hong Kong, Macao, and Taiwan time-zone identifiers, and English elsewhere. It checks the zone name, not just the UTC offset: Singapore and Perth do not become Chinese merely because they are UTC+8. A manual selection always wins. Chat titles, model identifiers, and saved budgets are preserved.
 
-## 更新与卸载
+## Features
 
-运行新版安装器，选择「安装 / 更新」。安装器会替换并重启菜单栏应用；桥接更新需要重开 Codex。预算、开关与备份保留。下载的安装器可以删除。
+- **Per-chat budgets:** 1K steps, with actual observed capacity shown separately from a pending target.
+- **Global defaults:** new chats inherit your defaults; forks inherit their parent’s budget. Existing chats remain independent.
+- **Optional context extension:** up to 920K usable context, with compaction by 904K and at least 16K reserved for the next turn. Native limits apply when disabled.
+- **Context details:** input, cache reads, estimated cache writes, standard-rate API cost estimates, generation speed, and compaction events on aligned charts.
+- **Responsive charts:** background aggregation, incremental history processing, bounded caches, coalesced pointer updates, and deferred refresh during interaction.
+- **Recent chats:** running chats first, then real activity time; recently completed chats stay available.
+- **Optional early-compaction fix:** a separate toggle and optional patched runtime. The large runtime is not part of the main installer.
 
-卸载：再次打开安装器，选择「移除安装」。预算与备份保留。
+New installations leave extension disabled. Upgrades preserve budgets and toggles. The 920K ceiling is a local control limit, not a guarantee of every server-side model’s capacity. Switching a running core mode requires restarting Codex.
 
-## 文档
+## Update or uninstall
 
-| 使用 | 开发与维护 |
+Run a newer installer and choose **Install / Update**. The menu bar app is replaced and restarted; restart Codex to load a new bridge. Budgets, preferences, and backups are retained. You can delete the downloaded installer afterward.
+
+To uninstall, reopen the installer and choose **Uninstall**. Budgets and backups remain.
+
+## Documentation
+
+| Using the app | Development |
 | --- | --- |
-| [安装与更新](docs/INSTALL_MAC.md) | [开发指南](docs/DEVELOPMENT.md) |
-| [详细功能](docs/FEATURES.md) | [架构](docs/ARCHITECTURE.md) |
-| [上下文拓展](docs/CONTEXT_EXTENSION.md) | [打包与发布](docs/RELEASING.md) |
-| [隐私](docs/PRIVACY.md) | [图标维护](macos/Assets/README.md) |
-| [图表与性能](docs/CHART-PERFORMANCE.md) | [性能调度](docs/PERFORMANCE.md) |
-| [更新记录](CHANGELOG.md) | [压力测试与修复](docs/STRESS_TEST_2026-10-17.md) |
+| [Installation](docs/en/INSTALL_MAC.md) | [Development](docs/en/DEVELOPMENT.md) |
+| [Usage and language](docs/en/USAGE.md) | [Architecture](docs/en/ARCHITECTURE.md) |
+| [Context extension](docs/en/CONTEXT_EXTENSION.md) | [Packaging and releases](docs/en/RELEASING.md) |
+| [Privacy](docs/en/PRIVACY.md) | [Localization](docs/en/LOCALIZATION.md) |
+| [Chinese documentation](README.zh-CN.md) | [Research and validation index](docs/en/README.md) |
 
-## 本地开发
+## Build locally
 
-开发需要 Node.js 22.13+ 与 Apple Command Line Tools。
+Development requires Node.js 22.13+ and Apple Command Line Tools.
 
 ```sh
 npm ci --ignore-scripts
@@ -69,8 +76,12 @@ npm run build:mac
 npm run install:local
 ```
 
-打包：提交变更并保持工作树干净，运行 `npm run package:mac -- --release`。GitHub Actions 的 **macOS installer** 工作流也可构建并验证安装包；它不会自动发布 Release。
+For a release build, commit changes and run `npm run package:mac -- --release` from a clean tree. The **macOS installer** GitHub Actions workflow can also build and validate the package; it does not publish a Release automatically.
 
-安装包包含固定版本、校验过的 Node 及生产依赖，不包含账号凭据、聊天记录、个人配置或大型修复核心。
+Packages include a pinned, checksummed Node runtime and production dependencies. They do not contain account credentials, chat history, personal settings, or the large optional patched runtime.
 
-这是独立工具，与 OpenAI 无隶属关系。项目保留所有权利，未授予公开开源或再分发许可；第三方组件按各自许可证提供。
+## License
+
+[MIT](LICENSE). You may use, modify, distribute, and sell copies subject to the copyright and permission notice requirements. [Third-party components](THIRD_PARTY_NOTICES.md) keep their own licenses.
+
+This is an independent project, not affiliated with OpenAI.

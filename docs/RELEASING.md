@@ -1,5 +1,7 @@
 # 打包与发布
 
+[English](en/RELEASING.md) | **简体中文** · [首页](../README.zh-CN.md)
+
 ## 测试安装包
 
 ```sh
@@ -26,7 +28,7 @@ npm run package:mac -- --release
 
 GitHub 的 **macOS installer** workflow_dispatch 工作流先测试、打包，再在没有可用 PATH 开发工具的隔离环境完成安装和卸载验证，最后上传产物。不会自动创建公开 Release。
 
-仓库保持私有；正式发布前由所有者确认分发授权范围。草稿 Release 可以用于所有者复核，未发布的草稿并不等于所有只读协作者都能下载。
+仓库已公开，原创代码使用 MIT 许可；发布安装包与发布视频分别进行。草稿 Release 可以用于所有者复核，未发布的草稿并不等于所有只读协作者都能下载。
 
 ## 签名、公证
 

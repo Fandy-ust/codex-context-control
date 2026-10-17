@@ -25,16 +25,19 @@ const iconSource=path.join(built,'Contents/Resources',iconName+'.icns');
 const output=path.join(repo,'build/distribution'),app=path.join(output,'Install Context Manager.app'),resources=path.join(app,'Contents/Resources'),payload=path.join(resources,'payload');
 fs.rmSync(app,{recursive:true,force:true});fs.mkdirSync(path.join(app,'Contents/MacOS'),{recursive:true});fs.mkdirSync(payload,{recursive:true});
 fs.copyFileSync(iconSource,path.join(resources,iconName+'.icns'));
-fs.mkdirSync(path.join(payload,'src'));for(const name of fs.readdirSync(path.join(repo,'src'))){if(name.endsWith('.mjs')||name==='api-prices.json')fs.copyFileSync(path.join(repo,'src',name),path.join(payload,'src',name));}
+fs.copyFileSync(path.join(repo,'src/locales/en.json'),path.join(resources,'localization-en.json'));
+fs.mkdirSync(path.join(payload,'src/locales'),{recursive:true});fs.copyFileSync(path.join(repo,'src/locales/en.json'),path.join(payload,'src/locales/en.json'));
+fs.mkdirSync(path.join(payload,'src'),{recursive:true});for(const name of fs.readdirSync(path.join(repo,'src'))){if(name.endsWith('.mjs')||name==='api-prices.json')fs.copyFileSync(path.join(repo,'src',name),path.join(payload,'src',name));}
 fs.mkdirSync(path.join(payload,'runtime-patches'));const patchPin=JSON.parse(fs.readFileSync(path.join(repo,'runtime-patches/manifest.json')));for(const name of ['manifest.json','LICENSE','CODEX-NOTICE',patchPin.baseVersion+'.patch'])fs.copyFileSync(path.join(repo,'runtime-patches',name),path.join(payload,'runtime-patches',name));
 const production=spawnSync('npm',['ls','--omit=dev','--all','--parseable'],{cwd:repo,encoding:'utf8'});if(production.status!==0)throw Error('Production dependencies are incomplete; run npm ci first');
 fs.mkdirSync(path.join(payload,'node_modules'));for(const directory of production.stdout.trim().split('\n').filter(p=>p!==repo.replace(/\/$/,''))){const relative=path.relative(repo,directory);if(!relative.startsWith('node_modules'+path.sep)||fs.lstatSync(directory).isSymbolicLink())throw Error('Unsupported production dependency path');fs.cpSync(directory,path.join(payload,relative),{recursive:true});} 
-for(const file of ['package.json','package-lock.json','LICENSE'])fs.copyFileSync(path.join(repo,file),path.join(payload,file));
+for(const file of ['package.json','package-lock.json','LICENSE','THIRD_PARTY_NOTICES.md'])fs.copyFileSync(path.join(repo,file),path.join(payload,file));
 fs.mkdirSync(path.join(payload,'scripts'));for(const name of ['install.mjs','install-patched-runtime.mjs'])fs.copyFileSync(path.join(repo,'scripts',name),path.join(payload,'scripts',name));
 fs.mkdirSync(path.join(payload,'build'));fs.cpSync(built,path.join(payload,'build/Codex Context Control.app'),{recursive:true});
+fs.cpSync(path.join(repo,'third-party-licenses'),path.join(payload,'third-party-licenses'),{recursive:true});
 fs.mkdirSync(path.join(payload,'vendor'));fs.copyFileSync(path.join(nodeRoot,'bin/node'),path.join(payload,'vendor/node'));fs.chmodSync(path.join(payload,'vendor/node'),0o755);fs.copyFileSync(path.join(nodeRoot,'LICENSE'),path.join(payload,'vendor/Node-LICENSE.txt'));
-run('xcrun',['swiftc','-parse-as-library','-O','-target','arm64-apple-macos14.0','packaging/Installer.swift','-o',path.join(app,'Contents/MacOS/Installer'),'-framework','SwiftUI','-framework','AppKit','-framework','CryptoKit']);
-fs.writeFileSync(path.join(app,'Contents/Info.plist'),`<?xml version="1.0"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.codex-context-control.installer</string><key>CFBundleName</key><string>Install Context Manager</string><key>CFBundleExecutable</key><string>Installer</string><key>CFBundleIconFile</key><string>${iconName}</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>${version}</string><key>LSMinimumSystemVersion</key><string>14.0</string></dict></plist>`);
+run('xcrun',['swiftc','-parse-as-library','-O','-target','arm64-apple-macos14.0','macos/Localization.swift','packaging/Installer.swift','-o',path.join(app,'Contents/MacOS/Installer'),'-framework','SwiftUI','-framework','AppKit','-framework','CryptoKit']);
+fs.writeFileSync(path.join(app,'Contents/Info.plist'),`<?xml version="1.0"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.codex-context-control.installer</string><key>CFBundleName</key><string>Install Context Manager</string><key>CFBundleExecutable</key><string>Installer</string><key>CFBundleIconFile</key><string>${iconName}</string><key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>${version}</string><key>LSMinimumSystemVersion</key><string>14.0</string></dict></plist>`);
 const identity=process.env.CONTEXT_CONTROL_SIGN_IDENTITY;
 if(identity){
  run('/usr/bin/codesign',['--force','--options','runtime','--timestamp','--entitlements','packaging/node-entitlements.plist','--sign',identity,path.join(payload,'vendor/node')]);
@@ -46,7 +49,26 @@ function scan(directory){for(const entry of fs.readdirSync(directory,{withFileTy
 scan(payload);fs.writeFileSync(path.join(resources,'payload-manifest.json'),JSON.stringify({version,sourceRevision,dirtyWorkingTree:dirty(),arch:'arm64',nodeVersion:pin.version,developerIDSigned:!!identity,files},null,2)+'\n');
 run('/usr/bin/codesign',['--force',...(identity?['--options','runtime','--timestamp']:[]),'--sign',identity||'-',app]);run('/usr/bin/codesign',['--verify','--strict','--deep',app]);
 const zip=path.join(output,`Context-Manager-${version}-macos-arm64.zip`);fs.rmSync(zip,{force:true});run('/usr/bin/ditto',['-c','-k','--sequesterRsrc','--keepParent',app,zip]);
-fs.writeFileSync(path.join(output,'README-FIRST.txt'),`Context Manager ${version} — Apple Silicon 测试包\n\n1. 先安装 Codex / ChatGPT 桌面客户端。\n2. 打开 Install Context Manager.app，点击安装 / 更新。无需 Node、npm、Homebrew 或 Xcode。\n3. 完整退出并重开 Codex，菜单栏将出现圆环图标。\n4. Hook stats 如需显示，在 Codex 的 /hooks 中审核新增 hook。\n\n当前包尚未 Apple 公证。确认来源后，如 macOS 阻止打开，请按系统设置 → 隐私与安全 → 仍要打开操作。不要关闭系统安全功能。\n安装器可在完成后删除；主程序不依赖下载目录。可再次打开安装器移除安装。\n本包不包含大型可选修复核心，也不包含作者的账号、聊天记录或配置。\n项目仓库保持私有，仅向所有者授权的测试者提供。\nhttps://github.com/Fandy-ust/codex-context-control\n`);
+fs.writeFileSync(path.join(output,'README-FIRST.txt'),`Context Manager ${version} — Apple Silicon preview / 测试版
+
+English | 中文
+
+1. Install Codex / ChatGPT Desktop first.
+2. Extract the ZIP, open Install Context Manager.app, and choose Install / Update.
+3. Fully quit and reopen Codex after initial installation or a bridge upgrade.
+4. Click the ring icon in the menu bar. Choose Automatic (time zone), 中文, or English in the app or installer.
+5. Optionally review the Stop hook in Codex’s /hooks for Hook stats.
+
+No Node, npm, Homebrew, Xcode, or administrator password is required. Budgets, language, and feature preferences are preserved on updates. The installer can be deleted after installation or reopened to uninstall.
+
+This preview is locally signed, not Developer ID signed or Apple notarized. If a trusted download is blocked, follow System Settings → Privacy & Security → Open Anyway. Do not disable system security.
+
+Original project code is MIT licensed. Third-party components retain their licenses. This package excludes credentials, chat history, personal configuration, and the large optional patched Codex runtime.
+
+中文：先安装 Codex 桌面客户端，解压后打开安装器，选择「安装 / 更新」，再完整退出并重开 Codex。菜单栏圆环提供设置入口，App 与安装器均可选择「自动（按时区）／中文／English」。更新保留预算、语言和开关。本测试包尚未 Apple 公证；确认来源后按「隐私与安全」提示允许打开。项目使用 MIT 许可，第三方组件保留各自许可。
+
+https://github.com/Fandy-ust/codex-context-control
+`);
 run('/usr/bin/zip',['-q','-j',zip,path.join(output,'README-FIRST.txt')]);
 fs.writeFileSync(zip+'.sha256',hash(zip)+'  '+path.basename(zip)+'\n');
 if(process.argv.includes('--release')&&dirty())throw Error('Source changed during packaging; do not publish this artifact');

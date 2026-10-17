@@ -3,6 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {L} from './localization.mjs';
 import {Peer,request} from './ipc.mjs';
 import {root,socketPath,ensureRoot,atomicJSON} from './paths.mjs';
 import {compareThreadActivity,mergeActivity} from './thread-activity.mjs';
@@ -51,9 +52,9 @@ export async function startDaemon() {
   function extensionState(fix=runtimeFix.status()){return extension.status([...bridges.values()],{compatible:fix.originalVersion==='0.160.0',available:!!nativeDefaultModel()});}
   function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:'extension_pending',message:(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
   function newChatDefaults(){return clampNewChatDefaults(store.data.newChatDefaults||(extension.enabled()?initialNewChatDefaults:nativeNewChatDefaults),defaultModel());}
-  function state(){store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version:'0.15.6',bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity)};}
+  function state(){store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version:'0.16.0',bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity)};}
   async function handle(peer,op,p) {
-    if(op==='ping')return {ok:true,version:'0.15.6'};
+    if(op==='ping')return {ok:true,version:'0.16.0'};
     if(op==='state')return state();
     if(op==='newChatBudget'){const m=runtimeModel(null,p.model,p.contextCeiling??true);if(!m)throw Error('等待当前模型的原生窗口信息');return {policy:policyForNewChat(newChatDefaults(),m)};}
     if(op==='setNewChatDefaults'){
@@ -138,10 +139,10 @@ export async function startDaemon() {
       const found=Object.values(store.data.threads).find(t=>t.id===p.sessionId&&(!p.turnId||t.turnId===p.turnId));
       const t=found?publicThread(found.id):null;
       if(!t)return {};
-      const policy=store.data.policies[t.id];const fmt=n=>Number.isSafeInteger(n)?n.toLocaleString('en-US'):'待观测';
-      const lines=[`Context Control｜实际窗口 ${fmt(t.observedWindow)}｜最近请求 ${fmt(t.lastUsage?.totalTokens)}（占用估算）`];
-      if(policy){const budget=savedBudget(policy,modelFor(t.id,t.model));lines.push(`目标可用 ${fmt(budget?.usableWindow)}｜压缩 ${budget?.compactPercent??'待识别'}%（${fmt(budget?.compact)}）｜${t.message||t.phase||'等待接入'}`);}
-      else lines.push('未设置该聊天的独立预算。');
+      const policy=store.data.policies[t.id];const fmt=n=>Number.isSafeInteger(n)?n.toLocaleString('en-US'):L('待观测');
+      const lines=[L('Context Control｜实际窗口 {0}｜最近请求 {1}（占用估算）',fmt(t.observedWindow),fmt(t.lastUsage?.totalTokens))];
+      if(policy){const budget=savedBudget(policy,modelFor(t.id,t.model));lines.push(L('目标可用 {0}｜压缩 {1}%（{2}）｜{3}',fmt(budget?.usableWindow),budget?.compactPercent??L('待识别'),fmt(budget?.compact),L(t.message||t.phase||'等待接入')));}
+      else lines.push(L('未设置该聊天的独立预算。'));
       return {systemMessage:lines.join('\n')};
     }
     throw new Error('不支持的操作');

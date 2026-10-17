@@ -167,7 +167,7 @@ CONTEXT_CONTROL_TEST_INSTALL=1 node --test test/install.test.mjs
 
 进一步阅读：[架构与接入](ARCHITECTURE.md) · [使用说明](USAGE.md) · [开发和发布](DEVELOPMENT.md) · [本机验证](VALIDATION.md) · [隐私与本地接口](PRIVACY.md) · [后续路线](ROADMAP.md)
 
-这是独立的实验性本地工具，与 OpenAI 无隶属关系。仓库当前为私有，未授予开源使用许可。
+这是独立的实验性本地工具，与 OpenAI 无隶属关系。仓库已公开，原创代码使用 MIT 许可证开放；第三方组件保留各自许可。
 
 ## 上下文详情与响应图表（0.6）
 

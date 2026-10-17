@@ -20,12 +20,12 @@ struct TimelineBucketPresentation:Sendable {
     init(_ bucket:TimelineBucket){
         func amount(_ value:Double?)->String{value.map{$0>=1000 ? String(format:"%.1fK",$0/1000):String(format:"%.0f",$0)} ?? "—"}
         speed=bucket.speed.map{String(format:"%.1f t/s",$0)} ?? "—"
-        speedHeading=bucket.speed.map{String(format:"区间 %.1f tokens/s",$0)} ?? "无计时"
+        speedHeading=bucket.speed.map{String(format:L("区间 %.1f tokens/s"),$0)} ?? L("无计时")
         input=amount(bucket.inputMean);cache=amount(bucket.cacheMean);output=bucket.outputSamples>0 ? amount(Double(bucket.outputTokens)):"—"
-        counts="\(bucket.responses) 次响应 · \(bucket.measured) 次计时"
-        events="最终 \(bucket.finals) · 用户输入 \(bucket.users) · 压缩 \(bucket.compactions) · 缓存零值 \(bucket.zeroCaches)"
+        counts=L("{0} 次响应 · {1} 次计时", bucket.responses, bucket.measured)
+        events=L("最终 {0} · 用户输入 {1} · 压缩 {2} · 缓存零值 {3}", bucket.finals, bucket.users, bucket.compactions, bucket.zeroCaches)
         models=bucket.models.map{modelDisplayName($0)}.joined(separator:" · ")
-        minimumCache="区间最低缓存：\(bucket.cacheMinimum.map{String($0)} ?? "—") tokens"
+        minimumCache=L("区间最低缓存：{0} tokens", bucket.cacheMinimum.map{String($0)} ?? "—")
     }
 }
 struct PreparedTimeline:Sendable {

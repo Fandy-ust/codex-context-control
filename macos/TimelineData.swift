@@ -15,8 +15,8 @@ struct TimelineBucket:Identifiable,Sendable {
     let outputTokens:Int;let outputSamples:Int;let finals:Int;let users:Int;let compactions:Int;let zeroCaches:Int
     let models:[String]
     var title:String {
-        if let firstResponse,let lastResponse{return firstResponse==lastResponse ? "响应 #\(firstResponse)":"响应 #\(firstResponse)–#\(lastResponse)"}
-        return "对话事件"
+        if let firstResponse,let lastResponse{return firstResponse==lastResponse ? L("响应 #{0}", firstResponse):L("响应 #{0}–#{1}", firstResponse, lastResponse)}
+        return L("对话事件")
     }
 }
 private struct TimelineAccumulator {
@@ -73,7 +73,7 @@ struct TimelineData:Sendable {
     init(responses:[ContextStatistics.Response],events:[ContextStatistics.TimelineEvent],revision:String,period:Int=0,limit:Int=120) throws {
         self.revision=revision;self.period=max(0,period);responseCount=responses.count
         measuredCount=responses.reduce(0){$0+($1.tokensPerSecond == nil ? 0:1)}
-        let output=responses.map{TimelineEntry(id:$0.id,position:$0.position,kind:"响应 #\($0.index) · \($0.kind)",eventType:$0.eventType,response:$0,event:nil)}
+        let output=responses.map{TimelineEntry(id:$0.id,position:$0.position,kind:L("响应 #{0} · {1}", $0.index, L($0.kind)),eventType:$0.eventType,response:$0,event:nil)}
         let inputEvents=events.map{TimelineEntry(id:$0.id,position:$0.position,kind:$0.kind,eventType:$0.eventType,response:nil,event:$0)}
         let entries=(output+inputEvents).sorted{$0.position<$1.position};self.entries=entries
         bucketSize=max(1,Int(ceil(Double(max(responses.count,events.isEmpty ? 0:1))/Double(max(1,limit)))))

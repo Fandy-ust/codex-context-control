@@ -23,6 +23,6 @@ import Foundation
  }
 }
 `);
- const binary=path.join(temp,'check');let r=spawnSync('xcrun',['swiftc','-parse-as-library',path.join(temp,'Models.swift'),path.join(temp,'Menu.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:30000});assert.equal(r.status,0,r.stderr);r=spawnSync(binary,[],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);
+ const binary=path.join(temp,'check');let r=spawnSync('xcrun',['swiftc','-parse-as-library',path.join(repo,'macos/Localization.swift'),path.join(temp,'Models.swift'),path.join(temp,'Menu.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:30000});assert.equal(r.status,0,r.stderr);r=spawnSync(binary,[],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);
  }finally{fs.rmSync(temp,{recursive:true,force:true});}
 });

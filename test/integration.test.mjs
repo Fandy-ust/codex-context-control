@@ -69,7 +69,12 @@ test('real runtime through the actual bridge preserves history, tools, permissio
     await request('setPolicy',{id:a,policy:{window:usable.window,compact:usable.compact},apply:true});
     await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='awaiting_runtime_confirmation'));
     assert.equal(await turn(a,'usable window matches the number entered'),700000);
+    fs.writeFileSync(path.join(control,'language.json'),JSON.stringify({selection:'zh'}));
     const hook=await request('hook',{sessionId:a});assert.match(hook.systemMessage,/目标可用 700,000/);assert.match(hook.systemMessage,/压缩 90%（630,000）/);
+    fs.writeFileSync(path.join(control,'language.json'),JSON.stringify({selection:'en'}));
+    const englishHook=await request('hook',{sessionId:a});assert.match(englishHook.systemMessage,/Target usable 700,000/);assert.match(englishHook.systemMessage,/compaction 90% \(630,000\)/);
+    assert.ok(!englishHook.systemMessage.includes('目标可用'));
+    fs.rmSync(path.join(control,'language.json'));
     const intermediate=await request('setPolicy',{id:a,policy:{window:447369,compact:382000},apply:true});
     await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.revision===intermediate.policy.revision&&t.phase==='awaiting_runtime_confirmation'));
     const requestCount=fixture.requests.length;

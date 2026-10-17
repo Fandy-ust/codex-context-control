@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import {L} from './localization.mjs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {request} from './ipc.mjs';
@@ -17,7 +18,7 @@ try{
     const event=JSON.parse(text);if(event.hook_event_name!=='Stop'){process.stdout.write('{}\n');}
     else {let answer={};try{answer=await request('hook',{sessionId:event.session_id,turnId:event.turn_id},500);}catch{}process.stdout.write(JSON.stringify(answer)+'\n');}
   }else if(command==='start'){
-    await ensureDaemon();process.stdout.write('本地控制服务已启动。\n');
+    await ensureDaemon();process.stdout.write(L('本地控制服务已启动。\n'));
   }else if(command==='list'){
     process.stdout.write(JSON.stringify(await request('state'),null,2)+'\n');
   }else if(command==='set-usable'){
@@ -34,8 +35,8 @@ try{
     let version='unavailable';try{version=spawnSync(realBinary(),['--version'],{encoding:'utf8'}).stdout.trim();}catch{}
     const state=service?await request('state'):{bridgeCount:0,threads:[]};
     const settings=readJSON(path.join(root,'settings.json'),{});
-    console.log(JSON.stringify({version:'0.15.6',node:process.version,runtime:version,runtimeSupported:runtimeSupported(version),verifiedVersions,service,connectedBridges:state.bridgeCount,serviceVersion:state.version??null,loadedBridgeVersions:(state.bridges||[]).map(b=>b.version),automaticStartup:process.platform==='darwin'?automaticStartupStatus():null,
+    console.log(JSON.stringify({version:'0.16.0',node:process.version,runtime:version,runtimeSupported:runtimeSupported(version),verifiedVersions,service,connectedBridges:state.bridgeCount,serviceVersion:state.version??null,loadedBridgeVersions:(state.bridges||[]).map(b=>b.version),automaticStartup:process.platform==='darwin'?automaticStartupStatus():null,
       runtimeFix:state.runtimeFix??null,contextExtension:state.contextExtension??null,newChatDefaults:state.newChatDefaults??null,newChatDefaultsPending:state.newChatDefaultsPending??null,observedChats:state.threads.length,installRoot:root,hookInstalled:!!settings.hookCommand,menuBar:menuBarStatus(),
-      activation:state.bridgeCount?'connected':'照常打开 Codex；首次安装或更新后请正常重开一次客户端。'},null,2));
+      activation:state.bridgeCount?'connected':L('照常打开 Codex；首次安装或更新后请正常重开一次客户端。')},null,2));
   }else throw new Error('支持 doctor、start、list、set-usable、set（底层配置）、hook');
-}catch(error){if(command==='hook'){process.stdout.write('{}\n');}else{process.stderr.write(error.message+'\n');process.exitCode=1;}}
+}catch(error){if(command==='hook'){process.stdout.write('{}\n');}else{process.stderr.write(L(error.message)+'\n');process.exitCode=1;}}

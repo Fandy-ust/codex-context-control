@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {L} from '../src/localization.mjs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -40,7 +41,7 @@ if(process.argv.includes('--uninstall')){
   const settings=readJSON(path.join(root,'settings.json'),{});if(settings.hookCommand)editHook(settings.hookCommand,true);
   const connection=readJSON(path.join(root,'connection.json'),{});if(connection.pid)try{process.kill(connection.pid,'SIGTERM');}catch{}
   for(const app of [installedApp,launcherApp])fs.rmSync(app,{recursive:true,force:true});
-  console.log('已移除自动接入、应用和本项目的 hook；保留预算、备份与代码目录。现有运行时将在正常退出时关闭。');
+  console.log(L('已移除自动接入、应用和本项目的 hook；保留预算、备份与代码目录。现有运行时将在正常退出时关闭。'));
 }else{
   if(process.platform!=='darwin')throw new Error('首版安装程序面向 macOS；核心测试可在 Node.js 上运行。');
   const binary=realBinary();if(!fs.existsSync(binary))throw new Error('未找到 Codex 二进制文件');
@@ -93,5 +94,5 @@ if(process.argv.includes('--uninstall')){
     const entry=ensureMenuBarEntry(installedApp);
     if(entry.error)throw new Error(entry.error);
   }
-  console.log(`已安装：${installedApp}\n菜单栏 Context Manager 圆环图标提供聊天概览和设置入口。照常打开原来的 Codex，预算控制会自动接入；首次安装后请正常重开一次客户端。\n请在 Codex 的 /hooks 中审核并信任新增 hook；安装程序不会生成信任记录。`);
+  console.log(L('已安装：{0}\n菜单栏 Context Manager 圆环图标提供聊天概览和设置入口。照常打开原来的 Codex，预算控制会自动接入；首次安装后请正常重开一次客户端。\n请在 Codex 的 /hooks 中审核并信任新增 hook；安装程序不会生成信任记录。',installedApp));
 }

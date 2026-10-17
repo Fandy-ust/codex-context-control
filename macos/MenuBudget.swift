@@ -18,9 +18,9 @@ struct MenuBudgetDraft {
     private var ratioDenominator:Int
 
     init(chat:Chat) throws {
-        guard chat.modelMetadata?.context_catalog_ready != false else{throw BudgetInputError(message:chat.connected ? "请重开 Codex，使上下文设置生效":"请先在 Codex 打开此聊天")}
+        guard chat.modelMetadata?.context_catalog_ready != false else{throw BudgetInputError(message:chat.connected ? L("请重开 Codex，使上下文设置生效"):L("请先在 Codex 打开此聊天"))}
         guard let percent=chat.modelMetadata?.effective_context_window_percent,
-              let maximum=chat.modelMetadata?.max_context_window,(1...100).contains(percent),maximum>=2000,maximum<Int.max/20000 else{throw BudgetInputError(message:"等待模型信息后即可调整")}
+              let maximum=chat.modelMetadata?.max_context_window,(1...100).contains(percent),maximum>=2000,maximum<Int.max/20000 else{throw BudgetInputError(message:L("等待模型信息后即可调整"))}
         chatID=chat.id;model=chat.model;revision=chat.policy?.revision ?? 0
         effectivePercent=percent;maximumRawWindow=maximum
         reserve=chat.policy?.reserve ?? 16000;retainedFloor=chat.policy?.retainedFloor ?? 0
@@ -45,7 +45,7 @@ struct MenuBudgetDraft {
         ratioNumerator=Int(compactK);ratioDenominator=Int(windowK)
     }
     func policy() throws -> [String:Any] {
-        guard Int(compactK)<=maximumCompactK else{throw BudgetInputError(message:"压缩阈值需保留下一轮输入余量")}
+        guard Int(compactK)<=maximumCompactK else{throw BudgetInputError(message:L("压缩阈值需保留下一轮输入余量"))}
         let preview=try BudgetMath.sliderPreview(windowK:Int(windowK),compactK:Int(compactK),effectivePercent:effectivePercent,maximumRawWindow:maximumRawWindow)
         return ["window":preview.rawWindow,"compact":preview.compact,"reserve":reserve,"retainedFloor":retainedFloor,"scope":"total"]
     }

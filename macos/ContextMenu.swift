@@ -72,20 +72,20 @@ private struct MenuRowFrames:PreferenceKey {
     var body:some View {
         VStack(alignment:.leading,spacing:8){
             Button(action:openSettings){
-                HStack{Text("打开主窗口");Spacer();Text("⌘M").foregroundStyle(.tertiary)}
+                HStack{Text(L("打开主窗口"));Spacer();Text("⌘M").foregroundStyle(.tertiary)}
                     .font(.system(size:13)).padding(.horizontal,10).padding(.vertical,7).contentShape(Rectangle())
             }.buttonStyle(ContextMenuButtonStyle()).keyboardShortcut("m")
             Divider().padding(.horizontal,8)
             ScrollView {
                 VStack(alignment:.leading,spacing:2){
-                    sectionLabel("正在运行",count:running.count)
+                    sectionLabel(L("正在运行"),count:running.count)
                     if running.isEmpty {
-                        Text(model.serviceAvailable ? "暂无运行中的聊天":"正在连接控制服务…").font(.system(size:12)).foregroundStyle(.secondary).padding(10)
+                        Text(model.serviceAvailable ? L("暂无运行中的聊天"):L("正在连接控制服务…")).font(.system(size:12)).foregroundStyle(.secondary).padding(10)
                     }
                     ForEach(running){chat in chatRow(chat)}
                     if !recent.isEmpty {
                         Divider().padding(.horizontal,8).padding(.vertical,6)
-                        sectionLabel("近期聊天",count:recent.count)
+                        sectionLabel(L("近期聊天"),count:recent.count)
                         ForEach(recent){chat in chatRow(chat)}
                     }
                 }
@@ -105,7 +105,7 @@ private struct MenuRowFrames:PreferenceKey {
                 Circle().fill(model.serviceAvailable && model.bridgeCount>0 ? Color.green:Color.gray).frame(width:6,height:6)
                 Text("Context Manager")
                 Spacer()
-                Button("退出",action:quit).buttonStyle(.plain).help("退出菜单栏入口")
+                Button(L("退出"),action:quit).buttonStyle(.plain).help(L("退出菜单栏入口"))
             }.font(.system(size:11)).foregroundStyle(.secondary).padding(.horizontal,10).padding(.vertical,4)
         }.padding(8).frame(width:400,height:model.contextMenuHeight)
     }
@@ -150,7 +150,7 @@ private struct MenuRowFrames:PreferenceKey {
         ZStack {
             if let draft {
                 Button{openChat(chat.id)}label:{Color.clear.contentShape(Rectangle())}
-                    .buttonStyle(.plain).accessibilityLabel("打开 \(chat.title) 的主面板")
+                    .buttonStyle(.plain).accessibilityLabel(L("打开 {0} 的主面板", chat.title))
                 editor(draft)
             }else{information}
         }.frame(height:50).contentShape(Rectangle())
@@ -160,7 +160,7 @@ private struct MenuRowFrames:PreferenceKey {
             .onChange(of:chat.modelMetadata){_,_ in cancel();if isEditing{begin()}}
             .onChange(of:chat.policy){_,_ in if isEditing && !dragging && !saving && draft?.edited != true{draft=try? MenuBudgetDraft(chat:chat)}}
             .onChange(of:saving){_,busy in if !busy && isEditing{begin()}}
-            .accessibilityAction(named:"调节预算"){begin()}
+            .accessibilityAction(named:L("调节预算")){begin()}
             .onDisappear{if dragging{dragChanged(false)}}
     }
     private var information:some View {
@@ -169,24 +169,24 @@ private struct MenuRowFrames:PreferenceKey {
                 Text(chat.title).font(.system(size:14,weight:.medium)).lineLimit(1).truncationMode(.middle).frame(maxWidth:.infinity,alignment:.leading)
                 VStack(alignment:.trailing,spacing:3){
                     ContextUsageRing(fraction:chat.contextFraction,stale:stale)
-                    Text(chat.contextFraction != nil ? "\(shortTokens(chat.lastUsage?.totalTokens)) / \(shortTokens(chat.observedWindow))\(stale ? " · 上次":"")":"尚无用量")
+                    Text(chat.contextFraction != nil ? "\(shortTokens(chat.lastUsage?.totalTokens)) / \(shortTokens(chat.observedWindow))\(stale ? L(" · 上次"):"")":L("尚无用量"))
                         .font(.system(size:9)).foregroundStyle(.secondary)
                 }.monospacedDigit().frame(width:100,alignment:.trailing)
             }.padding(.horizontal,10).contentShape(Rectangle())
-        }.buttonStyle(.plain).help("\(chat.title) · \(chat.contextPercentage)；悬停调节预算，点击打开设置")
-            .accessibilityLabel("\(chat.title)，上下文 \(chat.contextPercentage)\(stale ? "，上次读回":"")，打开设置")
+        }.buttonStyle(.plain).help(L("{0} · {1}；悬停调节预算，点击打开设置", chat.title, chat.contextPercentage))
+            .accessibilityLabel(L("{0}，上下文 {1}{2}，打开设置", chat.title, chat.contextPercentage, stale ? L("，上次读回"):""))
     }
     private func editor(_ value:MenuBudgetDraft)->some View {
         VStack(spacing:0){
             HStack(spacing:8){
-                if let feedback {Text(feedback).font(.system(size:10)).foregroundStyle(failed ? .orange:.secondary).lineLimit(1).help(feedback).allowsHitTesting(false)}
+                if let feedback {Text(L(feedback)).font(.system(size:10)).foregroundStyle(failed ? .orange:.secondary).lineLimit(1).help(L(feedback)).allowsHitTesting(false)}
                 else {
-                    if let actual=chat.observedWindow,actual/1000 != Int(value.windowK){Text("目标 \(Int(value.windowK))K · \(stale ? "上次":"实际") \(actual/1000)K").allowsHitTesting(false)}else{Text(Int(value.windowK)==value.maximumWindowK ? "MAX" : "上下文 \(Int(value.windowK))K").allowsHitTesting(false)}
+                    if let actual=chat.observedWindow,actual/1000 != Int(value.windowK){Text(L("目标 {0}K · {1} {2}K", Int(value.windowK), stale ? L("上次"):L("实际"), actual/1000)).allowsHitTesting(false)}else{Text(Int(value.windowK)==value.maximumWindowK ? "MAX" : L("上下文 {0}K", Int(value.windowK))).allowsHitTesting(false)}
                 }
                 Spacer(minLength:2)
                 if saving{ProgressView().controlSize(.mini).frame(width:28)}
-                else{Button{Task{await apply()}}label:{Text("应用").font(.system(size:11,weight:.semibold)).foregroundStyle(.white).frame(width:42,height:22).background(Color.accentColor.opacity(value.changed && serviceAvailable ? 1:0.35),in:RoundedRectangle(cornerRadius:5)).contentShape(Rectangle())}.foregroundStyle(.blue).disabled(!value.changed || !serviceAvailable)}
-                Button{cancel()}label:{Image(systemName:"xmark").frame(width:20,height:20).contentShape(Rectangle())}.disabled(saving).help("取消未提交的修改")
+                else{Button{Task{await apply()}}label:{Text(L("应用")).font(.system(size:11,weight:.semibold)).foregroundStyle(.white).frame(width:42,height:22).background(Color.accentColor.opacity(value.changed && serviceAvailable ? 1:0.35),in:RoundedRectangle(cornerRadius:5)).contentShape(Rectangle())}.foregroundStyle(.blue).disabled(!value.changed || !serviceAvailable)}
+                Button{cancel()}label:{Image(systemName:"xmark").frame(width:20,height:20).contentShape(Rectangle())}.disabled(saving).help(L("取消未提交的修改"))
             }.buttonStyle(.plain).font(.system(size:11,weight:.medium)).monospacedDigit().frame(height:20)
             BudgetRangeSlider(window:Binding(get:{draft?.windowK ?? value.windowK},set:{if draft?.windowK != $0{draft?.setWindow($0);feedback=nil}}),compact:.constant(value.compactK),selection:$selection,maximumWindow:value.maximumWindowK,maximumCompact:value.maximumCompactK,compactStyle:true,windowOnly:true,onEditingChanged:{active in dragging=active;dragChanged(active)})
                 .disabled(saving || !serviceAvailable)
@@ -203,20 +203,20 @@ private struct MenuRowFrames:PreferenceKey {
         do {
             guard let current=model.chats.first(where:{$0.id==value.chatID}),current.model==value.model,
                   current.modelMetadata?.effective_context_window_percent==value.effectivePercent,
-                  current.modelMetadata?.max_context_window==value.maximumRawWindow else{throw BudgetInputError(message:"模型信息已变化，请取消后重新调整")}
+                  current.modelMetadata?.max_context_window==value.maximumRawWindow else{throw BudgetInputError(message:L("模型信息已变化，请取消后重新调整"))}
             let data=try await model.api("/policy",body:["id":value.chatID,"policy":try value.policy(),"apply":true,"expectedRevision":value.revision])
             let result=try JSONSerialization.jsonObject(with:data) as? [String:Any]
             let code=(result?["plan"] as? [String:Any])?["code"] as? String
             switch code {
-            case "waiting_for_idle":feedback="已保存 · 本轮结束后应用"
-            case "needs_compaction":feedback="已保存 · 需先压缩再应用";failed=true
-            case "needs_observation":feedback="已保存 · 等待用量读回"
-            default:feedback="已提交 · 等待读回确认"
+            case "waiting_for_idle":feedback=L("已保存 · 本轮结束后应用")
+            case "needs_compaction":feedback=L("已保存 · 需先压缩再应用");failed=true
+            case "needs_observation":feedback=L("已保存 · 等待用量读回")
+            default:feedback=L("已提交 · 等待读回确认")
             }
             if let raw=result?["thread"],let data=try? JSONSerialization.data(withJSONObject:raw),let updated=try? JSONDecoder().decode(Chat.self,from:data){
                 draft=try? MenuBudgetDraft(chat:updated)
                 if !model.menuDragInProgress,let index=model.chats.firstIndex(where:{$0.id==updated.id}),model.chats[index] != updated{model.chats[index]=updated}
-                if !updated.connected{feedback="已保存 · 接入后自动应用"}
+                if !updated.connected{feedback=L("已保存 · 接入后自动应用")}
             }
             await model.refresh()
         }catch{feedback=error.localizedDescription;failed=true}

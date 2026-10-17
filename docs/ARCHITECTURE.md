@@ -1,5 +1,7 @@
 # 架构与 Codex 接入
 
+[English](en/ARCHITECTURE.md) | **简体中文** · [首页](../README.zh-CN.md)
+
 ## 所有权
 
 Codex 为每个线程持有自己的 SessionConfiguration 和 ModelInfoOverrides。模型目录等服务可以共享，但窗口覆盖值由聊天各自持有。仅修改 config.toml 不会更新现有会话捕获的窗口参数。

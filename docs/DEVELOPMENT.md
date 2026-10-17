@@ -1,5 +1,7 @@
 # 开发、测试与发布
 
+[English](en/DEVELOPMENT.md) | **简体中文** · [首页](../README.zh-CN.md)
+
 ## 目录
 
 ```

@@ -17,9 +17,9 @@ struct Chat: Identifiable, Decodable,Equatable {
     }
     var windowConfirmed:Bool {connected && freshUsage==true && phase=="confirmed" && revision==policy?.revision && observedWindow != nil && observedWindow==expectedWindow && observedWindow==targetWindow}
     var observedWindowTitle:String {
-        if windowConfirmed{return "已确认可用窗口"}
-        if !connected || freshUsage != true{return "上次读回窗口（待更新）"}
-        return phase=="mismatch" ? "运行时读回窗口（与目标不符）":"最近读回窗口"
+        if windowConfirmed{return L("已确认可用窗口")}
+        if !connected || freshUsage != true{return L("上次读回窗口（待更新）")}
+        return phase=="mismatch" ? L("运行时读回窗口（与目标不符）"):L("最近读回窗口")
     }
 }
 struct RuntimeFixState:Decodable,Equatable {let enabled:Bool;let available:Bool;let compatible:Bool;let baseVersion:String;let originalVersion:String?;let activeCount:Int;let pending:Bool;let message:String}
@@ -32,6 +32,18 @@ struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
 
 @MainActor final class Controller: ObservableObject {
+    @Published var languageSelection=Localization.choice
+    @Published var languageRevision=0
+    private var languageObservers:[NSObjectProtocol]=[]
+    init(){
+        for name in [Localization.didChange,Notification.Name.NSSystemTimeZoneDidChange] {
+            languageObservers.append(NotificationCenter.default.addObserver(forName:name,object:nil,queue:.main){[weak self] _ in
+                Task{@MainActor [weak self] in self?.languageSelection=Localization.choice;self?.languageRevision+=1}
+            })
+        }
+    }
+    deinit{for observer in languageObservers{NotificationCenter.default.removeObserver(observer)}}
+    func setLanguage(_ value:LanguageChoice){do{try Localization.setChoice(value)}catch{notice=L("无法保存语言设置：{0}",error.localizedDescription)}}
     @Published var chats:[Chat]=[]
     @Published var selectedID:String?
     @Published var bridgeCount=0
@@ -45,7 +57,7 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var menuHeightLimit:CGFloat=560
     @Published var runtimeFix:RuntimeFixState?
     @Published var changingRuntimeFix=false
-    @Published var notice="正在读取本地状态…"
+    @Published var notice=L("正在读取本地状态…")
     @Published private(set) var windowK=400.0
     @Published private(set) var compactK=360.0
     private var ratioNumerator=90
@@ -73,7 +85,7 @@ struct ServiceSettings: Decodable {let node:String}
         let (data,response)=try await URLSession.shared.data(for:request)
         guard (response as? HTTPURLResponse)?.statusCode==200 else {
             let object=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any]
-            throw NSError(domain:"ContextControl",code:1,userInfo:[NSLocalizedDescriptionKey:object?["error"] as? String ?? "本地服务暂时不可用"])
+            throw NSError(domain:"ContextControl",code:1,userInfo:[NSLocalizedDescriptionKey:object?["error"] as? String ?? L("本地服务暂时不可用")])
         }
         return data
     }
@@ -93,12 +105,12 @@ struct ServiceSettings: Decodable {let node:String}
             if selectedID==nil{selectedID=chats.first?.id;fill()}
             else if waitingForModel,let metadata=selected?.modelMetadata,metadata.effective_context_window_percent != nil,metadata.max_context_window != nil{fill()}
             else if !budgetEdited,editingRevision != (selected?.policy?.revision ?? 0){fill()}
-            if notice=="正在读取本地状态…"||notice.hasPrefix("读取失败："){notice=bridgeCount>0 ? "已接入 Codex。" : "照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。"}
-        }catch{serviceAvailable=false;notice="读取失败：\(error.localizedDescription)"}
+            if Localization.canonical(notice)=="正在读取本地状态…"||Localization.canonical(notice).hasPrefix("读取失败："){notice=bridgeCount>0 ? L("已接入 Codex。") : L("照常打开 Codex 并进入聊天，预算控制会自动接入。首次安装后请正常重开一次客户端。")}
+        }catch{serviceAvailable=false;notice=L("读取失败：{0}", error.localizedDescription)}
     }
     func setContextExtension(_ enabled:Bool) async {
         changingContextExtension=true;defer{changingContextExtension=false}
-        do{let data=try await api("/context-extension",body:["enabled":enabled]);contextExtension=try JSONDecoder().decode(ContextExtensionState.self,from:data);await refresh();fill();notice=contextExtension?.message ?? "拓展设置已保存"}catch{notice=error.localizedDescription}
+        do{let data=try await api("/context-extension",body:["enabled":enabled]);contextExtension=try JSONDecoder().decode(ContextExtensionState.self,from:data);await refresh();fill();notice=contextExtension?.message ?? L("拓展设置已保存")}catch{notice=error.localizedDescription}
     }
     func fill(){
         defer{budgetEdited=false}
@@ -115,10 +127,10 @@ struct ServiceSettings: Decodable {let node:String}
         else{ratioNumerator=90;ratioDenominator=100;setWindowK(400)}
     }
     func calculate() throws -> BudgetPreview {
-        guard let metadata=selected?.modelMetadata,let percent=metadata.effective_context_window_percent,let maximum=metadata.max_context_window else{throw BudgetInputError(message:"等待当前模型信息后即可设置实际可用窗口")}
-        guard metadata.context_catalog_ready != false else{throw BudgetInputError(message:bridgeCount==0 ? "打开 Codex 并进入聊天后即可调整":selected?.connected == true ? "请完整退出并重开 Codex，使上下文设置生效":"请先在 Codex 打开此聊天")}
-        guard !waitingForModel else{throw BudgetInputError(message:"正在读取此聊天的窗口设置")}
-        guard Int(compactK)<=maximumCompactK else{throw BudgetInputError(message:"压缩阈值需保留下一轮输入余量")}
+        guard let metadata=selected?.modelMetadata,let percent=metadata.effective_context_window_percent,let maximum=metadata.max_context_window else{throw BudgetInputError(message:L("等待当前模型信息后即可设置实际可用窗口"))}
+        guard metadata.context_catalog_ready != false else{throw BudgetInputError(message:bridgeCount==0 ? L("打开 Codex 并进入聊天后即可调整"):selected?.connected == true ? L("请完整退出并重开 Codex，使上下文设置生效"):L("请先在 Codex 打开此聊天"))}
+        guard !waitingForModel else{throw BudgetInputError(message:L("正在读取此聊天的窗口设置"))}
+        guard Int(compactK)<=maximumCompactK else{throw BudgetInputError(message:L("压缩阈值需保留下一轮输入余量"))}
         return try BudgetMath.sliderPreview(windowK:Int(windowK),compactK:Int(compactK),effectivePercent:percent,maximumRawWindow:maximum)
     }
     var preview:BudgetPreview? {try? calculate()}
@@ -153,9 +165,9 @@ struct ServiceSettings: Decodable {let node:String}
             if action=="policy"{body["apply"]=true;body["expectedRevision"]=editingRevision}
             let data=try await api("/\(action)",body:body)
             let object=try JSONSerialization.jsonObject(with:data) as? [String:Any]
-            if action=="preflight"{notice=(object?["message"] as? String ?? "预检完成")+((object?["notes"] as? [String])?.map{"\n"+$0}.joined() ?? "")}
-            else if action=="policy"{editingRevision=(object?["policy"] as? [String:Any])?["revision"] as? Int ?? editingRevision;budgetEdited=false;notice="预算已保存。请查看下方应用状态；实际值将在正常下一轮请求后确认。"}
-            else{notice=object?["message"] as? String ?? "操作已提交。"}
+            if action=="preflight"{notice=(object?["message"] as? String ?? L("预检完成"))+((object?["notes"] as? [String])?.map{"\n"+$0}.joined() ?? "")}
+            else if action=="policy"{editingRevision=(object?["policy"] as? [String:Any])?["revision"] as? Int ?? editingRevision;budgetEdited=false;notice=L("预算已保存。请查看下方应用状态；实际值将在正常下一轮请求后确认。")}
+            else{notice=object?["message"] as? String ?? L("操作已提交。")}
             await refresh()
         }catch{notice=error.localizedDescription}
     }
@@ -163,7 +175,7 @@ struct ServiceSettings: Decodable {let node:String}
         if changingRuntimeFix{return};changingRuntimeFix=true;defer{changingRuntimeFix=false}
         do {
             runtimeFix=try JSONDecoder().decode(RuntimeFixState.self,from:await api("/runtime-fix",body:["enabled":enabled]))
-            notice=runtimeFix?.message ?? "设置已保存"
+            notice=runtimeFix?.message ?? L("设置已保存")
         }catch{notice=error.localizedDescription}
     }
     func launchCodex(){
@@ -171,14 +183,14 @@ struct ServiceSettings: Decodable {let node:String}
             let settings=try JSONDecoder().decode(DesktopSettings.self,from:Data(contentsOf:home.appendingPathComponent("settings.json")))
             let app=URL(fileURLWithPath:settings.desktopExecutable).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             let process=Process();process.executableURL=URL(fileURLWithPath:"/usr/bin/open");process.arguments=["-a",app.path]
-            try process.run();notice="已请求打开 Codex；预算控制会随运行时自动接入。"
+            try process.run();notice=L("已请求打开 Codex；预算控制会随运行时自动接入。")
         }catch{notice=error.localizedDescription}
     }
 }
 
-func formatted(_ n:Int?) -> String {guard let n else{return "待观测"};return n.formatted()+" tokens"}
+func formatted(_ n:Int?) -> String {guard let n else{return L("待观测")};return n.formatted()+" tokens"}
 func phaseName(_ value:String?) -> String {
-    switch value {case "extension_pending":return "等待重开 Codex";case "compacting":return "正在保护性压缩";case "confirmed":return "窗口已确认";case "awaiting_runtime_confirmation":return "等待下一轮确认";case "reloading":return "正在应用";case "waiting_for_idle","queued":return "等待轮次结束";case "needs_compaction":return "需要先压缩";case "needs_observation":return "等待用量记录";case "error","mismatch":return "需要处理";case "saved":return "已保存";default:return "尚未接入"}
+    switch value {case "extension_pending":return L("等待重开 Codex");case "compacting":return L("正在保护性压缩");case "confirmed":return L("窗口已确认");case "awaiting_runtime_confirmation":return L("等待下一轮确认");case "reloading":return L("正在应用");case "waiting_for_idle","queued":return L("等待轮次结束");case "needs_compaction":return L("需要先压缩");case "needs_observation":return L("等待用量记录");case "error","mismatch":return L("需要处理");case "saved":return L("已保存");default:return L("尚未接入")}
 }
 
 private enum PanelStyle {
@@ -336,8 +348,8 @@ enum BudgetThumb {case compact,window}
         .onChange(of:selection){_,_ in if enabled{focused=true}}
         .accessibilityRepresentation {
             HStack {
-                if !windowOnly{Slider(value:$compact,in:1...Double(max(2,maximumCompact)),step:1).accessibilityLabel("压缩触发点").accessibilityValue("\(Int(compact))K").disabled(!enabled || maximumCompact<=1)}
-                Slider(value:$window,in:2...Double(max(3,maximumWindow)),step:1).accessibilityLabel("上下文窗口上限").accessibilityValue("\(Int(window))K").disabled(!enabled || maximumWindow<=2)
+                if !windowOnly{Slider(value:$compact,in:1...Double(max(2,maximumCompact)),step:1).accessibilityLabel(L("压缩触发点")).accessibilityValue("\(Int(compact))K").disabled(!enabled || maximumCompact<=1)}
+                Slider(value:$window,in:2...Double(max(3,maximumWindow)),step:1).accessibilityLabel(L("上下文窗口上限")).accessibilityValue("\(Int(window))K").disabled(!enabled || maximumWindow<=2)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)){_ in active=true}
@@ -367,15 +379,15 @@ struct RuntimeFixControl:View {
     var body:some View {
                 if let fix=model.runtimeFix {
                     VStack(alignment:.leading,spacing:7){
-                        Toggle("提前压缩修复",isOn:Binding(get:{model.runtimeFix?.enabled ?? false},set:{value in Task{await model.setRuntimeFix(value)}}))
+                        Toggle(L("提前压缩修复"),isOn:Binding(get:{model.runtimeFix?.enabled ?? false},set:{value in Task{await model.setRuntimeFix(value)}}))
                             .toggleStyle(.switch).controlSize(.small)
                             .disabled(model.changingRuntimeFix || (!fix.enabled && (!fix.available || !fix.compatible)))
-                        Text(fix.message).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
-                        DisclosureGroup("修复说明"){
+                        Text(L(fix.message)).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                        DisclosureGroup(L("修复说明")){
                             VStack(alignment:.leading,spacing:6){
-                                Text("避免历史推理重复计数。使用独立修复版 Codex \(fix.baseVersion)，切换后需完全退出并重开 Codex。")
-                                Text("社区修复 · 适用于跨轮推理；以服务器已计入历史推理为前提。")
-                                Link("查看补丁",destination:URL(string:"https://github.com/coinman-dev/codex-context-accounting-fix")!)
+                                Text(L("避免历史推理重复计数。使用独立修复版 Codex {0}，切换后需完全退出并重开 Codex。", fix.baseVersion))
+                                Text(L("社区修复 · 适用于跨轮推理；以服务器已计入历史推理为前提。"))
+                                Link(L("查看补丁"),destination:URL(string:"https://github.com/coinman-dev/codex-context-accounting-fix")!)
                             }.font(.caption2).foregroundStyle(.secondary).padding(.top,5)
                         }.font(.caption2).foregroundStyle(.secondary)
                     }.padding(10).background(.white.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
@@ -401,79 +413,88 @@ struct ContentView: View {
                 }
                 .frame(maxWidth:.infinity,alignment:.leading)
                 .accessibilityElement(children:.ignore)
-                .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? "已连接 Codex":"等待 Codex 连接")
-                .help((model.serviceAvailable && model.bridgeCount>0) ? "已连接 Codex":"等待 Codex 连接")
+                .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
+                .help((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 ScrollView {
                     LazyVStack(spacing:4){ForEach(model.chats){chat in
                         Button {model.selectedID=chat.id} label:{
-                            VStack(alignment:.leading,spacing:5){Text(chat.title).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle);Text(chat.connected ? phaseName(chat.phase):"尚未接入").font(.system(size:11)).foregroundStyle(.secondary)}
+                            VStack(alignment:.leading,spacing:5){Text(chat.title).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle);Text(chat.connected ? phaseName(chat.phase):L("尚未接入")).font(.system(size:11)).foregroundStyle(.secondary)}
                                 .frame(maxWidth:.infinity,alignment:.leading).padding(12)
                                 .background(model.selectedID==chat.id ? Color.white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:12))
                                 .contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
                     }}
                 }.frame(maxHeight:.infinity)
-                Button("全局默认",systemImage:"slider.horizontal.3"){showNewChatDefaults=true}.buttonStyle(.bordered)
-                Text("额外功能").font(.caption).foregroundStyle(.secondary)
+                VStack(alignment:.leading,spacing:5){
+                    Picker(L("语言"),selection:Binding(get:{model.languageSelection},set:{model.setLanguage($0)})){
+                        Text(L("自动（按时区）")).tag(LanguageChoice.auto)
+                        Text("中文").tag(LanguageChoice.zh)
+                        Text("English").tag(LanguageChoice.en)
+                    }.pickerStyle(.menu).accessibilityIdentifier("language-picker").help(L("自动按时区选择：中国大陆、香港、澳门、台湾使用中文，其他时区使用 English。手动选择优先。"))
+                    Text(model.languageSelection == .auto ? L("自动：{0}",Localization.language == .zh ? "中文":"English") : L("自动按时区选择，手动选择优先。"))
+                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                }
+                Button(L("全局默认"),systemImage:"slider.horizontal.3"){showNewChatDefaults=true}.buttonStyle(.bordered)
+                Text(L("额外功能")).font(.caption).foregroundStyle(.secondary)
                 ContextExtensionControl(model:model)
                 RuntimeFixControl(model:model)
-                Button("打开 Codex",systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
+                Button(L("打开 Codex"),systemImage:"arrow.up.forward.app"){model.launchCodex()}.buttonStyle(.bordered)
             }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
                     if let chat=model.selected {
-                        VStack(alignment:.leading,spacing:7){Text(chat.title).font(.system(size:20,weight:.medium)).lineLimit(2).truncationMode(.tail);Text(chat.model.map{modelDisplayName($0)} ?? "模型将在接入后识别").font(.callout).foregroundStyle(.secondary)}
+                        VStack(alignment:.leading,spacing:7){Text(chat.title).font(.system(size:20,weight:.medium)).lineLimit(2).truncationMode(.tail);Text(chat.model.map{modelDisplayName($0)} ?? L("模型将在接入后识别")).font(.callout).foregroundStyle(.secondary)}
                         VStack(alignment:.leading,spacing:12){
-                            HStack(spacing:28){metric(chat.observedWindowTitle,formatted(chat.observedWindow));metric("最近请求用量",formatted(chat.lastUsage?.totalTokens))}
+                            HStack(spacing:28){metric(chat.observedWindowTitle,formatted(chat.observedWindow));metric(L("最近请求用量"),formatted(chat.lastUsage?.totalTokens))}
                             if let target=chat.targetWindow,let policy=chat.policy {
-                                Text("已保存：可用窗口 \(formatted(target)) · 压缩阈值 \(formatted(min(policy.compact,policy.window*90/100)))\(chat.windowConfirmed ? "（窗口已确认）":"（窗口待确认）")").font(.callout).textSelection(.enabled)
+                                Text(L("已保存：可用窗口 {0} · 压缩阈值 {1}{2}", formatted(target), formatted(min(policy.compact,policy.window*90/100)), chat.windowConfirmed ? L("（窗口已确认）"):L("（窗口待确认）"))).font(.callout).textSelection(.enabled)
                             }
                             if chat.phase=="awaiting_runtime_confirmation" {
-                                Label("新预算已提交。上方仍是调整前的读回值，下一个正常请求完成后更新。",systemImage:"clock").font(.callout).foregroundStyle(.orange)
+                                Label(L("新预算已提交。上方仍是调整前的读回值，下一个正常请求完成后更新。"),systemImage:"clock").font(.callout).foregroundStyle(.orange)
                             }
                         }
                         HStack {Spacer();ContextDetailsButton(chatID:chat.id,title:chat.title,model:model).id(chat.id)}
                         Divider()
                         budgetEditor().disabled(!model.canEditBudget)
                         HStack {
-                            Button("预检"){Task{await model.act("preflight")}}.buttonStyle(QuietButtonStyle()).disabled(model.preview==nil)
-                            Button(chat.connected ? "应用到此聊天":"保存，接入后应用"){Task{await model.act("policy")}}.buttonStyle(ApplyButtonStyle()).disabled(model.preview==nil)
-                            Button("原生压缩…"){confirmCompact=true}.buttonStyle(QuietButtonStyle()).disabled(!chat.connected)
+                            Button(L("预检")){Task{await model.act("preflight")}}.buttonStyle(QuietButtonStyle()).disabled(model.preview==nil)
+                            Button(chat.connected ? L("应用到此聊天"):L("保存，接入后应用")){Task{await model.act("policy")}}.buttonStyle(ApplyButtonStyle()).disabled(model.preview==nil)
+                            Button(L("原生压缩…")){confirmCompact=true}.buttonStyle(QuietButtonStyle()).disabled(!chat.connected)
                             Spacer()
-                            Button("停止自动应用"){Task{await model.act("clear")}}.buttonStyle(QuietButtonStyle())
+                            Button(L("停止自动应用")){Task{await model.act("clear")}}.buttonStyle(QuietButtonStyle())
                         }.disabled(model.working)
-                        VStack(alignment:.leading,spacing:7){Label(phaseName(chat.phase),systemImage:chat.phase=="confirmed" ? "checkmark.circle":"clock").font(.callout.weight(.medium));Text(chat.message ?? "接入后，设置会在轮次之间应用。").font(.caption).foregroundStyle(.secondary)}.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:16))
+                        VStack(alignment:.leading,spacing:7){Label(phaseName(chat.phase),systemImage:chat.phase=="confirmed" ? "checkmark.circle":"clock").font(.callout.weight(.medium));Text(L(chat.message ?? L("接入后，设置会在轮次之间应用。"))).font(.caption).foregroundStyle(.secondary)}.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:16))
                     }else{
-                        ContentUnavailableView("等待聊天接入",systemImage:"bubble.left.and.bubble.right",description:Text("照常打开 Codex 并进入聊天，控制连接会随运行时自动启动。首次安装后请正常重开一次客户端。"))
+                        ContentUnavailableView(L("等待聊天接入"),systemImage:"bubble.left.and.bubble.right",description:Text(L("照常打开 Codex 并进入聊天，控制连接会随运行时自动启动。首次安装后请正常重开一次客户端。")))
                     }
-                    Divider();Text(model.notice).font(.callout).textSelection(.enabled).foregroundStyle(.secondary)
+                    Divider();Text(L(model.notice)).font(.callout).textSelection(.enabled).foregroundStyle(.secondary)
                 }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity)
             }.frame(minWidth:650).background(PanelStyle.background)
         }
         .frame(minWidth:960,minHeight:670)
         .background(PanelStyle.background)
-        .preferredColorScheme(.dark).tint(PanelStyle.blue)
+        .preferredColorScheme(.dark).tint(PanelStyle.blue).environment(\.locale,Localization.locale)
         .onChange(of:model.selectedID){_,_ in model.fill()}
         .sheet(isPresented:$showNewChatDefaults){NewChatDefaultsView(model:model)}
-        .confirmationDialog("请求 Codex 原生压缩？",isPresented:$confirmCompact,titleVisibility:.visible){Button("请求压缩"){Task{await model.act("compact")}};Button("取消",role:.cancel){}}message:{Text("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。")}
+        .confirmationDialog(L("请求 Codex 原生压缩？"),isPresented:$confirmCompact,titleVisibility:.visible){Button(L("请求压缩")){Task{await model.act("compact")}};Button(L("取消"),role:.cancel){}}message:{Text(L("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。"))}
     }
     func budgetEditor()->some View {
         VStack(alignment:.leading,spacing:18){
             if maxMode {Label("MAX CONTEXT · 920K",systemImage:"bolt.fill").font(.callout.weight(.semibold)).foregroundStyle(.secondary)}
             rangeEditor()
-            Text(model.selected?.modelMetadata?.context_ceiling != nil ? "920K 硬上限 · 最晚 904K 压缩 · 预留至少 16K" : "将蓝色压缩点往左拉，灰色压缩窗口余量随之增加。每步 1K，应用后生效。")
+            Text(model.selected?.modelMetadata?.context_ceiling != nil ? L("920K 硬上限 · 最晚 904K 压缩 · 预留至少 16K") : L("将蓝色压缩点往左拉，灰色压缩窗口余量随之增加。每步 1K，应用后生效。"))
                 .font(.system(size:11)).foregroundStyle(.secondary)
             if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
-            DisclosureGroup("高级设置"){
+            DisclosureGroup(L("高级设置")){
                 VStack(alignment:.leading,spacing:12){
                     Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:14){
-                        field("下一轮预留",text:$model.reserve,hint:"为新输入和工具结果留空间")
-                        field("必须保留量",text:$model.floor,hint:"可选的手动下限；0 表示未指定")
+                        field(L("下一轮预留"),text:$model.reserve,hint:L("为新输入和工具结果留空间"))
+                        field(L("必须保留量"),text:$model.floor,hint:L("可选的手动下限；0 表示未指定"))
                     }
-                    Text("窗口是容量上限。最近请求用量是当前占用的近似值；压缩后保留多少无法预先保证。联动阈值向下取整到 1K。")
+                    Text(L("窗口是容量上限。最近请求用量是当前占用的近似值；压缩后保留多少无法预先保证。联动阈值向下取整到 1K。"))
                         .font(.caption).foregroundStyle(.secondary)
                     if let budget=model.preview,let percent=model.selected?.modelMetadata?.effective_context_window_percent{
-                        Text("底层配置已自动换算为 \(formatted(budget.rawWindow))，按 \(percent)% 读回 \(formatted(budget.usableWindow))。压缩按完整上下文计数。").font(.caption).foregroundStyle(.secondary)
+                        Text(L("底层配置已自动换算为 {0}，按 {1}% 读回 {2}。压缩按完整上下文计数。", formatted(budget.rawWindow), percent, formatted(budget.usableWindow))).font(.caption).foregroundStyle(.secondary)
                     }
                 }.padding(.top,12)
             }.font(.callout).foregroundStyle(.secondary)
@@ -482,29 +503,29 @@ struct ContentView: View {
     private func rangeEditor()->some View {
         VStack(spacing:16){
             HStack(alignment:.center){
-                rangeValue("压缩触发",value:model.compactK,color:PanelStyle.blue,thumb:.compact)
+                rangeValue(L("压缩触发"),value:model.compactK,color:PanelStyle.blue,thumb:.compact)
                 Spacer()
-                VStack(spacing:5){Text("\(Int(max(0,model.windowK-model.compactK)))K").font(.system(size:22,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(PanelStyle.headroom);Text("压缩窗口余量").font(.system(size:11)).foregroundStyle(.secondary)}
+                VStack(spacing:5){Text("\(Int(max(0,model.windowK-model.compactK)))K").font(.system(size:22,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(PanelStyle.headroom);Text(L("压缩窗口余量")).font(.system(size:11)).foregroundStyle(.secondary)}
                 Spacer()
-                rangeValue("上下文窗口",value:model.windowK,color:.white,thumb:.window)
+                rangeValue(L("上下文窗口"),value:model.windowK,color:.white,thumb:.window)
                 Button {model.fill()} label:{Image(systemName:"arrow.counterclockwise").font(.system(size:14)).frame(width:22,height:26)}
-                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("重新载入已保存预算").help("重新载入已保存预算")
+                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel(L("重新载入已保存预算")).help(L("重新载入已保存预算"))
             }
             BudgetRangeSlider(window:Binding(get:{model.windowK},set:{model.setWindowK($0)}),compact:Binding(get:{model.compactK},set:{model.setCompactK($0)}),selection:$selectedThumb,maximumWindow:model.maximumWindowK,maximumCompact:model.maximumCompactK)
-            HStack {Text("0K");Spacer();Text("模型上限 \(model.maximumWindowK)K")}.font(.system(size:10)).foregroundStyle(.tertiary).monospacedDigit()
+            HStack {Text("0K");Spacer();Text(L("模型上限 {0}K", model.maximumWindowK))}.font(.system(size:10)).foregroundStyle(.tertiary).monospacedDigit()
             Divider().overlay(.white.opacity(0.02))
             HStack(spacing:7){
-                microAdjust("压缩",value:Binding(get:{model.compactK},set:{model.setCompactK($0)}),minimum:1,maximum:model.maximumCompactK,color:PanelStyle.blue)
+                microAdjust(L("压缩"),value:Binding(get:{model.compactK},set:{model.setCompactK($0)}),minimum:1,maximum:model.maximumCompactK,color:PanelStyle.blue)
                 Text("\(percentage(model.compactPercent))%").font(.system(size:11)).foregroundStyle(.secondary).monospacedDigit().frame(width:44)
                 Spacer(minLength:4)
                 ForEach([80,85,90],id:\.self){ratio in Button("\(ratio)%"){model.setRatio(ratio)}.buttonStyle(QuietButtonStyle(selected:abs(model.compactPercent-Double(ratio))<0.2))}
-                Button("最大"){model.setCompactK(Double(model.maximumCompactK))}.buttonStyle(QuietButtonStyle(selected:Int(model.compactK)==model.maximumCompactK))
+                Button(L("最大")){model.setCompactK(Double(model.maximumCompactK))}.buttonStyle(QuietButtonStyle(selected:Int(model.compactK)==model.maximumCompactK))
             }
             HStack(spacing:7){
-                microAdjust("窗口",value:Binding(get:{model.windowK},set:{model.setWindowK($0)}),minimum:2,maximum:model.maximumWindowK,color:.white)
+                microAdjust(L("窗口"),value:Binding(get:{model.windowK},set:{model.setWindowK($0)}),minimum:2,maximum:model.maximumWindowK,color:.white)
                 Spacer(minLength:4)
                 ForEach([200,400,800],id:\.self){k in Button("\(k)K"){model.setWindowK(Double(k))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==k)).disabled(k>model.maximumWindowK)}
-                Button("最大"){model.setWindowK(Double(model.maximumWindowK))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==model.maximumWindowK))
+                Button(L("最大")){model.setWindowK(Double(model.maximumWindowK))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==model.maximumWindowK))
             }
         }
         .padding(24)
@@ -518,15 +539,15 @@ struct ContentView: View {
                     .contentTransition(.numericText()).animation(reduceMotion ? nil:.easeOut(duration:0.18),value:value)
                 HStack(spacing:5){Circle().fill(color).frame(width:5,height:5);Text(title).font(.system(size:12)).foregroundStyle(.secondary)}
             }.padding(.vertical,4).padding(.horizontal,8).background(selectedThumb==thumb ? .white.opacity(0.035):.clear,in:RoundedRectangle(cornerRadius:10))
-        }.buttonStyle(.plain).accessibilityLabel("选择\(title)滑块，\(Int(value))K").help("选中后，可用轨道上的左右方向键逐 K 调整")
+        }.buttonStyle(.plain).accessibilityLabel(L("选择{0}滑块，{1}K", title, Int(value))).help(L("选中后，可用轨道上的左右方向键逐 K 调整"))
     }
     private func microAdjust(_ title:String,value:Binding<Double>,minimum:Int,maximum:Int,color:Color)->some View {
         HStack(spacing:6){
-            Text(title).font(.system(size:11)).foregroundStyle(color).frame(width:28,alignment:.leading)
+            Text(title).font(.system(size:11)).foregroundStyle(color).frame(width:Localization.language == .en ? 64:28,alignment:.leading)
             Button {value.wrappedValue-=1} label:{Image(systemName:"minus").font(.system(size:10,weight:.medium)).frame(width:22,height:22).background(.white.opacity(0.05),in:Circle())}
-                .buttonStyle(.plain).accessibilityLabel("\(title)减少 1K").disabled(value.wrappedValue<=Double(minimum))
+                .buttonStyle(.plain).accessibilityLabel(L("{0}减少 1K", title)).disabled(value.wrappedValue<=Double(minimum))
             Button {value.wrappedValue+=1} label:{Image(systemName:"plus").font(.system(size:10,weight:.medium)).frame(width:22,height:22).background(.white.opacity(0.05),in:Circle())}
-                .buttonStyle(.plain).accessibilityLabel("\(title)增加 1K").disabled(value.wrappedValue>=Double(maximum))
+                .buttonStyle(.plain).accessibilityLabel(L("{0}增加 1K", title)).disabled(value.wrappedValue>=Double(maximum))
         }.foregroundStyle(.secondary)
     }
     func percentage(_ value:Double)->String {value.formatted(.number.precision(.fractionLength(0...1)))}
@@ -552,6 +573,7 @@ struct ContentView: View {
     private var iconInitialized=false
     private let background=CommandLine.arguments.contains("--background")
     private var lastStatus:Data?
+    private var languageObservers:[NSObjectProtocol]=[]
 
     static func main(){
         let app=NSApplication.shared
@@ -562,6 +584,11 @@ struct ContentView: View {
     func applicationDidFinishLaunching(_ notification:Notification){
         startLocalService()
         installMainMenu()
+        for name in [Localization.didChange,Notification.Name.NSSystemTimeZoneDidChange]{
+            languageObservers.append(NotificationCenter.default.addObserver(forName:name,object:nil,queue:.main){[weak self] _ in
+                Task{@MainActor [weak self] in self?.installMainMenu();self?.updateStatusIcon()}
+            })
+        }
         let item=NSStatusBar.system.statusItem(withLength:30)
         item.button?.title=""
         item.button?.imagePosition = .imageOnly
@@ -603,9 +630,9 @@ struct ContentView: View {
             statusItem?.button?.image=managerStatusImage(progress:busiest?.contextFraction)
             lastIconPercentage=percentage;iconInitialized=true
         }
-        let summary=model.runningChats.isEmpty ? (model.serviceAvailable ? "暂无运行中的聊天":"等待连接") : "\(model.runningChats.count) 个运行中 · \(busiest.map{"最高占用 \($0.contextPercentage)"} ?? "等待用量读回")"
+        let summary=model.runningChats.isEmpty ? (model.serviceAvailable ? L("暂无运行中的聊天"):L("等待连接")) : L("{0} 个运行中 · {1}", model.runningChats.count, busiest.map{L("最高占用 {0}", $0.contextPercentage)} ?? L("等待用量读回"))
         statusItem?.button?.toolTip="Context Manager · \(summary)"
-        statusItem?.button?.setAccessibilityLabel("Context Manager，\(summary)，打开聊天概览")
+        statusItem?.button?.setAccessibilityLabel(L("Context Manager，{0}，打开聊天概览", summary))
     }
     @objc private func toggleContextPopover(){
         refreshNow()
@@ -665,16 +692,16 @@ struct ContentView: View {
         guard FileManager.default.fileExists(atPath:cli.path) else{return}
         let process=Process();process.executableURL=URL(fileURLWithPath:settings.node)
         process.arguments=[cli.path,"start"];process.standardOutput=FileHandle.nullDevice;process.standardError=FileHandle.nullDevice
-        do{try process.run();serviceStarter=process}catch{model.notice="无法启动本地服务：\(error.localizedDescription)"}
+        do{try process.run();serviceStarter=process}catch{model.notice=L("无法启动本地服务：{0}", error.localizedDescription)}
     }
     private func installMainMenu(){
         let bar=NSMenu(),appItem=NSMenuItem(),appMenu=NSMenu()
-        appMenu.addItem(withTitle:"打开主窗口",action:#selector(showSettings),keyEquivalent:"m").target=self
+        appMenu.addItem(withTitle:L("打开主窗口"),action:#selector(showSettings),keyEquivalent:"m").target=self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle:"退出 Context Manager",action:#selector(quitEntry),keyEquivalent:"q").target=self
+        appMenu.addItem(withTitle:L("退出 Context Manager"),action:#selector(quitEntry),keyEquivalent:"q").target=self
         appItem.submenu=appMenu;bar.addItem(appItem)
-        let editItem=NSMenuItem(title:"编辑",action:nil,keyEquivalent:""),edit=NSMenu(title:"编辑")
-        for (title,action,key) in [("撤销","undo:","z"),("重做","redo:","Z"),("剪切","cut:","x"),("复制","copy:","c"),("粘贴","paste:","v"),("全选","selectAll:","a")]{edit.addItem(withTitle:title,action:Selector(action),keyEquivalent:key)}
+        let editItem=NSMenuItem(title:L("编辑"),action:nil,keyEquivalent:""),edit=NSMenu(title:L("编辑"))
+        for (title,action,key) in [(L("撤销"),"undo:","z"),(L("重做"),"redo:","Z"),(L("剪切"),"cut:","x"),(L("复制"),"copy:","c"),(L("粘贴"),"paste:","v"),(L("全选"),"selectAll:","a")]{edit.addItem(withTitle:title,action:Selector(action),keyEquivalent:key)}
         editItem.submenu=edit;bar.addItem(editItem);NSApplication.shared.mainMenu=bar
     }
     @objc private func showSettings(){

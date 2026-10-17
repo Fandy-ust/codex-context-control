@@ -1,5 +1,7 @@
 # 使用说明
 
+[English](en/USAGE.md) | **简体中文** · [首页](../README.zh-CN.md)
+
 ## 正常启动与按需设置
 
 - **Context Control** 是控制面板。

@@ -13,6 +13,10 @@ test('downloaded installer validates payload, installs with empty PATH, and surv
   assert.equal(readPlist(panel,'CFBundleShortVersionString'),manifest.version);
   const panelIcon=readPlist(panel,'CFBundleIconFile'),installerIcon=readPlist(app,'CFBundleIconFile');
   assert.equal(installerIcon,panelIcon);
+  assert.deepEqual(fs.readFileSync(path.join(resources,'localization-en.json')),fs.readFileSync(path.join(panel,'Contents/Resources/localization-en.json')));
+  assert.ok(manifest.files['src/locales/en.json']);
+  assert.ok(manifest.files['THIRD_PARTY_NOTICES.md']);
+  assert.ok(manifest.files['third-party-licenses/js-tiktoken.txt']);
   assert.deepEqual(fs.readFileSync(path.join(resources,installerIcon+'.icns')),fs.readFileSync(path.join(panel,'Contents/Resources',panelIcon+'.icns')));
 
   const original=path.join(temp,'Fixture Codex.app/Contents'),binary=path.join(original,'Resources/codex-cli/bin/codex');fs.mkdirSync(path.dirname(binary),{recursive:true});fs.mkdirSync(path.join(original,'MacOS'));
@@ -22,7 +26,7 @@ test('downloaded installer validates payload, installs with empty PATH, and surv
   // Exercise the same native verifier/launcher, disabling only OS startup registration in this isolated test.
   const source=fs.readFileSync(path.join(repo,'packaging/Installer.swift'),'utf8').replace('["--use-built-panel","--bundled-node","--require-supported-runtime"]','["--use-built-panel","--bundled-node","--require-supported-runtime","--no-auto-start"]');fs.writeFileSync(path.join(temp,'Installer.swift'),source);
   fs.writeFileSync(main,'import Foundation\n@main struct Check {static func main(){do{_ = try InstallerModel.execute(resources:URL(fileURLWithPath:CommandLine.arguments[1]),uninstall:false)}catch{print(error.localizedDescription);exit(1)}}}\n');
-  r=run('xcrun',['swiftc','-D','INSTALLER_TESTING','-parse-as-library',path.join(temp,'Installer.swift'),main,'-o',verifier,'-framework','SwiftUI','-framework','AppKit','-framework','CryptoKit']);assert.equal(r.status,0,r.stderr);
+  r=run('xcrun',['swiftc','-D','INSTALLER_TESTING','-parse-as-library',path.join(repo,'macos/Localization.swift'),path.join(temp,'Installer.swift'),main,'-o',verifier,'-framework','SwiftUI','-framework','AppKit','-framework','CryptoKit']);assert.equal(r.status,0,r.stderr);
   const rogue=path.join(payload,'src/extra-file.txt');fs.writeFileSync(rogue,'unexpected');r=run(verifier,[resources],env);assert.notEqual(r.status,0);assert.match(r.stdout,/额外文件/);assert.equal(fs.existsSync(path.join(control,'settings.json')),false);fs.rmSync(rogue);
   const changed=path.join(payload,'src/cli.mjs'),old=fs.readFileSync(changed);fs.appendFileSync(changed,'\n// tampered');r=run(verifier,[resources],env);assert.notEqual(r.status,0);assert.match(r.stdout,/校验失败/);assert.equal(fs.existsSync(path.join(control,'settings.json')),false);fs.writeFileSync(changed,old);
   r=run(verifier,[resources],env);assert.equal(r.status,0,r.stdout+r.stderr);

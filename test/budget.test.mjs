@@ -36,7 +36,7 @@ precondition(BudgetMath.linkedSliderCompactK(windowK:700,ratioNumerator:94,ratio
 print("K slider math verified")
 `);
     const binary=path.join(temp,'slider-math');
-    const compiled=spawnSync('/usr/bin/xcrun',['swiftc',fileURLToPath(new URL('../macos/BudgetMath.swift',import.meta.url)),path.join(temp,'main.swift'),'-o',binary],{encoding:'utf8',timeout:30000});assert.equal(compiled.status,0,compiled.stderr);
+    const compiled=spawnSync('/usr/bin/xcrun',['swiftc',fileURLToPath(new URL('../macos/Localization.swift',import.meta.url)),fileURLToPath(new URL('../macos/BudgetMath.swift',import.meta.url)),path.join(temp,'main.swift'),'-o',binary],{encoding:'utf8',timeout:30000});assert.equal(compiled.status,0,compiled.stderr);
     const result=spawnSync(binary,[],{encoding:'utf8',timeout:5000});assert.equal(result.status,0,result.stderr);
   }finally{fs.rmSync(temp,{recursive:true,force:true});}
 });
@@ -88,7 +88,7 @@ test('the native panel and controller use matching conversion, rounding and vali
   try{
     fs.writeFileSync(path.join(temp,'main.swift'),`import Foundation\nlet rows=try JSONSerialization.jsonObject(with:FileHandle.standardInput.readDataToEndOfFile()) as! [[String:Any]]\nvar results:[[String:Any]]=[]\nfor row in rows {do {let p=try BudgetMath.preview(usableWindow:BudgetMath.tokens(row["usableWindow"] as! String),compactPercent:row["compactPercent"] as! Double,effectivePercent:row["percent"] as! Int,maximumRawWindow:row["max"] as! Int);results.append(["window":p.rawWindow,"usableWindow":p.usableWindow,"compact":p.compact,"maxCompactPercent":p.maxCompactPercent])}catch{results.append(["error":true])}}\nFileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject:results))\n`);
     const binary=path.join(temp,'budget-math');
-    const compiled=spawnSync('/usr/bin/xcrun',['swiftc',fileURLToPath(new URL('../macos/BudgetMath.swift',import.meta.url)),path.join(temp,'main.swift'),'-o',binary],{encoding:'utf8',timeout:30000});
+    const compiled=spawnSync('/usr/bin/xcrun',['swiftc',fileURLToPath(new URL('../macos/Localization.swift',import.meta.url)),fileURLToPath(new URL('../macos/BudgetMath.swift',import.meta.url)),path.join(temp,'main.swift'),'-o',binary],{encoding:'utf8',timeout:30000});
     assert.equal(compiled.status,0,compiled.stderr);
     const result=spawnSync(binary,[],{input:JSON.stringify(cases),encoding:'utf8',timeout:5000});assert.equal(result.status,0,result.stderr);
     const expected=cases.map(c=>{try{const b=calculateBudget(c,{max_context_window:c.max,effective_context_window_percent:c.percent});return {window:b.window,usableWindow:b.usableWindow,compact:b.compact,maxCompactPercent:b.maxCompactPercent};}catch{return {error:true};}});

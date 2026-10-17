@@ -54,8 +54,8 @@ struct ContextDetailsButton:View {
     @ObservedObject var model:Controller
     @State private var showing=false
     var body:some View {
-        Button {showing=true} label:{Label("上下文详情",systemImage:"chart.bar.xaxis")}
-            .buttonStyle(.bordered).help("查看这个聊天的分类用量和消息数量")
+        Button {showing=true} label:{Label(L("上下文详情"),systemImage:"chart.bar.xaxis")}
+            .buttonStyle(.bordered).help(L("查看这个聊天的分类用量和消息数量"))
             .sheet(isPresented:$showing){ContextDetailsView(chatID:chatID,title:title,model:model)}
     }
 }
@@ -64,7 +64,7 @@ struct ContextDetailsButton:View {
 
 @MainActor private struct ContextDetailsView:View {
     let chatID:String;let title:String
-    let model:Controller
+    @ObservedObject var model:Controller
     @Environment(\.dismiss) private var dismiss
     @State private var statistics:ContextStatistics?
     @State private var loading=false
@@ -78,43 +78,43 @@ struct ContextDetailsButton:View {
     var body:some View {
         VStack(alignment:.leading,spacing:16){
             HStack(alignment:.top){
-                VStack(alignment:.leading,spacing:5){Text("上下文详情").font(.title2.weight(.semibold));Text(title).font(.callout).foregroundStyle(.secondary).lineLimit(1)}
+                VStack(alignment:.leading,spacing:5){Text(L("上下文详情")).font(.title2.weight(.semibold));Text(title).font(.callout).foregroundStyle(.secondary).lineLimit(1)}
                 Spacer()
                 if loading{ProgressView().controlSize(.small)}
-                Button("刷新",systemImage:"arrow.clockwise"){Task{await reload(force:true)}}.disabled(loading)
-                Button("完成"){dismiss()}.keyboardShortcut(.cancelAction)
+                Button(L("刷新"),systemImage:"arrow.clockwise"){Task{await reload(force:true)}}.disabled(loading)
+                Button(L("完成")){dismiss()}.keyboardShortcut(.cancelAction)
             }
-            HStack {Text(statistics.map{ $0.snapshotKind=="last_request" ? "最近请求快照 · \(timestamp($0.snapshotAt))":"本地保留历史 · 尚无可对齐用量" } ?? "正在读取所选聊天…").font(.caption).foregroundStyle(.secondary);Spacer();Toggle("自动刷新",isOn:$autoRefresh).toggleStyle(.switch).controlSize(.small).font(.caption)}
+            HStack {Text(statistics.map{ $0.snapshotKind=="last_request" ? L("最近请求快照 · {0}", timestamp($0.snapshotAt)):L("本地保留历史 · 尚无可对齐用量") } ?? L("正在读取所选聊天…")).font(.caption).foregroundStyle(.secondary);Spacer();Toggle(L("自动刷新"),isOn:$autoRefresh).toggleStyle(.switch).controlSize(.small).font(.caption)}
             if let error{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
             ScrollView {
                 if let s=statistics {
                     VStack(alignment:.leading,spacing:16){
                         ContextSummaryView(statistics:s)
-                        ContextResponseChart(responses:s.responses,events:s.timelineEvents,revision:s.threadId+":"+s.generatedAt,onInteractionChanged:{active in if chartInteracting != active{chartInteracting=active}}).equatable()
+                        ContextResponseChart(responses:s.responses,events:s.timelineEvents,revision:s.threadId+":"+s.generatedAt+":"+Localization.language.rawValue,onInteractionChanged:{active in if chartInteracting != active{chartInteracting=active}}).equatable()
                         VStack(spacing:0){
-                            HStack {Text("分类");Spacer();Text("条目").frame(width:65,alignment:.trailing);Text("占用（估算）").frame(width:115,alignment:.trailing)}.font(.caption).foregroundStyle(.secondary).padding(.bottom,8)
+                            HStack {Text(L("分类"));Spacer();Text(L("条目")).frame(width:65,alignment:.trailing);Text(L("占用（估算）")).frame(width:115,alignment:.trailing)}.font(.caption).foregroundStyle(.secondary).padding(.bottom,8)
                             ForEach(s.categories){row in
-                                HStack {Circle().fill(color(row.category)).frame(width:7,height:7);Text(row.label).font(.callout);if row.images>0{Text("含 \(row.images) 张图片").font(.caption).foregroundStyle(.secondary)};Spacer();Text("\(row.items)").frame(width:65,alignment:.trailing);Text("≈ \(amount(row.tokensEstimate))").frame(width:115,alignment:.trailing)}.monospacedDigit().padding(.vertical,10)
+                                HStack {Circle().fill(color(row.category)).frame(width:7,height:7);Text(L(row.label)).font(.callout);if row.images>0{Text(L("含 {0} 张图片", row.images)).font(.caption).foregroundStyle(.secondary)};Spacer();Text("\(row.items)").frame(width:65,alignment:.trailing);Text("≈ \(amount(row.tokensEstimate))").frame(width:115,alignment:.trailing)}.monospacedDigit().padding(.vertical,10)
                                 Divider().opacity(0.4)
                             }
-                            HStack {Circle().fill(color("other")).frame(width:7,height:7);Text("其他／未分项");Spacer();Text("\(s.unclassified.opaqueItems) 项*").frame(width:65,alignment:.trailing);Text(s.unclassified.tokensEstimate.map{"≈ \(amount($0))"} ?? "无法对齐").frame(width:115,alignment:.trailing)}.font(.callout).monospacedDigit().padding(.vertical,10)
+                            HStack {Circle().fill(color("other")).frame(width:7,height:7);Text(L("其他／未分项"));Spacer();Text(L("{0} 项*", s.unclassified.opaqueItems)).frame(width:65,alignment:.trailing);Text(s.unclassified.tokensEstimate.map{"≈ \(amount($0))"} ?? L("无法对齐")).frame(width:115,alignment:.trailing)}.font(.callout).monospacedDigit().padding(.vertical,10)
                         }
-                        Text("* 已识别 \(s.unclassified.reasoningItems) 个推理项目、\(s.unclassified.compactionItems) 个不透明压缩项目；另有 \(s.unclassified.images) 张图片（已包含在消息内）。").font(.caption).foregroundStyle(.secondary)
-                        if s.unclassified.status=="estimate_exceeds_input"{Text("文本估算超过请求输入量，暂不显示差额；不会将它当作零占用。").font(.caption).foregroundStyle(.orange)}
-                        DisclosureGroup("各工具调用次数"){
-                            VStack(spacing:9){ForEach(s.toolCalls){tool in HStack{Text(tool.name).font(.system(.caption,design:.monospaced));Spacer();Text("\(tool.count) 次").monospacedDigit()}}}.padding(.top,12)
+                        Text(L("* 已识别 {0} 个推理项目、{1} 个不透明压缩项目；另有 {2} 张图片（已包含在消息内）。", s.unclassified.reasoningItems, s.unclassified.compactionItems, s.unclassified.images)).font(.caption).foregroundStyle(.secondary)
+                        if s.unclassified.status=="estimate_exceeds_input"{Text(L("文本估算超过请求输入量，暂不显示差额；不会将它当作零占用。")).font(.caption).foregroundStyle(.orange)}
+                        DisclosureGroup(L("各工具调用次数")){
+                            VStack(spacing:9){ForEach(s.toolCalls){tool in HStack{Text(tool.name).font(.system(.caption,design:.monospaced));Spacer();Text(L("{0} 次", tool.count)).monospacedDigit()}}}.padding(.top,12)
                         }
-                        DisclosureGroup("推理生成统计与统计口径"){
+                        DisclosureGroup(L("推理生成统计与统计口径")){
                             VStack(alignment:.leading,spacing:10){
-                                Text("本次压缩后、快照之前记录了 \(s.sampledResponses) 次响应，生成推理 \(amount(s.reasoningGenerated))。这是生成量，不是当前保留的推理占用。")
-                                Text("普通文本摘要已并入文本，只计一次；不透明压缩内容已合并到其他。此快照包含 \(s.plaintextSummaryItems) 条普通文本摘要。")
-                                ForEach(s.notes,id:\.self){Text($0)}
-                                Text("\(s.tokenizer)。统计在本机进行，不保存消息或推理正文。")
-                                Link("了解压缩摘要",destination:URL(string:"https://developers.openai.com/api/docs/guides/compaction")!)
+                                Text(L("本次压缩后、快照之前记录了 {0} 次响应，生成推理 {1}。这是生成量，不是当前保留的推理占用。", s.sampledResponses, amount(s.reasoningGenerated)))
+                                Text(L("普通文本摘要已并入文本，只计一次；不透明压缩内容已合并到其他。此快照包含 {0} 条普通文本摘要。", s.plaintextSummaryItems))
+                                ForEach(s.notes,id:\.self){Text(L($0))}
+                                Text(L("{0}。统计在本机进行，不保存消息或推理正文。", L(s.tokenizer)))
+                                Link(L("了解压缩摘要"),destination:URL(string:"https://developers.openai.com/api/docs/guides/compaction")!)
                             }.font(.caption).foregroundStyle(.secondary).padding(.top,12)
                         }
                     }.padding(.vertical,6).padding(.trailing,8)
-                }else if !loading{ContentUnavailableView("暂无上下文统计",systemImage:"chart.bar.xaxis",description:Text("这个聊天需要有本地记录。正常交互后点击刷新。"))}
+                }else if !loading{ContentUnavailableView(L("暂无上下文统计"),systemImage:"chart.bar.xaxis",description:Text(L("这个聊天需要有本地记录。正常交互后点击刷新。")))}
             }
         }
         .padding(26).frame(width:920,height:720).background(Color(white:0.095)).preferredColorScheme(.dark)
@@ -147,22 +147,22 @@ struct ContextDetailsButton:View {
     private func amount(_ n:Int)->String {n>=1000 ? (Double(n)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":n.formatted()}
     private func color(_ category:String)->Color {switch category{case "tool_calls":return .blue;case "tool_results":return .cyan;case "user":return .green;case "assistant_final":return .blue;case "assistant_commentary":return .gray;case "instructions":return .orange;default:return Color(red:0.48,green:0.43,blue:0.60)}}
     private func timestamp(_ text:String?)->String {
-        guard let text else{return "待观测"};let formatter=ISO8601DateFormatter();formatter.formatOptions=[.withInternetDateTime,.withFractionalSeconds]
+        guard let text else{return L("待观测")};let formatter=ISO8601DateFormatter();formatter.formatOptions=[.withInternetDateTime,.withFractionalSeconds]
         guard let date=formatter.date(from:text) else{return text}
-        return date.formatted(date:.abbreviated,time:.standard)
+        return date.formatted(Date.FormatStyle(date:.abbreviated,time:.standard).locale(Localization.locale))
     }
 }
 
 
 struct ContextSummaryView:View {
     let statistics:ContextStatistics
-    private func amount(_ n:Int?)->String {n.map{ $0>=1000000 ? (Double($0)/1000000).formatted(.number.precision(.fractionLength(0...2)))+"M":$0>=1000 ? (Double($0)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":$0.formatted()} ?? "待观测"}
-    private func money(_ n:Double?)->String {n.map{String(format:"$%.2f",$0)} ?? "待估算"}
+    private func amount(_ n:Int?)->String {n.map{ $0>=1000000 ? (Double($0)/1000000).formatted(.number.precision(.fractionLength(0...2)))+"M":$0>=1000 ? (Double($0)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":$0.formatted()} ?? L("待观测")}
+    private func money(_ n:Double?)->String {n.map{String(format:"$%.2f",$0)} ?? L("待估算")}
     var body:some View {
         VStack(alignment:.leading,spacing:12){
             HStack(spacing:12){
-                metric("活跃上下文",statistics.inputTokens).help("最近一次请求的输入总量，包含缓存命中部分；不是窗口容量上限")
-                metric("缓存命中",statistics.cachedInputTokens).help("最近请求复用的输入 token，已包含在活跃上下文内")
+                metric(L("活跃上下文"),statistics.inputTokens).help(L("最近一次请求的输入总量，包含缓存命中部分；不是窗口容量上限"))
+                metric(L("缓存命中"),statistics.cachedInputTokens).help(L("最近请求复用的输入 token，已包含在活跃上下文内"))
             }
             costCard
         }
@@ -174,26 +174,26 @@ struct ContextSummaryView:View {
         let cost=statistics.cost
         return VStack(alignment:.leading,spacing:9){
             HStack(alignment:.firstTextBaseline){
-                Text("本聊天费用 · API 估算").font(.callout.weight(.medium));Spacer()
-                if cost.unpricedRequests>0{Text("可估部分").font(.caption).foregroundStyle(.secondary)}
+                Text(L("本聊天费用 · API 估算")).font(.callout.weight(.medium));Spacer()
+                if cost.unpricedRequests>0{Text(L("可估部分")).font(.caption).foregroundStyle(.secondary)}
                 Text((cost.usd != nil ? "≈ ":"")+money(cost.usd)).font(.system(size:23,weight:.medium,design:.rounded)).monospacedDigit()
             }
-            HStack {Text("Standard 单价 · 已估 \(cost.pricedRequests)/\(cost.totalRequests) 次 · 非实际账单");Spacer();Text("USD")}.font(.caption2).foregroundStyle(.secondary)
+            HStack {Text(L("Standard 单价 · 已估 {0}/{1} 次 · 非实际账单", cost.pricedRequests, cost.totalRequests));Spacer();Text("USD")}.font(.caption2).foregroundStyle(.secondary)
             HStack(spacing:12){ForEach(cost.breakdown){part in
-                VStack(alignment:.leading,spacing:3){Text(part.category=="cache_write" ? "缓存写入 · 估算":part.label).font(.caption2).foregroundStyle(.secondary);Text(cost.pricedRequests>0 ? amount(part.tokens):"—").font(.callout).monospacedDigit();Text(cost.pricedRequests>0 ? money(part.usd):"—").font(.caption2).foregroundStyle(.secondary).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading)
+                VStack(alignment:.leading,spacing:3){Text(part.category=="cache_write" ? L("缓存写入 · 估算"):L(part.label)).font(.caption2).foregroundStyle(.secondary);Text(cost.pricedRequests>0 ? amount(part.tokens):"—").font(.callout).monospacedDigit();Text(cost.pricedRequests>0 ? money(part.usd):"—").font(.caption2).foregroundStyle(.secondary).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading)
             }}.padding(.vertical,3)
-            DisclosureGroup("官方公式与计价明细"){
+            DisclosureGroup(L("官方公式与计价明细")){
                 VStack(alignment:.leading,spacing:8){
-                    Text("新增写入按未命中输入估算，使用官方单价。")
-                    Text("普通输入 = 总输入 − 缓存读取 − 缓存写入")
-                    Text("费用 =（普通输入 × 输入价 + 缓存读取 × 读取价 + 缓存写入 × 写入价 + 输出 × 输出价）÷ 1,000,000")
-                    Link("OpenAI 官方 calculateInputCost",destination:URL(string:"https://developers.openai.com/api/docs/guides/prompt-caching#monitor-cache-performance")!)
-                    Text("四项按官方公式计费。估算写入对应的 token 已从普通输入扣除，不重复收费。")
-                    ForEach(cost.groups){group in HStack {Text("\(modelDisplayName(group.model)) · Standard 计价");Spacer();Text("\(group.requests) 次 · \(money(group.usd))").monospacedDigit()}}
-                    if cost.unpricedRequests>0{Text("未计入：模型价格未知 \(cost.unknownModel) · 用量缺失 \(cost.unknownUsage) · 不支持的费率 \(cost.unsupportedRate)").foregroundStyle(.orange)}
-                    Text("价格核对：\(cost.checkedAt)。仅累计本聊天请求，不含父聊天既有费用、税费、工具费或地区加价。缓存读取、写入分别计价，推理已包含在输出中。")
-                    Text("\(cost.longContextCount) 次已计价请求超过 272K，按长上下文费率。统一使用 Standard 基础单价，不含加速溢价。")
-                    Link("官方 API 价格",destination:URL(string:cost.source)!)
+                    Text(L("新增写入按未命中输入估算，使用官方单价。"))
+                    Text(L("普通输入 = 总输入 − 缓存读取 − 缓存写入"))
+                    Text(L("费用 =（普通输入 × 输入价 + 缓存读取 × 读取价 + 缓存写入 × 写入价 + 输出 × 输出价）÷ 1,000,000"))
+                    Link(L("OpenAI 官方 calculateInputCost"),destination:URL(string:"https://developers.openai.com/api/docs/guides/prompt-caching#monitor-cache-performance")!)
+                    Text(L("四项按官方公式计费。估算写入对应的 token 已从普通输入扣除，不重复收费。"))
+                    ForEach(cost.groups){group in HStack {Text(L("{0} · Standard 计价", modelDisplayName(group.model)));Spacer();Text(L("{0} 次 · {1}", group.requests, money(group.usd))).monospacedDigit()}}
+                    if cost.unpricedRequests>0{Text(L("未计入：模型价格未知 {0} · 用量缺失 {1} · 不支持的费率 {2}", cost.unknownModel, cost.unknownUsage, cost.unsupportedRate)).foregroundStyle(.orange)}
+                    Text(L("价格核对：{0}。仅累计本聊天请求，不含父聊天既有费用、税费、工具费或地区加价。缓存读取、写入分别计价，推理已包含在输出中。", cost.checkedAt))
+                    Text(L("{0} 次已计价请求超过 272K，按长上下文费率。统一使用 Standard 基础单价，不含加速溢价。", cost.longContextCount))
+                    Link(L("官方 API 价格"),destination:URL(string:cost.source)!)
                 }.font(.caption).foregroundStyle(.secondary).padding(.top,8)
             }.font(.caption).foregroundStyle(.secondary)
         }.padding(14).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))

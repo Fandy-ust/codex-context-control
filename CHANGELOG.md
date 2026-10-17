@@ -1,5 +1,13 @@
 # Changes
 
+## 0.16.0 — 2026-10-17
+
+- Add English and Chinese UI across the menu bar, main settings, context details, charts, runtime notices, hooks, and installer.
+- Add a saved Automatic / Chinese / English preference; automatic selection uses named China, Hong Kong, Macao, and Taiwan time zones, with English elsewhere. Manual selection takes precedence.
+- Refresh native menus and chart presentation after language or timezone changes without changing budgets or user-authored names.
+- Add linked English and Chinese READMEs, English usage/development guides, and shared localization documentation.
+- Adopt the MIT license as selected by the owner; retain third-party licenses and notices.
+
 ## 0.15.6 — 2026-10-17
 
 - Keep a statistics-only event projection in the bounded parser cache; omit duplicated tool-completion bodies, encrypted reasoning payloads and image data while preserving accounting fields and event ordinals.
