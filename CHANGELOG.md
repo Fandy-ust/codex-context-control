@@ -1,8 +1,10 @@
 # Changes
 
 
-## 0.17.1 — Remove obsolete runtime files after updates
+## 0.17.1 — Upgrade inheritance and runtime cleanup
 
+- Preserve existing and unknown settings fields across upgrades; keep one lightweight pre-upgrade configuration snapshot without copying runtimes or chat caches. Same-version reinstalls do not duplicate snapshots.
+- Preserve newer state schema versions instead of silently downgrading their version marker.
 - Replace app/code as before; now remove unused older bundled Node binaries and their obsolete licenses after a successful install.
 - Remove the disabled legacy patched core when no process is using it.
 - Defer in-use runtime cleanup until processes exit; retry at startup and every five minutes.

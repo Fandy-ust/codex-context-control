@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {prepareUpgrade,inheritedSettings,completeUpgrade} from '../src/upgrade-state.mjs';
 import {cleanupOldRuntimes} from '../src/runtime-cleanup.mjs';
 import {L} from '../src/localization.mjs';
 import path from 'node:path';
@@ -47,6 +48,7 @@ if(process.argv.includes('--uninstall')){
   if(process.platform!=='darwin')throw new Error('首版安装程序面向 macOS；核心测试可在 Node.js 上运行。');
   const binary=realBinary();if(!fs.existsSync(binary))throw new Error('未找到 Codex 二进制文件');
   if(process.argv.includes('--require-supported-runtime')){const version=spawnSync(binary,['--version'],{encoding:'utf8',timeout:5000}).stdout?.trim();if(!runtimeSupported(version))throw Error('当前 Codex 运行时尚未支持：'+(version||'无法识别版本'));}
+  const upgrade=prepareUpgrade({home:root,version:JSON.parse(fs.readFileSync(path.join(repo,'package.json'))).version});
   if(process.argv.includes('--bundled-node')){
     if(!fs.existsSync(path.join(repo,'build/Codex Context Control.app/Contents/MacOS/ContextControl'))||!fs.existsSync(path.join(repo,'node_modules/js-tiktoken/package.json')))throw Error('安装包不完整，请重新下载。');
     nodeBinary=installBundledNode({home:root,license:path.join(repo,'vendor/Node-LICENSE.txt')});
@@ -62,7 +64,7 @@ if(process.argv.includes('--uninstall')){
   const extensionFile=path.join(root,'context-extension.json');
   if(!fs.existsSync(extensionFile)&&/^0\.(12|13)\./.test(oldVersion??''))atomicJSON(extensionFile,{enabled:true,migratedFrom:oldVersion,updatedAt:Date.now()});
   // The lightweight release always uses the original desktop runtime.
-  atomicJSON(path.join(root,'runtime-fix.json'),{enabled:false,updatedAt:Date.now()});
+  atomicJSON(path.join(root,'runtime-fix.json'),{...readJSON(path.join(root,'runtime-fix.json'),{}),enabled:false,updatedAt:Date.now()});
   const code=path.join(root,'code');
   replaceDirectory(code,stage=>{
     for(const dir of ['src','scripts','runtime-patches'])fs.cpSync(path.join(repo,dir),path.join(stage,dir),{recursive:true});
@@ -79,7 +81,7 @@ if(process.argv.includes('--uninstall')){
   const desktopExecutable=path.join(appPath,'Contents/MacOS',info.stdout.trim());
   const previousSettings=readJSON(path.join(root,'settings.json'),{});
   if(previousSettings.hookCommand&&previousSettings.hookCommand!==hookCommand)editHook(previousSettings.hookCommand,true);
-  atomicJSON(path.join(root,'settings.json'),{version:1,realBinary:binary,node:nodeBinary,hookCommand,desktopExecutable,desktopBundleId:bundle,shim,installedApp,launcherApp});
+  atomicJSON(path.join(root,'settings.json'),inheritedSettings(previousSettings,{version:1,realBinary:binary,node:nodeBinary,hookCommand,desktopExecutable,desktopBundleId:bundle,shim,installedApp,launcherApp}));
   // Keep native runtime helpers discoverable beside the shim without changing signed apps.
   const binDir=path.dirname(binary);for(const name of fs.readdirSync(binDir)){
     if(name==='codex')continue;const link=path.join(root,'bin',name);try{fs.unlinkSync(link);}catch{}
@@ -97,6 +99,7 @@ if(process.argv.includes('--uninstall')){
     const entry=ensureMenuBarEntry(installedApp);
     if(entry.error)throw new Error(entry.error);
   }
+  completeUpgrade({home:root,...upgrade});
   try{cleanupOldRuntimes({home:root,currentNode:nodeBinary});}catch{/* Cleanup must not roll back a successful installation. */}
   console.log(L('已安装：{0}\n菜单栏 Context Manager 圆环图标提供聊天概览和设置入口。照常打开原来的 Codex，预算控制会自动接入；首次安装后请正常重开一次客户端。\n请在 Codex 的 /hooks 中审核并信任新增 hook；安装程序不会生成信任记录。',installedApp));
 }

@@ -38,10 +38,14 @@ test('downloaded installer validates payload, installs with empty PATH, and surv
   r=run(verifier,[resources],env);assert.equal(r.status,0,r.stdout+r.stderr);
   const settings=JSON.parse(fs.readFileSync(path.join(control,'settings.json')));assert.ok(settings.node.startsWith(path.join(control,'runtime')));assert.ok(!settings.node.startsWith(unpacked));assert.ok(fs.existsSync(path.join(control,'runtime/Node-'+manifest.nodeVersion+'-LICENSE.txt')));
   fs.writeFileSync(path.join(control,'thread-cache.json'),JSON.stringify({version:1,entries:{cached:{summary:{lastUsage:{totalTokens:123}}}}}));
+  const oldPackage=path.join(control,'code/package.json');const packageData=JSON.parse(fs.readFileSync(oldPackage));fs.writeFileSync(oldPackage,JSON.stringify({...packageData,version:'0.17.0'}));
+  const oldSettings=JSON.parse(fs.readFileSync(path.join(control,'settings.json')));fs.writeFileSync(path.join(control,'settings.json'),JSON.stringify({...oldSettings,futurePreference:'preserved'}));
+  const language='{"version":1,"choice":"en"}';fs.writeFileSync(path.join(control,'language.json'),language);
   const obsolete=path.join(control,'runtime/node-v22.0.0-arm64-111111111111');fs.writeFileSync(obsolete,'obsolete runtime');fs.writeFileSync(path.join(control,'runtime/Node-v22.0.0-LICENSE.txt'),'obsolete license');
   const retainedState={version:2,threads:{},policies:{saved:{window:400000,compact:360000,revision:3}}};fs.writeFileSync(path.join(control,'state.json'),JSON.stringify(retainedState));
   r=run(path.join(app,'Contents/MacOS/Installer'),['--install-update','--no-auto-start'],env);assert.equal(r.status,0,r.stdout+r.stderr);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(control,'state.json'))),retainedState);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(control,'settings.json'))).futurePreference,'preserved');assert.equal(fs.readFileSync(path.join(control,'language.json'),'utf8'),language);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(control,'upgrade-backup/state.json'))),retainedState);
   assert.equal(fs.existsSync(obsolete),false);assert.equal(fs.existsSync(path.join(control,'runtime/Node-v22.0.0-LICENSE.txt')),false);
   assert.equal(JSON.parse(fs.readFileSync(path.join(control,'thread-cache.json'))).entries.cached.summary.lastUsage.totalTokens,123);
   fs.rmSync(unpacked,{recursive:true,force:true});
