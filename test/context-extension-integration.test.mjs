@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import readline from 'node:readline';import {spawn} from 'node:child_process';import {fileURLToPath} from 'node:url';import {fixtureServer} from './fixture.mjs';
-const repo=fileURLToPath(new URL('../',import.meta.url)),binary='/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
+const repo=fileURLToPath(new URL('../',import.meta.url)),binary=process.env.CONTEXT_CONTROL_TEST_CODEX||'/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));async function until(fn){for(let i=0;i<300;i++){const r=await fn();if(r)return r;await sleep(25);}throw Error('Mode transition timed out');}
 test('real runtime toggles between extended and native limits; defaults and forks work in both modes',{skip:!fs.existsSync(binary),timeout:60000},async()=>{
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-mode-')),home=path.join(temp,'home'),control=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(control);const fixture=await fixtureServer();

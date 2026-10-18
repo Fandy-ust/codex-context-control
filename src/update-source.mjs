@@ -1,14 +1,8 @@
-export const repository='https://github.com/Fandy-ust/codex-context-control/';
+import {repository} from './core/update-artifact.mjs';
+export {repository,manifestCandidate} from './core/update-artifact.mjs';
 export const releaseManifestURL=repository+'releases/latest/download/update.json';
+export const releaseMatrixURL=repository+'releases/latest/download/update-v2.json';
 export const releaseAPI='https://api.github.com/repos/Fandy-ust/codex-context-control/releases/latest';
-export function manifestCandidate(doc){
- const version=doc?.version,tag=doc?.tag;
- if(doc?.schemaVersion!==1||typeof version!=='string'||!/^\d+\.\d+\.\d+$/.test(version)||typeof tag!=='string'||tag.match(/^v(\d+\.\d+\.\d+)(?:-preview\.\d+)?$/)?.[1]!==version)throw Error('版本文件格式无效');
- const filename=`Context-Manager-${version}-macos-arm64.dmg`;
- if(doc.filename!==filename||!Number.isSafeInteger(doc.size)||doc.size<=0||doc.size>256*1024*1024||typeof doc.sha256!=='string'||!/^[a-f0-9]{64}$/i.test(doc.sha256))throw Error('版本文件内容不完整');
- const prefix=repository+'releases/download/'+tag+'/';
- return {version,filename,size:doc.size,sha256:doc.sha256.toLowerCase(),url:prefix+filename,checksumURL:prefix+filename+'.sha256',releaseURL:repository+'releases/tag/'+tag};
-}
 export async function updateSourceError(response,source,now){
  const header=name=>response.headers?.get?.(name),status=response.status;let message='';
  try{message=String((await response.json()).message??'').slice(0,1000);}catch{}

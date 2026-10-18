@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
+import {canonicalLocalPath,pathInside} from './local-path.mjs';
 
 const latestDatabase=home=>fs.readdirSync(home).filter(n=>/^state_\d+\.sqlite$/.test(n)).sort((a,b)=>Number(b.match(/\d+/)[0])-Number(a.match(/\d+/)[0]))[0];
 const fingerprint=stat=>`${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
@@ -14,7 +15,7 @@ export function historySourcesUnchanged(home,sources){
     const query=db.prepare('SELECT rollout_path FROM threads WHERE id=?');
     return sources.every(source=>{
       const row=query.get(source.threadId);if(!row?.rollout_path)return false;
-      const file=fs.realpathSync(row.rollout_path);
+      const file=canonicalLocalPath(row.rollout_path);
       return file===source.file&&fingerprint(fs.statSync(file))===source.fingerprint;
     });
   }catch{return false;}finally{db?.close();}
@@ -27,13 +28,13 @@ export function readHistory(home,id,cache=null){
   const database=latestDatabase(home);
   if(!database)throw new Error('尚未找到本地聊天记录');
   const db=new DatabaseSync(path.join(home,database),{readOnly:true});let bytes=0;const dependencies=[],sources=[];
-  const root=fs.realpathSync(home)+path.sep;
+  const root=canonicalLocalPath(home);
   function load(threadId,limit=null,seen=[]){
     if(seen.includes(threadId)||seen.length>16)throw new Error('分支继承历史异常');
     const row=db.prepare('SELECT rollout_path FROM threads WHERE id=?').get(threadId);
     if(!row?.rollout_path)throw new Error('这个聊天尚无本地历史，正常交互后再刷新');
-    const file=fs.realpathSync(row.rollout_path);
-    if(!file.startsWith(root)||!file.endsWith('.jsonl'))throw new Error('聊天记录不在本地 Codex 目录内');
+    const file=canonicalLocalPath(row.rollout_path);
+    if(!pathInside(root,file)||!file.endsWith('.jsonl'))throw new Error('聊天记录不在本地 Codex 目录内');
     const stat=fs.statSync(file),size=stat.size,n=limit??size;
     if(!Number.isSafeInteger(n)||n<0||n>size||n>128*1024*1024||(bytes+=n)>256*1024*1024)throw new Error('历史大小或分支边界无法安全读取');
     const key=`${threadId}:${file}:${limit??'live'}`;

@@ -12,11 +12,11 @@ test('quota refresh is coalesced and cached; failures retain explicitly stale ob
 });
 
 test('native quota session initializes and reads account limits without opening chats',async()=>{
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-quota-')),binary=path.join(dir,'native-fixture'),log=path.join(dir,'methods.jsonl');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-quota-')),binary=path.join(dir,'native-fixture.cjs'),log=path.join(dir,'methods.jsonl');
  try{fs.writeFileSync(binary,String.raw`#!/usr/bin/env node
 const fs=require('node:fs');require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m.method)+'\n');if(m.id)process.stdout.write(JSON.stringify({id:m.id,result:m.method==='initialize'?{}:{rateLimits:{primary:{usedPercent:15,windowDurationMins:300}}}})+'\n');});
 `,{mode:0o700});
- const response=await readAccountQuota({binary});assert.equal(normalizeQuota(response)[0].primary.remainingPercent,85);assert.deepEqual(fs.readFileSync(log,'utf8').trim().split('\n').map(JSON.parse),['initialize','initialized','account/rateLimits/read']);
+ const response=await readAccountQuota({binary:process.execPath,launcherArgs:[binary]});assert.equal(normalizeQuota(response)[0].primary.remainingPercent,85);assert.deepEqual(fs.readFileSync(log,'utf8').trim().split('\n').map(JSON.parse),['initialize','initialized','account/rateLimits/read']);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
 

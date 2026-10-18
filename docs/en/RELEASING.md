@@ -2,14 +2,15 @@
 
 **English** | [简体中文](../RELEASING.md) · [Home](../../README.md)
 
-## Build
+Follow the [dual-platform release workflow](../CROSS_PLATFORM_BUILD.md) to build and publish Mac and Windows together after validation. The sections below cover Mac packaging and signing.
+
+## Mac build
 
 ```sh
 npm ci --ignore-scripts
 npm test
 npm run package:mac -- --release
-version=$(node -p "require('./package.json').version")
-CONTEXT_CONTROL_TEST_INSTALLER_ZIP="$PWD/build/distribution/Context-Manager-$version-macos-arm64.zip" npm run test:distribution
+CONTEXT_CONTROL_TEST_INSTALLER_APP="$PWD/build/distribution/Install Context Manager.app" npm run test:distribution
 ```
 
 The release flag requires a clean working tree. Package metadata records source revision, architecture, Node version, sizes, and actual signing status.

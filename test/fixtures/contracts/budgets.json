@@ -1,0 +1,6 @@
+[
+ {"name":"native-400k","usableWindow":400000,"compact":360000,"rawWindow":421053,"percent":95,"maximum":872000},
+ {"name":"native-700k","usableWindow":700000,"compact":630000,"rawWindow":736843,"percent":95,"maximum":872000},
+ {"name":"extended-920k","usableWindow":920000,"compact":904000,"rawWindow":1022223,"percent":90,"maximum":1022223},
+ {"name":"extended-500k","usableWindow":500000,"compact":450000,"rawWindow":555556,"percent":90,"maximum":1022223}
+]

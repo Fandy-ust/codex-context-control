@@ -4,13 +4,13 @@
 
 ## Open the panel
 
-Click the ring icon in the macOS menu bar. Running chats come first, followed by recent chats ordered by actual starts and completions. A completed chat can remain available after its runtime unloads it. Temporary and managed agent sessions are excluded.
+Click the quota icon in the Mac menu bar or Windows system tray. Running chats come first, followed by recent chats ordered by actual starts and completions. A completed chat can remain available after its runtime unloads it. Temporary and managed agent sessions are excluded.
 
 Hover over a chat to reveal its budget slider, or click it to open the main window. Chat names retain their original text in both UI languages.
 
 ## Language
 
-In the main window’s sidebar, use **Language**:
+Open Settings from the bottom left and use **Language**:
 
 - **Automatic (time zone):** Chinese for mainland China, Hong Kong, Macao, and Taiwan zone identifiers; English elsewhere.
 - **中文:** always use Chinese.

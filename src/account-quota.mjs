@@ -1,12 +1,12 @@
 import {spawn} from 'node:child_process';
 import readline from 'node:readline';
-import {realBinary} from './paths.mjs';
+import {realBinary,codexHome} from './paths.mjs';
 
 // A read-only native app-server session: no thread creation, model requests,
 // credentials export, or dependence on an already-open desktop chat.
-export function readAccountQuota({binary=realBinary(),timeout=20000}={}){
+export function readAccountQuota({binary=realBinary(),timeout=20000,launcherArgs=[]}={}){
  return new Promise((resolve,reject)=>{
-  const child=spawn(binary,['app-server','--listen','stdio://'],{stdio:['pipe','pipe','ignore']});
+  const child=spawn(binary,[...launcherArgs,'app-server','--listen','stdio://'],{windowsHide:true,stdio:['pipe','pipe','ignore'],env:{...process.env,CODEX_HOME:codexHome}});
   let done=false,sequence=0,total=0;const pending=new Map();
   const lines=readline.createInterface({input:child.stdout});
   const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);lines.close();child.stdin.end();child.kill('SIGTERM');for(const p of pending.values())p.reject(error??Error('Quota session closed'));pending.clear();error?reject(error):resolve(value);};

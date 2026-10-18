@@ -1,5 +1,78 @@
 # Changes
 
+## 0.19.6 — Shared core and cross-platform maintenance (unreleased)
+
+- Integrate main 0.18.3 update recovery and approved Mac quota/control-panel design with the Windows 0.19.5 port.
+- Separate pure budget/state/update rules, control API contracts, presentation and OS adapters; both interfaces submit visible budgets to the same authority.
+- Generate native API routes from one specification and check JS/Swift budget parity with shared fixtures.
+- Preserve future state fields and reject corrupt state instead of silently resetting it; replace stale same-version services and reclaim verified unused Windows installations.
+- Require Linux core checks, native Mac build/package validation, and Windows build, installation, same-version rebuild, cross-version upgrade and OTA checks.
+- Publish both platforms together with platform-specific update manifests while preserving the 0.18.x Mac update feed.
+
+## 0.19.5 — Synchronized slider and progressive motion
+
+- Remove fill-width transitions so the blue fill, headroom and handles follow the same drag frame.
+- Accelerate particles progressively toward the right with the existing 80/20 budget weighting, keeping randomized drift and pacing.
+- Adjust playback speed without restarting phases, and batch animation reads instead of rewriting every particle during drag.
+
+## 0.19.4 — Continuous trends and inline chart values
+
+- Join available chart measurements across missing intervals with straight lines on Windows and macOS.
+- Add left-axis values, compact color legends and a pointer-following Windows data card so interval values can be read without scrolling down.
+- Keep missing values, interval statistics, EMA resets and raw-record details unchanged; preserve native Apple chart rendering within measured intervals.
+
+## 0.19.3 — One-command Windows EXE build
+
+- Make build:win compile and compress the payload into a self-contained Setup.exe by default.
+- Keep directory-only builds and explicit update-ZIP packaging available as separate commands.
+- Upload the Windows installer and update archive as separate Actions artifacts to avoid downloading two copies for installation.
+
+## 0.19.2 — Compact Windows budget layout
+
+- Put context details beside the saved budget summary and remove the redundant instruction below the slider.
+- Use equal-sized main action buttons, with Apply to this chat to the right of Stop auto apply.
+- Reduce main-page spacing at the default window height so budget actions are easier to reach.
+- Slow slider particles with independent randomized speed, position, size and gentle drift; preserve 80/20 budget weighting and animation continuity across refreshes.
+
+## 0.19.1 — Apple-led cross-platform interaction
+
+- Align Windows budget control order, percentage/window preset rows, model readiness, minimums and strict readback confirmation with the native Apple interface.
+- Open context details in a modal sheet with preserved budget drafts, matching summary/chart/category ordering, smoothing controls and record selection.
+- Match hover-versus-pin behavior, stale-request handling and inline tray save/cancel feedback; keep floating settings and the larger chat sidebar.
+- Preserve all Apple native view sources, materials and Liquid Glass; retain the shared core and dual-platform build workflow.
+
+## 0.19.0 — Unified Windows and macOS codebase
+
+- Merge upstream 0.18 quota support with the Windows adaptation and keep both platform shells on one shared core and product version.
+- Standardize floating settings into General, Global defaults, Account quota, Codex integration and Shortcut sections, opened by a bottom-left gear.
+- Keep native SwiftUI/AppKit controls and materials on macOS, including Liquid Glass on supported SDKs and systems.
+- Add Windows quota bars and percentage, remaining amounts, reset times, multiple quota pools, stale states and manual refresh.
+- Package nested platform modules in the macOS installer and provide one workflow that builds Windows x64 and macOS arm64 from the same commit.
+
+## 0.17.4 — Window toggle, slider motion and Windows history paths
+
+- Toggle the main window with the configured global shortcut, including Ctrl+Shift+M by default.
+- Increase slider particle count and speed with 80% compaction-threshold and 20% context-window weighting, updating live while dragging.
+- Resolve Windows extended-length rollout paths through the native filesystem API and normalize drive/UNC namespaces for local-history containment checks.
+- Enable integration by default after its startup check; retain explicit user choices and preserve native startup if automatic activation fails.
+- Explain the disabled legacy early-compaction patch while retaining native automatic compaction and configurable thresholds.
+
+## 0.17.3 — Windows sidebar and launch diagnostics
+
+- Display native chat names in the sidebar, budget view, statistics and tray instead of falling back to IDs.
+- Move sidebar controls into a floating Settings dialog opened by a bottom-left gear, with general, defaults, integration and shortcut tabs.
+- Flush each native stdio write so short initialization messages reach Node before EOF; add rotating stage/timing/byte-count logs and an Open integration logs action.
+
+- Install only the tray and interface by default; make desktop integration an explicit Settings action, with a startup probe before registration and restoration on disable.
+- Give the installer, tray and service stable working directories so launched processes do not hold the extracted payload directory open.
+- Prevent a late service attachment from keeping an already-closed runtime wrapper alive.
+
+- Align trend cursors, selected points, event markers and pointer hit testing with one padded horizontal scale.
+- Add configurable global show-window shortcut, defaulting to Ctrl+Shift+M, with recording, conflict handling and saved preferences.
+- Unify control corners at 10px and prevent the information button from stretching with the heading.
+- Make the three-chat synthetic preview explicit and add an entry to open real local chats.
+- Package Windows as a self-contained Setup.exe with an embedded, checksum-verified payload and automatic temporary-file cleanup, reusing the existing installation and upgrade flow.
+
 
 ## 0.18.3 — Resilient update checks
 

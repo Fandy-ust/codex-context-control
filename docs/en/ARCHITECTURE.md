@@ -9,10 +9,16 @@ flowchart LR
     UI[Menu bar and settings] -->|Authenticated loopback| Controller[Local controller]
     Controller <-->|Local IPC| Bridge[Runtime bridge]
     Desktop[Codex Desktop] <-->|App-server protocol| Bridge
-    Bridge <-->|App-server protocol| Runtime[Original or optional patched Codex]
+    Bridge <-->|App-server protocol| Runtime[Original signed Codex]
     Controller --> Statistics[Bounded statistics workers]
     Statistics --> History[Local history and metadata]
 ```
+
+## Cross-platform boundaries (0.19.6)
+
+`src/core/` owns pure budget, inheritance, state migration and update-selection rules. `src/contracts/` defines the shared control API and generates native routes; `src/platform/` owns OS operations. The daemon, bridge and storage compose those modules. `macos/` and `desktop/` independently render the product.
+
+Clients send visible tokens through `budget.usableWindow` when `capabilities.visibleBudget` is present. The service performs the authoritative conversion and preflight; legacy `policy.window` payloads remain supported. Shared fixtures validate JavaScript and Swift previews. See [development boundaries](../MULTIPLATFORM_DEVELOPMENT.md) and [contribution workflow](../../CONTRIBUTING.md).
 
 ## Per-chat state
 

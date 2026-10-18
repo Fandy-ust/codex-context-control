@@ -1,6 +1,7 @@
 import net from 'node:net';
 import {randomUUID} from 'node:crypto';
-import {socketPath} from './paths.mjs';
+import {socketPath,ipcKey} from './paths.mjs';
+import {authenticateClient} from './ipc-auth.mjs';
 
 export class Peer {
   constructor(socket,handler=async()=>{throw new Error('Unknown operation');}) {
@@ -23,6 +24,7 @@ export class Peer {
     });
     socket.on('error',()=>{});
     socket.on('close',()=>{for(const item of this.pending.values()){clearTimeout(item.timer);item.reject(new Error('连接已断开'));}this.pending.clear();});
+    socket.resume();
   }
   send(message) {if(this.socket.destroyed)throw new Error('连接已断开');this.socket.write(JSON.stringify(message)+'\n');}
   async receive(message) {
@@ -48,8 +50,9 @@ export class Peer {
   close(){this.socket.end();}
 }
 export async function connect(handler) {
+  const key=ipcKey();
   const socket=net.createConnection(socketPath);
-  await new Promise((resolve,reject)=>{socket.once('connect',resolve);socket.once('error',reject);});
+  try{await new Promise((resolve,reject)=>{socket.once('connect',resolve);socket.once('error',reject);});if(key)await authenticateClient(socket,key);}catch(error){socket.destroy();throw error;}
   return new Peer(socket,handler);
 }
 export async function request(op,params={},timeout=15000) {

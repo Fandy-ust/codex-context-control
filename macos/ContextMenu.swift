@@ -205,7 +205,9 @@ private struct MenuRowFrames:PreferenceKey {
             guard let current=model.chats.first(where:{$0.id==value.chatID}),current.model==value.model,
                   current.modelMetadata?.effective_context_window_percent==value.effectivePercent,
                   current.modelMetadata?.max_context_window==value.maximumRawWindow else{throw BudgetInputError(message:L("模型信息已变化，请取消后重新调整"))}
-            let data=try await model.api("/policy",body:["id":value.chatID,"policy":try value.policy(),"apply":true,"expectedRevision":value.revision])
+            var command:[String:Any]=["id":value.chatID,"apply":true,"expectedRevision":value.revision]
+            command.merge(model.policyCommand(try value.policy(),usableWindow:Int(value.windowK)*1000),uniquingKeysWith:{$1})
+            let data=try await model.api(ControlAPI.policy,body:command)
             let result=try JSONSerialization.jsonObject(with:data) as? [String:Any]
             let code=(result?["plan"] as? [String:Any])?["code"] as? String
             switch code {

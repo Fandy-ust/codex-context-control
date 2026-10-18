@@ -30,7 +30,8 @@ struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:
 struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPercent:Double;let windowDurationMins:Int?;let resetsAt:Int?}
 struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?;let creditBalance:String?}
 struct QuotaState:Decodable,Equatable {let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
-struct RuntimeState: Decodable {let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct ControlCapabilities:Decodable {let visibleBudget:Bool?}
+struct RuntimeState: Decodable {let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -56,6 +57,7 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var quotaRefreshing=false
     @Published var selectedQuotaID="codex"
     var selectedQuota:QuotaBucket? {quota?.buckets.first{$0.id==selectedQuotaID} ?? quota?.buckets.first}
+    @Published var supportsVisibleBudget=false
     @Published var bridgeCount=0
     @Published var contextCeilingPending=false
     @Published var contextExtension:ContextExtensionState?
@@ -101,8 +103,9 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func refresh() async {
         if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
-        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"))
+        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api(ControlAPI.state))
             guard !menuDragInProgress else{return}
+            supportsVisibleBudget=state.capabilities?.visibleBudget == true
             if quota != state.quota{acceptQuota(state.quota)}
             if updateState != state.update{updateState=state.update;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
             if chats != state.threads{chats=state.threads}
@@ -126,19 +129,19 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func refreshQuota() async {
         guard !quotaRefreshing else{return};quotaRefreshing=true;defer{quotaRefreshing=false}
-        do{acceptQuota(try JSONDecoder().decode(QuotaState.self,from:await api("/quota",body:[:])))}catch{notice=L("暂时无法读取额度")}
+        do{acceptQuota(try JSONDecoder().decode(QuotaState.self,from:await api(ControlAPI.quotaRefresh,body:[:])))}catch{notice=L("暂时无法读取额度")}
     }
     func updateApp(install:Bool=false) async {
         checkingUpdates=true;defer{checkingUpdates=false}
-        do{updateState=try JSONDecoder().decode(UpdateState.self,from:await api(install ? "/updates/install":"/updates/check",body:[:]));if let error=updateState?.error{notice=error}else{notice=install ? L("正在下载更新，安装后请重开 Codex"):L(updateState?.available == true ? "发现新版本":"已是最新版本")}}catch{notice=error.localizedDescription}
+        do{updateState=try JSONDecoder().decode(UpdateState.self,from:await api(install ? ControlAPI.installUpdate:ControlAPI.checkUpdate,body:[:]));if let error=updateState?.error{notice=error}else{notice=install ? L("正在下载更新，安装后请重开 Codex"):L(updateState?.available == true ? "发现新版本":"已是最新版本")}}catch{notice=error.localizedDescription}
     }
     func scanChats() async {
         working=true;defer{working=false}
-        do{_ = try await api("/scan",body:[:]);await refresh();notice=L("本地聊天已更新")}catch{notice=error.localizedDescription}
+        do{_ = try await api(ControlAPI.scan,body:[:]);await refresh();notice=L("本地聊天已更新")}catch{notice=error.localizedDescription}
     }
     func setContextExtension(_ enabled:Bool) async {
         changingContextExtension=true;defer{changingContextExtension=false}
-        do{let data=try await api("/context-extension",body:["enabled":enabled]);contextExtension=try JSONDecoder().decode(ContextExtensionState.self,from:data);await refresh();fill();notice=contextExtension?.message ?? L("拓展设置已保存")}catch{notice=error.localizedDescription}
+        do{let data=try await api(ControlAPI.contextExtension,body:["enabled":enabled]);contextExtension=try JSONDecoder().decode(ContextExtensionState.self,from:data);await refresh();fill();notice=contextExtension?.message ?? L("拓展设置已保存")}catch{notice=error.localizedDescription}
     }
     func fill(){
         defer{budgetEdited=false}
@@ -185,13 +188,18 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func setRatio(_ value:Int){ratioNumerator=value;ratioDenominator=100;setWindowK(windowK)}
     var policy:[String:Any] {get throws {let budget=try calculate();return ["window":budget.rawWindow,"compact":budget.compact,"reserve":reserve,"retainedFloor":floor,"scope":"total"]}}
+    func policyCommand(_ raw:[String:Any],usableWindow:Int)->[String:Any]{
+        if !supportsVisibleBudget{return ["policy":raw]}
+        var budget=raw;budget.removeValue(forKey:"window");budget["usableWindow"]=usableWindow
+        return ["budget":budget]
+    }
     func act(_ action:String) async {
         guard let chat=selected else{return};working=true;defer{working=false}
         do {
             var body:[String:Any]=["id":chat.id]
-            if action=="preflight"||action=="policy"{body["policy"]=try policy}
+            if action=="preflight"||action=="policy"{body.merge(policyCommand(try policy,usableWindow:Int(windowK)*1000),uniquingKeysWith:{$1})}
             if action=="policy"{body["apply"]=true;body["expectedRevision"]=editingRevision}
-            let data=try await api("/\(action)",body:body)
+            let data=try await api(ControlAPI.routes[action] ?? "/invalid",body:body)
             let object=try JSONSerialization.jsonObject(with:data) as? [String:Any]
             if action=="preflight"{notice=(object?["message"] as? String ?? L("预检完成"))+((object?["notes"] as? [String])?.map{"\n"+$0}.joined() ?? "")}
             else if action=="policy"{editingRevision=(object?["policy"] as? [String:Any])?["revision"] as? Int ?? editingRevision;budgetEdited=false;notice=L("预算已保存。请查看下方应用状态；实际值将在正常下一轮请求后确认。")}
@@ -202,7 +210,7 @@ struct ServiceSettings: Decodable {let node:String}
     func setRuntimeFix(_ enabled:Bool) async {
         if changingRuntimeFix{return};changingRuntimeFix=true;defer{changingRuntimeFix=false}
         do {
-            runtimeFix=try JSONDecoder().decode(RuntimeFixState.self,from:await api("/runtime-fix",body:["enabled":enabled]))
+            runtimeFix=try JSONDecoder().decode(RuntimeFixState.self,from:await api(ControlAPI.runtimeFix,body:["enabled":enabled]))
             notice=runtimeFix?.message ?? L("设置已保存")
         }catch{notice=error.localizedDescription}
     }

@@ -1,0 +1,48 @@
+name: Build Windows and macOS
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish an existing draft after both platforms pass validation
+        type: boolean
+        default: false
+  push:
+    branches:
+      - 'codex/cross-platform-*'
+permissions:
+  contents: read
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    uses: ./.github/workflows/_build-desktop.yml
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: context-manager-*
+          path: release
+          merge-multiple: true
+      - run: node scripts/create-update-manifest.mjs release
+      - name: Publish both platforms together
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v${version}-preview.1"
+          test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
+          existing=$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            test "$(gh api "repos/$GH_REPO/commits/$tag" --jq '.sha')" = "$GITHUB_SHA"
+          fi
+          gh release edit "$tag" --target "$GITHUB_SHA"
+          gh release upload "$tag" release/*.dmg release/*.exe release/*.zip release/*.sha256 release/*.json release/README-FIRST.txt --clobber
+          gh release edit "$tag" --draft=false --latest

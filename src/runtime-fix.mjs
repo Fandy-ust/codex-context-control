@@ -19,7 +19,7 @@ export function validateRuntimePackage(directory,{platform=process.platform,arch
   if(manifest.platform!==platform||manifest.arch!==arch)throw Error('修复包与这台电脑不兼容');
   if(!['codex','bin/codex'].includes(manifest.entrypoint??'codex'))throw Error('运行时入口无效');
   const binary=path.join(directory,manifest.entrypoint??'codex'),stat=fs.lstatSync(binary);
-  if(!stat.isFile()||stat.isSymbolicLink()||!(stat.mode&0o111))throw Error('修复版运行时文件无效');
+  if(!stat.isFile()||stat.isSymbolicLink()||process.platform!=='win32'&&!(stat.mode&0o111))throw Error('修复版运行时文件无效');
   if(!/^[a-f0-9]{64}$/.test(manifest.binarySHA256)||fileSHA256(binary)!==manifest.binarySHA256)throw Error('修复版运行时校验失败');
   return {manifest,binary};
 }
@@ -33,7 +33,7 @@ export function createRuntimeFixManager({home=root,platform=process.platform,arc
     const companion=path.join(path.dirname(file),'../CodexCLI.app/Contents/MacOS/codex');
     const key=fingerprint(file)+':'+fingerprint(companion),previous=versionCache.get(file);
     if(previous?.key===key&&(previous.value!=null||Date.now()-previous.at<versionRetryMs))return previous.value;
-    const r=spawnSync(file,['--version'],{encoding:'utf8',timeout:5000});
+    const r=spawnSync(file,['--version'],{windowsHide:true,encoding:'utf8',timeout:5000});
     const value=r.status===0?r.stdout.trim().match(/^codex-cli (\d+\.\d+\.\d+(?:[-+][\w.-]+)?)$/)?.[1]??null:null;
     versionCache.set(file,{key,value,at:Date.now()});return value;
   };

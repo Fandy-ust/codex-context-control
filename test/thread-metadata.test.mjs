@@ -1,10 +1,11 @@
+import os from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
 test('native fork names and archive state refresh without stale bridge titles or budget changes',async()=>{
-  const temp=fs.mkdtempSync('/tmp/ctc-names-'),home=path.join(temp,'codex'),root=path.join(temp,'control');
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-names-')),home=path.join(temp,'codex'),root=path.join(temp,'control');
   fs.mkdirSync(home);fs.mkdirSync(root);process.env.CONTEXT_CONTROL_HOME=root;process.env.CONTEXT_CONTROL_CODEX_HOME=home;
   const {DatabaseSync}=await import('node:sqlite');const db=new DatabaseSync(path.join(home,'state_5.sqlite'));
   try{

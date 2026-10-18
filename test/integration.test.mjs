@@ -1,3 +1,4 @@
+import os from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,7 +15,7 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(predicate){for(let n=0;n<300;n++){const value=await predicate();if(value)return value;await sleep(30);}throw new Error('condition timed out');}
 
 test('real runtime through the actual bridge preserves history, tools, permissions and instructions',{skip:!fs.existsSync(binary),timeout:60000},async()=>{
-  const temp=fs.mkdtempSync('/tmp/ctc-');const home=path.join(temp,'codex');fs.mkdirSync(home);const control=path.join(temp,'control');
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-'));const home=path.join(temp,'codex');fs.mkdirSync(home);const control=path.join(temp,'control');
   process.env.CONTEXT_CONTROL_HOME=control;process.env.CONTEXT_CONTROL_CODEX_HOME=home;
   const {request}=await import('../src/ipc.mjs');
   const fixture=await fixtureServer();

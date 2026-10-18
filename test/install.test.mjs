@@ -1,3 +1,4 @@
+import os from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,7 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 test('install, reinstall and uninstall preserve unrelated hooks and never create trust',{skip:process.env.CONTEXT_CONTROL_TEST_INSTALL!=='1'||process.platform!=='darwin',timeout:120000},()=>{
-  const temp=fs.mkdtempSync('/tmp/ctc-install-');const repo=fileURLToPath(new URL('../',import.meta.url));
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-install-'));const repo=fileURLToPath(new URL('../',import.meta.url));
   const home=path.join(temp,'codex');fs.mkdirSync(home);
   // Installation checks need an application layout, not a real model runtime or installed Codex.
   const contents=path.join(temp,'Fixture Codex.app/Contents');

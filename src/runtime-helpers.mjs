@@ -54,7 +54,7 @@ export function validateRuntimeHelpers(directory,baseVersion){
     const file=path.join(directory,name),stat=fs.lstatSync(file);
     if(!stat.isFile()||stat.isSymbolicLink()||sha(file)!==digest)throw Error('辅助程序校验失败');
   }
-  for(const name of ['bin/codex-code-mode-host','codex-path/rg'])if(!(fs.statSync(path.join(directory,name)).mode&0o111))throw Error('辅助程序不可执行');
+  if(process.platform!=='win32')for(const name of ['bin/codex-code-mode-host','codex-path/rg'])if(!(fs.statSync(path.join(directory,name)).mode&0o111))throw Error('辅助程序不可执行');
   return m;
 }
 

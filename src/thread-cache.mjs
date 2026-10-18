@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {atomicJSON,readJSON} from './paths.mjs';
+import {normalizeLocalPath,pathInside} from './local-path.mjs';
 const stamp=s=>`${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
 const valid=n=>Number.isSafeInteger(n)&&n>=0;
 // Persist only numeric observations, never message bodies. Initial reads are
@@ -25,8 +26,8 @@ export class ThreadCache {
   return this.metrics;
  }
  async read(row){
-  const [home,file]=await Promise.all([fs.realpath(this.home),fs.realpath(row.rollout_path)]);
-  if(!file.startsWith(home+path.sep)||!file.endsWith('.jsonl'))return false;
+  const [home,file]=(await Promise.all([fs.realpath(this.home),fs.realpath(row.rollout_path)])).map(normalizeLocalPath);
+  if(!pathInside(home,file)||!file.endsWith('.jsonl'))return false;
   const stat=await fs.stat(file);if(!stat.isFile())return false;
   const previous=this.entries[row.id],fingerprint=stamp(stat);
   if(previous?.file===file&&previous.fingerprint===fingerprint){this.metrics.hits++;return false;}

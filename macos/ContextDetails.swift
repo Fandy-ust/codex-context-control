@@ -137,7 +137,7 @@ struct ContextDetailsButton:View {
     private func reload(force:Bool) async {
         if loading || !visible{return};loading=true;defer{loading=false}
         do {
-            let data=try await model.api("/context-stats",body:["id":chatID,"refresh":force])
+            let data=try await model.api(ControlAPI.statistics,body:["id":chatID,"refresh":force])
             if data==lastPayload{if !chartInteracting{deferred.statistics=nil;deferred.payload=nil};error=nil;return}
             let decoded=try await Task.detached(priority:.utility){try JSONDecoder().decode(ContextStatistics.self,from:data)}.value
             guard !Task.isCancelled,decoded.threadId==chatID else{return}
