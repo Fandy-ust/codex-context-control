@@ -34,7 +34,7 @@ test('self-contained Windows installer extracts without siblings, forwards optio
     const recorded=JSON.parse(fs.readFileSync(meta,'utf8'));
     const extractedCode=path.dirname(path.dirname(recorded.args[0]));
     assert.deepEqual(recorded.args.slice(1),['--payload',path.dirname(path.dirname(extractedCode)),'--no-auto-start','--no-open','--no-shortcut']);
-    assert.equal(recorded.cwd,extraction);assert.ok(extractedCode.startsWith(extraction+path.sep));assert.deepEqual(fs.readdirSync(extraction),[]);
+    assert.equal(fs.realpathSync.native(recorded.cwd),fs.realpathSync.native(extraction));assert.ok([extraction,fs.realpathSync.native(extraction)].some(prefix=>extractedCode.toLowerCase().startsWith((prefix+path.sep).toLowerCase())));assert.deepEqual(fs.readdirSync(extraction),[]);
     fs.unlinkSync(meta);
     const invalid=run(['--unexpected']);assert.equal(invalid.status,1);assert.equal(fs.existsSync(meta),false);assert.deepEqual(fs.readdirSync(extraction),[]);
     fs.writeFileSync(checksum,'0'.repeat(64));compile();

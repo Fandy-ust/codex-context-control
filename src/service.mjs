@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {request} from './ipc.mjs';
 import {root,ensureRoot,settings} from './paths.mjs';
 import {windows,processInfo} from './platform/index.mjs';
+import {canonicalLocalPath,normalizeLocalPath} from './local-path.mjs';
 import {buildId} from './version.mjs';
 
 export async function ensureDaemon(){
@@ -16,11 +17,11 @@ export async function ensureDaemon(){
     const connection=JSON.parse(fs.readFileSync(path.join(root,'connection.json'),'utf8'));
     const allowed=[fileURLToPath(new URL('./daemon.mjs',import.meta.url)),path.join(root,'code/src/daemon.mjs')];
     if(windows&&typeof connection.script==='string'&&settings().installBase){
-      const relative=path.relative(path.resolve(settings().installBase),path.resolve(connection.script));
-      if(/^versions[\\/]\d+\.\d+\.\d+-[a-f0-9]{12}[\\/]resources[\\/]app[\\/]src[\\/]daemon\.mjs$/.test(relative)&&fs.existsSync(connection.script))allowed.push(connection.script);
+      const relative=path.relative(canonicalLocalPath(settings().installBase),canonicalLocalPath(connection.script));
+      if(/^versions[\\/]\d+\.\d+\.\d+-[a-f0-9]{12}[\\/]resources[\\/]app[\\/]src[\\/]daemon\.mjs$/.test(relative)&&fs.existsSync(connection.script))allowed.push(connection.script,canonicalLocalPath(connection.script));
     }
     const command=windows?processInfo(connection.pid)?.command:spawnSync('/bin/ps',['-p',String(connection.pid),'-o','command='],{encoding:'utf8',timeout:2000}).stdout?.trim();
-    if(!Number.isSafeInteger(connection.pid)||connection.pid<1||!allowed.some(file=>command?.endsWith(' '+file)||command?.includes('"'+file+'"')))throw new Error('旧控制服务的进程路径无法确认，暂未自动更新。');
+    if(!Number.isSafeInteger(connection.pid)||connection.pid<1||!allowed.some(file=>{const c=windows?normalizeLocalPath(command??'').toLowerCase():command,p=windows?normalizeLocalPath(file).toLowerCase():file;return c?.endsWith(' '+p)||c?.includes('"'+p+'"');}))throw new Error('旧控制服务的进程路径无法确认，暂未自动更新。');
     if(windows){const r=await fetch(`http://127.0.0.1:${connection.port}/shutdown`,{method:'POST',headers:{Authorization:`Bearer ${connection.token}`},signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error('控制服务暂不能安全更新，请稍后重试。');}
     else process.kill(connection.pid,'SIGTERM');
     let stopped=false;

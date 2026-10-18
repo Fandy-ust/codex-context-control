@@ -1,6 +1,6 @@
 {
   "name": "codex-context-control",
-  "version": "0.19.5",
+  "version": "0.19.6",
   "private": true,
   "type": "module",
   "description": "Cross-platform per-chat context budgets and account quota for Codex Desktop",
@@ -30,7 +30,11 @@
     "package:mac": "node scripts/package-mac.mjs",
     "test:distribution": "node --test test/distribution.test.mjs",
     "build": "node scripts/build-current.mjs",
-    "package": "node scripts/build-current.mjs --package"
+    "package": "node scripts/build-current.mjs --package",
+    "generate:contracts": "node scripts/generate-contracts.mjs",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "test:contracts": "node --test test/core-contract.test.mjs",
+    "test:ci": "node --test --test-concurrency=2 test/*.test.mjs"
   },
   "dependencies": {
     "js-tiktoken": "1.0.21"

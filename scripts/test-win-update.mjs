@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {createWindowsTestRuntime} from './windows-test-runtime.mjs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -10,7 +11,7 @@ const repo=fileURLToPath(new URL('../',import.meta.url)),pkg=JSON.parse(fs.readF
 const filename=`Context-Manager-${pkg.version}-windows-${process.arch}.zip`,archive=path.join(repo,'build',filename);
 if(!fs.existsSync(archive))throw Error('Run npm run package:win:update first');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-win-update-')),home=path.join(temp,'control'),codex=path.join(temp,'codex'),apps=path.join(temp,'apps');fs.mkdirSync(home);fs.mkdirSync(codex);
-Object.assign(process.env,{CONTEXT_CONTROL_HOME:home,CONTEXT_CONTROL_CODEX_HOME:codex,CONTEXT_CONTROL_APPLICATIONS:apps});
+Object.assign(process.env,{CONTEXT_CONTROL_REAL_CODEX:createWindowsTestRuntime(temp),CONTEXT_CONTROL_HOME:home,CONTEXT_CONTROL_CODEX_HOME:codex,CONTEXT_CONTROL_APPLICATIONS:apps});
 const {applyWindowsUpdate}=await import('../src/windows-update-worker.mjs');
 const bytes=fs.readFileSync(archive),digest=crypto.createHash('sha256').update(bytes).digest('hex');
 const base=`https://github.com/Fandy-ust/codex-context-control/releases/download/v${pkg.version}/`;

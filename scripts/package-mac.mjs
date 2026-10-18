@@ -85,7 +85,9 @@ try{
  fs.copyFileSync(path.join(output,'README-FIRST.txt'),path.join(imageRoot,'README-FIRST.txt'));
  run('/usr/bin/hdiutil',['create','-ov','-format','UDZO','-volname','Context Manager','-srcfolder',imageRoot,image]);
 }finally{fs.rmSync(imageRoot,{recursive:true,force:true});}
-fs.writeFileSync(image+'.sha256',hash(image)+'  '+path.basename(image)+'\n');
+const imageSHA=hash(image);
+fs.writeFileSync(image+'.sha256',imageSHA+'  '+path.basename(image)+'\n');
+fs.writeFileSync(path.join(output,'update.json'),JSON.stringify({schemaVersion:1,version,tag:`v${version}-preview.1`,filename:path.basename(image),size:fs.statSync(image).size,sha256:imageSHA},null,2)+'\n');
 if(process.argv.includes('--release')&&dirty())throw Error('Source changed during packaging; do not publish this artifact');
 const result={version,sourceRevision,dirtyWorkingTree:dirty(),arch:'arm64',nodeVersion:pin.version,payloadFiles:Object.keys(files).length,uncompressedPayloadBytes:bytes,archiveBytes:fs.statSync(image).size,developerIDSigned:!!identity,notarized:false,archive:path.relative(repo,image)};
 fs.writeFileSync(path.join(output,'package-info.json'),JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result,null,2));

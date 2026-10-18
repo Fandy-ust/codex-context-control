@@ -1,4 +1,6 @@
 import net from 'node:net';
+import {normalizeBudgetCommand} from './core/budget-command.mjs';
+import {CONTROL_API_VERSION,controlOperation} from './contracts/control-api.mjs';
 import {createQuotaManager} from './account-quota.mjs';
 import {version,buildId} from './version.mjs';
 import {cleanupOldRuntimes} from './runtime-cleanup.mjs';
@@ -64,7 +66,7 @@ export async function startDaemon() {
   function extensionState(fix=runtimeFix.status()){return extension.status([...bridges.values()],{compatible:!!fix.originalVersion,available:!!nativeDefaultModel()});}
   function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===0?!!m:peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:'extension_pending',message:(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
   function newChatDefaults(){return clampNewChatDefaults(store.data.newChatDefaults||(extension.enabled()?initialNewChatDefaults:nativeNewChatDefaults),defaultModel());}
-  function state(){store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity)};}
+  function state(){store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true},buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads:Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity)};}
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version,buildId};
     if(op==='state')return state();
@@ -116,13 +118,13 @@ export async function startDaemon() {
     }
     if(op==='preflight') {
       if((owners.get(p.id)||[]).some(peer=>!bridgeReady(bridges.get(peer))))return {code:'runtime_restart_required',allowed:false,message:'请完整退出并重开 Codex，加载修正后的模型目录。'};
-      const policy=normalizePolicy(p.policy);const t=store.data.threads[p.id];
+      const t=store.data.threads[p.id];const policy=normalizeBudgetCommand(p,modelFor(p.id,t?.model));
       return preflight(t,policy,modelFor(p.id,t?.model));
     }
     if(op==='setPolicy') {
       const t=Object.hasOwn(store.data.threads,p.id)?store.data.threads[p.id]:null;if(!t)throw new Error('未找到聊天');
       const peers=owners.get(p.id)||[];if(peers.some(peer=>!bridgeReady(bridges.get(peer))))throw Error('当前 Codex 连接尚未加载修正后的模型目录，请完整退出并重新打开 Codex。');
-      const policy=normalizePolicy(p.policy);const plan=preflight(t,policy,modelFor(t.id,t.model));
+      const policy=normalizeBudgetCommand(p,modelFor(t.id,t.model));const plan=preflight(t,policy,modelFor(t.id,t.model));
       if(['above_catalog_maximum','above_safe_compact','below_retained_floor','unsupported_thread'].includes(plan.code))throw new Error(plan.message);
       const previous=store.data.policies[p.id];
       if(p.expectedRevision!=null&&p.expectedRevision!==(previous?.revision||0))throw new Error('设置已在另一窗口更新，请刷新后重试');
@@ -170,24 +172,24 @@ export async function startDaemon() {
     try {
       let body='';for await(const data of req){body+=data;if(body.length>65536)throw new Error('请求过大');}
       const params=body?JSON.parse(body):{};const route=req.url;
-      let answer;
-      if(req.method==='GET'&&route==='/state')answer=state();
-      else if(req.method==='POST'&&route==='/quota')answer=await quota.refresh(true);
-      else if(req.method==='POST'&&route==='/shutdown'){if(Object.values(store.data.threads).some(t=>t.phase==='reloading'))throw Error('A budget transaction is still active');answer={ok:true};setTimeout(shutdown,100).unref();}
-      else if(req.method==='POST'&&route==='/updates/check')answer=await updater.check(true);
-      else if(req.method==='POST'&&route==='/updates/install')answer=await updater.install();
-      else if(req.method==='POST'&&route==='/scan'){await store.scanLocal();answer=state();}
-      else if(req.method==='POST'&&route==='/context-stats'){
+      let answer;const operation=controlOperation(req.method,route);
+      if(operation==='state')answer=state();
+      else if(operation==='quota-refresh')answer=await quota.refresh(true);
+      else if(operation==='shutdown'){if(Object.values(store.data.threads).some(t=>t.phase==='reloading'))throw Error('A budget transaction is still active');answer={ok:true};setTimeout(shutdown,100).unref();}
+      else if(operation==='check-update')answer=await updater.check(true);
+      else if(operation==='install-update')answer=await updater.install();
+      else if(operation==='scan'){await store.scanLocal();answer=state();}
+      else if(operation==='statistics'){
         if(!Object.hasOwn(store.data.threads,params.id))throw new Error('未找到所选聊天');
         answer=await contextStatistics(params.id,params.refresh===true);
       }
-      else if(req.method==='POST'&&route==='/context-extension')answer=await handle(null,'setContextExtension',params);
-      else if(req.method==='POST'&&route==='/new-chat-defaults')answer=await handle(null,'setNewChatDefaults',params);
-      else if(req.method==='POST'&&route==='/runtime-fix')answer=runtimeFix.setEnabled(params.enabled,undefined,[...bridges.values()]);
-      else if(req.method==='POST'&&route==='/preflight')answer=await handle(null,'preflight',params);
-      else if(req.method==='POST'&&route==='/policy')answer=await handle(null,'setPolicy',params);
-      else if(req.method==='POST'&&route==='/clear')answer=await handle(null,'clearPolicy',params);
-      else if(req.method==='POST'&&route==='/compact')answer=await handle(null,'compact',params);
+      else if(operation==='extension')answer=await handle(null,'setContextExtension',params);
+      else if(operation==='defaults')answer=await handle(null,'setNewChatDefaults',params);
+      else if(operation==='runtime-fix')answer=runtimeFix.setEnabled(params.enabled,undefined,[...bridges.values()]);
+      else if(operation==='preflight')answer=await handle(null,'preflight',params);
+      else if(operation==='policy')answer=await handle(null,'setPolicy',params);
+      else if(operation==='clear')answer=await handle(null,'clearPolicy',params);
+      else if(operation==='compact')answer=await handle(null,'compact',params);
       else{res.writeHead(404);res.end();return;}
       let serialized;
       if(route==='/context-stats'){

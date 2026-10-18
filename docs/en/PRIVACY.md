@@ -29,3 +29,5 @@ The original signed Codex app is preserved. Installation backs up hook configura
 Automatic update checks contact this public GitHub repository for release metadata; downloads occur only after clicking Install update. No chat content or credentials are sent. The persistent thread cache stores local file fingerprints, read offsets, model names, last reported usage, and window capacity. It contains no message bodies. Initial history reads use a bounded 256 KiB tail; subsequent reads process complete appended records and reuse unchanged files.
 
 The quota indicator reads account rate limits through a short-lived official Codex app-server session. It does not open chats or request model output. Only quota percentages, window lengths, and reset times are retained in memory, with a five-minute refresh interval; authentication remains inside the official runtime.
+
+When the official API supplies a numeric credit balance, it is shown in the account menu and cached only in memory. No generic availability message is substituted for a missing balance.

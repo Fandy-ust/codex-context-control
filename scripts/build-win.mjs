@@ -9,6 +9,8 @@ import {compileWindowsInstaller} from './windows-installer.mjs';
 
 if(process.platform!=='win32')throw Error('Build Windows packages on Windows');
 const repo=fileURLToPath(new URL('../',import.meta.url)),pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
+const contracts=spawnSync(process.execPath,[path.join(repo,'scripts/check-architecture.mjs')],{stdio:'inherit',windowsHide:true});
+if(contracts.status!==0)process.exit(contracts.status||1);
 const arch=process.env.CONTEXT_CONTROL_BUILD_ARCH||process.arch;
 if(!['x64','arm64'].includes(arch)||arch!==process.arch)throw Error('Build with a Node/Electron runtime matching the target architecture');
 const compiler=path.join(process.env.SystemRoot,'Microsoft.NET/Framework64/v4.0.30319/csc.exe');

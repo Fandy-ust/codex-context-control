@@ -1,12 +1,8 @@
 # Context Manager
 
-本整合分支统一为 **0.19.5**，共用业务核心，分别构建 Windows 原生安装 EXE 与 macOS SwiftUI 安装包。[双平台构建说明](docs/CROSS_PLATFORM_BUILD.md)。两端使用相同设置结构，Mac 保留 Apple 原生材质。
-
-本适配分支新增 **Windows 11 x64 系统托盘预览版**，共用现有预算与统计核心。[安装与构建](docs/INSTALL_WINDOWS.md) · [验证结果](docs/WINDOWS_COMPATIBILITY.md) · [UI 验收](docs/WINDOWS_UI_CHECKLIST.md)。Windows 包目前在本地构建，下面的公开下载仍为 macOS 版本。
-
 在 Mac 菜单栏管理每个 Codex 聊天的上下文，最高 **920K**。
 
-## [下载 Mac 最新版 0.18.0 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.0-preview.1/Context-Manager-0.18.0-macos-arm64.dmg)
+## [下载 Mac 最新版 0.18.3 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.3-preview.1/Context-Manager-0.18.3-macos-arm64.dmg)
 
 Apple Silicon · macOS 14+ · DMG，45 MB · 中文 / English
 
@@ -16,7 +12,7 @@ Apple Silicon · macOS 14+ · DMG，45 MB · 中文 / English
 
 1. 先安装 Codex 桌面客户端，再下载并打开上方 DMG。
 2. 打开 **Install Context Manager.app**，点击「安装 / 更新」。
-3. 重开 Codex，点击菜单栏圆环。在设置中开启「上下文拓展」可用最高 920K；切换后需再重开 Codex。
+3. 重开 Codex，点击菜单栏额度图标。在设置中开启「上下文拓展」可用最高 920K；切换后需再重开 Codex。
 
 [安装遇到问题？](docs/INSTALL_MAC.md)
 
@@ -28,7 +24,7 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 - **主控制面板**：左下角一键展开设置浮窗，点击外部收起。
 
-- **额度指示**：阶梯条形随额度减少变空心，右下角直接显示剩余百分比。
+- **额度指示**：竖条组成闪电，额度减少时逐渐空心，右下角紧贴显示剩余百分比。
 
 - **本地缓存**：启动即显示聊天和最近用量，后台增量同步。
 - **在线更新**：自动检查，点击后下载安装。
@@ -39,6 +35,8 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 - 不设 app／版本白名单，保留 Codex 官方运行时。
 
 提前压缩修复因修改核心、缺少官方签名而影响 Computer Use，现已停用。**920K 无需修改核心，继续保留。**
+
+**0.19.6 整合预览**新增 Windows：共用核心，两端独立维护界面。[Windows 安装](docs/INSTALL_WINDOWS.md) · [跨平台开发](docs/MULTIPLATFORM_DEVELOPMENT.md) · [协作约定](CONTRIBUTING.md)。上方下载仍是已发布的 Mac 版本。
 
 [使用指南](docs/FEATURES.md) · [开发指南](docs/DEVELOPMENT.md) · [隐私](docs/PRIVACY.md) · [更新记录](CHANGELOG.md)
 

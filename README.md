@@ -1,12 +1,8 @@
 # Context Manager
 
-This integration branch targets **0.19.5** with one shared core, native SwiftUI on macOS, and the Windows tray application. [Build both platforms](docs/CROSS_PLATFORM_BUILD.md).
-
-This branch adds a **Windows 11 x64 system-tray preview**, sharing the existing budget and statistics core. [Build and installation](docs/INSTALL_WINDOWS.md) · [Validation](docs/WINDOWS_COMPATIBILITY.md) · [UI checklist](docs/WINDOWS_UI_CHECKLIST.md). Windows packages are currently local previews; the public downloads below remain macOS releases.
-
 Manage each Codex chat’s context from your Mac menu bar. Up to **920K**.
 
-## [Download 0.18.0 for Mac ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.0-preview.1/Context-Manager-0.18.0-macos-arm64.dmg)
+## [Download 0.18.3 for Mac ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.3-preview.1/Context-Manager-0.18.3-macos-arm64.dmg)
 
 Apple Silicon · macOS 14+ · DMG, 45 MB · English / 中文
 
@@ -16,7 +12,7 @@ Apple Silicon · macOS 14+ · DMG, 45 MB · English / 中文
 
 1. Install Codex Desktop, then download and open the DMG above.
 2. Open **Install Context Manager.app** and choose **Install / Update**.
-3. Restart Codex and click the menu bar ring. Enable **Context extension** for up to 920K; restart Codex after switching.
+3. Restart Codex and click the menu bar quota indicator. Enable **Context extension** for up to 920K; restart Codex after switching.
 
 [Installation help](docs/en/INSTALL_MAC.md)
 
@@ -28,7 +24,7 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 - **Control panel:** settings open from one compact button at the bottom left.
 
-- **Quota indicator:** stepped bars gradually empty beside a remaining-percentage label.
+- **Quota indicator:** vertical stripes form a lightning bolt that empties as quota decreases.
 
 - **Local cache:** chats and recent usage appear at startup, with incremental background sync.
 - **Updates:** automatic checks; install only when you click.
@@ -39,6 +35,8 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 - No app-name or version allowlist. Uses the official Codex runtime.
 
 The early-compaction patch is disabled because its modified core lacks the official signing identity required for Computer Use. **920K stays available without modifying the core.**
+
+The **0.19.6 integration preview** adds Windows with a shared core and independent native Mac / Electron Windows interfaces. [Windows installation](docs/INSTALL_WINDOWS.md) · [Cross-platform development](docs/MULTIPLATFORM_DEVELOPMENT.md) · [Contributing](CONTRIBUTING.md). The public download above remains the released Mac version.
 
 [Usage](docs/en/USAGE.md) · [Development](docs/en/DEVELOPMENT.md) · [Privacy](docs/en/PRIVACY.md) · [Changelog](CHANGELOG.md)
 

@@ -1,5 +1,14 @@
 # Changes
 
+## 0.19.6 — Shared core and cross-platform maintenance (unreleased)
+
+- Integrate main 0.18.3 update recovery and approved Mac quota/control-panel design with the Windows 0.19.5 port.
+- Separate pure budget/state/update rules, control API contracts, presentation and OS adapters; both interfaces submit visible budgets to the same authority.
+- Generate native API routes from one specification and check JS/Swift budget parity with shared fixtures.
+- Preserve future state fields and reject corrupt state instead of silently resetting it; replace stale same-version services and reclaim verified unused Windows installations.
+- Require Linux core checks, native Mac build/package validation, and Windows build, installation, same-version rebuild, cross-version upgrade and OTA checks.
+- Publish both platforms together with platform-specific update manifests while preserving the 0.18.x Mac update feed.
+
 ## 0.19.5 — Synchronized slider and progressive motion
 
 - Remove fill-width transitions so the blue fill, headroom and handles follow the same drag frame.
@@ -63,6 +72,27 @@
 - Unify control corners at 10px and prevent the information button from stretching with the heading.
 - Make the three-chat synthetic preview explicit and add an entry to open real local chats.
 - Package Windows as a self-contained Setup.exe with an embedded, checksum-verified payload and automatic temporary-file cleanup, reusing the existing installation and upgrade flow.
+
+
+## 0.18.3 — Resilient update checks
+
+- Prefer the public release manifest instead of depending on anonymous GitHub REST API requests; retain API fallback for older releases.
+- Distinguish rate limiting, access refusal, network failure, and invalid metadata. Honor per-source retry/reset times and coalesce/throttle repeated checks.
+- Offer retry timing and a manual release-page download link without asking users for tokens.
+- Bind downloads to the manifest checksum as well as the existing sidecar and installer payload checks.
+
+
+## 0.18.2 — Compact menu item and concrete credits
+
+- Reduce the menu item width from 56 to 44 points and trim unused image canvas, without shrinking the bolt or percentage text.
+- Replace the generic extra-credit availability message with the reported numeric credit balance. Hide the line when no finite balance is provided.
+
+
+## 0.18.1 — Striped lightning quota indicator
+
+- Apply the approved B design: vertical stripes form a lightning bolt, progressively emptying as remaining quota decreases.
+- Bring the transparent percentage label 2.5 points closer to the bolt, keeping its lower-right placement.
+- Preserve the shared dropdown, floating control panel, budgets, preferences, and caches.
 
 
 ## 0.18.0 — Quota indicator and floating control panel

@@ -1,67 +1,32 @@
-# 多平台开发与版本管理
+# Cross-platform development
 
-状态：Windows 适配期间的开发约定，2026-10-17。当前产品版本 `0.19.5`；Windows x64 构建入口与本地预览包已实现，尚未公开发布。
+The product shares rules, not pixels. Mac uses SwiftUI/AppKit; Windows uses Electron and native C# entry points. Both call the same local controller and preserve the official Codex runtime.
 
-## 一个仓库，一套产品版本
+## Change ownership
 
-macOS 和 Windows 使用同一个仓库、同一份业务核心与统一产品版本。Windows 适配暂时在 `codex/cross-platform-0.19` 开发，完成验收后合并主分支。不要长期维护互不合并的 macOS / Windows 产品分支，也不要把 `src/` 复制到 Windows 目录再各自修改。
+| Change | Owner / review |
+| --- | --- |
+| Mac layout and interactions | Mac maintainer |
+| Windows tray, shortcuts and installation | Windows maintainer |
+| Budget math, compaction safety, fork/default inheritance, cache semantics | Shared-core review from both maintainers |
+| Persisted data, API routes and release manifests | Both maintainers, with upgrade tests |
 
-产品版本以根目录 `package.json` 为唯一来源。原生 UI、Electron UI、安装器、doctor、更新元数据和资源清单在构建时读取该版本，不各自手工填写。后续新增 npm workspace 时，内部包保持 private，产品发布版本仍取根配置。
+## Shared contract
 
-## 代码分工
+`src/contracts/control-api.json` defines routes; generated `macos/ControlAPI.swift` and the Electron main process use it. State includes `apiVersion` and capabilities. New clients submit visible-token budgets when `capabilities.visibleBudget` is available; the controller converts them using `src/core/budget-command.mjs`. Legacy raw-policy requests still work.
 
-| 层次 | 共用范围 | 平台差异位置 |
-| --- | --- | --- |
-| 业务核心 | `src/` 中的预算、策略、桥接事务、确认、默认值、fork、统计缓存和费用计算 | 不因平台分叉；所有平台复用同一份实现 |
-| OS 接入 | 对外提供一致的路径、IPC、进程身份、生命周期、启动登记和运行时发现接口 | 逐步抽取到 `src/platform/`；darwin / win32 实现分别维护 |
-| UI | 文案、数据契约、设计参数、合成状态和可共享的纯计算 | 现有 `macos/` 保留 SwiftUI；`desktop/` 提供 Windows Electron UI |
-| 打包 | 版本来源、资源清单、校验原则及配置迁移语义 | macOS 包签名/DMG 与 Windows 签名/安装器分别实现 |
-| 测试 | 预算/统计 fixtures、协议行为与状态断言 | 原生窗口、托盘、权限、进程与安装流程分别验收 |
+The authoritative checks stay in `src/core/`: actual capacity, compaction limits, reservation, stale usage, active turns and revision conflicts. UI drafts are only previews. The shared fixtures in `test/fixtures/contracts/budgets.json` verify JavaScript and native Swift against the same examples.
 
-UI 无法直接共用 SwiftUI 源码。现阶段保留 macOS 原生 UI，只维护两份表现层；业务计算不能在新 UI 中重写第二份。仅在 Swift 中存在的纯 UI 计算先提取规则和对照案例，再为共享 JS 实现建立一致性验证。
+## Platform boundaries
 
-以后如需最大化 UI 源码复用，可单独评估让 macOS 使用同一个 Electron renderer；这属于后续产品决策，需要重新验证原生行为、体积和性能，不与首轮 Windows 适配绑定。
+Windows uses user-protected data directories and authenticated named pipes. macOS uses its native support directory and local sockets. Platform entry points handle OS mechanisms; pure core modules must not import them. `npm run check:architecture` enforces that dependency direction and checks generated bindings.
 
-统一构建入口及平台 runner 说明见 [0.19 双平台构建](CROSS_PLATFORM_BUILD.md)。
+## Maintenance flow
 
-## 构建与发布
+Branch from current main, make a focused change, run local core tests, open a PR, and let the reusable desktop workflow validate both platforms. Merge the tested commit rather than maintaining separate long-lived product branches. UI redesigns should be separate from platform/core fixes.
 
-目标是同一 tag 触发多个平台构建任务，每项使用同一提交和根版本：
+Both installers inherit user data. Windows installs immutable version directories because active executables may be locked, then reclaims verified inactive versions. Unknown or live installations remain untouched. A same-version rebuild must compare build identity, not only the version string.
 
-```text
-同一产品 tag / Git 提交
-  ├─ macOS runner → SwiftUI + 共享核心 → macOS arm64 安装包
-  ├─ Windows runner → Electron + 共享核心 + shim → Windows x64 安装包
-  └─ Windows ARM64 构建与验证 → 独立 ARM64 安装包（后续）
-```
+## Release flow
 
-构建产物附带 `version`、`platform`、`arch`、`commit`、所需数据 schema 与核心/UI 协议版本。安装包只包含本平台需要的外壳和资源；不会把 SwiftUI 编译进 Windows，也不会把 Windows helper 打进 Mac 包。
-
-现有 `build:mac` / `package:mac` 继续使用，Windows 使用 `build:win` / `package:win`。后续正式发布时 tag 和产品版本必须一致，不能把两个不同提交的产物静默挂到同一个版本下。当前适配包带独立 buildId 与文件清单，不覆盖上游已发布的 macOS 产物。
-
-版本号不需要因为平台不同拆成两套，但“这个版本在哪个平台可用”必须单独记录。仅修复 Windows 时仍推进统一产品版本；macOS 是否重发由发布策略决定。如果没有重发 macOS 包，更新器应把缺少当前平台资产视为“该平台没有新安装包”，不能下载别的平台，也不能把旧包标成新版本。
-
-更新选择以 `platform + arch + channel` 为条件，稳定版与预览版分开处理。下载后再验证安装清单与当前平台匹配。Windows 移植期间不得把尚未验收的包加入正式发布支持列表。
-
-## 四种版本分别负责什么
-
-| 版本 | 作用 | 规则 |
-| --- | --- | --- |
-| 产品版本 | 面向用户的功能和修复发布 | 根 `package.json`，同一发布统一编号 |
-| UI / 核心协议版本 | 检测已运行 UI、daemon 和桥接能否协作 | 只有不兼容接口变化才推进；可选字段优先向后兼容 |
-| 持久化 schema | 预算、偏好、缓存与迁移 | 与产品版本分开；保留未知字段和未来 schema 标记，延续 0.17.2 行为 |
-| Codex 兼容记录 | 上游桌面及 runtime 是否经过实测 | 记录桌面版本、runtime、安装渠道、系统架构与能力证据，不能只按版本字符串宣称兼容 |
-
-新增协议版本字段时保持旧客户端可读；不能在抽平台层的同时强制重写全部存量数据。旧桥接仍可能在当前 Codex 进程内运行，诊断继续显示安装、服务与 loaded bridge 的不同版本。
-
-## 升级和回退
-
-Windows 可执行文件使用不可变版本目录，稳定 shim 指向当前安装；已有桥接正常结束后再清理旧版本。UI 更新不自动结束 Codex 或活跃请求。旧版和新版并存期间验证协议兼容性，不依赖立即替换被占用的 exe。
-
-延续上游的轻量配置快照、未知字段继承和清理保护。降级必须先核对数据及协议兼容性；不识别未来 schema 时拒绝破坏性迁移，而不是降低 schema 标记后覆盖。不能因两个平台使用同一产品版本就假定其可执行文件、配置路径或注册信息可直接互换。
-
-## 跟进上游
-
-在适配分支中定期 fetch 上游，通过正常 merge/rebase 纳入经过审查的变更；已有对外共享的分支优先 merge，避免改写协作历史。每次更新后先跑共享核心测试，再运行受影响的平台检查。
-
-新增功能先放进共用核心和契约，再由两种 UI 接入。共享核心回归失败会阻止两端发布；平台专属问题只由对应检查证明修复。Windows 尚未有交互式环境或 macOS runner 时明确记录未验证项，不以跳过测试代表通过。
+Build both systems with `.github/workflows/build-desktop.yml`. Regression and installer tests are mandatory. Publish an existing draft only after both platform jobs succeed. The release contains DMG, Setup EXE, updater ZIP, checksums, and two public update manifests: schema 1 for existing Mac clients and schema 2 for platform-specific selection.

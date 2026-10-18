@@ -2,73 +2,47 @@ name: Build Windows and macOS
 on:
   workflow_dispatch:
     inputs:
-      run_tests:
-        description: Run regression tests before packaging
+      publish_release:
+        description: Publish an existing draft after both platforms pass validation
         type: boolean
         default: false
   push:
     branches:
       - 'codex/cross-platform-*'
-    tags:
-      - 'v*-desktop'
 permissions:
   contents: read
 concurrency:
   group: desktop-build-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  windows:
-    runs-on: windows-latest
-    timeout-minutes: 30
+  build:
+    uses: ./.github/workflows/_build-desktop.yml
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/download-artifact@v4
         with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - if: ${{ inputs.run_tests == true }}
-        run: npm test
-      - run: npm run build:win
-      - run: npm run package:win:update
-      - uses: actions/upload-artifact@v4
-        with:
-          name: context-manager-windows-x64
-          path: |
-            build/Context-Manager-*-windows-x64-Setup.exe
-            build/Context-Manager-*-windows-x64-Setup.exe.sha256
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        with:
-          name: context-manager-windows-x64-update
-          path: |
-            build/Context-Manager-*-windows-x64.zip
-            build/Context-Manager-*-windows-x64.zip.sha256
-          if-no-files-found: error
-  macos:
-    runs-on: macos-26
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - uses: actions/cache@v4
-        with:
-          path: build/vendor
-          key: macos-node-${{ hashFiles('packaging/node-runtime.json') }}
-      - run: npm run build
-      - if: ${{ inputs.run_tests == true }}
-        run: node --test --test-concurrency=2 test/*.test.mjs
-      - run: npm run package -- --release --use-built-panel
-      - uses: actions/upload-artifact@v4
-        with:
-          name: context-manager-macos-arm64
-          path: |
-            build/distribution/*.dmg
-            build/distribution/*.sha256
-            build/distribution/package-info.json
-            build/distribution/README-FIRST.txt
-          if-no-files-found: error
+          pattern: context-manager-*
+          path: release
+          merge-multiple: true
+      - run: node scripts/create-update-manifest.mjs release
+      - name: Publish both platforms together
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v${version}-preview.1"
+          test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
+          existing=$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            test "$(gh api "repos/$GH_REPO/commits/$tag" --jq '.sha')" = "$GITHUB_SHA"
+          fi
+          gh release edit "$tag" --target "$GITHUB_SHA"
+          gh release upload "$tag" release/*.dmg release/*.exe release/*.zip release/*.sha256 release/*.json release/README-FIRST.txt --clobber
+          gh release edit "$tag" --draft=false --latest

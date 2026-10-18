@@ -4,9 +4,9 @@ import {realBinary,codexHome} from './paths.mjs';
 
 // A read-only native app-server session: no thread creation, model requests,
 // credentials export, or dependence on an already-open desktop chat.
-export function readAccountQuota({binary=realBinary(),timeout=20000}={}){
+export function readAccountQuota({binary=realBinary(),timeout=20000,launcherArgs=[]}={}){
  return new Promise((resolve,reject)=>{
-  const child=spawn(binary,['app-server','--listen','stdio://'],{windowsHide:true,stdio:['pipe','pipe','ignore'],env:{...process.env,CODEX_HOME:codexHome}});
+  const child=spawn(binary,[...launcherArgs,'app-server','--listen','stdio://'],{windowsHide:true,stdio:['pipe','pipe','ignore'],env:{...process.env,CODEX_HOME:codexHome}});
   let done=false,sequence=0,total=0;const pending=new Map();
   const lines=readline.createInterface({input:child.stdout});
   const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);lines.close();child.stdin.end();child.kill('SIGTERM');for(const p of pending.values())p.reject(error??Error('Quota session closed'));pending.clear();error?reject(error):resolve(value);};
@@ -23,10 +23,15 @@ function window(value){
  const usedPercent=Math.max(0,Math.min(100,value.usedPercent));
  return {usedPercent,remainingPercent:100-usedPercent,windowDurationMins:Number.isSafeInteger(value.windowDurationMins)&&value.windowDurationMins>0?value.windowDurationMins:null,resetsAt:Number.isSafeInteger(value.resetsAt)&&value.resetsAt>0?value.resetsAt:null};
 }
+export function creditBalance(credits){
+ if(credits?.unlimited===true)return null;
+ const raw=typeof credits?.balance==='string'?credits.balance.trim():typeof credits?.balance==='number'?String(credits.balance):'';
+ return raw.length<=64&&/^\d+(?:\.\d+)?$/.test(raw)&&Number.isFinite(Number(raw))?raw:null;
+}
 export function normalizeQuota(response){
  const source=response?.rateLimitsByLimitId;
  const entries=source&&typeof source==='object'&&Object.keys(source).length?Object.entries(source):response?.rateLimits?[['codex',response.rateLimits]]:[];
- return entries.map(([id,value])=>({id,name:typeof value?.limitName==='string'?value.limitName.slice(0,100):id,primary:window(value?.primary),secondary:window(value?.secondary),hasCredits:value?.credits?.hasCredits===true,unlimitedCredits:value?.credits?.unlimited===true})).filter(v=>v.primary||v.secondary).sort((a,b)=>(a.id==='codex'?-1:b.id==='codex'?1:a.id.localeCompare(b.id)));
+ return entries.map(([id,value])=>({id,name:typeof value?.limitName==='string'?value.limitName.slice(0,100):id,primary:window(value?.primary),secondary:window(value?.secondary),creditBalance:creditBalance(value?.credits),hasCredits:value?.credits?.hasCredits===true,unlimitedCredits:value?.credits?.unlimited===true})).filter(v=>v.primary||v.secondary||v.creditBalance!=null).sort((a,b)=>(a.id==='codex'?-1:b.id==='codex'?1:a.id.localeCompare(b.id)));
 }
 export function createQuotaManager({read=readAccountQuota,now=Date.now,interval=5*60*1000}={}){
  let buckets=[],updatedAt=null,checkedAt=0,error=null,pending;

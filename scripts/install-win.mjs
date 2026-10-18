@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {cleanupWindowsInstallations} from '../src/platform/windows-cleanup.mjs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawn,spawnSync} from 'node:child_process';
@@ -106,5 +107,6 @@ if(!args.includes('--no-shortcut')){
   powershell('$s=New-Object -ComObject WScript.Shell;$folder=Join-Path ([Environment]::GetFolderPath("Programs")) "Context Manager";[void][IO.Directory]::CreateDirectory($folder);$l=$s.CreateShortcut((Join-Path $folder "Context Manager.lnk"));$l.TargetPath=$env:CONTEXT_CONTROL_UI_EXE;$l.WorkingDirectory=[IO.Path]::GetDirectoryName($env:CONTEXT_CONTROL_UI_EXE);$l.Save();$key="HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\CodexContextControl";[void](New-Item -Path $key -Force);$values=@{DisplayName="Context Manager";DisplayVersion=$env:CONTEXT_CONTROL_INSTALL_VERSION;Publisher="Fandy-ust";InstallLocation=$env:CONTEXT_CONTROL_INSTALL_BASE;UninstallString=$env:CONTEXT_CONTROL_UNINSTALL;NoModify=1;NoRepair=1};foreach($name in $values.Keys){Set-ItemProperty -LiteralPath $key -Name $name -Value $values[$name]}',{CONTEXT_CONTROL_UI_EXE:installedApp,CONTEXT_CONTROL_INSTALL_BASE:base,CONTEXT_CONTROL_INSTALL_VERSION:pkg.version,CONTEXT_CONTROL_UNINSTALL:`"${node}" "${path.join(code,'scripts/install-win.mjs')}" --uninstall`});
 }
 if(!args.includes('--no-open'))ensureMenuBarEntry(installedApp);
+try{cleanupWindowsInstallations({home:root});}catch{/* Retry after the UI starts; never turn a valid update into a failure. */}
 console.log('Windows 安装完成。接入默认开启；请在当前工作结束后完整退出并重开 Codex。\n可在设置中关闭接入；关闭主窗口后入口保留在系统托盘。');
 if(integrationWarning)console.log('本次接入未启用，已保留原生启动入口。请在设置中查看日志并重试：'+integrationWarning);

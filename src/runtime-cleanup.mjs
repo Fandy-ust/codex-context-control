@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import {windows} from './platform/index.mjs';
+import {cleanupWindowsInstallations} from './platform/windows-cleanup.mjs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {root,readJSON,atomicJSON} from './paths.mjs';
@@ -17,7 +19,8 @@ function resourceInUse(file,directory=false){
 }
 // Only remove installation-owned files after a successful update. Running
 // binaries and their resources remain until a later cleanup pass.
-export function cleanupOldRuntimes({home=root,activeExecutables=processExecutables(),inUse=resourceInUse,currentNode=readJSON(path.join(home,'settings.json'),{})?.node}={}){
+export function cleanupOldRuntimes(options={}){return windows?cleanupWindowsInstallations({home:root,...options}):cleanupMacRuntimes(options);}
+export function cleanupMacRuntimes({home=root,activeExecutables=processExecutables(),inUse=resourceInUse,currentNode=readJSON(path.join(home,'settings.json'),{})?.node}={}){
  const result={removed:[],deferred:[]};
  if(!Array.isArray(activeExecutables)||!currentNode||!fs.existsSync(currentNode))return result;
  const canonical=p=>{try{return fs.realpathSync(p);}catch{return p;}};

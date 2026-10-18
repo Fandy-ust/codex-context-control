@@ -26,11 +26,12 @@ struct RuntimeFixState:Decodable,Equatable {let enabled:Bool;let available:Bool;
 struct NewChatDefaultsState:Decodable,Equatable {let usableWindow:Int;let compact:Int;let revision:Int}
 struct ContextExtensionState:Decodable,Equatable {let enabled:Bool;let effective:Bool;let pending:Bool;let activeCount:Int;let connectedCount:Int;let compatible:Bool;let available:Bool;let message:String}
 struct NewChatDefaultsLimits:Decodable,Equatable {let maximumUsableWindow:Int;let effectivePercent:Int;let extended:Bool}
-struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:Bool;let version:String?;let phase:String;let error:String?}
+struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:Bool;let version:String?;let phase:String;let error:String?;let retryAt:Int?}
 struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPercent:Double;let windowDurationMins:Int?;let resetsAt:Int?}
-struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?}
+struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?;let creditBalance:String?}
 struct QuotaState:Decodable,Equatable {let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
-struct RuntimeState: Decodable {let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct ControlCapabilities:Decodable {let visibleBudget:Bool?}
+struct RuntimeState: Decodable {let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -56,6 +57,7 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var quotaRefreshing=false
     @Published var selectedQuotaID="codex"
     var selectedQuota:QuotaBucket? {quota?.buckets.first{$0.id==selectedQuotaID} ?? quota?.buckets.first}
+    @Published var supportsVisibleBudget=false
     @Published var bridgeCount=0
     @Published var contextCeilingPending=false
     @Published var contextExtension:ContextExtensionState?
@@ -101,8 +103,9 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func refresh() async {
         if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
-        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api("/state"))
+        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api(ControlAPI.state))
             guard !menuDragInProgress else{return}
+            supportsVisibleBudget=state.capabilities?.visibleBudget == true
             if quota != state.quota{acceptQuota(state.quota)}
             if updateState != state.update{updateState=state.update;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
             if chats != state.threads{chats=state.threads}
@@ -126,19 +129,19 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func refreshQuota() async {
         guard !quotaRefreshing else{return};quotaRefreshing=true;defer{quotaRefreshing=false}
-        do{acceptQuota(try JSONDecoder().decode(QuotaState.self,from:await api("/quota",body:[:])))}catch{notice=L("暂时无法读取额度")}
+        do{acceptQuota(try JSONDecoder().decode(QuotaState.self,from:await api(ControlAPI.quotaRefresh,body:[:])))}catch{notice=L("暂时无法读取额度")}
     }
     func updateApp(install:Bool=false) async {
         checkingUpdates=true;defer{checkingUpdates=false}
-        do{updateState=try JSONDecoder().decode(UpdateState.self,from:await api(install ? "/updates/install":"/updates/check",body:[:]));if let error=updateState?.error{notice=error}else{notice=install ? L("正在下载更新，安装后请重开 Codex"):L(updateState?.available == true ? "发现新版本":"已是最新版本")}}catch{notice=error.localizedDescription}
+        do{updateState=try JSONDecoder().decode(UpdateState.self,from:await api(install ? ControlAPI.installUpdate:ControlAPI.checkUpdate,body:[:]));if let error=updateState?.error{notice=error}else{notice=install ? L("正在下载更新，安装后请重开 Codex"):L(updateState?.available == true ? "发现新版本":"已是最新版本")}}catch{notice=error.localizedDescription}
     }
     func scanChats() async {
         working=true;defer{working=false}
-        do{_ = try await api("/scan",body:[:]);await refresh();notice=L("本地聊天已更新")}catch{notice=error.localizedDescription}
+        do{_ = try await api(ControlAPI.scan,body:[:]);await refresh();notice=L("本地聊天已更新")}catch{notice=error.localizedDescription}
     }
     func setContextExtension(_ enabled:Bool) async {
         changingContextExtension=true;defer{changingContextExtension=false}
-        do{let data=try await api("/context-extension",body:["enabled":enabled]);contextExtension=try JSONDecoder().decode(ContextExtensionState.self,from:data);await refresh();fill();notice=contextExtension?.message ?? L("拓展设置已保存")}catch{notice=error.localizedDescription}
+        do{let data=try await api(ControlAPI.contextExtension,body:["enabled":enabled]);contextExtension=try JSONDecoder().decode(ContextExtensionState.self,from:data);await refresh();fill();notice=contextExtension?.message ?? L("拓展设置已保存")}catch{notice=error.localizedDescription}
     }
     func fill(){
         defer{budgetEdited=false}
@@ -185,13 +188,18 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func setRatio(_ value:Int){ratioNumerator=value;ratioDenominator=100;setWindowK(windowK)}
     var policy:[String:Any] {get throws {let budget=try calculate();return ["window":budget.rawWindow,"compact":budget.compact,"reserve":reserve,"retainedFloor":floor,"scope":"total"]}}
+    func policyCommand(_ raw:[String:Any],usableWindow:Int)->[String:Any]{
+        if !supportsVisibleBudget{return ["policy":raw]}
+        var budget=raw;budget.removeValue(forKey:"window");budget["usableWindow"]=usableWindow
+        return ["budget":budget]
+    }
     func act(_ action:String) async {
         guard let chat=selected else{return};working=true;defer{working=false}
         do {
             var body:[String:Any]=["id":chat.id]
-            if action=="preflight"||action=="policy"{body["policy"]=try policy}
+            if action=="preflight"||action=="policy"{body.merge(policyCommand(try policy,usableWindow:Int(windowK)*1000),uniquingKeysWith:{$1})}
             if action=="policy"{body["apply"]=true;body["expectedRevision"]=editingRevision}
-            let data=try await api("/\(action)",body:body)
+            let data=try await api(ControlAPI.routes[action] ?? "/invalid",body:body)
             let object=try JSONSerialization.jsonObject(with:data) as? [String:Any]
             if action=="preflight"{notice=(object?["message"] as? String ?? L("预检完成"))+((object?["notes"] as? [String])?.map{"\n"+$0}.joined() ?? "")}
             else if action=="policy"{editingRevision=(object?["policy"] as? [String:Any])?["revision"] as? Int ?? editingRevision;budgetEdited=false;notice=L("预算已保存。请查看下方应用状态；实际值将在正常下一轮请求后确认。")}
@@ -202,7 +210,7 @@ struct ServiceSettings: Decodable {let node:String}
     func setRuntimeFix(_ enabled:Bool) async {
         if changingRuntimeFix{return};changingRuntimeFix=true;defer{changingRuntimeFix=false}
         do {
-            runtimeFix=try JSONDecoder().decode(RuntimeFixState.self,from:await api("/runtime-fix",body:["enabled":enabled]))
+            runtimeFix=try JSONDecoder().decode(RuntimeFixState.self,from:await api(ControlAPI.runtimeFix,body:["enabled":enabled]))
             notice=runtimeFix?.message ?? L("设置已保存")
         }catch{notice=error.localizedDescription}
     }
@@ -454,9 +462,10 @@ struct ContentView: View {
                     }}
                 }.frame(maxHeight:.infinity)
                 Button{showControlPanel.toggle()} label:{
-                    Image(systemName:"gearshape").font(.system(size:20)).frame(width:44,height:44)
-                        .background(.regularMaterial,in:RoundedRectangle(cornerRadius:12,style:.continuous))
-                }.buttonStyle(.plain).help(L("设置")).accessibilityLabel(L("设置")).accessibilityIdentifier("control-panel-button")
+                    HStack(spacing:10){Image(systemName:"slider.horizontal.3");Text(L("主控制面板")).font(.system(size:13,weight:.medium));Spacer();Image(systemName:showControlPanel ? "chevron.down":"chevron.up").font(.system(size:10,weight:.semibold)).foregroundStyle(.secondary)}
+                        .padding(12).frame(maxWidth:.infinity).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:12)).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier("control-panel-button")
+                    .popover(isPresented:$showControlPanel,attachmentAnchor:.rect(.bounds),arrowEdge:.bottom){MainControlPanelView(model:model,close:{showControlPanel=false})}
             }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
@@ -489,16 +498,7 @@ struct ContentView: View {
                 }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity)
             }.frame(minWidth:650).background(PanelStyle.background)
         }
-        .disabled(showControlPanel)
         .frame(minWidth:960,minHeight:670)
-        .overlay {
-            if showControlPanel {
-                ZStack {
-                    Color.black.opacity(0.28).ignoresSafeArea().onTapGesture{showControlPanel=false}
-                    MainControlPanelView(model:model,close:{showControlPanel=false})
-                }.transition(.opacity)
-            }
-        }
         .background(PanelStyle.background)
         .preferredColorScheme(.dark).tint(PanelStyle.blue).environment(\.locale,Localization.locale)
         .onChange(of:model.selectedID){_,_ in model.fill()}
@@ -617,9 +617,10 @@ struct ContentView: View {
                 Task{@MainActor [weak self] in self?.installMainMenu();self?.updateStatusIcon()}
             })
         }
-        let item=NSStatusBar.system.statusItem(withLength:56)
+        let item=NSStatusBar.system.statusItem(withLength:44)
         item.button?.title=""
         item.button?.imagePosition = .imageOnly
+        item.button?.imageScaling = .scaleProportionallyDown
         item.button?.setButtonType(.pushOnPushOff)
         item.button?.target=self;item.button?.action=#selector(toggleContextPopover)
         statusItem=item
@@ -728,16 +729,13 @@ struct ContentView: View {
     }
     private func installMainMenu(){
         let bar=NSMenu(),appItem=NSMenuItem(),appMenu=NSMenu()
-        appMenu.addItem(withTitle:L("打开主窗口"),action:#selector(toggleSettingsWindow),keyEquivalent:"m").target=self
+        appMenu.addItem(withTitle:L("打开主窗口"),action:#selector(showSettings),keyEquivalent:"m").target=self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle:L("退出 Context Manager"),action:#selector(quitEntry),keyEquivalent:"q").target=self
         appItem.submenu=appMenu;bar.addItem(appItem)
         let editItem=NSMenuItem(title:L("编辑"),action:nil,keyEquivalent:""),edit=NSMenu(title:L("编辑"))
         for (title,action,key) in [(L("撤销"),"undo:","z"),(L("重做"),"redo:","Z"),(L("剪切"),"cut:","x"),(L("复制"),"copy:","c"),(L("粘贴"),"paste:","v"),(L("全选"),"selectAll:","a")]{edit.addItem(withTitle:title,action:Selector(action),keyEquivalent:key)}
         editItem.submenu=edit;bar.addItem(editItem);NSApplication.shared.mainMenu=bar
-    }
-    @objc private func toggleSettingsWindow(){
-        if let window=settingsWindow,window.isVisible,!window.isMiniaturized{window.orderOut(nil);publishStatus()}else{showSettings()}
     }
     @objc private func showSettings(){
         closeContextMenu()

@@ -15,7 +15,7 @@ test('Windows executable launcher preserves binary stdio, Unicode arguments, cwd
     fs.writeFileSync(path.join(root,'launcher.json'),JSON.stringify({node:process.execPath,codeRoot:code,controlHome:root}));
     const args=['hello world','中文🙂','a"b','C:\\trailing space\\','& do not run',''];const input=Buffer.from([0,1,255,13,10,0,128]);
     const result=spawnSync(exe,args,{input,cwd:root,env:{...process.env,CTC_TEST_META:meta},windowsHide:true,timeout:10000});
-    assert.equal(result.status,7,result.error?.message);assert.deepEqual(result.stdout,input);assert.equal(result.stderr.toString(),'stderr preserved');assert.deepEqual(JSON.parse(fs.readFileSync(meta,'utf8')),{args,cwd:root});
+    assert.equal(result.status,7,result.error?.message);assert.deepEqual(result.stdout,input);assert.equal(result.stderr.toString(),'stderr preserved');const reported=JSON.parse(fs.readFileSync(meta,'utf8'));assert.deepEqual(reported.args,args);assert.equal(fs.realpathSync.native(reported.cwd),fs.realpathSync.native(root));
     const hook=spawnSync(exe,['--hook'],{input:'{}',cwd:root,env:{...process.env,CTC_TEST_META:meta},windowsHide:true,timeout:10000});assert.equal(hook.status,7);assert.deepEqual(JSON.parse(fs.readFileSync(meta,'utf8')).args,['hook']);
   }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:3,retryDelay:100});}
 });

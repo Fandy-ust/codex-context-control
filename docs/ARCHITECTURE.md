@@ -2,6 +2,14 @@
 
 [English](en/ARCHITECTURE.md) | **简体中文** · [首页](../README.zh-CN.md)
 
+## 代码边界（0.19.6）
+
+`src/core/` 保存不依赖系统或界面的预算、继承、状态迁移和更新选择规则。`src/contracts/` 定义控制接口，Mac 的路由由同一份规范生成。`src/platform/` 处理系统路径、进程、启动登记和旧版本回收；控制服务、桥接和存储把这些模块组合起来。`macos/` 和 `desktop/` 分别负责界面。
+
+界面可自行预览拖动效果，最终提交使用可见容量 `budget.usableWindow`，由服务端统一反算底层窗口并执行预检。旧客户端仍可提交 `policy.window`；新界面通过 `capabilities.visibleBudget` 判断接口能力。生成文件检查和跨语言案例测试防止两套预览算法出现偏差。
+
+两个平台的核心行为约定见 [功能一致性](FEATURE_PARITY.md)，分支与发布规则见 [协作指南](../CONTRIBUTING.md)。
+
 ## 所有权
 
 Codex 为每个线程持有自己的 SessionConfiguration 和 ModelInfoOverrides。模型目录等服务可以共享，但窗口覆盖值由聊天各自持有。仅修改 config.toml 不会更新现有会话捕获的窗口参数。
@@ -10,8 +18,8 @@ Codex 为每个线程持有自己的 SessionConfiguration 和 ModelInfoOverrides
 
 ```mermaid
 flowchart LR
-  Panel[原生 macOS 面板] -->|仅本机认证接口| Controller[控制服务与逐聊天策略]
-  Controller -->|Unix socket| Bridge[桌面连接桥接]
+  Panel[Mac 原生面板 / Windows 界面] -->|仅本机认证接口| Controller[控制服务与逐聊天策略]
+  Controller -->|Unix socket / 认证 named pipe| Bridge[桌面连接桥接]
   Desktop[原有 Codex 桌面端] <-->|原有 JSON-RPC| Bridge
   Bridge <-->|stdio| Runtime[原有 Codex app-server]
   Runtime --> Hook[Stop hook]
@@ -101,4 +109,4 @@ native_compact_maximum = floor(raw_window × 90 / 100)
 
 官方接口文档确认 fork 复制历史、生成新 ID，并在可用时返回 forkedFromId：[Codex App Server](https://learn.chatgpt.com/docs/app-server)。配置注入能力另外以本机 0.160.0 生成的 schema 核对，并通过 0.159.2 / 0.160.0 的本地模拟服务集成测试。预算继承是本项目增加的行为。临时会话、path 来源和父代理管理的子会话仍不纳入持久控制范围。
 
-启动控制服务时检查版本。已有服务较旧时，核对其 PID 与本项目 daemon 的可执行脚本路径，再替换控制服务；同版或更新服务复用。该操作不终止 Codex 内核。桥接本身仍须正常重开 Codex 才能换成新版；`loadedBridgeVersions` 用于区分安装版本与已加载版本。
+启动控制服务时检查版本。已有服务较旧时，核对其 PID 与本项目 daemon 的可执行脚本路径，再替换控制服务；同版且 buildId 相同，或更高版本的服务复用。该操作不终止 Codex 内核。桥接本身仍须正常重开 Codex 才能换成新版；`loadedBridgeVersions` 用于区分安装版本与已加载版本。

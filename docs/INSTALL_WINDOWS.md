@@ -1,13 +1,13 @@
 # Windows 安装与开发
 
-当前分支提供 Windows 11 x64 本地预览版，当前版本为 0.19.5。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，也尚未发布到 GitHub Releases。
+当前分支提供 Windows 11 x64 本地预览版，当前版本为 0.19.6。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，也尚未发布到 GitHub Releases。
 
 ## 安装
 
-1. 下载 `Context-Manager-0.19.5-windows-x64-Setup.exe`，只需要这一个文件，不需要旁边放 `payload/`。
+1. 下载 `Context-Manager-0.19.6-windows-x64-Setup.exe`，只需要这一个文件，不需要旁边放 `payload/`。
 2. 双击 `Setup.exe`，选择「安装 / 更新」。安装器先校验并解压内置程序，再安装到当前用户；完成后自动清理临时解压目录，不需要修改 Codex 安装文件。安装成功后可以删除下载的 EXE。
 3. **默认接入 Codex**：启动检查通过后自动登记接入，安装完成后在工作结束时完整退出并重开 Codex。若检查失败，仍完成界面安装并保留原生启动入口；在「设置 → Codex 接入」查看错误或重试。
-4. 在右下角系统托盘点击圆环图标。Windows 可能把它收在 `^` 折叠区，可在系统任务栏设置中选择显示。
+4. 在右下角系统托盘点击额度图标。Windows 可能把它收在 `^` 折叠区，可在系统任务栏设置中选择显示。
 5. 接入生效后进入聊天，观察连接状态与实际用量。需要 Hook stats 时，在 Codex 自己的 `/hooks` 中审核本项目新增的 Hook。
 
 手动开启接入后，若正常重开仍未读到新的用户环境，退出并重新登录 Windows 后再打开。诊断中应区分用户环境已登记、桥接已连接和下一轮窗口已确认；这些不是同一个状态。
@@ -53,7 +53,7 @@
 
 在「设置 → 应用」或原安装器中卸载。卸载只撤销自己的环境登记和 Hook，保留预算、缓存、偏好与备份。仍有 Codex 进程或桥接使用程序时，保留对应文件；完整退出 Codex 后可再次执行卸载以清理。卸载后残留进程若仍继承旧入口，新调用只透传原版运行时。
 
-直接运行新版 `Setup.exe` 即可更新，无需先卸载。开始菜单和管理器入口切到新版，预算、快捷键与其他偏好保留。0.19.5 默认尝试开启接入；之后在设置里明确关闭的选择会在后续更新中保留。程序按不可变目录安装，升级前保留一份轻量配置快照；升级时目前不自动删除旧版目录，以免影响仍在使用的桥接。不要手动删除正在使用的版本目录；回退时同样使用安装器并核对数据 schema。
+直接运行新版 `Setup.exe` 即可更新，无需先卸载。开始菜单和管理器入口切到新版，预算、快捷键与其他偏好保留。0.19.6 默认尝试开启接入；之后在设置里明确关闭的选择会在后续更新中保留。程序按不可变目录安装，升级前保留一份轻量配置快照；确认旧版本不再被进程使用后自动清理。Codex 仍在运行、进程检查失败或目录校验不通过时保留旧文件，之后由后台再次检查；不会删除预算、缓存和偏好。不要手动删除正在使用的版本目录；回退时同样使用安装器并核对数据 schema。
 
 ## 从源码构建
 
@@ -64,11 +64,11 @@ npm ci
 npm run build:win
 ```
 
-`build:win` 一次完成编译、压缩与封装，输出独立的 `build/Context-Manager-0.19.5-windows-x64-Setup.exe` 和同名 `.sha256`。分发时只需发送 `Setup.exe`，不需要旁边放 `payload/`。安装后程序会正常展开到安装目录。
+`build:win` 一次完成编译、压缩与封装，输出独立的 `build/Context-Manager-0.19.6-windows-x64-Setup.exe` 和同名 `.sha256`。分发时只需发送 `Setup.exe`，不需要旁边放 `payload/`。安装后程序会正常展开到安装目录。
 
-`build/Context-Manager-0.19.5-windows-x64/` 是构建中间目录。如果只需要目录而不生成 EXE，可执行 `npm run build:win:dir`；需要重新封装现有目录时可执行 `npm run package:win`。
+`build/Context-Manager-0.19.6-windows-x64/` 是构建中间目录。如果只需要目录而不生成 EXE，可执行 `npm run build:win:dir`；需要重新封装现有目录时可执行 `npm run package:win`。
 
-更新器所用 ZIP 改为显式生成：`npm run package:win:update`（先完成构建）。也可使用 `npm run build:win -- --with-update-zip` 一次生成 EXE 和 ZIP。Actions 的 `context-manager-windows-x64` 仅包含安装 EXE 与校验文件，更新 ZIP 单独放在 `context-manager-windows-x64-update`；日常安装只需下载前者。构建仍包含已有品牌图标和版本信息。
+更新器所用 ZIP 改为显式生成：`npm run package:win:update`（先完成构建）。也可使用 `npm run build:win -- --with-update-zip` 一次生成 EXE 和 ZIP。Actions 的 `context-manager-windows-x64` 同时包含安装 EXE、更新 ZIP 与校验文件；日常安装只需使用其中的 EXE。构建仍包含已有品牌图标和版本信息。
 
 单文件安装器使用系统 .NET Framework 的[程序集内置资源](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/compiler-options/resources)封装压缩包，运行时通过[资源流](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.assembly.getmanifestresourcestream)读取。解压前验证 SHA-256，解压时拒绝越界路径和符号链接；内部仍复用同一套安装/升级脚本。
 

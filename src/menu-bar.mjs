@@ -1,11 +1,12 @@
 import fs from 'node:fs';
+import {canonicalLocalPath} from './local-path.mjs';
 import path from 'node:path';
 import {spawnSync,spawn} from 'node:child_process';
 import {root,settings,readJSON} from './paths.mjs';
 import {windows,processInfo} from './platform/index.mjs';
 
 export function menuBarProcess(app=settings().installedApp){
-  if(windows){const s=readJSON(path.join(root,'ui-status.json'),{});if(!app||!Number.isSafeInteger(s.pid))return null;const info=processInfo(s.pid);return info?.executable&&path.resolve(info.executable).toLowerCase()===path.resolve(app).toLowerCase()?s.pid:null;}
+  if(windows){const s=readJSON(path.join(root,'ui-status.json'),{});if(!app||!Number.isSafeInteger(s.pid))return null;const info=processInfo(s.pid);return info?.executable&&canonicalLocalPath(info.executable).toLowerCase()===canonicalLocalPath(app).toLowerCase()?s.pid:null;}
   if(process.platform!=='darwin'||!app)return null;
   const installed=path.join(app,'Contents/MacOS/ContextControl-native');
   let executable=fs.existsSync(installed)?installed:path.join(app,'Contents/MacOS/ContextControl');

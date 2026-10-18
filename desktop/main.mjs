@@ -1,5 +1,6 @@
 import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell,dialog} from 'electron';
 import fs from 'node:fs';
+import {assertControlOperation} from '../src/contracts/control-api.mjs';
 import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath} from 'node:url';
@@ -45,15 +46,14 @@ async function api(action,params={}){
     if(action==='preflight')return {allowed:true,code:'ready',message:'Demo'};
     return {ok:true};
   }
-  const routes={state:['GET','/state'],statistics:['POST','/context-stats'],preflight:['POST','/preflight'],policy:['POST','/policy'],clear:['POST','/clear'],compact:['POST','/compact'],defaults:['POST','/new-chat-defaults'],extension:['POST','/context-extension'],scan:['POST','/scan'],'quota-refresh':['POST','/quota'],'check-update':['POST','/updates/check'],'install-update':['POST','/updates/install']};
-  const route=routes[action];if(!route)throw Error('Unknown action');
+  const route=assertControlOperation(action);
   const connection=readJSON(path.join(root,'connection.json'));
   if(!Number.isSafeInteger(connection?.port)||connection.port<1||connection.port>65535||!/^[a-f0-9]{64}$/.test(connection.token||''))throw Error('Local service connection is unavailable');
-  const response=await fetch(`http://127.0.0.1:${connection.port}${route[1]}`,{method:route[0],headers:{Authorization:`Bearer ${connection.token}`},...(route[0]==='POST'?{body:JSON.stringify(params)}:{}),signal:AbortSignal.timeout(action==='statistics'?60000:30000)});
+  const response=await fetch(`http://127.0.0.1:${connection.port}${route.path}`,{method:route.method,headers:{Authorization:`Bearer ${connection.token}`},...(route.method==='POST'?{body:JSON.stringify(params)}:{}),signal:AbortSignal.timeout(action==='statistics'?60000:30000)});
   const body=await response.json();if(!response.ok)throw Error(localize(body.error||'Local service error'));return body;
 }
 const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,shortcut:shortcutManager.status(),menuReady:!!tray,menuWindowVisible:!!trayWindow?.isVisible(),menuOnScreen:!!trayWindow?.isVisible(),windowVisible:!!main?.isVisible(),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow?.getBounds()});};
-async function ensureUiService(){try{if((await api('state')).version===pkg.version)return;}catch{}await ensureDaemon();}
+async function ensureUiService(){return ensureDaemon();}
 function createWindow(menu=false){
   const win=new BrowserWindow({width:menu?400:1080,height:menu?450:760,minWidth:menu?320:960,minHeight:menu?180:670,show:false,frame:!menu,resizable:!menu,skipTaskbar:menu,alwaysOnTop:menu,backgroundColor:'#181818',title:'Context Manager',icon:path.join(repo,'macos/Assets/ContextManager.png'),webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   win.setMenuBarVisibility(false);win.webContents.setWindowOpenHandler(()=>({action:'deny'}));

@@ -1,11 +1,12 @@
 import fs from 'node:fs';
+import {canonicalLocalPath} from './local-path.mjs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {root,realBinary,readJSON,settings} from './paths.mjs';
 import {windows,processInfo,desktopInstallation} from './platform/index.mjs';
 
 export function selectDesktopRuntime(parentExecutable,configuredExecutable,fallback){
-  if(windows&&parentExecutable&&configuredExecutable&&path.resolve(parentExecutable).toLowerCase()===path.resolve(configuredExecutable).toLowerCase()){
+  if(windows&&parentExecutable&&configuredExecutable&&fs.existsSync(parentExecutable)&&fs.existsSync(configuredExecutable)&&canonicalLocalPath(parentExecutable).toLowerCase()===canonicalLocalPath(configuredExecutable).toLowerCase()){
     const binary=path.join(path.dirname(parentExecutable),'resources/codex.exe');return fs.existsSync(binary)?{binary,desktop:true}:{binary:fallback,desktop:false};
   }
   parentExecutable=parentExecutable?.replaceAll('\\','/');

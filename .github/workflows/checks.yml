@@ -7,41 +7,16 @@ on:
 permissions:
   contents: read
 jobs:
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - run: npm ci
-      - run: npm test
-      - run: npm run build:win
-      - run: npm run test:win:ui-smoke
-      - uses: actions/upload-artifact@v4
-        with:
-          name: context-manager-windows-x64
-          path: |
-            build/Context-Manager-*-windows-x64-Setup.exe
-            build/Context-Manager-*-windows-x64-Setup.exe.sha256
-  node:
+  core:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - run: npm ci --ignore-scripts
-      - run: npm test
-  macos:
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: npm ci --ignore-scripts
-      - run: npm run build:mac
-      - run: CONTEXT_CONTROL_TEST_INSTALL=1 CONTEXT_CONTROL_TEST_UI=1 npm test
-      - run: node scripts/chart-fixture.mjs
-      - run: node scripts/check-chart-interaction.mjs
+      - run: npm run check:architecture
+      - run: npm run test:ci
+  desktop:
+    uses: ./.github/workflows/_build-desktop.yml

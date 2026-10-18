@@ -1,5 +1,7 @@
-import {threadDraft as legacyThreadDraft,draftLimits as legacyDraftLimits,resizeDraft as legacyResizeDraft,policyForDraft as legacyPolicyForDraft} from '../../src/ui-budget.mjs';
-import {appleThreadDraft,appleDraftLimits,appleResizeDraft,applePolicyForDraft,windowConfirmed,observedWindowTitle,modelDisplayName} from '../../src/apple-ui.mjs';
+import {draftLimits as legacyDraftLimits,resizeDraft as legacyResizeDraft,policyForDraft as legacyPolicyForDraft} from '../../src/core/default-budget-editor.mjs';
+import {threadDraft as appleThreadDraft,threadDraftLimits as appleDraftLimits,resizeThreadDraft as appleResizeDraft,policyForThreadDraft as applePolicyForDraft} from '../../src/core/budget-editor.mjs';
+import {windowConfirmed,observedWindowTitle,modelDisplayName} from '../../src/presentation/chat.mjs';
+import {budgetCommand} from '../../src/core/budget-command.mjs';
 import {tokenNumber} from '../../src/policy.mjs';
 import {savedBudget} from '../../src/budget.mjs';
 import {timelineData,nearestBucket} from '../../src/timeline-data.mjs';
@@ -406,7 +408,7 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action==='save-defaults'){await run('defaults',{usableWindow:draft.window,compact:draft.compact,expectedRevision:draft.expectedRevision},t('默认值已保存','Defaults saved'));dirty=false;await refresh();if(settingsOpen)render();return;}
     if(action==='preflight'||action==='apply'){
       if(budgetInputError)throw Error(budgetInputError);
-      const params={id:selected,policy:policyForDraft(draft,current().modelMetadata),...(action==='apply'?{expectedRevision:draft.expectedRevision,apply:true}:{})};
+      const params={id:selected,...budgetCommand(draft,policyForDraft(draft,current().modelMetadata),state.capabilities),...(action==='apply'?{expectedRevision:draft.expectedRevision,apply:true}:{})};
       try{
         if(action==='preflight'){const result=await run(action,params);setNotice([result.message||t('预检完成','Preflight completed'),...(result.notes||[])].join('\n'),result.allowed===false);}
         else{await run('policy',params);dirty=false;setNotice(t('预算已保存。请查看下方应用状态；实际值将在正常下一轮请求后确认。','Budget saved. Check the application status; actual values are confirmed after the next normal request.'));await refresh();}
@@ -426,7 +428,7 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       traySaving.add(chat.id);updateTrayDraft(chat.id,d,chat.modelMetadata);
       try{
         if(d.modelKey!==modelSignature(chat))throw Error(t('模型信息已变化，请取消后重新调整','Model metadata changed. Cancel and adjust again.'));
-        const result=await api.invoke('policy',{id:chat.id,policy:policyForDraft(d,chat.modelMetadata),expectedRevision:d.expectedRevision,apply:true});
+        const result=await api.invoke('policy',{id:chat.id,...budgetCommand(d,policyForDraft(d,chat.modelMetadata),state.capabilities),expectedRevision:d.expectedRevision,apply:true});
         if(result.thread){state.threads=state.threads.map(item=>item.id===chat.id?{...item,...result.thread}:item);}
         const code=result.plan?.code,updated=state.threads.find(item=>item.id===chat.id),messages={waiting_for_idle:t('已保存 · 本轮结束后应用','Saved · apply after this turn'),needs_compaction:t('已保存 · 需先压缩再应用','Saved · compaction required'),needs_observation:t('已保存 · 等待用量读回','Saved · waiting for usage')};
         trayFeedback.set(chat.id,{message:!updated.connected?t('已保存 · 接入后自动应用','Saved · apply when connected'):messages[code]||t('已提交 · 等待读回确认','Submitted · awaiting confirmation'),error:code==='needs_compaction'});

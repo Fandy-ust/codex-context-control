@@ -36,7 +36,7 @@ struct NewChatDefaultsView:View {
             if model.newChatDefaultsPending {Label(L("首次接入需完整退出并重开 Codex；之后改默认值无需重启。"),systemImage:"arrow.clockwise").font(.caption).foregroundStyle(.orange)}
             if let notice {Text(L(notice)).font(.callout).foregroundStyle(failed ? .orange:.secondary)}
             HStack{Button(L(onClose == nil ? "关闭":"返回")){if let onClose{onClose()}else{dismiss()}}.keyboardShortcut(.cancelAction);Spacer();if saving{ProgressView().controlSize(.small)};Button(L("保存默认")){Task{await save()}}.buttonStyle(.borderedProminent).disabled(!edited || saving || !model.serviceAvailable || model.newChatDefaultsLimits==nil).keyboardShortcut(.defaultAction)}
-        }.padding(compact ? 20:28).frame(width:compact ? 680:650).background(compact ? Color.clear:Color(white:0.095)).preferredColorScheme(.dark)
+        }.padding(compact ? 20:28).frame(width:compact ? 360:650).background(Color(white:0.095)).preferredColorScheme(.dark)
             .onAppear{load()}.onChange(of:model.newChatDefaults?.revision){_,_ in if !edited{load()}}.onChange(of:model.newChatDefaultsLimits){_,_ in load()}
     }
     private func metric(_ title:String,_ value:Int,_ color:Color)->some View {VStack(alignment:.leading,spacing:5){Text("\(value)K").font(.system(size:compact ? 24:28,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(color);Text(title).font(.caption).foregroundStyle(.secondary)}}
@@ -44,5 +44,5 @@ struct NewChatDefaultsView:View {
     private func setWindow(_ value:Double){windowK=max(34,min(Double(maximumWindowK),value.rounded()));compactK=Double(max(17,BudgetMath.linkedSliderCompactK(windowK:Int(windowK),ratioNumerator:ratioNumerator,ratioDenominator:ratioDenominator,maximumK:maximumCompactK)));edited=true;notice=nil}
     private func setCompact(_ value:Double){compactK=max(17,min(Double(maximumCompactK),value.rounded()));ratioNumerator=Int(compactK);ratioDenominator=Int(windowK);edited=true;notice=nil}
     private func copySelected(){guard let chat=model.selected,let policy=chat.policy,let percent=chat.modelMetadata?.effective_context_window_percent else{return};setWindow(Double(policy.window*percent/100/1000));setCompact(Double(min(policy.compact,policy.window*90/100)/1000))}
-    private func save() async {saving=true;defer{saving=false};do{let data=try await model.api("/new-chat-defaults",body:["usableWindow":Int(windowK)*1000,"compact":Int(compactK)*1000,"expectedRevision":revision]);let saved=try JSONDecoder().decode(NewChatDefaultsState.self,from:data);model.newChatDefaults=saved;revision=saved.revision;edited=false;failed=false;notice=L("已保存，之后新建的聊天将沿用这组设置。")}catch{failed=true;notice=error.localizedDescription}}
+    private func save() async {saving=true;defer{saving=false};do{let data=try await model.api(ControlAPI.defaults,body:["usableWindow":Int(windowK)*1000,"compact":Int(compactK)*1000,"expectedRevision":revision]);let saved=try JSONDecoder().decode(NewChatDefaultsState.self,from:data);model.newChatDefaults=saved;revision=saved.revision;edited=false;failed=false;notice=L("已保存，之后新建的聊天将沿用这组设置。")}catch{failed=true;notice=error.localizedDescription}}
 }
