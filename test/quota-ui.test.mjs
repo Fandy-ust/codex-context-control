@@ -31,14 +31,17 @@ import AppKit
   let model=Controller(),view=NSHostingView(rootView:QuotaAnalyticsView(model:model,onBack:{},fixture:report).frame(width:820,height:1000))
   let window=NSWindow(contentRect:NSRect(x:0,y:0,width:820,height:1000),styleMask:[.borderless],backing:.buffered,defer:false);window.contentView=view;window.display()
   Task{@MainActor in
-   do{try await Task.sleep(for:.milliseconds(500));view.layoutSubtreeIfNeeded();view.display();let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds)!;view.cacheDisplay(in:view.bounds,to:bitmap);try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:CommandLine.arguments[2]));print("Native shared analytics report rendered");app.terminate(nil)}catch{print(error);exit(1)}
+   do{try await Task.sleep(for:.milliseconds(500));view.layoutSubtreeIfNeeded();view.display();let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds)!;view.cacheDisplay(in:view.bounds,to:bitmap);try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:CommandLine.arguments[2]));print("Native shared analytics report rendered")
+    model.taskQueues=TaskQueuesState(sleepPrevented:false,queues:[ChatTaskQueue(id:"fixture",enabled:false,config:QueueConfig(),tasks:[QueueTask(id:"task",prompt:"完整任务：实现界面并运行测试",status:"waiting",error:nil)],revision:1,state:"off",message:"未开启监视")])
+    let queueView=NSHostingView(rootView:TaskQueueDetailView(model:model,chatID:"fixture",onBack:{}).frame(width:820,height:1000));window.contentView=queueView;window.display();try await Task.sleep(for:.milliseconds(250));queueView.layoutSubtreeIfNeeded();queueView.display()
+    let queueBitmap=queueView.bitmapImageRepForCachingDisplay(in:queueView.bounds)!;queueView.cacheDisplay(in:queueView.bounds,to:queueBitmap);try queueBitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:CommandLine.arguments[2]+".queue.png"));print("Native task queue rendered");app.terminate(nil)}catch{print(error);exit(1)}
   };app.run()
  }
 }`);
   const sources=fs.readdirSync(path.join(repo,'macos')).filter(n=>n.endsWith('.swift')&&n!=='ContextControl.swift').map(n=>path.join(repo,'macos',n));
   const binary=path.join(temp,'preview'),build=spawnSync('xcrun',['swiftc','-parse-as-library',...sources,path.join(temp,'Control.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:90000});assert.equal(build.status,0,build.stderr);
   const screenshot=process.env.CONTEXT_CONTROL_QUOTA_SCREENSHOT||path.join(temp,'analytics.png');
-  const run=spawnSync(binary,[path.join(temp,'report.json'),screenshot],{env:{...process.env,CONTEXT_CONTROL_HOME:temp},encoding:'utf8',timeout:15000});assert.equal(run.status,0,run.stdout+run.stderr);assert.ok(fs.statSync(screenshot).size>5000);
+  const run=spawnSync(binary,[path.join(temp,'report.json'),screenshot],{env:{...process.env,CONTEXT_CONTROL_HOME:temp},encoding:'utf8',timeout:15000});assert.equal(run.status,0,run.stdout+run.stderr);assert.ok(fs.statSync(screenshot).size>5000);assert.ok(fs.statSync(screenshot+'.queue.png').size>5000);
  }finally{fs.rmSync(temp,{recursive:true,force:true});}
 });
 

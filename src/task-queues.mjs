@@ -9,7 +9,7 @@ export function validateQueueConfig(value){
   for(const name of ['fiveHour','weekly']){
     const item=value[name];if(!item||!Array.isArray(item.stages)||item.stages.length>2)throw Error('每种额度最多设置两个释放梯度');
     const reserve=percentage(item.reserve);let previousMinutes=Infinity,previousReserve=reserve;
-    const stages=item.stages.map(s=>{if(!Number.isInteger(s.minutes)||s.minutes<1||s.minutes>10080||s.minutes>=previousMinutes)throw Error('释放时间应由远到近，且不能重复');const next=percentage(s.reserve);if(next>previousReserve)throw Error('临近重置的保留比例只能降低');previousMinutes=s.minutes;previousReserve=next;return {minutes:s.minutes,reserve:next};});
+    const stages=item.stages.map(s=>{if(!Number.isInteger(s.minutes)||s.minutes<1||s.minutes>(name==='fiveHour'?300:10080)||s.minutes>=previousMinutes)throw Error('释放时间应由远到近，且不能重复');const next=percentage(s.reserve);if(next>previousReserve)throw Error('临近重置的保留比例只能降低');previousMinutes=s.minutes;previousReserve=next;return {minutes:s.minutes,reserve:next};});
     out[name]={reserve,stages};
   }return out;
 }
@@ -69,6 +69,7 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,i
       for(const q of queues.values()){
         const chat=thread(q.id),running=q.tasks.find(t=>t.status==='running'),owned=chat?.automaticTask;
         if(running){
+          if(chat?.connected&&!chat.ambiguous&&owned?.executionId!==running.executionId){running.status='interrupted';q.enabled=false;q.state='off';q.message='执行状态待核对，监视已关闭';continue;}
           if(owned?.executionId===running.executionId&&['completed','error','interrupted'].includes(owned.status)){
             running.status=owned.status==='completed'?'completed':owned.status;running.error=owned.error??null;running.finishedAt=now();
             if(running.status==='error'){q.pause={kind:'manual'};q.message='任务执行失败，请检查后重试';}
@@ -92,7 +93,7 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,i
         if(!gate.valid){q.state='waiting-quota';q.message='等待有效额度，不启动新轮次';continue;}
         if(gate.blocked){q.pause??={kind:'quota',windows:gate.windows.filter(w=>w.remaining<=w.reserve)};q.state='paused';q.message='已到最低保留额度';continue;}
         if(q.pause){
-          const reset=q.pause.kind==='cycle'?now()>=q.pause.until:q.pause.kind==='quota'&&q.config.resume==='auto'&&q.pause.windows.every(old=>gate.windows.some(w=>w.name===old.name&&w.resetsAt>old.resetsAt));
+          const reset=q.pause.kind==='cycle'?now()>=q.pause.until:q.pause.kind==='quota'&&q.config.resume==='auto'&&q.pause.windows.every(old=>gate.windows.some(w=>w.name===old.name&&(w.resetsAt>old.resetsAt||w.reserve<old.reserve&&w.remaining>w.reserve)));
           if(!reset){q.state='paused';continue;}q.pause=null;
         }
         if(!chat?.connected||chat.ambiguous||chat.status!=='idle'||chat.ephemeral||chat.canAcceptDirectInput===false||['compacting','reloading','extension_pending'].includes(chat.phase)){q.state='waiting-chat';q.message='等待唯一连接且空闲的聊天';continue;}

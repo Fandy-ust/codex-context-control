@@ -88,19 +88,29 @@ struct TaskQueueDetailView:View {
     private var queue:ChatTaskQueue?{model.taskQueue(chatID)}
     var body:some View {
         VStack(spacing:0){
-            HStack{Button(L("返回"),systemImage:"arrow.left",action:onBack).buttonStyle(.bordered);Text(L("任务队列")).font(.title2.bold());Spacer();Button(L(queue?.enabled == true ? "关闭监视":"开启监视")){Task{await model.queueCommand(chatID,"enable",values:["enabled":queue?.enabled != true])}}.buttonStyle(.bordered)}.padding(24).background(PanelStyle.background)
+            header
             ScrollView{
                 VStack(alignment:.leading,spacing:20){
                     Text(model.chats.first{$0.id==chatID}?.title ?? chatID).font(.title3)
                     Text(L(queue?.message ?? "未开启监视")).foregroundStyle(.secondary)
                     if queue?.state=="paused"{Button(L("继续队列")){Task{await model.queueCommand(chatID,"enable",values:["enabled":true])}}.buttonStyle(.borderedProminent)}
                     Text(L("开启时会将当前执行中的任务加入队首；每项正常结束后才发送下一项完整提示词。队列完成后自动关闭监视。")).font(.caption).foregroundStyle(.secondary)
-                    GroupBox(L(editingTask == nil ? "新增任务：完整提示词":"编辑任务提示词")){
+                    taskEditor
+                    taskList
+                    settingsEditor
+                    if !feedback.isEmpty{Text(feedback).foregroundStyle(.orange)}
+                    Text(model.notice).font(.caption).foregroundStyle(.secondary)
+                }.padding(24).frame(maxWidth:900).frame(maxWidth:.infinity)
+            }
+        }.disabled(model.working).onAppear{config=queue?.config ?? QueueConfig()}.onChange(of:chatID){_,_ in config=queue?.config ?? QueueConfig();prompt="";editingTask=nil}
+    }
+    private var header:some View{HStack{Button(L("返回"),systemImage:"arrow.left",action:onBack).buttonStyle(.bordered);Text(L("任务队列")).font(.title2.bold());Spacer();Button(L(queue?.enabled == true ? "关闭监视":"开启监视")){Task{await model.queueCommand(chatID,"enable",values:["enabled":queue?.enabled != true])}}.buttonStyle(.bordered)}.padding(24).background(PanelStyle.background)}
+    private var taskEditor:some View{GroupBox(L(editingTask == nil ? "新增任务：完整提示词":"编辑任务提示词")){
                         VStack(alignment:.leading){TextEditor(text:$prompt).font(.body).frame(minHeight:110).padding(6)
                             HStack{Button(L(editingTask == nil ? "添加到队列":"保存")){Task{var values:[String:Any]=["prompt":prompt];if let editingTask{values["taskId"]=editingTask};await model.queueCommand(chatID,editingTask == nil ? "add":"edit",values:values);if model.taskQueue(chatID)?.tasks.contains(where:{$0.prompt==prompt}) == true{prompt="";editingTask=nil}}}.buttonStyle(.borderedProminent).disabled(prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty);if editingTask != nil{Button(L("取消")){editingTask=nil;prompt=""}.buttonStyle(.bordered)}}
                         }.padding(8)
-                    }
-                    if let tasks=queue?.tasks,!tasks.isEmpty{
+                    }}
+    @ViewBuilder private var taskList:some View{if let tasks=queue?.tasks,!tasks.isEmpty{
                         Text(L("拖动排序任务")).font(.caption).foregroundStyle(.secondary)
                         List{
                             ForEach(tasks){task in
@@ -116,8 +126,8 @@ struct TaskQueueDetailView:View {
                                 }.padding(.vertical,8)
                             }.onMove{source,destination in var order=tasks.map{$0.id};order.move(fromOffsets:source,toOffset:destination);Task{await model.queueCommand(chatID,"reorder",values:["order":order])}}
                         }.frame(height:min(400,CGFloat(tasks.count)*130+20)).listStyle(.inset)
-                    }else{Text(L("暂无任务，监视不会启动")).foregroundStyle(.secondary)}
-                    GroupBox(L("额度保护与自动恢复")){
+                    }else{Text(L("暂无任务，监视不会启动")).foregroundStyle(.secondary)}}
+    private var settingsEditor:some View{GroupBox(L("额度保护与自动恢复")){
                         VStack(alignment:.leading,spacing:16){
                             HStack{Text(L("额度类型"));TextField("codex",text:$config.pool)}
                             Picker(L("重置后"),selection:$config.resume){Text(L("自动恢复")).tag("auto");Text(L("手动恢复")).tag("manual")}.pickerStyle(.segmented)
@@ -127,11 +137,6 @@ struct TaskQueueDetailView:View {
                             Text(L("任一额度触线后等待当前轮次结束；低于保留线 2 个百分点或额度为 0 时立即中断。重置后恢复基础保留比例。")).font(.caption).foregroundStyle(.secondary)
                             Button(L("保存队列设置")){Task{do{let value=try JSONSerialization.jsonObject(with:JSONEncoder().encode(config));await model.queueCommand(chatID,"config",values:["config":value])}catch{feedback=error.localizedDescription}}}.buttonStyle(.borderedProminent)
                         }.padding(12)
-                    }
-                    if !feedback.isEmpty{Text(feedback).foregroundStyle(.orange)}
-                    Text(model.notice).font(.caption).foregroundStyle(.secondary)
-                }.padding(24).frame(maxWidth:900).frame(maxWidth:.infinity)
-            }
-        }.disabled(model.working).onAppear{config=queue?.config ?? QueueConfig()}.onChange(of:chatID){_,_ in config=queue?.config ?? QueueConfig();prompt="";editingTask=nil}
-    }
+                    }}
+
 }

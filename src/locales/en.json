@@ -911,5 +911,6 @@
   "5 小时": "5 hours",
   "等待运行时同步当前轮次": "Waiting for the runtime to identify the current turn",
   "继续队列": "Resume queue",
-  "任务已中断，请手动继续": "Task interrupted; resume manually"
+  "任务已中断，请手动继续": "Task interrupted; resume manually",
+  "执行状态待核对，监视已关闭": "Execution state is unconfirmed; monitoring turned off"
 }
