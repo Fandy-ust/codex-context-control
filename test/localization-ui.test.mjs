@@ -29,17 +29,17 @@ import Vision
   model.chats=[try JSONDecoder().decode(Chat.self,from:JSONSerialization.data(withJSONObject:raw))];model.selectedID="language-fixture";model.serviceAvailable=true;model.supportsQuotaAnalytics=true;model.bridgeCount=1;model.notice="已接入 Codex。";model.fill()
   model.sidebar=ChatSidebar(projects:[SidebarProject(id:"project-fixture",name:"Project group · 分组",roots:["/fixture/project"],threadIds:["language-fixture"]),SidebarProject(id:"empty-project",name:"Empty project",roots:[],threadIds:[])],standaloneThreadIds:[])
   let original=model.selected!.policy!
-  let view=NSHostingView(rootView:ContentView(model:model).frame(width:1040,height:900))
-  let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:900),styleMask:[.borderless],backing:.buffered,defer:false);window.contentView=view;window.display()
+  let view=NSHostingView(rootView:ContentView(model:model).frame(width:1040,height:1100))
+  let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:1100),styleMask:[.borderless],backing:.buffered,defer:false);window.contentView=view;window.display()
   let panel=NSHostingView(rootView:MainControlPanelView(model:model))
   let panelWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:760,height:560),styleMask:[.borderless],backing:.buffered,defer:false);panelWindow.contentView=panel;panelWindow.display()
   Task{@MainActor in
    do{
     try await Task.sleep(for:.milliseconds(350));model.setLanguage(.en);try await Task.sleep(for:.milliseconds(350))
-    let english=try capture(view,"en"),panelEnglish=try capture(panel,"en-panel");precondition(english.contains("Compact now") && panelEnglish.contains("Account usage") && panelEnglish.contains("Language") && panelEnglish.contains("Global defaults") && english.contains("Context window") && english.contains("Context details"),"English UI was not rendered: "+english+"\nSettings: "+panelEnglish)
+    let english=try capture(view,"en"),panelEnglish=try capture(panel,"en-panel");precondition(english.contains("Compact now") && panelEnglish.contains("Account usage") && panelEnglish.contains("Language") && panelEnglish.contains("Global defaults") && english.contains("Context window") && english.contains("Context details") && english.contains("Task queue"),"English UI was not rendered: "+english+"\nSettings: "+panelEnglish)
     precondition(!english.contains("全局默认") && model.selected!.policy! == original)
     model.setLanguage(.zh);try await Task.sleep(for:.milliseconds(350));let chinese=try capture(view,"zh"),panelChinese=try capture(panel,"zh-panel")
-    precondition(chinese.contains("手动压缩") && panelChinese.contains("账户额度") && panelChinese.contains("全局默认") && chinese.contains("应用") && chinese.contains("上下文详情"),"Chinese UI did not refresh: "+chinese+"\nSettings: "+panelChinese)
+    precondition(chinese.contains("手动压缩") && panelChinese.contains("账户额度") && panelChinese.contains("全局默认") && chinese.contains("应用") && chinese.contains("上下文详情") && chinese.contains("任务队列"),"Chinese UI did not refresh: "+chinese+"\nSettings: "+panelChinese)
     precondition(model.selected!.policy! == original && model.selected!.title=="Project title · 原文")
     print("English/Chinese native rendering, immediate switch, original chat title and unchanged budget passed")
     app.terminate(nil)

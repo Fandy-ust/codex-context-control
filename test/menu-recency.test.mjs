@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 test('recent menu retains completed disconnected chats and excludes inactive unknown or managed sessions',{skip:process.platform!=='darwin'},()=>{
  const repo=fileURLToPath(new URL('../',import.meta.url)),temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-menu-recency-'));
  try{const source=fs.readFileSync(path.join(repo,'macos/ContextControl.swift'),'utf8'),menu=fs.readFileSync(path.join(repo,'macos/ContextMenu.swift'),'utf8');
- fs.writeFileSync(path.join(temp,'Models.swift'),source.slice(0,source.indexOf('@MainActor final class Controller'))+'\n@MainActor final class Controller {var chats:[Chat]=[];var serviceAvailable=true;var menuHeightLimit:CGFloat=600}\n');
+ fs.writeFileSync(path.join(temp,'Models.swift'),source.slice(0,source.indexOf('@MainActor final class Controller'))+fs.readFileSync(path.join(repo,'macos/TaskQueues.swift'),'utf8').split('extension Controller')[0]+'\n@MainActor final class Controller {var chats:[Chat]=[];var serviceAvailable=true;var menuHeightLimit:CGFloat=600}\n');
  fs.writeFileSync(path.join(temp,'Menu.swift'),menu.slice(0,menu.indexOf('@MainActor func managerStatusImage')));
  fs.writeFileSync(path.join(temp,'Main.swift'),String.raw`
 import Foundation

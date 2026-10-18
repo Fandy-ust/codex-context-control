@@ -10,7 +10,7 @@ test('native menu budgets, screen placement and highlight survive click tracking
  const root=fileURLToPath(new URL('../',import.meta.url)),temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-menu-controls-'));
  try{
   const source=fs.readFileSync(path.join(root,'macos/ContextControl.swift'),'utf8');
-  fs.writeFileSync(path.join(temp,'Models.swift'),source.slice(0,source.indexOf('@MainActor final class Controller')));
+  fs.writeFileSync(path.join(temp,'Models.swift'),source.slice(0,source.indexOf('@MainActor final class Controller'))+fs.readFileSync(path.join(root,'macos/TaskQueues.swift'),'utf8').split('extension Controller')[0]);
   fs.writeFileSync(path.join(temp,'main.swift'),String.raw`
 import Foundation
 import AppKit
