@@ -6,8 +6,8 @@ Manage Codex chat context and account quota from your **Mac menu bar or Windows 
 
 | Platform | Installer | Requirements |
 | --- | --- | --- |
-| macOS | [Download 0.20.0 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.0-preview.1/Context-Manager-0.20.0-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [Download 0.20.0 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.0-preview.1/Context-Manager-0.20.0-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [Download 0.20.2 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.2-preview.1/Context-Manager-0.20.2-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [Download 0.20.2 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.2-preview.1/Context-Manager-0.20.2-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac installation](docs/en/INSTALL_MAC.md) · [Windows installation](docs/en/INSTALL_WINDOWS.md) · [Release notes](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [简体中文](README.zh-CN.md)
 

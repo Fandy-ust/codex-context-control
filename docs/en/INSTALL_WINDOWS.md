@@ -2,7 +2,7 @@
 
 **English** | [简体中文](../INSTALL_WINDOWS.md) · [Home](../../README.md)
 
-Windows 11 x64 · Context Manager 0.20.0 preview. Node and the interface runtime are bundled; no development tools are required.
+Windows 11 x64 · Context Manager 0.20.2 preview. Node and the interface runtime are bundled; no development tools are required.
 
 ## Download and install
 
@@ -13,7 +13,7 @@ Windows 11 x64 · Context Manager 0.20.0 preview. Node and the interface runtime
 
 Integration is enabled after its startup check passes. If that check fails, the interface still installs and preserves native Codex startup; open **Settings → Codex integration** to inspect or retry. Review the project's Stop hook in Codex if you want Hook stats.
 
-This preview is not publisher-signed. It is available from [GitHub Releases](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.20.0-preview.1), alongside the matching Mac version.
+This preview is not publisher-signed. It is available from [GitHub Releases](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.20.2-preview.1), alongside the matching Mac version.
 
 ## Use and update
 

@@ -15,7 +15,7 @@ The preview targets Apple Silicon (M-series) Macs with macOS 14 or later. Instal
 
 Users do not need Node, npm, Homebrew, Xcode, an administrator password, or an Apple developer membership. The installer copies the runtime to a stable user support directory, so deleting the downloaded installer does not break the app.
 
-The 0.20.0 English / Chinese preview is published and publicly downloadable. Mac and Windows installers are published together with the same product version.
+The 0.20.2 English / Chinese preview is published and publicly downloadable. Mac and Windows installers are published together with the same product version.
 
 ## Opening a preview
 
