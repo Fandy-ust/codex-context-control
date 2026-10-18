@@ -6,4 +6,4 @@ export const demoStatistics={threadId:'demo-a',inputTokens:315000,cachedInputTok
 demoState.sidebar={projects:[{id:'demo-project',name:'Context Manager',roots:['C:\\Projects\\context-manager'],threadIds:['demo-a','demo-b']},{id:'demo-empty',name:'新项目 · New project',roots:[],threadIds:[]}],standaloneThreadIds:['demo-c']};
 
 // Synthetic quota never reads an account during preview.
-demoState.quota={updatedAt:Date.now(),loading:false,stale:false,error:null,buckets:[{id:'codex',name:'Codex',primary:{usedPercent:28,remainingPercent:72,windowDurationMins:300,resetsAt:Math.floor(Date.now()/1000)+7200},secondary:{usedPercent:45,remainingPercent:55,windowDurationMins:10080,resetsAt:Math.floor(Date.now()/1000)+172800},hasCredits:false,unlimitedCredits:false}]};
+demoState.quota={updatedAt:Date.now(),loading:false,stale:false,error:null,buckets:[{id:'codex',name:'Codex',primary:{usedPercent:28,remainingPercent:72,windowDurationMins:300,resetsAt:Math.floor(Date.now()/1000)+7200},secondary:{usedPercent:45,remainingPercent:55,windowDurationMins:10080,resetsAt:Math.floor(Date.now()/1000)+172800},creditBalance:"30240",hasCredits:true,unlimitedCredits:false}]};

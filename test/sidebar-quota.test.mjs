@@ -2,10 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeQuota} from '../src/account-quota.mjs';
 import {quotaLevel,quotaCountdown} from '../src/quota-display.mjs';
-import {sidebarQuota,quotaOutlinePath} from '../desktop/renderer/sidebar-quota.mjs';
+import {sidebarCredits,sidebarQuota,quotaOutlinePath} from '../desktop/renderer/sidebar-quota.mjs';
 const t=(zh,en,...args)=>en.replace(/\{(\d+)\}/g,(_,i)=>args[i]);
 const escape=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
 const render=response=>sidebarQuota({quota:{buckets:normalizeQuota(response),stale:false},t,escape});
+
+test('credit badge abbreviates large balances, retains exact tooltip and distinguishes zero from unknown',()=>{
+ const badge=(credits,stale=false)=>sidebarCredits({quota:{buckets:normalizeQuota({rateLimits:{credits}}),stale},t,escape});
+ assert.match(badge({balance:'30240.123456'}),/30\.2K/);assert.match(badge({balance:'30240.123456'}),/30,240\.123456/);
+ assert.match(badge({balance:'0'}),/>0<\/strong>/);assert.equal(badge({hasCredits:true}),'');assert.equal(badge({balance:'invalid'}),'');
+ assert.match(badge({balance:'1250000'}),/1\.3M/);assert.match(badge({unlimited:true}),/∞/);
+ assert.match(badge({balance:'23'},true),/Cached observation/);assert.match(badge({balance:'23'}),/data-action="quota-details"/);
+});
 test('quota thresholds use strict comparisons, including zero and unknown',()=>{
  for(const [value,level] of [[100,''],[20,''],[19.9,'warning'],[5,'warning'],[4.9,'critical'],[0,'critical'],[null,''],[NaN,'']])assert.equal(quotaLevel(value),level);
 });

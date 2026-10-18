@@ -6,8 +6,8 @@
 
 | 平台 | 安装包 | 系统要求 |
 | --- | --- | --- |
-| macOS | [下载 0.19.18 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.18-preview.1/Context-Manager-0.19.18-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [下载 0.19.18 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.18-preview.1/Context-Manager-0.19.18-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [下载 0.19.20 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.20-preview.1/Context-Manager-0.19.20-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [下载 0.19.20 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.20-preview.1/Context-Manager-0.19.20-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac 安装说明](docs/INSTALL_MAC.md) · [Windows 安装说明](docs/INSTALL_WINDOWS.md) · [版本说明](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [English](README.md)
 
@@ -28,6 +28,7 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 - **逐聊天预算**：调整上下文窗口和压缩阈值，新聊天可设默认值，分支继承父聊天预算。
 - **账户额度**：显示剩余额度与重置时间，Mac 使用逐渐空心的闪电图标，Windows 适配系统托盘。
+- **Windows Credits**：侧栏余额与本机进度基准，悬停查看完整数额，可在额度设置中手动重置基准。
 - **主控制面板**：左下角打开设置，两端按各自平台设计界面。
 - **本地缓存**：启动即显示聊天和最近用量，后台增量同步。
 - **项目侧栏**：上方展开本机项目及聊天，下方「最近」实时显示全部聊天；显示项目名与接入状态，独立滚动并记住展开状态。

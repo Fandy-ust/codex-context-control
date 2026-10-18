@@ -6,8 +6,8 @@ Manage Codex chat context and account quota from your **Mac menu bar or Windows 
 
 | Platform | Installer | Requirements |
 | --- | --- | --- |
-| macOS | [Download 0.19.18 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.18-preview.1/Context-Manager-0.19.18-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [Download 0.19.18 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.18-preview.1/Context-Manager-0.19.18-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [Download 0.19.20 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.20-preview.1/Context-Manager-0.19.20-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [Download 0.19.20 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.20-preview.1/Context-Manager-0.19.20-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac installation](docs/en/INSTALL_MAC.md) · [Windows installation](docs/en/INSTALL_WINDOWS.md) · [Release notes](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [简体中文](README.zh-CN.md)
 
@@ -28,6 +28,7 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 - **Per-chat budgets:** adjust context windows and compaction thresholds; set new-chat defaults and inherit budgets when forking.
 - **Account quota:** view remaining quota and reset times, with a gradually emptying lightning indicator on Mac and a tray-adapted icon on Windows.
+- **Windows Credits:** compact sidebar balance and a local progress baseline, with exact-value tooltips and manual baseline reset in quota settings.
 - **Control panel:** open settings from the bottom left, with an interface tailored to each platform.
 - **Local cache:** see chats and recent usage at startup, with incremental background sync.
 - **Project sidebar:** expandable local projects above a live Recent list of all chats, with project names, connection status, independent scrolling and saved expansion preferences.

@@ -1,4 +1,20 @@
 import {selectedQuota,quotaWindows,quotaStale,quotaLevel,quotaCountdown} from '../../src/quota-display.mjs';
+import {creditRemaining} from '../../src/credit-baseline.mjs';
+
+export function sidebarCredits({quota,pool,available=true,observation,t,escape:e}){
+  const bucket=selectedQuota(quota,pool),raw=bucket?.creditBalance;
+  const known=raw!=null&&/^\d+(?:\.\d+)?$/.test(String(raw))&&Number.isFinite(Number(raw));
+  if(!known&&!bucket?.unlimitedCredits)return '';
+  const unlimited=bucket?.unlimitedCredits===true;
+  const [integer,fraction]=String(raw).split('.');
+  const full=unlimited?t('不限量','Unlimited'):integer.replace(/\B(?=(\d{3})+(?!\d))/g,',')+(fraction?'.'+fraction:'');
+  const short=unlimited?'∞':new Intl.NumberFormat('en-US',{notation:'compact',maximumFractionDigits:1}).format(Number(raw));
+  const stale=quotaStale(quota,available),label=`Credits: ${full}${stale?' · '+t('上次记录，待刷新','Cached observation; refresh needed'):''}`;
+  const remaining=unlimited?100:creditRemaining(raw,observation);
+  const outline=quotaOutlinePath(44,44);
+  const ring=`<svg class="quota-outline" data-remaining="${remaining}" viewBox="0 0 44 44" aria-hidden="true"><path class="quota-outline-track" d="${outline}"/><path class="quota-outline-value" d="${outline}" pathLength="100" stroke-dasharray="${remaining} 100" ${remaining===0?'visibility="hidden"':''}/><circle class="quota-outline-dot" r="2.5" ${remaining===0?'visibility="hidden"':''}/></svg>`;
+  return `<button class="sidebar-credits ${quotaLevel(remaining)} ${stale?'stale':''}" data-action="quota-details" aria-haspopup="dialog" aria-label="${e(label)}" title="${e(label)}">${ring}<span>Credits</span><strong class="num">${e(short)}</strong></button>`;
+}
 
 // A capsule whose 0/100% point is top center, travelling clockwise.
 export function quotaOutlinePath(width,height){

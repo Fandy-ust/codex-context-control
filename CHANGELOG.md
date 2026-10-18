@@ -1,5 +1,25 @@
 # Changes
 
+## 0.19.20 — Credits balance and context details
+
+相较于 0.19.18，本版本改进 Windows 侧栏与上下文详情：
+
+- **Credits 余额**：设置入口移至侧栏顶部版本号左侧；底部新增两行圆形余额入口。大额使用 K/M 等缩写，悬停显示完整数额，点击进入账户额度详情。标签为灰色小字，数字为白色，并留足圈内空间。
+- **Credits 进度**：复用额度胶囊的边框粗细、顶部中点顺时针起始、端点圆点与告警颜色。首次读到余额和每次观察到余额增加时，以当前数额建立新基准；消费后按当前余额占基准的比例显示，基准在本机保存。此进度为本机观察值，不代表官方提供的总额度。
+- **手动重置基准**：设置的账户额度页新增「重置 Credits 基准」，可将当前余额设为新的 100%；余额为零时保持空圈。未知余额不当作零，读取失败或缓存过期时需先刷新。
+- **上下文详情布局**：返回预算和刷新按钮使用一致的带框样式；标题放到按钮行下方，增加留白，并移除聊天名称副标题。
+
+本次界面改动面向 Windows；macOS 保持现有界面，两端继续使用同一产品版本。更新保留预算、缓存与偏好。
+
+Compared with 0.19.18, this release refines the Windows sidebar and context details:
+
+- Move Settings beside the version in the sidebar header. Add a two-line circular Credits balance with K/M abbreviations, an exact-value tooltip and a shortcut to account quota details.
+- Match the Credits ring to quota outlines, clockwise progress from top center, endpoint dots and warning colors. The first balance and each observed increase establish a locally saved baseline; spending reduces the displayed ratio. This is a local observation, not an official total-credit allowance.
+- Add **Reset Credits baseline** in account quota settings to use the current balance as the new 100%. Zero stays empty; missing balances remain unknown, and stale observations must be refreshed before resetting.
+- Give Back to budget and Refresh matching bordered buttons, move the context-details title below the toolbar, and remove its chat-name subtitle.
+
+These UI changes target Windows. macOS retains its existing interface and shares the same product version. Updates preserve budgets, caches and preferences.
+
 ## 0.19.18 — Projects, quota and update prompts
 
 相较于 0.19.6，本版本统一包含以下更新：
