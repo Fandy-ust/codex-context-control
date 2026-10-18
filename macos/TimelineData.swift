@@ -7,13 +7,19 @@ struct TimelineEntry:Identifiable,Sendable {
 struct TimelinePlotPoint:Identifiable,Sendable {
     let id:Int;let position:Double;let value:Double;let series:Int
 }
+func timelineSpeedMode(_ raw:String?)->String? {
+    switch raw {case "priority","fast":return "fast";case "default","standard":return "standard";default:return raw?.isEmpty == false ? raw:nil}
+}
+struct TimelineSettingChange:Sendable {
+    let responseIndex:Int;let field:String;let from:String;let to:String
+}
 struct TimelineBucket:Identifiable,Sendable {
     let id:Int;let entryRange:Range<Int>;let startPosition:Int;let endPosition:Int
     var position:Double{Double(startPosition+endPosition)/2}
     let firstResponse:Int?;let lastResponse:Int?;let responses:Int;let measured:Int
     let inputSamples:Int;let cacheSamples:Int;let inputMean:Double?;let cacheMean:Double?;let cacheMinimum:Int?;let speed:Double?
     let outputTokens:Int;let outputSamples:Int;let finals:Int;let users:Int;let compactions:Int;let zeroCaches:Int
-    let models:[String]
+    let models:[String];let settingsChanges:[TimelineSettingChange];let speedModes:[String]
     var title:String {
         if let firstResponse,let lastResponse{return firstResponse==lastResponse ? L("响应 #{0}", firstResponse):L("响应 #{0}–#{1}", firstResponse, lastResponse)}
         return L("对话事件")
@@ -24,7 +30,7 @@ private struct TimelineAccumulator {
     var firstResponse:Int?;var lastResponse:Int?;var responses=0;var measured=0
     var inputSum=0.0;var inputCount=0;var cacheSum=0.0;var cacheCount=0;var cacheMinimum:Int?
     var generatedTokens=0.0;var duration=0.0;var output=0;var outputSamples=0
-    var finals=0;var users=0;var compactions=0;var zeros=0;var models=Set<String>()
+    var finals=0;var users=0;var compactions=0;var zeros=0;var models=Set<String>();var settingsChanges:[TimelineSettingChange]=[];var speedModes:[String]=[]
 }
 private struct TimelineMetric {
     struct Bin {var sum=0.0;var count=0;}
@@ -82,7 +88,7 @@ struct TimelineData:Sendable {
         guard !entries.isEmpty else{buckets=[];byID=[:];entryBuckets=[];speed=[];input=[];cache=[];return}
         var bins=Array(repeating:TimelineAccumulator(start:0,end:0),count:count)
         var speed=TimelineMetric(bins:Array(repeating:.init(),count:count)),input=TimelineMetric(bins:Array(repeating:.init(),count:count)),cache=TimelineMetric(bins:Array(repeating:.init(),count:count))
-        var lookup:[String:Int]=[:],mapping:[Int]=[],responseIndex=0,seenBins=Set<Int>(),previousConfig:String?
+        var lookup:[String:Int]=[:],mapping:[Int]=[],responseIndex=0,seenBins=Set<Int>(),previousConfig:String?,previousSettings:ContextStatistics.Response.Config?
         for (index,entry) in entries.enumerated(){
             if index%256==0{try Task.checkCancellation()}
             let bucket=min(count-1,responses.isEmpty ? index/eventBinSize:responseIndex/bucketSize)
@@ -96,6 +102,14 @@ struct TimelineData:Sendable {
             if r.eventType=="final"{bins[bucket].finals+=1}
             if r.cacheStatus=="zero_in_log"{bins[bucket].zeros+=1}
             if let model=r.config.model{bins[bucket].models.insert(model)}
+            if let before=previousSettings {
+                let fields:[(String,String?,String?)]=[("model",before.model,r.config.model),("effort",before.effort,r.config.effort),("serviceTier",timelineSpeedMode(before.serviceTier),timelineSpeedMode(r.config.serviceTier))]
+                for (field,from,to) in fields {
+                    if let from,let to,!from.isEmpty,!to.isEmpty,from != to{bins[bucket].settingsChanges.append(.init(responseIndex:r.index,field:field,from:from,to:to))}
+                }
+            }
+            previousSettings=r.config
+            if let mode=timelineSpeedMode(r.config.serviceTier),["fast","ultrafast"].contains(mode),!bins[bucket].speedModes.contains(mode){bins[bucket].speedModes.append(mode)}
             let config=[r.config.model ?? "",r.config.serviceTier ?? "",r.config.effort ?? ""].joined(separator:"|")
             if let previousConfig,previousConfig != config{speed.reset();input.reset();cache.reset()};previousConfig=config
             if let n=r.inputTokens{bins[bucket].inputSum+=Double(n);bins[bucket].inputCount+=1}
@@ -106,7 +120,7 @@ struct TimelineData:Sendable {
             input.add(r.inputTokens.map(Double.init),source:r.inputSegment,bucket:bucket,period:self.period)
             cache.add(r.cachedInputTokens.map(Double.init),source:r.cacheSegment,bucket:bucket,period:self.period)
         }
-        let result=bins.enumerated().map{index,b in TimelineBucket(id:index,entryRange:b.start..<b.end,startPosition:entries[b.start].position,endPosition:entries[b.end-1].position,firstResponse:b.firstResponse,lastResponse:b.lastResponse,responses:b.responses,measured:b.measured,inputSamples:b.inputCount,cacheSamples:b.cacheCount,inputMean:b.inputCount>0 ? b.inputSum/Double(b.inputCount):nil,cacheMean:b.cacheCount>0 ? b.cacheSum/Double(b.cacheCount):nil,cacheMinimum:b.cacheMinimum,speed:b.duration>0 ? b.generatedTokens/(b.duration/1000):nil,outputTokens:b.output,outputSamples:b.outputSamples,finals:b.finals,users:b.users,compactions:b.compactions,zeroCaches:b.zeros,models:b.models.sorted())}
+        let result=bins.enumerated().map{index,b in TimelineBucket(id:index,entryRange:b.start..<b.end,startPosition:entries[b.start].position,endPosition:entries[b.end-1].position,firstResponse:b.firstResponse,lastResponse:b.lastResponse,responses:b.responses,measured:b.measured,inputSamples:b.inputCount,cacheSamples:b.cacheCount,inputMean:b.inputCount>0 ? b.inputSum/Double(b.inputCount):nil,cacheMean:b.cacheCount>0 ? b.cacheSum/Double(b.cacheCount):nil,cacheMinimum:b.cacheMinimum,speed:b.duration>0 ? b.generatedTokens/(b.duration/1000):nil,outputTokens:b.output,outputSamples:b.outputSamples,finals:b.finals,users:b.users,compactions:b.compactions,zeroCaches:b.zeros,models:b.models.sorted(),settingsChanges:b.settingsChanges,speedModes:b.speedModes)}
         buckets=result;byID=lookup;entryBuckets=mapping
         self.speed=speed.points(result,raw:{$0.speed},period:self.period);self.input=input.points(result,raw:{$0.inputMean},period:self.period);self.cache=cache.points(result,raw:{$0.cacheMean},period:self.period)
     }

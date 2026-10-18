@@ -440,11 +440,7 @@ struct ProjectChatSidebar:View {
     @AppStorage("project-sidebar-expanded") private var expandedJSON="[]"
     private var expanded:Set<String> {Set((try? JSONDecoder().decode([String].self,from:Data(expandedJSON.utf8))) ?? [])}
     private var projects:[SidebarProject] {model.sidebar?.projects ?? []}
-    private var standalone:[Chat] {
-        guard let sidebar=model.sidebar else{return model.chats}
-        let byID=Dictionary(model.chats.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
-        return sidebar.standaloneThreadIds.compactMap{byID[$0]}
-    }
+    private var recent:[Chat] {model.chats.sorted{($0.lastActivityAt ?? 0)>($1.lastActivityAt ?? 0)}}
     private func setExpanded(_ id:String,_ value:Bool){
         var ids=expanded;if value{ids.insert(id)}else{ids.remove(id)}
         if let data=try? JSONEncoder().encode(ids.sorted()),let json=String(data:data,encoding:.utf8){expandedJSON=json}
@@ -456,14 +452,15 @@ struct ProjectChatSidebar:View {
     var body:some View {
         GeometryReader{geometry in
             VStack(alignment:.leading,spacing:0){
-                projectList.frame(height:max(0,geometry.size.height-15)*0.55)
-                Divider().padding(.vertical,7)
+                projectList.frame(height:max(0,geometry.size.height-15)*0.5)
+                Color.clear.frame(height:15)
                 VStack(alignment:.leading,spacing:6){
-                    heading("单独聊天",count:standalone.count)
+                    heading("最近",count:recent.count)
                     ScrollView{LazyVStack(spacing:4){
-                        if standalone.isEmpty{empty("暂无单独聊天")}
-                        ForEach(standalone){chat in chatRow(chat)}
-                    }.frame(maxWidth:.infinity,alignment:.leading)}
+                        if recent.isEmpty{empty("暂无最近聊天")}
+                        ForEach(recent){chat in chatRow(chat)}
+                    }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,28)}
+                    .overlay(alignment:.bottom){bottomFade}
                 }.frame(maxHeight:.infinity)
             }
         }
@@ -485,14 +482,21 @@ struct ProjectChatSidebar:View {
                     }label:{
                         HStack(spacing:7){
                             Image(systemName:"folder").foregroundStyle(.secondary)
-                            Text(project.name).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle)
+                            Text(project.name).font(.system(size:12,weight:.medium)).lineLimit(1).truncationMode(.middle)
                             Spacer(minLength:2)
                             Text("\(project.threadIds.count)").font(.caption).foregroundStyle(.secondary)
                         }.padding(.vertical,7).help(project.roots.joined(separator:"\n"))
                     }.padding(.horizontal,8)
                 }
-            }.frame(maxWidth:.infinity,alignment:.leading)}
+            }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,28)}
+            .overlay(alignment:.bottom){bottomFade}
         }
+    }
+    private var bottomFade:some View {
+        Rectangle().fill(.ultraThinMaterial).frame(height:28)
+            .overlay(LinearGradient(colors:[.clear,PanelStyle.background],startPoint:.top,endPoint:.bottom))
+            .mask(LinearGradient(colors:[.clear,.black],startPoint:.top,endPoint:.bottom))
+            .allowsHitTesting(false).accessibilityHidden(true)
     }
     private func heading(_ title:String,count:Int)->some View {
         HStack{Text(L(title));Spacer();Text("\(count)")}.font(.system(size:11,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,10)
@@ -502,11 +506,15 @@ struct ProjectChatSidebar:View {
     }
     private func chatRow(_ chat:Chat)->some View {
         Button{model.selectedID=chat.id}label:{
-            VStack(alignment:.leading,spacing:5){
-                Text(chat.title).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle)
-                Text(chat.connected ? phaseName(chat.phase):L(chat.lastUsage != nil ? "已缓存":"本地聊天")).font(.system(size:11)).foregroundStyle(.secondary)
-            }.frame(maxWidth:.infinity,alignment:.leading).padding(12)
-                .background(model.selectedID==chat.id ? Color.white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:12)).contentShape(Rectangle())
+            VStack(alignment:.leading,spacing:3){
+                Text(chat.title).font(.system(size:12,weight:.medium)).lineLimit(1).truncationMode(.middle)
+                HStack(spacing:10){
+                    Text(model.sidebar?.projects.first(where:{$0.threadIds.contains(chat.id)})?.name ?? L("单独聊天")).lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength:0)
+                    Text(L(chat.connected ? "已接入":"未接入")).fixedSize()
+                }.font(.system(size:10)).foregroundStyle(.secondary)
+            }.frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,10).padding(.vertical,8)
+                .background(model.selectedID==chat.id ? Color.white.opacity(0.08):Color.white.opacity(0.015),in:RoundedRectangle(cornerRadius:12)).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
     }
 }
@@ -515,6 +523,7 @@ struct ContentView: View {
     @ObservedObject var model:Controller
     @State private var confirmCompact=false
     @State private var showControlPanel=false
+    @State private var showDetails=false
     @State private var selectedThumb:BudgetThumb = .window
     private var maxMode:Bool {model.selected?.modelMetadata?.context_ceiling==920000 && Int(model.windowK)==920}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -532,12 +541,17 @@ struct ContentView: View {
                 .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 .help((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 ProjectChatSidebar(model:model).frame(maxHeight:.infinity)
+                AccountQuotaSection(model:model)
                 Button{showControlPanel.toggle()} label:{
                     HStack(spacing:10){Image(systemName:"slider.horizontal.3");Text(L("主控制面板")).font(.system(size:13,weight:.medium));Spacer();Image(systemName:showControlPanel ? "chevron.down":"chevron.up").font(.system(size:10,weight:.semibold)).foregroundStyle(.secondary)}
                         .padding(12).frame(maxWidth:.infinity).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:12)).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("control-panel-button")
                     .popover(isPresented:$showControlPanel,attachmentAnchor:.rect(.bounds),arrowEdge:.bottom){MainControlPanelView(model:model,close:{showControlPanel=false})}
             }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
+            Group {
+                if showDetails,let chat=model.selected {
+                    ContextDetailsView(chatID:chat.id,title:chat.title,model:model,onBack:{showDetails=false}).id(chat.id)
+                } else {
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
                     if let chat=model.selected {
@@ -551,7 +565,7 @@ struct ContentView: View {
                                 Label(L("新预算已提交。上方仍是调整前的读回值，下一个正常请求完成后更新。"),systemImage:"clock").font(.callout).foregroundStyle(.orange)
                             }
                         }
-                        HStack {Spacer();ContextDetailsButton(chatID:chat.id,title:chat.title,model:model).id(chat.id)}
+                        HStack {Spacer();Button{showDetails=true}label:{Label(L("上下文详情"),systemImage:"chart.bar.xaxis")}.buttonStyle(.bordered)}
                         Divider()
                         budgetEditor().disabled(!model.canEditBudget)
                         HStack {
@@ -567,6 +581,8 @@ struct ContentView: View {
                     }
                     Divider();Text(L(model.notice)).font(.callout).textSelection(.enabled).foregroundStyle(.secondary)
                 }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity)
+            }
+                }
             }.frame(minWidth:650).background(PanelStyle.background)
         }
         .frame(minWidth:960,minHeight:670)

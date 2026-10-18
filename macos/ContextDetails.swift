@@ -13,7 +13,7 @@ func effortDisplayName(_ raw:String?)->String {
 }
 func serviceTierDisplayName(_ raw:String?)->String {
     guard let raw else{return "—"}
-    switch raw.lowercased(){case "priority","fast":return "Fast";case "default","standard":return "Standard";default:return raw.capitalized}
+    switch raw.lowercased(){case "priority","fast":return "Fast";case "default","standard":return "Standard";case "ultrafast":return "Ultrafast";default:return raw.capitalized}
 }
 
 struct ContextStatistics:Decodable,Sendable {
@@ -62,9 +62,10 @@ struct ContextDetailsButton:View {
 
 @MainActor private final class DeferredContextDetails {var statistics:ContextStatistics?;var payload:Data?}
 
-@MainActor private struct ContextDetailsView:View {
+@MainActor struct ContextDetailsView:View {
     let chatID:String;let title:String
     @ObservedObject var model:Controller
+    var onBack:(()->Void)?=nil
     @Environment(\.dismiss) private var dismiss
     @State private var statistics:ContextStatistics?
     @State private var loading=false
@@ -82,7 +83,7 @@ struct ContextDetailsButton:View {
                 Spacer()
                 if loading{ProgressView().controlSize(.small)}
                 Button(L("刷新"),systemImage:"arrow.clockwise"){Task{await reload(force:true)}}.disabled(loading)
-                Button(L("完成")){dismiss()}.keyboardShortcut(.cancelAction)
+                Button(L("返回预算"),systemImage:"arrow.left"){if let onBack{onBack()}else{dismiss()}}.keyboardShortcut(.cancelAction)
             }
             HStack {Text(statistics.map{ $0.snapshotKind=="last_request" ? L("最近请求快照 · {0}", timestamp($0.snapshotAt)):L("本地保留历史 · 尚无可对齐用量") } ?? L("正在读取所选聊天…")).font(.caption).foregroundStyle(.secondary);Spacer();Toggle(L("自动刷新"),isOn:$autoRefresh).toggleStyle(.switch).controlSize(.small).font(.caption)}
             if let error{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
@@ -117,7 +118,7 @@ struct ContextDetailsButton:View {
                 }else if !loading{ContentUnavailableView(L("暂无上下文统计"),systemImage:"chart.bar.xaxis",description:Text(L("这个聊天需要有本地记录。正常交互后点击刷新。")))}
             }
         }
-        .padding(26).frame(width:920,height:720).background(Color(white:0.095)).preferredColorScheme(.dark)
+        .padding(26).frame(maxWidth:.infinity,maxHeight:.infinity).background(Color(white:0.095)).preferredColorScheme(.dark)
         .task(id:chatID){
             await reload(force:false)
             while !Task.isCancelled {do{try await Task.sleep(for:.seconds(10))}catch{break};if autoRefresh && !chartInteracting{await reload(force:false)}}

@@ -557,5 +557,20 @@
   "更新来源暂不可用（HTTP {0}），可从发布页下载。": "Update source unavailable (HTTP {0}). Download from releases.",
   "无法连接更新来源，请稍后重试或从发布页下载。": "Cannot reach update sources. Retry later or download from releases.",
   "更新检查被拒绝（HTTP 403），请检查网络或从发布页下载。": "The update check was refused (HTTP 403). Check your network or download from releases.",
-  "更新来源返回了无效版本信息，可从发布页下载。": "The update source returned invalid version information. Download from releases."
+  "更新来源返回了无效版本信息，可从发布页下载。": "The update source returned invalid version information. Download from releases.",
+  "每周": "Weekly",
+  "账户剩余额度": "Remaining account quota",
+  "等待额度刷新": "Waiting for quota refresh",
+  "还剩 {0}天 {1}小时": "In {0}d {1}h",
+  "还剩 {0}小时 {1}分": "In {0}h {1}m",
+  "还剩 {0}分 {1}秒": "In {0}m {1}s",
+  "额外额度不限量": "Unlimited extra credits",
+  "额外额度：{0}": "Extra credits: {0}",
+  "模型切换": "Model change",
+  "思考深度": "Reasoning effort",
+  "速度模式": "Speed mode",
+  "另有 {0} 项变化，点击图表查看详情": "{0} more changes; click the chart for details",
+  "最近": "Recent",
+  "暂无最近聊天": "No recent chats",
+  "返回预算": "Back to budget"
 }

@@ -69,14 +69,18 @@ test('Store refreshes native project moves and cwd changes without altering budg
   await store.threadCache.running;store.flush();
 });
 
-test('sidebar renders selected project chats once, respects collapse and escapes metadata',()=>{
+test('sidebar repeats project chats in Recent, respects collapse and escapes metadata',()=>{
   const escape=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
-  const args={threads:[{id:'a',name:'<chat>'},{id:'single',name:'Single'}],sidebar:{projects:[{id:'p',name:'<project>',roots:['/a"b'],threadIds:['a']},{id:'empty',name:'Empty',roots:[],threadIds:[]}],standaloneThreadIds:['single']},selected:'a',expanded:new Map(),t:(zh,en)=>en,escape,chatName:c=>c.name,statusText:()=> 'Cached'};
+  const args={threads:[{id:'a',name:'<chat>',connected:true,lastActivityAt:200},{id:'single',name:'Single',lastActivityAt:300}],sidebar:{projects:[{id:'p',name:'<project>',roots:['/a"b'],threadIds:['a']},{id:'empty',name:'Empty',roots:[],threadIds:[]}],standaloneThreadIds:['single']},selected:'a',expanded:new Map(),t:(zh,en)=>en,escape,chatName:c=>c.name,statusText:()=> 'Cached'};
   const open=projectSidebar(args);
   assert.match(open,/&lt;project>/);assert.match(open,/&lt;chat>/);assert.ok(!open.includes('<chat>'));
-  assert.equal((open.match(/data-id="a"/g)||[]).length,1);assert.match(open,/aria-current="true"/);
-  assert.ok(open.indexOf('projects-section')<open.indexOf('standalone-section'));
+  assert.match(open,/<span class="chat-project-name" title="&lt;project>">&lt;project><\/span><span class="chat-connection">Connected<\/span>/);
+  assert.match(open,/<span class="chat-project-name" title="Standalone chat">Standalone chat<\/span><span class="chat-connection">Not connected<\/span>/);
+  assert.equal((open.match(/data-id="a"/g)||[]).length,2);assert.match(open,/aria-current="true"/);
+  assert.ok(open.indexOf('projects-section')<open.indexOf('recent-section'));
+  const recent=open.slice(open.indexOf('recent-section'));assert.ok(recent.indexOf('data-id="single"')<recent.indexOf('data-id="a"'));assert.match(recent,/Recent/);
   const closed=projectSidebar({...args,expanded:new Map([['p',false],['empty',true]])});
-  assert.ok(!closed.includes('data-id="a"'));assert.match(closed,/No chats yet/);assert.match(closed,/data-id="single"/);
+  assert.equal((closed.match(/data-id="a"/g)||[]).length,1);assert.match(closed,/No chats yet/);assert.match(closed,/data-id="single"/);
+  const refreshed=projectSidebar({...args,threads:args.threads.map(chat=>chat.id==='a'?{...chat,lastActivityAt:400}:chat)});const recentUpdated=refreshed.slice(refreshed.indexOf('recent-section'));assert.ok(recentUpdated.indexOf('data-id="a"')<recentUpdated.indexOf('data-id="single"'));assert.equal(args.threads[0].lastActivityAt,200);
   const fallback=projectSidebar({...args,sidebar:null});assert.match(fallback,/data-id="a"/);assert.match(fallback,/No local projects/);
 });

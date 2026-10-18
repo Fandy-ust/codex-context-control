@@ -3,6 +3,16 @@ import {manifestCandidate} from '../src/update-source.mjs';
 import {createUpdateManager,releaseUpdate,newerVersion,releaseManifestURL,releaseAPI} from '../src/updates.mjs';import {downloadVerified,expectedChecksum,detachUpdateMount} from '../src/update-worker.mjs';
 function release(version='0.17.0'){const tag='v'+version,filename=`Context-Manager-${version}-macos-arm64.dmg`;return {tag_name:tag,draft:false,prerelease:false,assets:[filename,filename+'.sha256'].map(name=>({name,state:'uploaded',size:4,browser_download_url:`https://github.com/Fandy-ust/codex-context-control/releases/download/${tag}/${name}`}))};}
 function manifest(){return {schemaVersion:1,version:'0.17.0',tag:'v0.17.0',filename:'Context-Manager-0.17.0-macos-arm64.dmg',size:4,sha256:'a'.repeat(64)};}
+
+test('disabled automatic updates make no requests, but manual checks still work',async()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-update-preference-'));let requests=0;
+ try{
+  fs.writeFileSync(path.join(home,'ui-settings.json'),JSON.stringify({autoCheckUpdates:false}));
+  const manager=createUpdateManager({platform:'darwin',arch:'arm64',home,current:'0.16.2',fetcher:async()=>{requests++;return new Response(JSON.stringify(manifest()));}});
+  await manager.check();assert.equal(requests,0);
+  assert.equal((await manager.check(true)).available,true);assert.equal(requests,1);
+ }finally{fs.rmSync(home,{recursive:true,force:true});}
+});
 test('updates accept only newer complete releases and assets from this repository',()=>{
  assert.equal(newerVersion('0.17.0','0.16.2'),true);assert.equal(newerVersion('0.9.9','0.16.2'),false);assert.equal(newerVersion('0.17.0-beta','0.16.2'),false);
  assert.equal(releaseUpdate(release(),'0.16.2').version,'0.17.0');assert.equal(releaseUpdate(release(),'0.17.0'),null);assert.equal(releaseUpdate({...release(),prerelease:true},'0.16.2'),null);

@@ -6,8 +6,8 @@
 
 | 平台 | 安装包 | 系统要求 |
 | --- | --- | --- |
-| macOS | [下载 0.19.6 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.6-preview.1/Context-Manager-0.19.6-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [下载 0.19.6 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.6-preview.1/Context-Manager-0.19.6-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [下载 0.19.18 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.18-preview.1/Context-Manager-0.19.18-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [下载 0.19.18 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.18-preview.1/Context-Manager-0.19.18-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac 安装说明](docs/INSTALL_MAC.md) · [Windows 安装说明](docs/INSTALL_WINDOWS.md) · [版本说明](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [English](README.md)
 
@@ -30,8 +30,8 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 - **账户额度**：显示剩余额度与重置时间，Mac 使用逐渐空心的闪电图标，Windows 适配系统托盘。
 - **主控制面板**：左下角打开设置，两端按各自平台设计界面。
 - **本地缓存**：启动即显示聊天和最近用量，后台增量同步。
-- **项目侧栏**：上方展开本机项目及聊天，下方显示单独聊天，独立滚动并记住展开状态（0.19.7）。
-- **在线更新**：自动检查，点击后安装，保留预算和偏好，安全清理闲置旧版本。
+- **项目侧栏**：上方展开本机项目及聊天，下方「最近」实时显示全部聊天；显示项目名与接入状态，独立滚动并记住展开状态。
+- **在线更新**：自动检查，点击后安装并保留预算和偏好；Windows 支持启动提示、本次跳过和自动检查开关。
 - **用量统计**：查看上下文、缓存、费用估算和响应速度。
 
 两端共用业务核心，不设 app／版本白名单，保留 Codex 官方运行时。

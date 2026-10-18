@@ -10,6 +10,7 @@ import {defaultRoot} from '../src/platform/index.mjs';
 import {createShortcutManager} from '../src/ui-shortcut.mjs';
 import {selectedQuota,quotaRemaining,quotaWindows,quotaStale} from '../src/quota-display.mjs';
 import {quotaIconBitmap} from './quota-icon.mjs';
+import {createUpdatePrompt} from './update-prompt.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url)),repo=path.dirname(here),args=process.argv;
 if(app.isPackaged)process.chdir(repo);
 if(fs.existsSync(path.join(repo,'vendor/node.exe')))process.env.CONTEXT_CONTROL_NODE=path.join(repo,'vendor/node.exe');
@@ -31,6 +32,20 @@ let main,trayWindow,tray,quitting=false,lastState=null,serviceOnline=false,ready
 const shortcutManager=createShortcutManager({read:()=>readJSON(path.join(root,'ui-settings.json'),{}),write:doc=>atomicJSON(path.join(root,'ui-settings.json'),doc),register:(key,callback)=>globalShortcut.register(key,callback),unregister:key=>globalShortcut.unregister(key),onTrigger:()=>toggleMain(),inactive:smoke});
 const zh=()=>resolveLanguage(languagePreference())==='zh';
 const label=(a,b)=>zh()?a:b;
+const updateSettingsFile=path.join(root,'ui-settings.json');
+const autoCheckUpdates=()=>readJSON(updateSettingsFile,{}).autoCheckUpdates!==false;
+function setAutoCheckUpdates(enabled){atomicJSON(updateSettingsFile,{...readJSON(updateSettingsFile,{}),autoCheckUpdates:enabled});}
+const refreshUpdateUI=()=>{main?.webContents.send('refresh');trayWindow?.webContents.send('refresh');};
+const updatePrompt=createUpdatePrompt({enabled:autoCheckUpdates,setEnabled:setAutoCheckUpdates,
+  check:()=>api('check-update'),install:()=>api('install-update'),changed:refreshUpdateUI,
+  prompt:async update=>{
+    if(demo||smoke)return 'skip';
+    showMain();
+    const answer=await dialog.showMessageBox(main,{type:'info',title:label('发现新版本','Update available'),message:label(`Context Manager ${update.version} 可更新`,`Context Manager ${update.version} is available`),detail:label(`当前版本 ${pkg.version}。更新将下载并安装新版本。`,`Current version: ${pkg.version}. The update will be downloaded and installed.`),buttons:[label('更新','Update'),label('本次跳过','Skip this time'),label('关闭自动检查','Disable automatic checks')],defaultId:0,cancelId:1,noLink:true});
+    return ['install','skip','disable'][answer.response]??'skip';
+  }
+});
+
 app.on('second-instance',(_event,argv)=>{if(argv.includes('--quit'))app.quit();else if(!argv.includes('--background'))showMain();});
 app.on('before-quit',()=>{quitting=true;clearTimeout(timer);});
 app.on('window-all-closed',()=>{});
@@ -38,7 +53,7 @@ app.on('activate',()=>showMain());
 async function api(action,params={}){
   if(demo){
     if(action==='state')return structuredClone(demoState);
-    if(action==='statistics')return structuredClone(demoStatistics);
+    if(action==='statistics')return structuredClone({...demoStatistics,threadId:params.id});
     if(action==='quota-refresh')return structuredClone(demoState.quota);
     if(action==='policy'){const t=demoState.threads.find(t=>t.id===params.id);if(t){t.policy={...params.policy,enabled:true,revision:(t.policy?.revision||0)+1};t.phase='saved';}return {ok:true};}
     if(action==='defaults'){Object.assign(demoState.newChatDefaults,params);return demoState.newChatDefaults;}
@@ -67,7 +82,7 @@ function createWindow(menu=false){
   return win;
 }
 function showMain(id){if(!main)main=createWindow();if(main.isMinimized())main.restore();main.show();main.focus();trayWindow?.hide();if(id){if(main.webContents.isLoading())main.webContents.once('did-finish-load',()=>main.webContents.send('select-chat',id));else main.webContents.send('select-chat',id);}publish();}
-function toggleMain(){if(main?.isVisible()&&!main.isMinimized()){main.hide();trayWindow?.hide();publish();}else showMain();}
+function toggleMain(){if(main?.isVisible()&&!main.isMinimized()&&main.isFocused()){main.hide();trayWindow?.hide();publish();}else showMain();}
 function showSettings(){showMain();if(main.webContents.isLoading())main.webContents.once('did-finish-load',()=>main.webContents.send('open-settings'));else main.webContents.send('open-settings');}
 function placeMenu(){
   const bounds=tray.getBounds(),cursor=screen.getCursorScreenPoint(),display=screen.getDisplayNearestPoint(bounds.width?{x:bounds.x,y:bounds.y}:cursor),area=display.workArea;
@@ -89,11 +104,13 @@ function updateTray(){
   const reset=quotaWindows(bucket).filter(window=>window.resetsAt).map(window=>new Date(window.resetsAt*1000).toLocaleString(zh()?'zh-CN':'en-US')).join(' / ');
   tray.setToolTip((`Context Manager · ${label('剩余额度','Quota remaining')} ${remaining==null?'—':Math.round(remaining)+'%'}${stale?' · '+label('待刷新','stale'):''}\n${active.length} ${label('个运行中','running')}${reset?' · '+label('重置','Reset')+' '+reset:''}`).slice(0,127));
 }
-function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口','Open main window'),click:()=>showMain()},{label:label('设置','Settings'),click:showSettings},{label:label('刷新额度','Refresh quota'),click:async()=>{try{const quota=await api('quota-refresh');lastState={...lastState,quota};updateTray();main?.webContents.send('refresh');trayWindow?.webContents.send('refresh');}catch(e){console.error(e.message);}}},{label:label('检查更新','Check for updates'),click:async()=>{try{await api('check-update');showMain();main.webContents.send('refresh');}catch(e){console.error(e.message);}}},{type:'separator'},{label:label('退出管理界面','Quit manager UI'),click:()=>app.quit()}]);}
+function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口','Open main window'),click:()=>showMain()},{label:label('设置','Settings'),click:showSettings},{label:label('刷新额度','Refresh quota'),click:async()=>{try{const quota=await api('quota-refresh');lastState={...lastState,quota};updateTray();main?.webContents.send('refresh');trayWindow?.webContents.send('refresh');}catch(e){console.error(e.message);}}},{label:label('检查更新','Check for updates'),click:async()=>{try{showSettings();await updatePrompt.run();refreshUpdateUI();}catch(e){console.error(e.message);}}},{type:'separator'},{label:label('退出管理界面','Quit manager UI'),click:()=>app.quit()}]);}
 ipcMain.handle('context-manager',async(event,action,params)=>{
   if(![main?.webContents.id,trayWindow?.webContents.id].includes(event.sender.id)||event.senderFrame!==event.sender.mainFrame)throw Error('Unknown UI sender');
   if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>65536)throw Error('Invalid UI request');
-  if(action==='preferences')return {selection:languagePreference(),language:resolveLanguage(languagePreference()),english:JSON.parse(fs.readFileSync(path.join(repo,'src/locales/en.json'),'utf8')),version:pkg.version,demo,quotaPool:readJSON(path.join(root,'ui-settings.json'),{}).quotaPool||null,shortcut:shortcutManager.status(),integration:demo?{enabled:false,registered:false,available:false,inactive:true}:windowsIntegrationStatus()};
+  if(action==='preferences')return {selection:languagePreference(),language:resolveLanguage(languagePreference()),english:JSON.parse(fs.readFileSync(path.join(repo,'src/locales/en.json'),'utf8')),version:pkg.version,demo,autoCheckUpdates:autoCheckUpdates(),quotaPool:readJSON(path.join(root,'ui-settings.json'),{}).quotaPool||null,shortcut:shortcutManager.status(),integration:demo?{enabled:false,registered:false,available:false,inactive:true}:windowsIntegrationStatus()};
+  if(action==='update-preferences'){if(typeof params.enabled!=='boolean')throw Error('Invalid update preference');setAutoCheckUpdates(params.enabled);refreshUpdateUI();return {enabled:autoCheckUpdates()};}
+  if(action==='check-update'){const result=await updatePrompt.run();refreshUpdateUI();return result;}
   if(action==='integration-set'){
     if(demo||smoke)throw Error('预览模式不修改 Codex 接入。');
     return setWindowsIntegration(params.enabled);
@@ -139,6 +156,7 @@ if(args.includes('--quit')){app.quit();}else{
   shortcutManager.start();
   if(!args.includes('--background')&&!smoke)main.once('ready-to-show',()=>showMain());
   const refresh=async()=>{try{lastState=await api('state');serviceOnline=true;updateTray();}catch{serviceOnline=false;if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};updateTray();}if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting)timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
+  if(!demo&&!smoke)main.webContents.once('did-finish-load',()=>{updatePrompt.run(true).then(refreshUpdateUI).catch(error=>console.error('Startup update check:',error.message));});
   if(smoke){
     const loaded=win=>new Promise((resolve,reject)=>{if(!win.webContents.isLoading())resolve();else{win.webContents.once('did-finish-load',resolve);win.webContents.once('did-fail-load',(_e,code,message)=>reject(Error(`${code}: ${message}`)));}});
     try{
@@ -147,7 +165,22 @@ if(args.includes('--quit')){app.quit();}else{
         try{if(!globalShortcut.register(probe,()=>{})||!globalShortcut.isRegistered(probe))throw Error('Native shortcut registration failed');globalShortcut.setSuspended(true);if(!globalShortcut.isSuspended())throw Error('Native shortcut suspension failed');globalShortcut.setSuspended(false);}finally{globalShortcut.setSuspended(false);globalShortcut.unregister(probe);}
         if(globalShortcut.isRegistered(probe))throw Error('Native shortcut release failed');console.log('NATIVE_SHORTCUT_PROBE passed');
       }
-      await Promise.all([loaded(main),loaded(trayWindow)]);await new Promise(r=>setTimeout(r,1200));const results=await Promise.all([main,trayWindow].map(w=>w.webContents.executeJavaScript('window.__contextSmoke()')));if(results.some(r=>!r.ok))throw Error(JSON.stringify(results));console.log('UI_SMOKE '+JSON.stringify(results));app.exit(0);
+      await Promise.all([loaded(main),loaded(trayWindow)]);await new Promise(r=>setTimeout(r,1200));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){const directory=path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR);fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'sidebar-quota.png'),(await main.webContents.capturePage()).toPNG());const footer=await main.webContents.executeJavaScript("(()=>{const r=document.querySelector('.sidebar-footer-row').getBoundingClientRect();return {x:8,y:Math.floor(r.top-10),width:Math.ceil(r.right),height:Math.ceil(r.height+20)}})()");fs.writeFileSync(path.join(directory,'quota-footer.png'),(await main.webContents.capturePage(footer)).toPNG());}const results=await Promise.all([main,trayWindow].map(w=>w.webContents.executeJavaScript('window.__contextSmoke()')));if(results.some(r=>!r.ok))throw Error(JSON.stringify(results));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await main.webContents.executeJavaScript('window.__contextSmoke({preview:true})');await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'timeline-settings.png'),(await main.webContents.capturePage()).toPNG());}
+      // Exercise the real window state: visible in the background must focus in one press.
+      const waitFor=async check=>{const end=Date.now()+3000;while(!check()&&Date.now()<end)await new Promise(r=>setTimeout(r,25));if(!check())throw Error('Shortcut window focus transition timed out');};
+      const covering=new BrowserWindow({width:320,height:240,show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
+      try{
+        showMain();await waitFor(()=>main.isFocused());
+        covering.show();covering.focus();await waitFor(()=>covering.isFocused()&&!main.isFocused());
+        toggleMain();await waitFor(()=>main.isVisible()&&main.isFocused());
+        toggleMain();await waitFor(()=>!main.isVisible());
+        toggleMain();await waitFor(()=>main.isVisible()&&main.isFocused());
+        main.minimize();await waitFor(()=>main.isMinimized());
+        toggleMain();await waitFor(()=>!main.isMinimized()&&main.isVisible()&&main.isFocused());
+      }finally{main.hide();covering.destroy();}
+      // Drain focus-triggered renderer refreshes before destroying the app windows.
+      await new Promise(resolve=>setTimeout(resolve,200));
+      console.log('SHORTCUT_FOCUS_SMOKE passed');console.log('UI_SMOKE '+JSON.stringify(results));app.exit(0);
     }catch(e){console.error('UI_SMOKE_FAILED '+e.message);app.exit(1);}
   }
 }

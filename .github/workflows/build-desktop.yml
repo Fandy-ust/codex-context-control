@@ -59,6 +59,10 @@ jobs:
 
           The ZIP and JSON files are for automatic updates. See [changes](https://github.com/$GH_REPO/blob/$tag/CHANGELOG.md) and [installation guides](https://github.com/$GH_REPO/blob/main/README.md).
           EOF
+          if [ -f "docs/releases/$version.md" ]; then
+            printf '\n' >> release-notes.md
+            cat "docs/releases/$version.md" >> release-notes.md
+          fi
           if gh release view "$tag" --json isDraft > release-state.json 2>/dev/null; then
             test "$(node -p "require('./release-state.json').isDraft")" = true
             gh release edit "$tag" --target "$GITHUB_SHA" --notes-file release-notes.md

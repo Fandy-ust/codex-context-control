@@ -17,6 +17,7 @@ struct TimelineHoverMapping {
 struct TimelineBucketPresentation:Sendable {
     let speed:String;let speedHeading:String;let input:String;let cache:String;let output:String
     let counts:String;let events:String;let models:String;let minimumCache:String
+    let settingsChanges:[String];let speedModes:[String]
     init(_ bucket:TimelineBucket){
         func amount(_ value:Double?)->String{value.map{$0>=1000 ? String(format:"%.1fK",$0/1000):String(format:"%.0f",$0)} ?? "—"}
         speed=bucket.speed.map{String(format:"%.1f t/s",$0)} ?? "—"
@@ -25,6 +26,18 @@ struct TimelineBucketPresentation:Sendable {
         counts=L("{0} 次响应 · {1} 次计时", bucket.responses, bucket.measured)
         events=L("最终 {0} · 用户输入 {1} · 压缩 {2} · 缓存零值 {3}", bucket.finals, bucket.users, bucket.compactions, bucket.zeroCaches)
         models=bucket.models.map{modelDisplayName($0)}.joined(separator:" · ")
+        speedModes=bucket.speedModes.map{$0=="ultrafast" ? "⚡⚡ Ultrafast":"⚡ Fast"}
+        settingsChanges=bucket.settingsChanges.map{change in
+            let label=change.field=="model" ? L("模型切换"):change.field=="effort" ? L("思考深度"):L("速度模式")
+            func value(_ raw:String)->String {
+                if change.field=="model"{return modelDisplayName(raw)}
+                if change.field=="effort"{return effortDisplayName(raw)}
+                if raw=="fast"{return "⚡ Fast"};if raw=="ultrafast"{return "⚡⚡ Ultrafast"}
+                return serviceTierDisplayName(raw)
+            }
+            let prefix=bucket.responses>1 ? "#\(change.responseIndex) ":""
+            return prefix+label+"："+value(change.from)+" → "+value(change.to)
+        }
         minimumCache=L("区间最低缓存：{0} tokens", bucket.cacheMinimum.map{String($0)} ?? "—")
     }
 }

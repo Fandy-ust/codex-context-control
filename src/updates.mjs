@@ -12,6 +12,7 @@ export function createUpdateManager({home=root,current,fetcher=fetch,launch,now=
  const read=()=>{try{return readJSON(file,{})??{};}catch{return {};}};
  function status(){const s=read();return {currentVersion:current,available:artifactForTarget(s.update,target)&&newerVersion(s.update.version,current),version:s.update?.version??null,phase:s.phase??'idle',checkedAt:s.checkedAt??null,error:s.error??null,retryAt:s.retryAt??null,source:s.source??null};}
  async function check(force=false){
+  if(!force&&readJSON(path.join(home,'ui-settings.json'),{}).autoCheckUpdates===false)return status();
   if(checking){await checking;return status();}const old=read();
   if(['downloading','installing'].includes(old.phase)){try{process.kill(old.pid,0);return status();}catch{atomicJSON(file,{...old,phase:'error',pid:null,error:'上次更新已中断，请重试'});old.phase='error';}}
   const time=now();

@@ -1,7 +1,7 @@
 import Foundation
 @main struct TimelineMathTest {
-    static func response(_ i:Int,speed:Double?=10,cache:Int?=50,model:String="test")->ContextStatistics.Response {
-        var value:[String:Any]=["id":"r\(i)","index":i+1,"position":i*3+2,"eventType":"intermediate","timestamp":"2026-10-16T00:00:00Z","kind":"中间响应","cacheStatus":cache==0 ? "zero_in_log":cache==nil ? "missing":"recorded","cacheSegment":0,"inputSegment":0,"timingKind":"observed_generation","segment":0,"config":["model":model],"inputTokens":100,"outputTokens":100]
+    static func response(_ i:Int,speed:Double?=10,cache:Int?=50,model:String="test",effort:String="medium",tier:String="standard")->ContextStatistics.Response {
+        var value:[String:Any]=["id":"r\(i)","index":i+1,"position":i*3+2,"eventType":"intermediate","timestamp":"2026-10-16T00:00:00Z","kind":"中间响应","cacheStatus":cache==0 ? "zero_in_log":cache==nil ? "missing":"recorded","cacheSegment":0,"inputSegment":0,"timingKind":"observed_generation","segment":0,"config":["model":model,"effort":effort,"serviceTier":tier],"inputTokens":100,"outputTokens":100]
         if let speed{value["tokensPerSecond"]=speed;value["durationMs"]=100/speed*1000};if let cache{value["cachedInputTokens"]=cache}
         return try! JSONDecoder().decode(ContextStatistics.Response.self,from:JSONSerialization.data(withJSONObject:value))
     }
@@ -11,6 +11,11 @@ import Foundation
     }
     static func near(_ a:Double?,_ b:Double){precondition(a != nil && abs(a!-b)<0.00001,"\(String(describing:a)) != \(b)")}
     static func main() throws {
+        let changed=try TimelineData(responses:[response(0),response(1,model:"next",effort:"xhigh",tier:"priority"),response(2,model:"next",effort:"xhigh",tier:"fast"),response(3,model:"next",effort:"xhigh",tier:"ultrafast")],events:[],revision:"changes",period:40,limit:1)
+        precondition(changed.buckets[0].settingsChanges.count==4)
+        precondition(changed.buckets[0].settingsChanges[0].from=="test" && changed.buckets[0].settingsChanges[0].to=="next")
+        precondition(changed.buckets[0].settingsChanges[1].field=="effort" && changed.buckets[0].settingsChanges[1].responseIndex==2)
+        precondition(changed.buckets[0].speedModes==["fast","ultrafast"])
         let ema=try TimelineData(responses:[response(0,speed:10),response(1,speed:30)],events:[],revision:"ema",period:3)
         near(ema.speed[0].value,10);near(ema.speed[1].value,20)
         let off=try TimelineData(responses:[response(0,speed:10),response(1,speed:30)],events:[],revision:"off",period:0)

@@ -1,6 +1,6 @@
 # 双平台构建与发布
 
-0.19.6 整合预览共用一个版本号与业务核心，Mac 使用 SwiftUI/AppKit，Windows 使用 Electron 与原生启动器。两端界面可以不同，核心行为以 [功能一致性表](FEATURE_PARITY.md) 为准。目录与协作约定见 [开发说明](MULTIPLATFORM_DEVELOPMENT.md) 和 [CONTRIBUTING](../CONTRIBUTING.md)。
+当前整合版本共用一个版本号与业务核心，Mac 使用 SwiftUI/AppKit，Windows 使用 Electron 与原生启动器。两端界面可以不同，核心行为以 [功能一致性表](FEATURE_PARITY.md) 为准。目录与协作约定见 [开发说明](MULTIPLATFORM_DEVELOPMENT.md) 和 [CONTRIBUTING](../CONTRIBUTING.md)。
 
 ## 本地开发
 
@@ -44,4 +44,4 @@ Mac 和 Windows 始终共用一个产品版本。即使只修改某个平台的 
 - 生成清单时重新校验实际文件大小、哈希与文件名；不把只有一个平台的包发布为完整更新。
 - 客户端自动检查，用户点击后安装；预算、缓存、语言和界面偏好保留。旧程序文件在确认未使用后回收。
 
-发布完成后，将 README 的两端下载入口一起更新到该版本。
+发布前，将 README 的两端下载入口一起更新到该版本，并在 `docs/releases/<version>.md` 汇总相较上个发布版的变化；发布工作流会将该文件附加到 Release 下载说明中。

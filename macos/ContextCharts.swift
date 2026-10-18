@@ -248,6 +248,8 @@ private enum TimelinePlotKind:String {case speed,cache,events}
             HStack{Text(b.title).font(.callout.weight(.medium));Spacer();Text(label.counts).font(.caption).foregroundStyle(.secondary)}
             HStack(spacing:12){metric(L("区间均速"),label.speed);metric(L("输入均量"),label.input);metric(L("缓存均量"),label.cache);metric(L("输出合计"),label.output)}
             Text(label.events).font(.caption).foregroundStyle(.secondary)
+            if !label.speedModes.isEmpty{Text(label.speedModes.joined(separator:" · ")).font(.caption).foregroundStyle(.yellow)}
+            ForEach(Array(label.settingsChanges.enumerated()),id:\.offset){_,change in Text(change).font(.caption).fixedSize(horizontal:false,vertical:true)}
             if !b.models.isEmpty {Text(label.models).font(.caption2).foregroundStyle(.secondary).lineLimit(1)}
             if b.measured<b.responses || b.inputSamples<b.responses || b.cacheSamples<b.responses {
                 Text(L("缺少记录：计时 {0} · 输入 {1} · 缓存 {2}", b.responses-b.measured, b.responses-b.inputSamples, b.responses-b.cacheSamples)).font(.caption2).foregroundStyle(.secondary)
