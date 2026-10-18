@@ -15,6 +15,7 @@ Mac 和 Windows 共用同一统计核心、图表数据和栏目顺序。两端�
 - 通过只读的 `account/rateLimits/read` 取得额度；`account/read` 使用 `refreshToken:false`，只用于区分账户观测，不执行登录、退出或重置额度。接口字段以 [官方 App Server 文档](https://learn.chatgpt.com/docs/app-server) 为依据。
 - 历史曲线回填自本机 rollout 中已有的额度快照。旧记录没有可靠账户身份，因此单独标为「本机历史（账户未标识）」，不会自动归到当前账户。
 - Token 来自本机逐请求 `token_usage_record`。按响应 ID 去重，忽略 fork 复制的父请求；缓存输入已包含在输入 token 中，推理已包含在输出中，不再重复相加。历史被压缩、截断或回滚，不会退回已经发生的消耗。
+- 没有 5h 记录时，效率图按 weekly 周期汇总，weekly 曲线和换算仍可使用；5h 贡献图和 5h 散点图保持暂无记录。
 - 5h 和 weekly 按实际 `windowDurationMins` 识别，不假设 primary 一定是 5h。缺失周期显示暂无记录，不补成零。
 - 额度重置、读数下降和超过 30 分钟的缺测都会中断比较。跨 5h 重置的差值不强行归给某个窗口。
 - Token／百分点是本机相关观测，不是官方兑换率。额度可能包含其他设备的使用，本机 token 也不保证覆盖所有账户活动。低于 1 个百分点的变化先累积；缺少 token 或模型信息时不生成精确换算。

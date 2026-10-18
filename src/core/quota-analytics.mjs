@@ -115,7 +115,6 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   });
   const comparable = comparableWeekly.intervals.filter(p => p.tokens > 0 && p.pp >= 1 && !p.unknownRequests);
   const weekComparable = comparable.filter(p => p.cycle === currentWeek);
-  const efficiency = comparable.map(p => p.tokens / p.pp), efficiencySummary = distribution(efficiency);
   const largestWindow = windows.filter(p => p.weeklyCycle===currentWeek && p.weeklyPP != null).sort((a, b) => b.weeklyPP - a.weeklyPP)[0] || null;
   const data = new Map(QUOTA_CHARTS.map(spec => [spec.id, {...spec, points: [], empty: '尚无足够的可比较记录'}]));
   const set = (id, points, extra = {}) => Object.assign(data.get(id), {points}, extra);
@@ -145,7 +144,12 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   for (const [id, intervals] of [['weekly-scatter', comparableWeekly.intervals], ['five-hour-scatter', comparableFive.intervals]]) {
     const points = chartPoints(intervals);set(id, points, {fit: fitLine(points), note: '本机相关观测，并非官方 token 换算公式'});
   }
-  set('efficiency', windows.filter(p => p.weeklyPP >= 1 && p.alignedTokens > 0).map((p, i) => windowPoint(p, p.alignedTokens / p.weeklyPP, i)), {summary: efficiencySummary, note: '使用与 Weekly 变化对齐的 token；不足 1 个百分点不换算'});
+  const efficiencyPoints=windows.filter(p => p.weeklyPP >= 1 && p.alignedTokens > 0).map((p, i) => windowPoint(p, p.alignedTokens / p.weeklyPP, i));
+  if(!fiveCycles.length)for(const [id,values] of aggregateBy(comparable,p=>p.cycle)){
+    const totalTokens=sum(values.map(p=>p.tokens)),weeklyPP=sum(values.map(p=>p.pp));
+    efficiencyPoints.push({id,x:efficiencyPoints.length,y:totalTokens/weeklyPP,label:dateLabel(Number(id)*1000-WEEK,zone),series:'本机观测',tokens:totalTokens,weeklyPP,at:Number(id)*1000-WEEK});
+  }
+  set('efficiency',efficiencyPoints,{xLabel:fiveCycles.length?'5h 窗口':'Weekly 周期',summary:distribution(efficiencyPoints.map(p=>p.y)),note:'使用与 Weekly 变化对齐的 token；不足 1 个百分点不换算'});
   const heat = [];
   weeklyCycles.forEach(([id], row) => {
     const start = Number(id) * 1000 - WEEK;

@@ -62,3 +62,10 @@ test('5h/weekly ratios use the same observed intervals when one quota stream is 
  const report=buildQuotaAnalytics({snapshots},{now});const ratio=report.charts.find(c=>c.id==='ratio').points;
  assert.equal(ratio.length,1);assert.equal(ratio[0].y,5);assert.equal(ratio[0].weeklyPP,1);assert.equal(ratio[0].fivePP,5);assert.equal(ratio[0].partial,true);
 });
+test('weekly-only accounts retain efficiency and weekly analysis without synthetic 5h windows',()=>{
+ const fixture=quotaFixture(now);fixture.snapshots=fixture.snapshots.map(p=>({...p,fiveUsed:null,fiveReset:null}));
+ const report=buildQuotaAnalytics(fixture,{now});
+ for(const id of ['weekly','weekly-scatter','efficiency','weeks'])assert.ok(report.charts.find(c=>c.id===id).points.length,id);
+ assert.equal(report.charts.find(c=>c.id==='efficiency').xLabel,'Weekly 周期');
+ for(const id of ['windows','five-hour-scatter'])assert.equal(report.charts.find(c=>c.id===id).points.length,0,id);
+});
