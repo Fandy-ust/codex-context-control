@@ -5,10 +5,11 @@ import {root,codexHome,readJSON,atomicJSON} from './paths.mjs';
 import {activityTime,timestampMs,readNativeTurnActivity} from './thread-activity.mjs';
 import {readForkParent} from './fork-metadata.mjs';
 import {ThreadCache} from './thread-cache.mjs';
+import {ProjectCatalog} from './project-catalog.mjs';
 import {inheritedForkPolicy} from './fork-budget.mjs';
 
 export class Store {
-  constructor(){this.file=path.join(root,'state.json');let saved;try{saved=JSON.parse(fs.readFileSync(this.file,'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;saved={version:2,policies:{},threads:{}};}this.data=normalizeStateDocument(saved);this.metadata=new Map();this.metadataCheckedAt=0;this.threadCache=new ThreadCache({home:codexHome,file:path.join(root,'thread-cache.json')});}
+  constructor(){this.file=path.join(root,'state.json');let saved;try{saved=JSON.parse(fs.readFileSync(this.file,'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;saved={version:2,policies:{},threads:{}};}this.data=normalizeStateDocument(saved);this.metadata=new Map();this.metadataCheckedAt=0;this.threadCache=new ThreadCache({home:codexHome,file:path.join(root,'thread-cache.json')});this.projects=new ProjectCatalog(codexHome);}
   save(){clearTimeout(this.saveTimer);this.saveTimer=null;atomicJSON(this.file,this.data);this.dirty=false;this.writes=(this.writes??0)+1;}
   scheduleSave(delay=150){this.dirty=true;if(this.saveTimer)return;this.saveTimer=setTimeout(()=>{this.saveTimer=null;try{this.save();}catch(error){if(Date.now()-(this.lastSaveErrorAt??0)>15000){this.lastSaveErrorAt=Date.now();process.stderr.write('Context Control: 观测状态保存失败：'+error.message+'\n');}}},delay);this.saveTimer.unref();}
   flush(){if(this.dirty)this.save();}
@@ -73,7 +74,8 @@ export class Store {
         const cols=new Set(db.prepare('PRAGMA table_info(threads)').all().map(r=>r.name));
         if(!cols.has('id'))return;
         // Use the explicit native name, never the legacy title/first prompt.
-        const selected=['id','name','model','cwd','updated_at','updated_at_ms','recency_at','recency_at_ms','created_at','created_at_ms','thread_source','archived','rollout_path'].filter(c=>cols.has(c));
+        this.projects.readNative(db,cols.has('project_id'));
+        const selected=['id','name','model','cwd','project_id','updated_at','updated_at_ms','recency_at','recency_at_ms','created_at','created_at_ms','thread_source','archived','rollout_path'].filter(c=>cols.has(c));
         const hasRecencyColumn=cols.has('recency_at_ms')||cols.has('recency_at');
         const candidates=['recency_at_ms','recency_at','created_at_ms','created_at',...(!hasRecencyColumn?['updated_at_ms','updated_at']:[])].filter(c=>cols.has(c));
         const expressions=candidates.map(c=>`NULLIF(${c},0)${c.endsWith('_ms')?'':'*1000'}`);
@@ -91,6 +93,8 @@ export class Store {
         this.forkHeaderCache??=new Map();
         for(const row of rows.values()) {
           const current={...turnActivity.get(row.id)};
+          current.projectId=typeof row.project_id==='string'?row.project_id:null;
+          if(cols.has('cwd'))current.cwd=typeof row.cwd==='string'?row.cwd:null;
           if(typeof row.model==='string')current.model=row.model;
           if(cols.has('thread_source'))current.threadSource=row.thread_source;
           current.createdAt=timestampMs(row.created_at_ms)??timestampMs(row.created_at);

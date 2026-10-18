@@ -1,4 +1,9 @@
 {
+  "项目": "Projects",
+  "单独聊天": "Standalone chats",
+  "暂无本地项目": "No local projects",
+  "暂无单独聊天": "No standalone chats",
+  "暂无聊天": "No chats yet",
   "打开主窗口": "Open main window",
   "正在运行": "Running",
   "暂无运行中的聊天": "No running chats",

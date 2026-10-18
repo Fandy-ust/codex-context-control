@@ -31,7 +31,9 @@ struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPerc
 struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?;let creditBalance:String?}
 struct QuotaState:Decodable,Equatable {let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
 struct ControlCapabilities:Decodable {let visibleBudget:Bool?}
-struct RuntimeState: Decodable {let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
+struct ChatSidebar:Decodable,Equatable {let projects:[SidebarProject];let standaloneThreadIds:[String]}
+struct RuntimeState: Decodable {let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -50,6 +52,7 @@ struct ServiceSettings: Decodable {let node:String}
     deinit{for observer in languageObservers{NotificationCenter.default.removeObserver(observer)}}
     func setLanguage(_ value:LanguageChoice){do{try Localization.setChoice(value)}catch{notice=L("无法保存语言设置：{0}",error.localizedDescription)}}
     @Published var chats:[Chat]=[]
+    @Published var sidebar:ChatSidebar?
     @Published var selectedID:String?
     @Published var updateState:UpdateState?
     @Published var checkingUpdates=false
@@ -109,6 +112,7 @@ struct ServiceSettings: Decodable {let node:String}
             if quota != state.quota{acceptQuota(state.quota)}
             if updateState != state.update{updateState=state.update;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
             if chats != state.threads{chats=state.threads}
+            if sidebar != state.sidebar{sidebar=state.sidebar}
             if bridgeCount != state.bridgeCount{bridgeCount=state.bridgeCount}
             if runtimeFix != state.runtimeFix{runtimeFix=state.runtimeFix}
             if contextCeilingPending != (state.contextCeilingPending ?? false){contextCeilingPending=state.contextCeilingPending ?? false}
@@ -431,6 +435,82 @@ struct RuntimeFixControl:View {
     }
 }
 
+struct ProjectChatSidebar:View {
+    @ObservedObject var model:Controller
+    @AppStorage("project-sidebar-expanded") private var expandedJSON="[]"
+    private var expanded:Set<String> {Set((try? JSONDecoder().decode([String].self,from:Data(expandedJSON.utf8))) ?? [])}
+    private var projects:[SidebarProject] {model.sidebar?.projects ?? []}
+    private var standalone:[Chat] {
+        guard let sidebar=model.sidebar else{return model.chats}
+        let byID=Dictionary(model.chats.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
+        return sidebar.standaloneThreadIds.compactMap{byID[$0]}
+    }
+    private func setExpanded(_ id:String,_ value:Bool){
+        var ids=expanded;if value{ids.insert(id)}else{ids.remove(id)}
+        if let data=try? JSONEncoder().encode(ids.sorted()),let json=String(data:data,encoding:.utf8){expandedJSON=json}
+    }
+    private func revealSelection(){
+        guard let id=model.selectedID,let project=projects.first(where:{$0.threadIds.contains(id)}) else{return}
+        if !expanded.contains(project.id){setExpanded(project.id,true)}
+    }
+    var body:some View {
+        GeometryReader{geometry in
+            VStack(alignment:.leading,spacing:0){
+                projectList.frame(height:max(0,geometry.size.height-15)*0.55)
+                Divider().padding(.vertical,7)
+                VStack(alignment:.leading,spacing:6){
+                    heading("单独聊天",count:standalone.count)
+                    ScrollView{LazyVStack(spacing:4){
+                        if standalone.isEmpty{empty("暂无单独聊天")}
+                        ForEach(standalone){chat in chatRow(chat)}
+                    }.frame(maxWidth:.infinity,alignment:.leading)}
+                }.frame(maxHeight:.infinity)
+            }
+        }
+        .onAppear{revealSelection()}
+        .onChange(of:model.selectedID){_,_ in revealSelection()}
+    }
+    private var projectList:some View {
+        let byID=Dictionary(model.chats.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
+        return VStack(alignment:.leading,spacing:6){
+            heading("项目",count:projects.count)
+            ScrollView{LazyVStack(alignment:.leading,spacing:4){
+                if projects.isEmpty{empty("暂无本地项目")}
+                ForEach(projects){project in
+                    DisclosureGroup(isExpanded:Binding(get:{expanded.contains(project.id)},set:{setExpanded(project.id,$0)})){
+                        LazyVStack(spacing:4){
+                            if project.threadIds.isEmpty{empty("暂无聊天")}
+                            ForEach(project.threadIds.compactMap{byID[$0]}){chat in chatRow(chat)}
+                        }.padding(.leading,6)
+                    }label:{
+                        HStack(spacing:7){
+                            Image(systemName:"folder").foregroundStyle(.secondary)
+                            Text(project.name).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength:2)
+                            Text("\(project.threadIds.count)").font(.caption).foregroundStyle(.secondary)
+                        }.padding(.vertical,7).help(project.roots.joined(separator:"\n"))
+                    }.padding(.horizontal,8)
+                }
+            }.frame(maxWidth:.infinity,alignment:.leading)}
+        }
+    }
+    private func heading(_ title:String,count:Int)->some View {
+        HStack{Text(L(title));Spacer();Text("\(count)")}.font(.system(size:11,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,10)
+    }
+    private func empty(_ title:String)->some View {
+        Text(L(title)).font(.caption).foregroundStyle(.secondary).padding(10).frame(maxWidth:.infinity,alignment:.leading)
+    }
+    private func chatRow(_ chat:Chat)->some View {
+        Button{model.selectedID=chat.id}label:{
+            VStack(alignment:.leading,spacing:5){
+                Text(chat.title).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle)
+                Text(chat.connected ? phaseName(chat.phase):L(chat.lastUsage != nil ? "已缓存":"本地聊天")).font(.system(size:11)).foregroundStyle(.secondary)
+            }.frame(maxWidth:.infinity,alignment:.leading).padding(12)
+                .background(model.selectedID==chat.id ? Color.white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:12)).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var model:Controller
     @State private var confirmCompact=false
@@ -451,16 +531,7 @@ struct ContentView: View {
                 .accessibilityElement(children:.ignore)
                 .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 .help((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
-                ScrollView {
-                    LazyVStack(spacing:4){ForEach(model.chats){chat in
-                        Button {model.selectedID=chat.id} label:{
-                            VStack(alignment:.leading,spacing:5){Text(chat.title).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle);Text(chat.connected ? phaseName(chat.phase):L(chat.lastUsage != nil ? "已缓存":"本地聊天")).font(.system(size:11)).foregroundStyle(.secondary)}
-                                .frame(maxWidth:.infinity,alignment:.leading).padding(12)
-                                .background(model.selectedID==chat.id ? Color.white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:12))
-                                .contentShape(Rectangle())
-                        }.buttonStyle(.plain).accessibilityAddTraits(model.selectedID==chat.id ? .isSelected:[])
-                    }}
-                }.frame(maxHeight:.infinity)
+                ProjectChatSidebar(model:model).frame(maxHeight:.infinity)
                 Button{showControlPanel.toggle()} label:{
                     HStack(spacing:10){Image(systemName:"slider.horizontal.3");Text(L("主控制面板")).font(.system(size:13,weight:.medium));Spacer();Image(systemName:showControlPanel ? "chevron.down":"chevron.up").font(.system(size:10,weight:.semibold)).foregroundStyle(.secondary)}
                         .padding(12).frame(maxWidth:.infinity).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:12)).contentShape(Rectangle())

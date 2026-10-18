@@ -5,6 +5,7 @@
 | Visible window and compaction | core/budget, budget-command, policy | Native sliders | Web/native tray sliders | Core fixtures + Swift parity |
 | Default budgets and forks | core/new-chat-defaults, fork-budget | Floating control panel | Settings overlay | API and bridge tests |
 | Fresh versus cached usage | store, thread-cache, confirmation | Labels and rings | Labels and rings | Cache, lifecycle and confirmation tests |
+| Projects and standalone chats | project-catalog, store | Native expandable projects, 55/45 split | Expandable projects, 55/45 split | Native/legacy membership, migration, refresh and rendering tests |
 | Quota and credits | account-quota, quota-display | Striped lightning | Taskbar-adapted icon | Normalization and native rendering tests |
 | History and charts | context-history, context-statistics | Native Charts | Canvas/SVG charts | Shared statistics and timeline tests |
 | Update selection | core/update-artifact, updates | Native installer | Native setup/updater | Manifest, platform and corruption tests |

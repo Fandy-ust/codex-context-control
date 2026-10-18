@@ -11,6 +11,7 @@ import {timelinePlot,timelineX,timelinePosition} from '../../src/timeline-scale.
 import {DEFAULT_SHORTCUT,shortcutLabel,shortcutFromEvent,normalizeShortcut} from '../../src/ui-shortcut.mjs';
 import {sliderMotion,SLIDER_MOTION_SECONDS} from '../../src/slider-motion.mjs';
 import {selectedQuota,quotaWindows,quotaStale} from '../../src/quota-display.mjs';
+import {projectSidebar} from './project-sidebar.mjs';
 import {budgetView,chatView,detailsView,statisticsView,chartDetailView,chartTooltipView,rawRecordsView,trayChatView} from './apple-view.mjs';
 
 const api=window.contextManager,root=document.querySelector('#app'),mode=new URLSearchParams(location.search).get('mode')||'main';
@@ -34,6 +35,9 @@ const policyForDraft=(...args)=>(useLegacyBudget()?legacyPolicyForDraft:applePol
 const editorRoot=()=>settingsOpen?root.querySelector('.settings-body'):root.querySelector('.main');
 const chatName=chat=>chat?.name||chat?.title||chat?.cwd?.split(/[\\/]/).filter(Boolean).at(-1)||chat?.id?.slice(0,12)||t('未命名聊天','Untitled chat');
 const trayDrafts=new Map();
+const projectExpansion=new Map(),sidebarScroll=new Map();
+try{const saved=JSON.parse(localStorage.getItem('project-expansion')||'[]');if(Array.isArray(saved))for(const pair of saved)if(Array.isArray(pair)&&typeof pair[0]==='string'&&typeof pair[1]==='boolean')projectExpansion.set(...pair);}catch{}
+root.addEventListener('scroll',event=>{const key=event.target.dataset?.sidebarScroll;if(key)sidebarScroll.set(key,event.target.scrollTop);},true);
 let sidebarWidth=Number(localStorage.getItem('sidebar-width'))||270;
 const visibleSidebarWidth=()=>Math.max(235,Math.min(sidebarWidth,340,window.innerWidth-650));
 const e=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
@@ -52,7 +56,8 @@ function ring(thread){const fraction=observed(thread);return `<span class="ring"
 function statusText(thread){return thread.connected?phase(thread):t(thread.lastUsage?'已缓存':'本地聊天',thread.lastUsage?'Cached':'Local chat');}
 function sidebar(){
   const connected=state?.bridgeCount>0;
-  return `<aside class="sidebar"><div class="brand row"><span class="dot ${connected?'on':''}"></span><span>Codex</span>${preferences.demo?`<span class="preview-pill">${e(t('预览','Preview'))}</span>`:''}<span class="grow"></span><span class="tiny">v${e(preferences.version||'')}</span></div><nav class="chat-list" aria-label="${e(t('聊天','Chats'))}">${(state?.threads||[]).map(chat=>`<button class="chat-button ${selected===chat.id&&view!=='defaults'?'selected':''}" data-action="select" data-id="${e(chat.id)}" title="${e(chatName(chat))}"><span class="truncate">${e(chatName(chat))}</span><span class="muted">${e(statusText(chat))}</span></button>`).join('')||`<p class="muted tiny">${e(t('等待本地聊天…','Waiting for local chats…'))}</p>`}</nav><button class="settings-trigger" data-action="settings" title="${e(t('设置','Settings'))}" aria-label="${e(t('设置','Settings'))}" aria-haspopup="dialog" aria-expanded="${settingsOpen}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m9.5 3-.7 2.2-2 .9-2.1-.5-2.5 4.3 1.5 1.7v2.3l-1.5 1.7 2.5 4.3 2.1-.5 2 .9.7 2.2h5l.7-2.2 2-.9 2.1.5 2.5-4.3-1.5-1.7v-2.3l1.5-1.7-2.5-4.3-2.1.5-2-.9-.7-2.2Z"/><circle cx="12" cy="12.8" r="3"/></svg></button></aside>`;
+  const navigation=projectSidebar({threads:state?.threads,sidebar:state?.sidebar,selected,expanded:projectExpansion,t,escape:e,chatName,statusText});
+  return `<aside class="sidebar"><div class="brand row"><span class="dot ${connected?'on':''}"></span><span>Codex</span>${preferences.demo?`<span class="preview-pill">${e(t('预览','Preview'))}</span>`:''}<span class="grow"></span><span class="tiny">v${e(preferences.version||'')}</span></div>${navigation}<button class="settings-trigger" data-action="settings" title="${e(t('设置','Settings'))}" aria-label="${e(t('设置','Settings'))}" aria-haspopup="dialog" aria-expanded="${settingsOpen}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m9.5 3-.7 2.2-2 .9-2.1-.5-2.5 4.3 1.5 1.7v2.3l-1.5 1.7 2.5 4.3 2.1-.5 2 .9.7 2.2h5l.7-2.2 2-.9 2.1.5 2.5-4.3-1.5-1.7v-2.3l1.5-1.7-2.5-4.3-2.1.5-2-.9-.7-2.2Z"/><circle cx="12" cy="12.8" r="3"/></svg></button></aside>`;
 }
 function slider(value,model,{single=false,id='main'}={}){
   const limit=draftLimits(model,value.window,value.reserve),max=limit?.maximum||1,white=value.window/max*100,blue=value.compact/max*100;
@@ -211,6 +216,7 @@ function switchSettingsTab(tab){
 }
 function finishShortcutRecording(){shortcutRecording=false;api.invoke('shortcut-recording',{active:false}).catch(()=>{});const field=document.getElementById('shortcut-input');if(field){field.readOnly=false;field.value=shortcutLabel(shortcutDraft);field.classList.remove('recording');}const button=root.querySelector('[data-action="shortcut-record"]');if(button)button.textContent=t('录制快捷键','Record shortcut');}
 function bindSidebar(){
+  for(const region of root.querySelectorAll('[data-sidebar-scroll]'))region.scrollTop=sidebarScroll.get(region.dataset.sidebarScroll)||0;
   const side=root.querySelector('.sidebar');if(!side||side.querySelector('.sidebar-resizer'))return;
   const handle=document.createElement('div');handle.className='sidebar-resizer';handle.tabIndex=0;handle.setAttribute('role','separator');handle.setAttribute('aria-orientation','vertical');handle.setAttribute('aria-label',t('调整侧栏宽度','Resize sidebar'));side.append(handle);
   const apply=value=>{sidebarWidth=Math.max(235,Math.min(340,value));root.querySelector('.shell')?.style.setProperty('--sidebar-width',visibleSidebarWidth()+'px');handle.setAttribute('aria-valuenow',String(visibleSidebarWidth()));localStorage.setItem('sidebar-width',String(sidebarWidth));};
@@ -364,7 +370,7 @@ async function loadStats(force=false){
   finally{if(epoch===detailsEpoch){statsLoading=false;if(detailsOpen&&id===selected&&hover==null&&!smoothingInteracting&&repaint)render();}}
 }
 
-function selectChat(id){if(detailsOpen)closeDetails();mainNotice='';budgetInputError='';budgetText={};if(settingsOpen)closeSettings();selected=id;view='chat';draft=threadDraft(current());dirty=false;stats=null;statsJSON='';pinned=hover=null;render();}
+function selectChat(id){if(detailsOpen)closeDetails();mainNotice='';budgetInputError='';budgetText={};if(settingsOpen)closeSettings();selected=id;const project=state?.sidebar?.projects.find(project=>project.threadIds.includes(id));if(project){projectExpansion.set(project.id,true);localStorage.setItem('project-expansion',JSON.stringify([...projectExpansion]));}view='chat';draft=threadDraft(current());dirty=false;stats=null;statsJSON='';pinned=hover=null;render();}
 function loadDraft(){if(editingDefaults()){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else{const next=threadDraft(current());if(draft?.expectedRevision!==next?.expectedRevision){budgetText={};budgetInputError='';}draft=next;}dirty=false;}
 async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');state=next;serviceAvailable=true;if(!selected||!current())selected=state.threads[0]?.id??null;if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen&&!detailsOpen)refreshBudgetValidity();if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select')){if(view==='stats'&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if((!dirty&&!detailsOpen)||mode==='tray')render();else{document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
@@ -395,6 +401,11 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       finishShortcutRecording();await api.invoke('shortcut-recording',{active:false});
       const saved=await run('shortcut-save',{accelerator:normalizeShortcut(shortcutDraft),enabled:shortcutEnabled});
       preferences.shortcut=saved;shortcutDraft=saved.accelerator;shortcutDirty=false;render();notify(saved.inactive?t('预览设置已保存；真实模式中需单独保存。','Preview preference saved. Save it separately in local mode.'):t('快捷键设置已保存','Shortcut settings saved'));return;
+    }
+    if(action==='project-toggle'){
+      projectExpansion.set(button.dataset.id,button.getAttribute('aria-expanded')!=='true');localStorage.setItem('project-expansion',JSON.stringify([...projectExpansion]));
+      root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();
+      [...root.querySelectorAll('[data-action="project-toggle"]')].find(item=>item.dataset.id===button.dataset.id)?.focus({preventScroll:true});return;
     }
     if(action==='select'){selectChat(button.dataset.id);return;}
     if(action==='target'){interactionId=button.dataset.target;editorRoot()?.querySelector(`[data-range="${interactionId}"]`)?.focus();updateDraftDOM();return;}
@@ -499,8 +510,16 @@ function chartGeometryCheck(){
   container.style.width=before;hover=pinned=null;updateChartSelection();return {ok:samples>0&&maxError<.75,maxError,samples};
 }
 window.__contextSmoke=async()=>{
-  const initial=!!state&&!!root.querySelector(mode==='tray'?'.tray-shell':'.shell')&&!!root.querySelector('[data-slider]');let defaults=true,charts=true,settings=true,geometry={ok:true},radius=true;
+  const initial=!!state&&!!root.querySelector(mode==='tray'?'.tray-shell':'.shell')&&!!root.querySelector('[data-slider]');let defaults=true,charts=true,settings=true,geometry={ok:true},radius=true,projects=true;
   if(mode==='main'&&preferences.demo){
+    const groups=root.querySelector('.projects-section'),single=root.querySelector('.standalone-section'),projectHeight=groups.getBoundingClientRect().height;
+    projects=!!groups.querySelector('[data-id="demo-a"]')&&!!single.querySelector('[data-id="demo-c"]')&&!single.querySelector('[data-id="demo-a"]')&&Math.abs(projectHeight/(projectHeight+single.getBoundingClientRect().height)-.55)<.02;
+    groups.querySelector('[data-action="project-toggle"]').click();
+    projects=projects&&!root.querySelector('.projects-section [data-id="demo-a"]')&&JSON.parse(localStorage.getItem('project-expansion')).some(([id,open])=>id==='demo-project'&&!open);
+    render();projects=projects&&!root.querySelector('.projects-section [data-id="demo-a"]');
+    root.querySelector('[data-action="project-toggle"]').click();
+    root.querySelector('.projects-section [data-id="demo-b"]').click();projects=projects&&selected==='demo-b'&&!!root.querySelector('[data-slider]');
+    root.querySelector('.standalone-section [data-id="demo-c"]').click();projects=projects&&selected==='demo-c';selectChat(state.threads[0].id);
     radius=['[data-action="apply"]','[data-action="preflight"]','[data-action="clear"]','[data-action="stats"]','.pill','#language','.sidebar-footer>button'].every(selector=>[...root.querySelectorAll(selector)].every(node=>getComputedStyle(node).borderTopLeftRadius==='10px'));
     radius=radius&&root.querySelector('[data-action="stats"]').getBoundingClientRect().height<48;
     openSettings('defaults');defaults=root.querySelector('.settings-dialog').querySelectorAll('[data-range]').length===2;closeSettings();
@@ -511,7 +530,7 @@ window.__contextSmoke=async()=>{
     const saved=await api.invoke('shortcut-save',{accelerator:'Control+Alt+K',enabled:true});preferences=await api.invoke('preferences');settings=settings&&saved.accelerator==='Control+Alt+K'&&preferences.shortcut.accelerator==='Control+Alt+K'&&preferences.shortcut.inactive;
     await api.invoke('shortcut-save',{accelerator:DEFAULT_SHORTCUT,enabled:true});preferences=await api.invoke('preferences');selectChat(state.threads[0].id);
   }
-  return {ok:initial&&defaults&&charts&&settings&&geometry.ok&&radius,mode,chats:state?.threads.length,defaults,charts,settings,geometry,radius,isolated:typeof window.require==='undefined'};
+  return {ok:initial&&defaults&&charts&&settings&&geometry.ok&&radius&&projects,mode,chats:state?.threads.length,defaults,charts,settings,geometry,radius,projects,isolated:typeof window.require==='undefined'};
 };
 await refresh();
 setInterval(()=>{if(!document.hidden&&!dragging&&hover==null)refresh();},2000);

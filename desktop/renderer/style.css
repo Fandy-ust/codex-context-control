@@ -4,6 +4,13 @@
 :root .sidebar{position:relative}
 :root .sidebar-resizer{display:block;position:absolute;right:-3px;top:0;bottom:0;width:6px;cursor:col-resize;touch-action:none;z-index:5}
 .sidebar-resizer:hover{background:#ffffff0b}.sidebar-resizer:focus-visible{background:#4580fc66;outline:none}
+.project-navigation{display:grid;grid-template-rows:minmax(0,55fr) minmax(0,45fr);gap:14px;overflow:hidden}
+.sidebar-section{display:flex;flex-direction:column;min-height:0;overflow:hidden}.standalone-section{border-top:1px solid var(--line);padding-top:12px}
+.sidebar-section-title{display:flex;justify-content:space-between;gap:8px;flex:none;padding:0 10px 7px;font-size:11px;font-weight:500;color:var(--muted)}
+.sidebar-scroll{min-height:0;overflow:auto;overscroll-behavior:contain;flex:1}.sidebar-empty{font-size:11px;color:var(--muted);padding:8px 12px}
+.project-toggle{display:flex;align-items:center;gap:7px;width:100%;border:0;background:transparent;text-align:left;padding:10px 9px;margin:2px 0}.project-toggle.contains-selection{color:#a4c1ff}.project-toggle .truncate{min-width:0}
+.project-chevron{width:10px;font-size:16px;line-height:1;text-align:center;flex:none}.project-folder{font-size:18px;line-height:1;color:var(--muted)}
+.project-chats{margin-left:17px;padding-left:6px;border-left:1px solid var(--line)}.project-chats .chat-button{padding:9px 10px}
 html:root{--radius-control:10px;--radius-card:26px;--radius:var(--radius-card)}
 body button,body select,body input[type=number],body input[type=text],body .pill,body .actions .primary,body .range-value,body .chat-button,body .tray-top{border-radius:var(--radius-control)}
 .heading{align-items:flex-start}.heading>button{align-self:flex-start;flex-shrink:0}

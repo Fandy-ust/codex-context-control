@@ -1,0 +1,13 @@
+export function projectSidebar({threads=[],sidebar,selected,expanded,t,escape:e,chatName,statusText}){
+  const chats=new Map(threads.map(chat=>[chat.id,chat]));
+  const projects=sidebar?.projects??[],standalone=sidebar?.standaloneThreadIds??threads.map(chat=>chat.id);
+  const row=id=>{
+    const chat=chats.get(id);if(!chat)return '';
+    return `<button class="chat-button ${selected===id?'selected':''}" data-action="select" data-id="${e(id)}" title="${e(chatName(chat))}" ${selected===id?'aria-current="true"':''}><span class="truncate">${e(chatName(chat))}</span><span class="muted">${e(statusText(chat))}</span></button>`;
+  };
+  const groups=projects.map(project=>{
+    const open=expanded.get(project.id)??project.threadIds.includes(selected);
+    return `<div class="project-group"><button class="project-toggle ${project.threadIds.includes(selected)?'contains-selection':''}" data-action="project-toggle" data-id="${e(project.id)}" aria-expanded="${open}" title="${e(project.roots.join('\n'))}"><span class="project-chevron" aria-hidden="true">${open?'⌄':'›'}</span><span class="project-folder" aria-hidden="true">▱</span><span class="truncate grow">${e(project.name)}</span><span class="muted tiny">${project.threadIds.length}</span></button>${open?`<div class="project-chats">${project.threadIds.map(row).join('')||`<p class="sidebar-empty">${e(t('暂无聊天','No chats yet'))}</p>`}</div>`:''}</div>`;
+  }).join('');
+  return `<nav class="chat-list project-navigation" aria-label="${e(t('聊天','Chats'))}"><section class="sidebar-section projects-section" aria-label="${e(t('项目','Projects'))}"><h2 class="sidebar-section-title">${e(t('项目','Projects'))}<span>${projects.length}</span></h2><div class="sidebar-scroll" data-sidebar-scroll="projects">${groups||`<p class="sidebar-empty">${e(t('暂无本地项目','No local projects'))}</p>`}</div></section><section class="sidebar-section standalone-section" aria-label="${e(t('单独聊天','Standalone chats'))}"><h2 class="sidebar-section-title">${e(t('单独聊天','Standalone chats'))}<span>${standalone.length}</span></h2><div class="sidebar-scroll" data-sidebar-scroll="standalone">${standalone.map(row).join('')||`<p class="sidebar-empty">${e(t('暂无单独聊天','No standalone chats'))}</p>`}</div></section></nav>`;
+}

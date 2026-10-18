@@ -1,5 +1,11 @@
 # Changes
 
+## 0.19.7 — Expandable project sidebar
+
+- Read local Codex projects and explicit chat memberships from the native index, with compatibility for legacy project assignments during migration.
+- Show expandable projects in the upper 55% of the Windows and Mac sidebar, with standalone chats in the remaining space; both sections scroll independently.
+- Preserve project expansion preferences and existing chat budget controls. Keep worktree chats in their assigned projects and avoid grouping standalone chats by directory.
+
 ## 0.19.6 — Shared core and cross-platform maintenance
 
 - Integrate main 0.18.3 update recovery and approved Mac quota/control-panel design with the Windows 0.19.5 port.

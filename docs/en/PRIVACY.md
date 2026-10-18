@@ -16,6 +16,8 @@ The statistics service reads local retained history to compute aggregates. It do
 
 ## Local interfaces
 
+The project sidebar reads local project names, roots, order and explicit chat memberships from the Codex index, with compatibility for project fields in `.codex-global-state.json`. It keeps only those fields in memory, does not modify Codex project data or read source files, and does not connect to remote project hosts. Expansion preferences belong to this tool's UI settings.
+
 The UI uses an authenticated loopback controller and local IPC. The connection file includes a local token; do not publish it. The controller rejects missing or invalid authentication and browser-origin requests on its HTTP interface. Malformed IPC connections are isolated and bounded.
 
 ## Distribution

@@ -30,6 +30,7 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 - **Account quota:** view remaining quota and reset times, with a gradually emptying lightning indicator on Mac and a tray-adapted icon on Windows.
 - **Control panel:** open settings from the bottom left, with an interface tailored to each platform.
 - **Local cache:** see chats and recent usage at startup, with incremental background sync.
+- **Project sidebar:** expandable local projects above standalone chats, with independent scrolling and saved expansion preferences (0.19.7).
 - **Updates:** automatic checks, click-to-install, preserved budgets and preferences, and safe cleanup of unused versions.
 - **Usage statistics:** track context, cache, estimated cost, and response speed.
 

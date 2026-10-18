@@ -27,6 +27,7 @@ import Vision
    "policy":["window":1022223,"compact":904000,"reserve":16000,"retainedFloor":0,"revision":1,"enabled":true],
    "modelMetadata":["max_context_window":1022223,"effective_context_window_percent":90,"context_ceiling":920000,"context_compact_ceiling":904000,"context_catalog_ready":true]]
   model.chats=[try JSONDecoder().decode(Chat.self,from:JSONSerialization.data(withJSONObject:raw))];model.selectedID="language-fixture";model.serviceAvailable=true;model.bridgeCount=1;model.notice="已接入 Codex。";model.fill()
+  model.sidebar=ChatSidebar(projects:[SidebarProject(id:"project-fixture",name:"Project group · 分组",roots:["/fixture/project"],threadIds:["language-fixture"]),SidebarProject(id:"empty-project",name:"Empty project",roots:[],threadIds:[])],standaloneThreadIds:[])
   let original=model.selected!.policy!
   let view=NSHostingView(rootView:ContentView(model:model).frame(width:1040,height:900))
   let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:900),styleMask:[.borderless],backing:.buffered,defer:false);window.contentView=view;window.display()
