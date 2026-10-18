@@ -758,6 +758,10 @@ window.__contextScrollSmoke=async function(action){
     return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+35)};
   }
   if(action==='check'){
+    // Native input delivery is asynchronous on hosted Windows runners. Wait for
+    // the real wheel listener before simulating an auto-refresh.
+    const deadline=Date.now()+2000;while(!mainScroll.active&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
+    if(!mainScroll.active)return {active:false,stable:scrollProbe.stable,error:'Native wheel input was not delivered'};
     const main=root.querySelector('.main'),top=main.scrollTop;
     scrollProbe.stable=scrollProbe.stable&&main===scrollProbe.main;
     scrollProbe.down||=top>scrollProbe.lastTop;scrollProbe.up||=top<scrollProbe.lastTop;scrollProbe.lastTop=top;

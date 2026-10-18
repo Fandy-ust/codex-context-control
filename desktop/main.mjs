@@ -204,7 +204,7 @@ if(args.includes('--quit')){app.quit();}else{
         main.webContents.sendInputEvent({type:'mouseWheel',...point,deltaY:i<12?-45:45,deltaX:0,canScroll:true});
         await new Promise(r=>setTimeout(r,25));
         const sample=await main.webContents.executeJavaScript("window.__contextScrollSmoke('check')");
-        if(!sample.active||!sample.stable)throw Error('Wheel gesture replaced its active scroll container');
+        if(!sample.active||!sample.stable)throw Error('Wheel gesture replaced its active scroll container: '+JSON.stringify(sample));
       }
       const scrollResult=await main.webContents.executeJavaScript("window.__contextScrollSmoke('result')");
       if(!scrollResult.ok)throw Error(JSON.stringify(scrollResult));
