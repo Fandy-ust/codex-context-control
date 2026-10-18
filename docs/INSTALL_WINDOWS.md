@@ -1,10 +1,10 @@
 # Windows 安装与开发
 
-Windows 11 x64 预览版，当前版本为 0.19.6。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，也尚未发布到 GitHub Releases。
+Windows 11 x64 预览版，当前版本为 0.19.6。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，现已发布到 GitHub Releases。
 
 ## 下载与安装
 
-[下载 0.19.6 Windows 预览构建](https://github.com/Fandy-ust/codex-context-control/actions/runs/39100081846/artifacts/12125834393)。需登录 GitHub；解压构建产物后，使用其中的 `Context-Manager-0.19.6-windows-x64-Setup.exe`。同包中的更新 ZIP 供 OTA 使用，日常安装无需再解压它。构建产物有保留期限，若链接失效，请查看 [构建记录](https://github.com/Fandy-ust/codex-context-control/actions/workflows/checks.yml)。
+[下载 0.19.6 Windows Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.6-preview.1/Context-Manager-0.19.6-windows-x64-Setup.exe)。直接运行这一个文件即可，不需要 GitHub 登录、解压构建产物或安装开发工具。Release 中的 ZIP 供 OTA 使用，普通安装不需要下载。
 
 1. 下载 `Context-Manager-0.19.6-windows-x64-Setup.exe`，只需要这一个文件，不需要旁边放 `payload/`。
 2. 双击 `Setup.exe`，选择「安装 / 更新」。安装器先校验并解压内置程序，再安装到当前用户；完成后自动清理临时解压目录，不需要修改 Codex 安装文件。安装成功后可以删除下载的 EXE。

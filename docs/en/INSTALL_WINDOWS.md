@@ -7,13 +7,13 @@ Windows 11 x64 · Context Manager 0.19.6 preview. Node and the interface runtime
 ## Download and install
 
 1. Install Codex Desktop.
-2. [Download the Windows preview build](https://github.com/Fandy-ust/codex-context-control/actions/runs/39100081846/artifacts/12125834393). Sign in to GitHub, then extract the artifact and run `Context-Manager-0.19.6-windows-x64-Setup.exe`. The separate updater ZIP is for OTA; you do not need to extract it for installation.
+2. [Download the Windows Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.6-preview.1/Context-Manager-0.19.6-windows-x64-Setup.exe). Run this single file directly; no GitHub sign-in, extraction or development tools are required. The ZIP in the release is for OTA updates.
 3. Choose **Install / Update**. The installer checks the bundled files and installs for your user account.
 4. After your current work finishes, fully quit and reopen Codex. Click the quota icon in the system tray; Windows may place it under the hidden-icons arrow.
 
 Integration is enabled after its startup check passes. If that check fails, the interface still installs and preserves native Codex startup; open **Settings → Codex integration** to inspect or retry. Review the project's Stop hook in Codex if you want Hook stats.
 
-This preview is not publisher-signed and has not been published to GitHub Releases. Build artifacts expire; if the link is unavailable, check the [build history](https://github.com/Fandy-ust/codex-context-control/actions/workflows/checks.yml).
+This preview is not publisher-signed. It is available from [GitHub Releases](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.19.6-preview.1), alongside the matching Mac version.
 
 ## Use and update
 

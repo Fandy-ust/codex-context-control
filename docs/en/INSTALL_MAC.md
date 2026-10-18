@@ -2,20 +2,20 @@
 
 **English** | [简体中文](../INSTALL_MAC.md) · [Home](../../README.md)
 
-The preview targets Apple Silicon (M-series) Macs with macOS 14 or later. Install Codex / ChatGPT Desktop first. 920K integration is verified with Codex 0.163.0-alpha.10.2 using local test fixtures. The current package does not include Intel or Windows builds.
+The preview targets Apple Silicon (M-series) Macs with macOS 14 or later. Install Codex / ChatGPT Desktop first. 920K integration is verified with Codex 0.163.0-alpha.10.2 using local test fixtures. This DMG targets Apple Silicon; the same-version Windows installer is available separately. Intel Mac builds are not currently provided.
 
 ## Install or update
 
-1. [Download the 0.18.3 Apple Silicon DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.3-preview.1/Context-Manager-0.18.3-macos-arm64.dmg) and open it.
+1. [Download the 0.19.6 Apple Silicon DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.6-preview.1/Context-Manager-0.19.6-macos-arm64.dmg) and open it.
 2. Open **Install Context Manager.app**.
 3. Select **Automatic (time zone)**, **中文**, or **English** if desired.
 4. Choose **Install / Update**.
 5. Fully quit and reopen Codex after the first installation or bridge upgrade.
-6. Use the ring-and-three-bars icon in the macOS menu bar to open chat overview or the main window.
+6. Use the lightning quota icon in the macOS menu bar to open chat overview or the main window.
 
 Users do not need Node, npm, Homebrew, Xcode, an administrator password, or an Apple developer membership. The installer copies the runtime to a stable user support directory, so deleting the downloaded installer does not break the app.
 
-The 0.18.3 English / Chinese preview is published and publicly downloadable. The demo release contains a video, not an installer. Older drafts remain maintainer review artifacts.
+The 0.19.6 English / Chinese preview is published and publicly downloadable. Mac and Windows installers are published together with the same product version.
 
 ## Opening a preview
 
@@ -53,7 +53,7 @@ Enable context extension in Settings for up to 920K and restart Codex after chan
 
 ## Updates and local cache
 
-Install 0.18.3 once to enable in-app updates. The app checks GitHub at startup (cached for six hours) and every six hours. Click Install update to download, verify, and install; restart Codex afterward. Budgets, language, and caches are retained. Local chats load at startup, update incrementally in the background, and can be refreshed with Sync local chats. Cached observations are historical, not a live connection. Missing remote-only histories remain unavailable until synchronized by Codex.
+Install 0.19.6 once to enable in-app updates. The app checks GitHub at startup (cached for six hours) and every six hours. Click Install update to download, verify, and install; restart Codex afterward. Budgets, language, and caches are retained. Local chats load at startup, update incrementally in the background, and can be refreshed with Sync local chats. Cached observations are historical, not a live connection. Missing remote-only histories remain unavailable until synchronized by Codex.
 
 Successful updates replace the old app and code, remove unused bundled runtimes and the disabled patched core, and delete OTA downloads after installation. Runtimes still used by a process are retained temporarily and checked again every five minutes after the app starts. Budgets, language, chat caches, and user backups are preserved. Manually downloaded DMGs are not deleted.
 

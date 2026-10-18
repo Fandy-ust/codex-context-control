@@ -6,8 +6,8 @@
 
 | 平台 | 安装包 | 系统要求 |
 | --- | --- | --- |
-| macOS | [下载 0.18.3 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.3-preview.1/Context-Manager-0.18.3-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [下载 0.19.6 预览版 · 构建产物](https://github.com/Fandy-ust/codex-context-control/actions/runs/39100081846/artifacts/12125834393) | Windows 11 · x64 |
+| macOS | [下载 0.19.6 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.6-preview.1/Context-Manager-0.19.6-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [下载 0.19.6 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.6-preview.1/Context-Manager-0.19.6-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac 安装说明](docs/INSTALL_MAC.md) · [Windows 安装说明](docs/INSTALL_WINDOWS.md) · [版本说明](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [English](README.md)
 
@@ -16,7 +16,7 @@
 先安装 Codex 桌面客户端，再安装对应平台的 Context Manager。
 
 - **Mac**：打开 DMG，运行 **Install Context Manager.app**，点击「安装 / 更新」。
-- **Windows**：预览包暂通过 GitHub 构建产物下载；登录 GitHub 后下载并解压，运行其中的 **Setup.exe**，无需安装开发工具。
+- **Windows**：下载并运行 **Setup.exe**，选择「安装 / 更新」，无需解压或安装开发工具。
 
 安装完成后完整退出并重开 Codex，点击菜单栏或系统托盘的额度图标。开启「上下文拓展」可用最高 920K，切换后需重开 Codex。
 

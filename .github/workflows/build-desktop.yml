@@ -57,7 +57,7 @@ jobs:
 
           两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。
 
-          The ZIP and JSON files are for automatic updates. See [changes](https://github.com/$GH_REPO/blob/$tag/CHANGELOG.md) and [installation guides](https://github.com/$GH_REPO/blob/$tag/README.md).
+          The ZIP and JSON files are for automatic updates. See [changes](https://github.com/$GH_REPO/blob/$tag/CHANGELOG.md) and [installation guides](https://github.com/$GH_REPO/blob/main/README.md).
           EOF
           if gh release view "$tag" --json isDraft > release-state.json 2>/dev/null; then
             test "$(node -p "require('./release-state.json').isDraft")" = true
