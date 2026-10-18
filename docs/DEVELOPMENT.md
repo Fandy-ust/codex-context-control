@@ -38,7 +38,7 @@ Node 采用 ES modules 和标准库，生产第三方依赖为离线分词器 js
 5. 保存、提交、运行时确认必须区分。
 6. 不能以累计输入 token 作为当前上下文占用，也不能把未知用量当作零。
 7. 不能写入或替换用户的聊天历史、认证文件、全局窗口设置和 hook 信任记录。
-8. 新版本通过测试前保持透传。
+8. 根据实际接入能力判断是否可应用；不增加 app 或版本白名单。
 
 ## 测试
 
@@ -68,14 +68,14 @@ macOS 自动接入测试使用随机、独立的探测环境变量与登录任�
 ## 发布前工作
 
 - 运行全部测试及原生编译。
-- 对支持的每个 runtime 单独运行集成测试，更新 `src/compatibility.mjs`。
+- 对目标 runtime 运行集成测试并记录验证范围，不用版本白名单限制后续更新。
 - 在真实桌面启动路径确认桥接已连接；普通命令、Code Mode 辅助路径、取消和窗口切换正常。
 - 不将 Application Support 下的状态、日志、凭据、截图中真实聊天标题或原始 RPC 内容提交仓库。
 - 更新版本号、兼容矩阵和变更记录。
 
-0.15 起提供 Apple Silicon 预编译安装器，并内置固定版本 Node。当前产物为未公证测试包；正式签名与公证流程见 [发布说明](RELEASING.md)。Intel 和自动更新尚未包含。
+当前提供 Apple Silicon Mac DMG 和 Windows x64 Setup.exe，均内置运行所需依赖。两端支持自动检查、点击安装更新。构建与发布统一遵循 [双平台流程](CROSS_PLATFORM_BUILD.md)；Mac 签名与公证细节见 [发布说明](RELEASING.md)。
 
-修复版 Codex 核心的构建脚本 `scripts/build-patched-runtime.mjs` 根据 CPU 数和内存选择并行数，默认每个任务预留约 2 GiB 的内存预算（经验值，并非硬性内存限制）。专用构建机可用 `CONTEXT_CONTROL_BUILD_JOBS=8 node scripts/build-patched-runtime.mjs` 显式指定。首次构建仍需编译完整 Rust 依赖；增加并行数不能消除串行依赖和链接耗时。GitHub 工作流保存 Cargo 缓存，并在后续验证失败时仍上传已生成的候选产物；只有通过验证的产物才能安装。已经运行的 GitHub 托管构建无法中途改变机器规格。
+以下仅为已停用补丁的历史研究流程，不属于当前产品构建：修复版 Codex 核心的构建脚本 `scripts/build-patched-runtime.mjs` 根据 CPU 数和内存选择并行数，默认每个任务预留约 2 GiB 的内存预算（经验值，并非硬性内存限制）。专用构建机可用 `CONTEXT_CONTROL_BUILD_JOBS=8 node scripts/build-patched-runtime.mjs` 显式指定。首次构建仍需编译完整 Rust 依赖；增加并行数不能消除串行依赖和链接耗时。GitHub 工作流保存 Cargo 缓存，并在后续验证失败时仍上传已生成的候选产物；只有通过验证的产物才能安装。已经运行的 GitHub 托管构建无法中途改变机器规格。
 
 ## 开发环境覆盖
 

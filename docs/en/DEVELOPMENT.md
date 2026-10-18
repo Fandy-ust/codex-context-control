@@ -49,8 +49,7 @@ Useful isolation variables include `CONTEXT_CONTROL_HOME`, `CONTEXT_CONTROL_CODE
 
 ```sh
 npm run package:mac -- --release
-version=$(node -p "require('./package.json').version")
-CONTEXT_CONTROL_TEST_INSTALLER_ZIP="$PWD/build/distribution/Context-Manager-$version-macos-arm64.zip" npm run test:distribution
+CONTEXT_CONTROL_TEST_INSTALLER_APP="$PWD/build/distribution/Install Context Manager.app" npm run test:distribution
 ```
 
 Release packaging requires a clean tree and records its source revision. See [release details](RELEASING.md).

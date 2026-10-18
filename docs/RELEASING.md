@@ -2,17 +2,18 @@
 
 [English](en/RELEASING.md) | **简体中文** · [首页](../README.zh-CN.md)
 
-## 测试安装包
+发布顺序及 Windows 构建见 [双平台构建与发布](CROSS_PLATFORM_BUILD.md)。两端检查通过后一起发布；以下补充 Mac 打包与签名细节。
+
+## Mac 测试安装包
 
 ```sh
 npm ci --ignore-scripts
 npm test
 npm run package:mac
-version=$(node -p "require('./package.json').version")
-CONTEXT_CONTROL_TEST_INSTALLER_ZIP="$PWD/build/distribution/Context-Manager-$version-macos-arm64.zip" npm run test:distribution
+CONTEXT_CONTROL_TEST_INSTALLER_APP="$PWD/build/distribution/Install Context Manager.app" npm run test:distribution
 ```
 
-版本取自 package.json。输出在 `build/distribution/`：安装器、ZIP、SHA-256 和 package-info.json。Node 下载版本及哈希固定在 packaging/node-runtime.json，官方归档缓存到 build/vendor。
+版本取自 package.json。输出在 `build/distribution/`：安装器、DMG、SHA-256 和 package-info.json。Node 下载版本及哈希固定在 packaging/node-runtime.json，官方归档缓存到 build/vendor。
 
 安装包只包含生产 src、两个安装脚本、运行时修复元信息、生产依赖、预编译面板及 Node。研究探针、聊天数据、状态文件、日志、凭据和大型修复核心不打包。
 
