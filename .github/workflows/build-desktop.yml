@@ -44,8 +44,7 @@ jobs:
           version=$(node -p "require('./package.json').version")
           tag="v${version}-preview.1"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "$tag"; fi
-          existing=$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null || true)
-          if [ -n "$existing" ]; then
+          if gh api "repos/$GH_REPO/git/ref/tags/$tag" > tag-state.json 2>/dev/null; then
             test "$(gh api "repos/$GH_REPO/commits/$tag" --jq '.sha')" = "$GITHUB_SHA"
           fi
           cat > release-notes.md <<EOF
