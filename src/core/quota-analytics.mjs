@@ -1,7 +1,10 @@
+import {quotaReliability,annotateQuotaCharts} from './quota-analysis-presentation.mjs';
 import {HOUR, DAY, WEEK, finite, sum, distribution, fitLine, usageBetween} from './quota-statistics.mjs';
 import {QUOTA_CHARTS, QUOTA_SECTIONS} from './quota-chart-catalog.mjs';
 import {normalizeQuotaCycles} from './quota-observations.mjs';
 import {buildQuotaOutlook} from './quota-outlook.mjs';
+import {tokenCostCalendar} from './token-cost-calendar.mjs';
+import {QUOTA_CHART_GUIDES} from './quota-chart-guides.mjs';
 
 const validPercent = n => finite(n) && n >= 0 && n <= 100;
 const reset = n => Number.isSafeInteger(n) && n > 0 && n < 8640000000000;
@@ -101,15 +104,24 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   const ranked=[...(eligible.length?eligible:profiles)].sort((a,b)=>b.score-a.score||Number(b.id===currentScope)-Number(a.id===currentScope)||b.selected.length-a.selected.length);
   const chosen=manual||ranked[0];
   const scope=chosen?.id||'history',poolIds=chosen?.pools||[],pool=chosen?.pool||'codex',selected=chosen?.selected||[];
-  const weekly = quotaIntervals(selected, uniqueRequests, 'weekly'), five = quotaIntervals(selected, uniqueRequests, 'five');
-  const comparableWeekly=quotaIntervals(selected,uniqueRequests,'weekly',{minDelta:1,maxGap:WEEK}),comparableFive=quotaIntervals(selected,uniqueRequests,'five',{minDelta:1,maxGap:5*HOUR});
-  const weeklyPairs=observedQuotaPairs(selected,uniqueRequests,'weekly'),fivePairs=observedQuotaPairs(selected,uniqueRequests,'five');
+  const model=typeof options.model==='string'?options.model:'';
+  const modelName=p=>p.model||'未识别模型';
+  const models=[...new Set(requests.filter(p=>p.at<=now&&p.at>=now-366*DAY).map(modelName))].sort().map(id=>({id,label:id}));
+  const filteredRequests=model?uniqueRequests.filter(p=>modelName(p)===model):uniqueRequests;
+  // Identify models BEFORE filtering requests: mixed intervals cannot be assigned
+  // to a single model just because its peers were hidden by the picker.
+  const forModel=result=>({...result,intervals:model?result.intervals.filter(p=>p.model===model&&!p.unknownRequests):result.intervals});
+  const modelPairs=values=>model?values.filter(p=>p.model===model&&!p.unknownRequests):values;
+  const weekly = forModel(quotaIntervals(selected, uniqueRequests, 'weekly')), five = forModel(quotaIntervals(selected, uniqueRequests, 'five'));
+  const comparableWeekly=forModel(quotaIntervals(selected,uniqueRequests,'weekly',{minDelta:1,maxGap:WEEK})),comparableFive=forModel(quotaIntervals(selected,uniqueRequests,'five',{minDelta:1,maxGap:5*HOUR}));
+  const accountWeeklyPairs=observedQuotaPairs(selected,uniqueRequests,'weekly');
+  const weeklyPairs=modelPairs(accountWeeklyPairs),fivePairs=modelPairs(observedQuotaPairs(selected,uniqueRequests,'five'));
   const weeklyCycles = groupCycles(selected, 'weekly'), fiveCycles = groupCycles(selected, 'five');
   const latestWeekly = [...selected].reverse().find(p => validPercent(p.weeklyUsed) && reset(p.weeklyReset));
   const latestFive = [...selected].reverse().find(p => validPercent(p.fiveUsed) && reset(p.fiveReset));
   const currentWeek = latestWeekly?.weeklyReset * 1000 > now ? String(latestWeekly.weeklyReset) : null;
   const weekStart = currentWeek ? Number(currentWeek) * 1000 - WEEK : null;
-  const currentUsage = weekStart == null ? null : usageBetween(uniqueRequests, weekStart - 1, now);
+  const currentUsage = weekStart == null ? null : usageBetween(filteredRequests, weekStart - 1, now);
   const windows = fiveCycles.map(([id, points]) => {
     const start = Number(id) * 1000 - 5 * HOUR, end = Number(id) * 1000;
     const observedStart = points[0].at, observedEnd = points.at(-1).at;
@@ -117,7 +129,7 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
     const pairKeys=new Map(fh.map(p=>[p.start+':'+p.end,p]));
     const matched=wk.filter(p=>pairKeys.has(p.start+':'+p.end));
     const pairedWeeklyPP=sum(matched.map(p=>p.pp)),pairedFivePP=sum(matched.map(p=>pairKeys.get(p.start+':'+p.end).pp));
-    const usage = usageBetween(uniqueRequests, observedStart, observedEnd);
+    const usage = usageBetween(filteredRequests, observedStart, observedEnd);
     const weeklyPP = wk.length ? sum(wk.map(p => p.pp)) : null;
     const fivePP = fh.length ? sum(fh.map(p => p.pp)) : null;
     return {id, start, end, observedStart, observedEnd, pairedWeeklyPP,pairedFivePP, weeklyCycle: wk[0]?.cycle || null, weeklyPP, fivePP,
@@ -196,7 +208,7 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
     boxes.push({id, x: boxes.length, y: d.median, low: d.min, high: d.max, q1: d.q1, q3: d.q3, samples: d.count, label: dateLabel(Number(id) * 1000 - WEEK, zone), series: 'Token / Weekly 百分点'});
   }
   set('boxplot', boxes);
-  const recent = weeklyPairs.filter(p => p.cycle===currentWeek&&now-p.end<=DAY), hours=sum(recent.map(p=>p.duration))/HOUR;
+  const recent = accountWeeklyPairs.filter(p => p.cycle===currentWeek&&now-p.end<=DAY), hours=sum(recent.map(p=>p.duration))/HOUR;
   const forecast = [];
   if (latestWeekly && now - latestWeekly.at < HOUR && recent.filter(p=>p.pp>0).length >= 3 && hours >= 1) {
     // Quota percentages are often integer-quantized. A median of five-minute
@@ -219,19 +231,24 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   const dates = [...new Set([...hourly.values()].map(p => p.date))].sort();
   set('hours', [...hourly].map(([id, p]) => ({id, x: p.hour, y: dates.indexOf(p.date), value: p.value, label: p.date, series: 'Weekly 百分点'})), {xMax: 24, rows: dates, note: '差值记在观测结束的小时，不插值填补空白'});
   set('ratio', windows.filter(p => p.pairedWeeklyPP >= 1).map((p, i) => windowPoint({...p,weeklyPP:p.pairedWeeklyPP,fivePP:p.pairedFivePP}, p.pairedFivePP / p.pairedWeeklyPP, i)), {note: '同一窗口的观测增量之比，部分窗口不代表完整消耗'});
-  Object.assign(data.get('ranking'), {rows: requestRanking(uniqueRequests), note: '仅按本机 token 排序；账户额度无法精确归因到单个聊天'});
+  Object.assign(data.get('ranking'), {rows: requestRanking(filteredRequests), note: '仅按本机 token 排序；账户额度无法精确归因到单个聊天'});
   const scopes = scopeIds.map((id, i) => ({id, label: id === 'history' ? '本机历史（账户未标识）' : id === 'unidentified' ? '未识别账户观测' : id === currentScope ? '当前账户观测' : 'Account ' + (i + 1)}));
-  for(const chart of data.values()){chart.totalPoints=chart.points.length;if(chart.points.length>2000&&chart.kind!=='heatmap'){const values=chart.points;chart.points=Array.from({length:2000},(_,i)=>values[Math.floor(i*(values.length-1)/1999)]);chart.sampled=true;}}
+  for(const chart of data.values()){chart.guide=QUOTA_CHART_GUIDES[chart.id].map(p=>p[0]);chart.modelScope=['weekly','forecast'].includes(chart.id)?'account':'selected';chart.totalPoints=chart.points.length;if(chart.points.length>2000&&chart.kind!=='heatmap'){const values=chart.points;chart.points=Array.from({length:2000},(_,i)=>values[Math.floor(i*(values.length-1)/1999)]);chart.sampled=true;}}
   const fiveOnly=new Set(['windows','five-hour-scatter','distribution','anomalies','ratio']);
   const supported=id=>(capabilities.fiveHour||!fiveOnly.has(id))&&(capabilities.weekly||['five-hour-scatter','ranking'].includes(id));
   for(const chart of data.values())chart.visible=supported(chart.id);
+  if(model)for(const chart of data.values())if(chart.modelScope!=='account'&&chart.kind!=='table'&&!chart.points.length)chart.empty='该模型暂无可单独比较的区间；混合模型区间不分摊额度';
   const sections=QUOTA_SECTIONS.map(s=>({...s,title:s.id==='windows'&&!capabilities.fiveHour?'明细':s.title,chartIds:s.chartIds.filter(supported)}));
   if(!sections[0].chartIds.length)sections[0].chartIds=['ranking'];
   const visibleSections=sections.filter(s=>s.chartIds.length);
-  return {dashboard:buildQuotaOutlook(all,{currentScope,pool:options.pool,now}),schemaVersion: 1, generatedAt: now, timeZone: zone, days, scope, pool, capabilities,selection:{mode:manual?'manual':'auto',label:scopes.find(p=>p.id===scope)?.label||'本机记录'},scopes, pools: poolIds.map(id => ({id, label: id})), sections: visibleSections, charts: [...data.values()],
+  const reliability=quotaReliability(weekComparable,{unknownAccount:scope==='history'||scope==='unidentified',pending:progress?.pending||0});
+  for(const c of data.values())if(['efficiency','boxplot','models','cache','ratio','anomalies','weekly-scatter','five-hour-scatter'].includes(c.id))c.reliability=quotaReliability(comparable,{unknownAccount:scope==='history'||scope==='unidentified',pending:progress?.pending||0});
+  annotateQuotaCharts([...data.values()]);
+  const simpleChartIds=['weekly','windows','weeks','ranking',...(data.get('models').points.length>=2?['models']:[])].filter(supported);
+  return {simpleChartIds,reliability,costCalendar:tokenCostCalendar(requests,{now,timeZone:zone,model,costDate:options.costDate,costStart:options.costStart,costEnd:options.costEnd}),model,models,modelNotice:model?'已按模型筛选本机 Token；额度对比只使用单模型区间，混合区间不归因。账户已用百分比与预测仍为账户整体。':'当前汇总全部模型；不同模型的 Token 与额度消耗关系可能不同，可选择模型分别比较。',dashboard:buildQuotaOutlook(all,{currentScope,pool:options.pool,now}),schemaVersion: 1, generatedAt: now, timeZone: zone, days, scope, pool, capabilities,selection:{mode:manual?'manual':'auto',label:scopes.find(p=>p.id===scope)?.label||'本机记录'},scopes, pools: poolIds.map(id => ({id, label: id})), sections: visibleSections, charts: [...data.values()],
     overview: {weeklyUsed: currentWeek ? latestWeekly.weeklyUsed : null, fiveUsed: latestFive?.fiveReset * 1000 > now ? latestFive.fiveUsed : null,
-      tokens: currentUsage?.requests ? currentUsage.tokens : !capabilities.weekly&&uniqueRequests.length?sum(uniqueRequests.map(p=>p.input+p.output)):null, tokensPerPP: weekComparable.length ? sum(weekComparable.map(p => p.tokens)) / sum(weekComparable.map(p => p.pp)) : null,
+      tokens: currentUsage?.requests ? currentUsage.tokens : !capabilities.weekly&&filteredRequests.length?sum(filteredRequests.map(p=>p.input+p.output)):null, tokensPerPP: weekComparable.length ? sum(weekComparable.map(p => p.tokens)) / sum(weekComparable.map(p => p.pp)) : null,
       updatedAt: selected.at(-1)?.at || null, largestWindow: largestWindow ? {label: largestWindow.label, weeklyPP: largestWindow.weeklyPP} : null},
-    quality: {snapshots: selected.length, requests: uniqueRequests.length, comparableIntervals: comparable.length,estimatedIntervals:comparable.filter(p=>p.estimated).length,resetTimeAdjustments:normalized.adjusted,discontinuities: weekly.skipped + five.skipped, unknownAccount: scope === 'history' || scope === 'unidentified', progress,
+    quality: {snapshots: selected.length, requests: filteredRequests.length, comparableIntervals: comparable.length,estimatedIntervals:comparable.filter(p=>p.estimated).length,resetTimeAdjustments:normalized.adjusted,discontinuities: weekly.skipped + five.skipped, unknownAccount: scope === 'history' || scope === 'unidentified', progress,
       notes: [...(comparable.some(p=>p.estimated)?['较长间隔按两次读数的净变化计算，不推断中间消耗时间']:[]),...(progress?.unreadable?['部分聊天记录不在本机，相关 token 可能缺失']:[]),'额度来自账户观测；token 仅涵盖本机记录，多设备使用可能使两者不匹配', '缓存 token 已包含在输入中，推理 token 已包含在输出中，不重复相加', '百分比取整、延迟、额度重置和缺测会影响换算；这里展示相关性，不提供固定兑换率']}};
 }

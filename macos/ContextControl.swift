@@ -11,6 +11,7 @@ struct Chat: Identifiable, Decodable,Equatable {
     let observedWindow:Int?;let expectedWindow:Int?;let lastUsage:Usage?;let freshUsage:Bool?;let revision:Int?
     let policy:Budget?;let modelMetadata:Metadata?
     var title:String { if let name,!name.isEmpty{return name};if let cwd{return URL(fileURLWithPath:cwd).lastPathComponent};return String(id.prefix(12)) }
+    var canCompact:Bool {connected && !ambiguous && status=="idle" && ephemeral != true && canAcceptDirectInput != false && !["compacting","reloading","extension_pending"].contains(phase ?? "")}
     var targetWindow:Int? {
         guard let policy,policy.enabled != false,let percent=modelMetadata?.effective_context_window_percent,(1...100).contains(percent) else{return nil}
         return policy.window*percent/100
@@ -342,6 +343,7 @@ enum BudgetThumb {case compact,window}
     @FocusState private var focused:Bool
     @State private var active=NSApplication.shared.isActive
     @State private var dragging:BudgetThumb?
+    @State private var grabOffset:CGFloat=0
     @State private var dragUpdates=MenuDragUpdates()
     private var diameter:CGFloat {compactStyle ? 22:32}
     private var trackHeight:CGFloat {compactStyle ? 16:26}
@@ -373,17 +375,19 @@ enum BudgetThumb {case compact,window}
                     // lets the user select a handle whose hit areas overlap.
                     let left=abs(event.startLocation.x-compactX),right=abs(event.startLocation.x-windowX)
                     if windowOnly{dragging = .window}
-                    else if compactStyle && abs(compactX-windowX)<diameter {
+                    else if abs(compactX-windowX)<diameter {
                         dragging=event.startLocation.x<(compactX+windowX)/2 ? .compact:.window
                     }else{dragging=abs(left-right)<3 ? selection:(left<right ? .compact:.window)}
+                    let center=dragging == .compact ? compactX:windowX
+                    grabOffset=abs(event.startLocation.x-center)<=diameter/2 ? event.startLocation.x-center:0
                     selection=dragging!;focused=true
                 }
-                let tokens=(max(0,min(1,(event.location.x-diameter/2)/travel))*Double(maximumWindow)).rounded()
+                let tokens=(max(0,min(1,(event.location.x-grabOffset-diameter/2)/travel))*Double(maximumWindow)).rounded()
                 let target=dragging ?? selection
                 if compactStyle{dragUpdates.submit{setDragValue(tokens,target:target)}}
                 else{setDragValue(tokens,target:target)}
             }.onEnded {event in
-                let tokens=(max(0,min(1,(event.location.x-diameter/2)/travel))*Double(maximumWindow)).rounded()
+                let tokens=(max(0,min(1,(event.location.x-grabOffset-diameter/2)/travel))*Double(maximumWindow)).rounded()
                 dragUpdates.finish{setDragValue(tokens,target:dragging ?? selection)}
                 dragging=nil;onEditingChanged(false)
             })
@@ -478,9 +482,9 @@ struct ProjectChatSidebar:View {
     }
     private var projectList:some View {
         let byID=Dictionary(model.chats.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
-        return VStack(alignment:.leading,spacing:6){
+        return VStack(alignment:.leading,spacing:3){
             heading("项目",count:projects.count)
-            ScrollView{LazyVStack(alignment:.leading,spacing:4){
+            ScrollView{LazyVStack(alignment:.leading,spacing:2){
                 if projects.isEmpty{empty("暂无本地项目")}
                 ForEach(projects){project in
                     DisclosureGroup(isExpanded:Binding(get:{expanded.contains(project.id)},set:{setExpanded(project.id,$0)})){
@@ -494,7 +498,7 @@ struct ProjectChatSidebar:View {
                             Text(project.name).font(.system(size:12,weight:.medium)).lineLimit(1).truncationMode(.middle)
                             Spacer(minLength:2)
                             Text("\(project.threadIds.count)").font(.caption).foregroundStyle(.secondary)
-                        }.padding(.vertical,7).help(project.roots.joined(separator:"\n"))
+                        }.padding(.vertical,4).help(project.roots.joined(separator:"\n"))
                     }.padding(.horizontal,8)
                 }
             }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,28)}
@@ -536,27 +540,27 @@ struct ContentView: View {
     var body: some View {
         // Keep content below the native title bar; NavigationSplitView installs
         // an automatic toolbar/sidebar chrome inside this AppKit-hosted window.
+        Group {
+            if model.showQuotaAnalytics {
+                QuotaAnalyticsView(model:model,onBack:{model.showQuotaAnalytics=false})
+            } else {
         HSplitView {
             VStack(alignment:.leading,spacing:14){
                 HStack(spacing:7){
                     Circle().fill((model.serviceAvailable && model.bridgeCount>0) ? Color.green:Color.gray).frame(width:7,height:7)
                     Text("Codex").font(.system(size:11)).foregroundStyle(.secondary)
                     Spacer()
-                    Button{controlTab="general";showControlPanel=true}label:{Image(systemName:"gearshape").font(.system(size:17))}.buttonStyle(.plain).help(L("设置")).accessibilityIdentifier("control-panel-button")
                     Text("v"+model.appVersion).font(.system(size:10)).foregroundStyle(.secondary)
+                    Button{controlTab="general";showControlPanel=true}label:{Image(systemName:"gearshape").font(.system(size:17))}.buttonStyle(.plain).help(L("设置")).accessibilityIdentifier("control-panel-button")
                 }
                 .frame(maxWidth:.infinity,alignment:.leading)
                 .accessibilityElement(children:.ignore)
                 .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 .help((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 ProjectChatSidebar(model:model).frame(maxHeight:.infinity)
-                Button{model.showQuotaAnalytics=true}label:{Label(L("额度分析"),systemImage:"chart.xyaxis.line").font(.system(size:12)).frame(maxWidth:.infinity,alignment:.leading).padding(8).contentShape(Rectangle())}.buttonStyle(.plain).disabled(!model.supportsQuotaAnalytics)
                 QuotaSidebarView(model:model,open:{controlTab="quota";showControlPanel=true})
             }.padding().frame(minWidth:310,idealWidth:340,maxWidth:380).background(PanelStyle.background)
             Group {
-                if model.showQuotaAnalytics {
-                    QuotaAnalyticsView(model:model,onBack:{model.showQuotaAnalytics=false})
-                } else {
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
                     if let chat=model.selected {
@@ -568,6 +572,7 @@ struct ContentView: View {
                                 Text(phaseName(chat.phase)).font(.caption).foregroundStyle(.secondary).help(L(chat.message ?? ""))
                             }
                             Spacer()
+                            Button(L("手动压缩")){Task{await model.act("compact")}}.buttonStyle(.bordered).disabled(!chat.canCompact || model.working).help(L("仅在聊天空闲时请求原生压缩"))
                             Button(L("应用")){Task{await model.act("policy")}}.buttonStyle(ApplyButtonStyle()).disabled(model.preview==nil || model.working)
                         }
                         if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
@@ -579,8 +584,9 @@ struct ContentView: View {
                     }
                 }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity)
             }
-                }
             }.frame(minWidth:650).background(PanelStyle.background)
+        }
+            }
         }
         .frame(minWidth:960,minHeight:670)
         .background(PanelStyle.background)

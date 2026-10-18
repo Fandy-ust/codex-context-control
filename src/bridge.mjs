@@ -196,7 +196,27 @@ export class Bridge {
   }
   clearPolicy(id,revision){const r=this.records.get(id);if(r){const next=revision??(r.policyVersion||0)+1;if(next<(r.policyVersion||0))return {ignored:true};r.policyVersion=next;r.policy=null;r.phase='saved';r.message='已停止自动应用；当前窗口保持现值。';this.notify(r);}return {ok:true};}
   schedule(record){if(record.locked||!record.policy||record.appliedRevision===record.policy.revision||record.status!=='idle')return;queueMicrotask(()=>this.apply(record).catch(()=>{}));}
-  async compact(id){const r=this.records.get(id);if(!r||r.status!=='idle'||r.locked)throw new Error('请等待当前轮次结束后再压缩');r.freshUsage=false;r.usageFresh=false;await this.rpc('thread/compact/start',{threadId:id});return {started:true,message:'已请求原生压缩；完成后请等待下一轮用量记录。'};}
+  async compact(id){
+    const r=this.records.get(id);
+    if(!r||r.status!=='idle'||r.locked||r.initializing||r.ephemeral||r.canAcceptDirectInput===false||[...this.external.values()].some(p=>p.threadId===id&&['turn/start','thread/compact/start'].includes(p.method)))throw new Error('请等待当前轮次结束后再压缩');
+    r.locked=true;r.freshUsage=false;r.usageFresh=false;r.phase='compacting';r.message='正在手动压缩上下文';this.notify(r);
+    let timer;
+    const completed=new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(new Error('手动压缩等待超时，请刷新聊天状态后重试')),120000);timer.unref?.();r.compactionWait={resolve,reject};});
+    completed.catch(()=>{});
+    const finish=async()=>{
+      let success=false;
+      try{await completed;success=true;r.phase='needs_observation';r.message='已请求原生压缩；完成后请等待下一轮用量记录。';}
+      catch(error){r.phase='error';r.message=error.message;}
+      finally{clearTimeout(timer);r.compactionWait=null;r.locked=false;this.notify(r);}
+      const queued=r.queue.splice(0);r.queueBytes=0;
+      for(const line of queued){if(success)this.fromClient(line);else{try{this.rejectTurn(JSON.parse(line),r.message);}catch{}}}
+      if(success)this.schedule(r);
+    };
+    const finished=finish();
+    try{await this.rpc('thread/compact/start',{threadId:id});}
+    catch(error){r.compactionWait?.reject(error);await finished;throw error;}
+    return {started:true,message:'已请求原生压缩；完成后请等待下一轮用量记录。'};
+  }
   async apply(record){
     if(record.locked||!record.policy||record.appliedRevision===record.policy.revision||record.status!=='idle')return;
     record.usageFresh??=record.freshUsage;

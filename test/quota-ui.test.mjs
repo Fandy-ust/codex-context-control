@@ -10,10 +10,10 @@ import {quotaAnalyticsView} from '../desktop/renderer/quota-analytics.mjs';
 const escape=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
 test('web analytics renders the shared six-chart contract with escaped observation labels',()=>{
  const report=demoQuotaAnalytics();report.scopes[0].label='<script>unsafe</script>';
- const html=quotaAnalyticsView({report,section:'overview',e:escape,t:s=>s});
- assert.equal((html.match(/data-qa-chart=/g)||[]).length,6);assert.equal((html.match(/<nav class="qa-tabs"[^>]*>(.*?)<\/nav>/)?.[1].match(/data-action="qa-section"/g)||[]).length,4);
+ const html=quotaAnalyticsView({report,analysisMode:'advanced',section:'overview',e:escape,t:s=>s});
+ assert.equal((html.match(/data-qa-chart=/g)||[]).length,7);assert.equal((html.match(/data-action="qa-section"/g)||[]).length,4);
  assert.ok(!html.includes('<script>unsafe'));assert.ok(!html.includes('NaN'));assert.ok(!html.includes('Infinity'));
- for(const section of report.sections)assert.ok(quotaAnalyticsView({report,section:section.id,e:escape,t:s=>s}).includes('data-qa-chart='));
+ for(const section of report.sections)assert.ok(quotaAnalyticsView({report,analysisMode:'advanced',section:section.id,e:escape,t:s=>s}).includes('data-qa-chart='));
 });
 test('native analytics decodes the shared report and renders without a service or real account',{skip:process.platform!=='darwin',timeout:120000},()=>{
  const repo=fileURLToPath(new URL('../',import.meta.url)),temp=fs.mkdtempSync(path.join(os.tmpdir(),'qa-native-ui-'));
@@ -45,18 +45,28 @@ import AppKit
 test('weekly-only UI hides unsupported metrics and keeps Automatic selected across reports',async()=>{
  const {quotaFixture}=await import('../desktop/quota-demo.mjs'),{buildQuotaAnalytics}=await import('../src/core/quota-analytics.mjs');
  const fixture=quotaFixture();fixture.snapshots=fixture.snapshots.map(p=>({...p,fiveUsed:null,fiveReset:null}));
- const report=buildQuotaAnalytics(fixture),html=quotaAnalyticsView({report,section:'overview',e:escape,t:s=>s});
+ const report=buildQuotaAnalytics(fixture),html=quotaAnalyticsView({report,analysisMode:'advanced',section:'overview',e:escape,t:s=>s});
  assert.equal((html.match(/data-qa-chart=/g)||[]).length,4);assert.equal((html.match(/class="qa-metric"/g)||[]).length,3);assert.ok(!html.includes('5h'));assert.match(html,/<option value="" selected>/);
- const manual=quotaAnalyticsView({report,section:'overview',selectedScope:report.scope,e:escape,t:s=>s});assert.ok(!manual.includes('<option value="" selected>'));
+ const manual=quotaAnalyticsView({report,analysisMode:'advanced',section:'overview',selectedScope:report.scope,e:escape,t:s=>s});assert.ok(!manual.match(/<select id="qa-scope">([\s\S]*?)<\/select>/)[1].includes('<option value="" selected>'));
+});
+
+test('advanced analysis keeps the selected model and displays reading guidance without raw data disclosures',()=>{
+ const report=demoQuotaAnalytics({model:'gpt-6-sol'}),html=quotaAnalyticsView({report,analysisMode:'advanced',section:'overview',selectedModel:'gpt-6-sol',e:escape,t:s=>s});
+ assert.match(html,/<select id="qa-model">/);assert.match(html,/<option value="gpt-6-sol" selected>/);
+ assert.match(html,/图表说明/);assert.doesNotMatch(html,/class="qa-guide"/);assert.match(html,/qa-model-notice/);
+ assert.doesNotMatch(html,/class="qa-note"|<summary>数据说明<\/summary>/);
 });
 
 
-test('default outlook shows both reset predictions and a single current-cycle curve',()=>{
- const report=demoQuotaAnalytics(),html=quotaAnalyticsView({report,e:escape,t:s=>s});
- assert.equal((html.match(/data-qa-period=/g)||[]).length,2);assert.equal((html.match(/data-qa-chart=/g)||[]).length,1);
+test('one page shows predictions followed by advanced analysis without an entry button',()=>{
+ const report=demoQuotaAnalytics(),html=quotaAnalyticsView({report,analysisMode:'advanced',e:escape,t:s=>s});
+ assert.equal((html.match(/data-qa-period=/g)||[]).length,2);assert.equal((html.match(/data-qa-chart=/g)||[]).length,7);
  assert.ok(html.includes('预计提前'));assert.ok(html.includes('预计重置时还有'));assert.ok(html.includes('stroke-dasharray="6 4"'));
- assert.ok(!html.includes('id="qa-days"'));assert.ok(!html.includes('Token / Weekly'));
- assert.ok(quotaAnalyticsView({report,period:'weekly',e:escape,t:s=>s}).includes('data-qa-chart="outlook-weekly"'));
+ assert.ok(html.includes('id="qa-days"'));assert.ok(html.includes('id="qa-model"'));assert.ok(html.includes('每 1% 每周额度对应 Token'));
+ assert.ok(html.indexOf('data-qa-chart="outlook-five"')<html.indexOf('class="qa-analysis-heading'));
+ assert.ok(html.indexOf('class="qa-analysis-heading')<html.indexOf('id="qa-model"'));
+ assert.ok(!html.includes('返回预测'));assert.ok(!html.includes('data-section="summary"'));
+ assert.ok(quotaAnalyticsView({report,analysisMode:'advanced',period:'weekly',e:escape,t:s=>s}).includes('data-qa-chart="outlook-weekly"'));
  report.dashboard.periods=report.dashboard.periods.filter(p=>p.id==='weekly');
- const weekly=quotaAnalyticsView({report,e:escape,t:s=>s});assert.equal((weekly.match(/data-qa-period=/g)||[]).length,1);assert.ok(!weekly.includes('5 小时'));
+ const weekly=quotaAnalyticsView({report,analysisMode:'advanced',e:escape,t:s=>s});assert.equal((weekly.match(/data-qa-period=/g)||[]).length,1);assert.ok(!weekly.split('class="qa-analysis-heading')[0].includes('5 小时'));
 });

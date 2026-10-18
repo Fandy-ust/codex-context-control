@@ -13,7 +13,7 @@ export function outlookMessage(period, t) {
 }
 export function quotaOutlookView({report, period, e, t, renderChart}) {
   const dashboard = report?.dashboard, periods = dashboard?.periods || [];
-  if (!periods.length) return `<div class="qa-empty">${e(t('等待当前账户额度，历史记录可在高级分析查看'))}</div>`;
+  if (!periods.length) return `<div class="qa-empty">${e(t('等待当前账户额度，可在下方查看历史分析'))}</div>`;
   const current = periods.find(p => p.id === period) || periods[0];
   const number = value => value == null ? '—' : Number(value.toFixed(1)) + '%';
   const metric = (label, value) => `<div><span>${e(t(label))}</span><strong>${e(value)}</strong></div>`;

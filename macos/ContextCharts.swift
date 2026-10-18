@@ -18,10 +18,13 @@ private func eventColor(_ type:String)->Color {
     private let updates=MenuDragUpdates(maxFPS:60)
     private var tracking=false
     private var activity:((Bool)->Void)?
+    private var scrollIdle:Task<Void,Never>?
+    private var scrolling=false
     func setActivityHandler(_ handler:@escaping(Bool)->Void){activity=handler;handler(tracking)}
     private func track(_ value:Bool){if tracking != value{tracking=value;activity?(value)}}
     func hover(_ index:Int?){if hovered != index{hovered=index}}
     func move(_ position:Double?,in data:TimelineData){
+        guard !scrolling else{return}
         guard let position else{endHover();return}
         track(true)
 #if DEBUG
@@ -35,9 +38,16 @@ private func eventColor(_ type:String)->Color {
 #endif
         }
     }
-    func endHover(){updates.cancel();cursor.move(nil);hover(nil);track(false)}
+    func endHover(){updates.cancel();cursor.move(nil);hover(nil);track(scrolling)}
+    func scroll(){
+        scrollIdle?.cancel();scrolling=true;endHover()
+        scrollIdle=Task{[weak self] in
+            do{try await Task.sleep(for:.milliseconds(180));try Task.checkCancellation()}catch{return}
+            guard let self else{return};scrolling=false;track(false)
+        }
+    }
     func rebind(_ data:TimelineData){updates.cancel();if let fraction=cursor.fraction{let position=fraction*data.upperBound;cursor.move(position,upperBound:data.upperBound);hover(data.bucket(at:position))}else{hover(nil)}}
-    func stop(){endHover();activity=nil}
+    func stop(){scrollIdle?.cancel();scrollIdle=nil;scrolling=false;endHover();activity=nil}
     func pin(_ id:String){endHover();if selectedID != id{selectedID=id};pinnedPosition=nil}
     func pinBucket(_ position:Double){endHover();selectedID="";pinnedPosition=position}
     func focus(_ data:TimelineData)->Int? {
@@ -204,6 +214,8 @@ private enum TimelinePlotKind:String {case speed,cache,events}
                     TimelineFocusOverlay(mapping:mapping,data:data,selection:selection,cursor:selection.cursor)
                 }
             }
+            Color.clear.allowsHitTesting(false)
+                .onChange(of:geometry.frame(in:.global).minY){_,_ in selection.scroll()}
         }.help(L("悬停绘图区或横轴查看区间，点击固定"))
     }
 }

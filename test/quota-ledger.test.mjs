@@ -36,3 +36,16 @@ test('cycle identification uses reported duration rather than primary/secondary 
  assert.equal(p.weeklyUsed, 17);assert.equal(p.fiveUsed, 25);
  assert.equal(projectQuota({primary: {usedPercent: 20, windowDurationMins: 15, resetsAt: 1000}}, {at: now}), null);
 });
+
+test('cost history backfills a year and rescans upgraded files without double counting',()=>{
+ const f=fixture();try{
+  const old=now-200*86400000;
+  fs.writeFileSync(f.file,event('turn_context',{model:'gpt-6.1-sol'},old)+event('token_usage_record',{response_id:'year-old',thread_id:'a',usage:{input_tokens:100,output_tokens:20,cached_input_tokens:60,cache_write_input_tokens:40}},old));
+  f.ledger.scan({rows:[f.row]});assert.equal(f.ledger.read(84).requests.length,0);
+  assert.equal(f.ledger.read(366).requests[0].written,40);
+  f.ledger.setMetadata('costHistoryVersion',0);f.ledger.close();
+  f.ledger=new QuotaLedger({file:path.join(f.dir,'history.sqlite'),home:f.home,now:()=>now});
+  assert.ok(f.ledger.scan({rows:[f.row]}).bytesRead>0);assert.equal(f.ledger.read(366).requests.length,1);
+  assert.equal(f.ledger.scan({rows:[f.row]}).bytesRead,0);
+ }finally{f.ledger.close();fs.rmSync(f.dir,{recursive:true,force:true});}
+});

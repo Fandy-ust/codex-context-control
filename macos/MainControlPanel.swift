@@ -8,7 +8,7 @@ struct MainControlPanelView:View {
     init(model:Controller,initialTab:String="general",close:@escaping ()->Void={}){self.model=model;self.close=close;_tab=State(initialValue:initialTab)}
     var body:some View {
         VStack(alignment:.leading,spacing:18){
-            HStack{Text(L("设置")).font(.system(size:21,weight:.semibold));Spacer();Button(action:close){Image(systemName:"xmark").foregroundStyle(.secondary)}.buttonStyle(.plain).help(L("关闭设置"))}
+            HStack{if tab=="defaults"{Button(L("返回"),systemImage:"arrow.left"){tab="general"}.buttonStyle(.bordered)};Text(L("设置")).font(.system(size:21,weight:.semibold));Spacer();Button(action:close){Image(systemName:"xmark").foregroundStyle(.secondary)}.buttonStyle(.plain).help(L("关闭设置"))}
             Picker(L("设置分类"),selection:$tab){Text(L("通用")).tag("general");Text(L("全局默认")).tag("defaults");Text(L("账户额度")).tag("quota")}.pickerStyle(.segmented)
             ScrollView {
                 if tab=="defaults" {NewChatDefaultsView(model:model,onClose:{tab="general"})}

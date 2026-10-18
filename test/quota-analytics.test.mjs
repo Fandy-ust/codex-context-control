@@ -6,6 +6,25 @@ import {quotaFixture} from '../desktop/quota-demo.mjs';
 const now = Date.UTC(2026, 9, 18, 12), reset = Math.floor((now + DAY) / 1000);
 const point = (at, used, extra = {}) => ({at, scope: 'history', bucket: 'codex', weeklyUsed: used, weeklyReset: reset, ...extra});
 const request = (at, input, extra = {}) => ({id: String(at), at, input, output: 10, cached: 50, model: 'Sol', thread: 'a', ...extra});
+
+test('model selection filters tokens and quota comparisons without attributing mixed intervals',()=>{
+ const snapshots=Array.from({length:4},(_,i)=>point(now-(3-i)*600000,10+i));
+ const requests=[request(now-1500000,100),request(now-1100000,200),request(now-900000,300,{model:'Luna'}),request(now-300000,400,{model:'Luna'})];
+ const source={snapshots,requests},all=buildQuotaAnalytics(source,{now}),sol=buildQuotaAnalytics(source,{now,model:'Sol'}),luna=buildQuotaAnalytics(source,{now,model:'Luna'});
+ const chart=(report,id)=>report.charts.find(p=>p.id===id);
+ assert.deepEqual(sol.models.map(p=>p.id),['Luna','Sol']);assert.equal(sol.model,'Sol');
+ assert.equal(sol.overview.tokens,320);assert.equal(luna.overview.tokens,720);
+ assert.equal(chart(sol,'weekly-scatter').points.length,1);assert.equal(chart(sol,'weekly-scatter').points[0].tokens,110);
+ assert.equal(chart(luna,'weekly-scatter').points.length,1);assert.equal(chart(luna,'weekly-scatter').points[0].tokens,410);
+ assert.equal(chart(sol,'weekly-scatter').points[0].y,1);assert.equal(sol.overview.tokensPerPP,110);
+ assert.deepEqual(chart(sol,'weekly').points,chart(all,'weekly').points);assert.equal(sol.overview.weeklyUsed,13);
+ assert.deepEqual(sol.dashboard,all.dashboard);assert.equal(chart(sol,'weekly').modelScope,'account');
+ assert.equal(chart(sol,'ranking').rows.find(p=>p.category==='chat').tokens,320);
+ const absent=buildQuotaAnalytics(source,{now,model:'Missing'});
+ assert.equal(absent.model,'Missing');assert.equal(absent.overview.tokens,null);assert.equal(absent.overview.tokensPerPP,null);
+ assert.equal(chart(absent,'weekly-scatter').points.length,0);assert.equal(chart(absent,'ranking').rows.length,0);
+ assert.ok(all.charts.every(p=>p.guide.length===2));
+});
 test('zero-rounded samples accumulate until a positive delta, without recounting cache or reasoning', () => {
  const s = [point(now - 1800000, 10), point(now - 1200000, 10), point(now - 600000, 11)];
  const r = [request(now - 1500000, 100), request(now - 900000, 200)];

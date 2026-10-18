@@ -105,7 +105,44 @@ test('a newer budget that cannot hold measured usage remains blocked after reloa
     assert.deepEqual(reloaded,[447369]);
     await f.bridge.compact('chat');
     assert.equal(f.record.usageFresh,false);
+    f.bridge.fromServer(JSON.stringify({method:'turn/completed',params:{threadId:'chat',turn:{id:'compact'}}}));await tick();
     f.bridge.setPolicy('chat',policy(382106,326000,6),model);await tick();
     assert.equal(f.record.phase,'needs_observation');assert.deepEqual(reloaded,[447369]);
   }finally{f.close();}
+});
+
+test('manual compaction rejects busy, unsupported and already submitted turns',async()=>{
+  const f=fixture(async()=>({}));let calls=0;f.bridge.rpc=async()=>{calls++;return {};};
+  try{
+    for(const state of [{status:'active'},{status:'idle',locked:true},{locked:false,ephemeral:true},{ephemeral:false,canAcceptDirectInput:false}]){
+      Object.assign(f.record,state);await assert.rejects(f.bridge.compact('chat'),/请等待/);
+    }
+    Object.assign(f.record,{canAcceptDirectInput:true});
+    f.bridge.fromClient(JSON.stringify({id:10,method:'turn/start',params:{threadId:'chat',input:[]}}));
+    await assert.rejects(f.bridge.compact('chat'),/请等待/);assert.equal(calls,0);
+  }finally{f.close();}
+});
+
+test('manual compaction holds new input until completion and rejects duplicate clicks',async()=>{
+  const f=fixture(async()=>({}));const calls=[];f.bridge.rpc=async(method,params)=>{calls.push({method,params});return {};};
+  try{
+    assert.equal((await f.bridge.compact('chat')).started,true);
+    await assert.rejects(f.bridge.compact('chat'),/请等待/);
+    f.bridge.fromClient(JSON.stringify({id:11,method:'turn/start',params:{threadId:'chat',input:[]}}));
+    assert.equal(f.writes.length,0);assert.equal(f.record.locked,true);
+    assert.deepEqual(calls,[{method:'thread/compact/start',params:{threadId:'chat'}}]);
+    f.bridge.fromServer(JSON.stringify({method:'turn/completed',params:{threadId:'chat',turn:{id:'compact'}}}));await tick();
+    assert.equal(f.record.locked,false);assert.equal(f.writes[0].method,'turn/start');
+  }finally{f.close();}
+});
+
+test('manual compaction failure releases the lock without sending queued input',async()=>{
+  const f=fixture(async()=>({}));const started=deferred(),release=deferred();
+  f.bridge.rpc=async()=>{started.resolve();await release.promise;throw Error('native failed');};
+  try{
+    const pending=f.bridge.compact('chat');await started.promise;
+    f.bridge.fromClient(JSON.stringify({id:12,method:'turn/start',params:{threadId:'chat',input:[]}}));
+    release.resolve();await assert.rejects(pending,/native failed/);
+    assert.equal(f.record.locked,false);assert.equal(f.record.compactionWait,null);assert.equal(f.record.phase,'error');assert.equal(f.writes.length,0);
+  }finally{release.resolve();f.close();}
 });

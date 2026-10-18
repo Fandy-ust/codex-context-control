@@ -1,5 +1,51 @@
 # Changes
 
+## 0.21.7 — Manual compaction and macOS parity audit
+
+- Add a bordered Compact now action beside Apply on both platforms, available only for an idle connected chat. Use native compaction with runtime checks, duplicate protection and safe handling of input arriving during compaction.
+- Align native cost range defaults with the selected calendar day, clear stale native chart hover selections when data changes, and include Token / pp in native hover details.
+- Audit recent analytics parity across both native Swift Charts and Windows charts; macOS execution still requires a Mac.
+
+## 0.21.6 — Reliable slider handle dragging
+
+- Fix Windows maximum-window handle hit testing: the visible outer half now receives pointer input. Pick the actual pressed handle and retain its grab offset throughout dragging.
+- Keep linked compression scaling and model limits. Improve macOS close-handle selection and retain the grab offset; native handles already fit within their control bounds.
+- Verify a real mouse drag from the outer edge at maximum capacity, including no initial jump and linked threshold reduction.
+
+## 0.21.5 — Simpler analysis and date selection
+
+- Add historical date selection and exact custom start/end times to the Token cost calendar on macOS and Windows.
+- Default to Simple mode for practical quota and usage charts; keep statistical charts in Advanced analysis, with model comparisons shown in Simple only when at least two models have comparable data.
+- Replace prominent fit statistics with plain-language interpretations. Collapse technical details and mark conversion ratios as insufficient, limited, or relatively consistent observations rather than official exchange rates.
+- Move chart reading guidance into title info controls and hide weak fit lines.
+
+## 0.21.4 — Token cost calendar
+
+- Add local Token API cost estimates as a contribution-style heatmap or line chart on macOS and Windows, with day/week/month/year views and model filtering. Yearly lines aggregate the latest 12 calendar months.
+- Reuse chat Standard pricing and cache-write assumptions; show missing and unpriced records separately. Retain up to 366 days and backfill available local logs.
+- Match analytics hover cards to the conversation chart tooltip style and hide them during scrolling.
+- Keep bordered return controls visible while scrolling in analytics and native defaults settings.
+
+## 0.21.3 — One quota page
+
+- Show quota predictions first, followed directly by advanced analysis on the same scrollable page on Mac and Windows.
+- Remove the Advanced analysis / Back to prediction navigation toggle; retain the bordered Back to budget button.
+- Keep model filters, chart categories, and reading guidance directly available below the outlook, preserving scroll position when filters change.
+
+## 0.21.2 — Model-specific advanced analysis
+
+- Add a model selector to advanced quota analysis on macOS and Windows, filtering local Token totals, rankings, and comparable intervals together.
+- Calculate model quota relationships only from single-model intervals; keep account usage curves and forecasts labelled as account-wide.
+- Replace expandable chart data dumps with shared reading guidance explaining each graph and how to interpret comparisons.
+
+## 0.21.1 — Compact project sidebar
+
+- Remove the main sidebar quota analytics entry on both platforms; keep analytics available in quota settings.
+- Place the version before Settings and tighten project heading and project row spacing.
+- Preserve Recent chat spacing and quota footer height, with native SwiftUI/AppKit on Mac and the existing Windows UI.
+- Show quota analytics across the full application content area with the standard bordered Back button.
+- Suspend chart hover updates during scrolling on both platforms; defer Windows page replacement until scrolling is idle.
+
 ## 0.21.0 — Quota outlook for 5-hour and weekly limits
 
 - Make remaining quota, time to use it all, and expected unused quota at reset the default analytics view on both platforms.

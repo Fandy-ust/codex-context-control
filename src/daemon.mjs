@@ -188,7 +188,10 @@ export async function startDaemon() {
         if(params.days!=null&&![28,56,84].includes(params.days))throw Error('Invalid quota history range');
         if(params.scope!=null&&(typeof params.scope!=='string'||params.scope.length>80))throw Error('Invalid quota history scope');
         if(params.pool!=null&&(typeof params.pool!=='string'||params.pool.length>160))throw Error('Invalid quota pool');
-        answer=await quotaAnalytics.report({days:params.days??28,scope:params.scope,pool:params.pool,refresh:params.refresh===true,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
+        if(params.model!=null&&(typeof params.model!=='string'||params.model.length>160))throw Error('Invalid quota model');
+        if(params.costDate!=null&&(typeof params.costDate!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(params.costDate)||!Number.isFinite(Date.parse(params.costDate))||new Date(params.costDate).toISOString().slice(0,10)!==params.costDate))throw Error('Invalid cost date');
+        if(params.costStart!=null||params.costEnd!=null){if(!Number.isSafeInteger(params.costStart)||!Number.isSafeInteger(params.costEnd)||params.costStart<0||params.costEnd<=params.costStart||params.costEnd-params.costStart>366*86400000||params.costStart>Date.now())throw Error('Invalid cost time range');}
+        answer=await quotaAnalytics.report({days:params.days??28,scope:params.scope,pool:params.pool,model:params.model,costDate:params.costDate,costStart:params.costStart,costEnd:params.costEnd,refresh:params.refresh===true,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
       }
       else if(operation==='shutdown'){if(Object.values(store.data.threads).some(t=>t.phase==='reloading'))throw Error('A budget transaction is still active');answer={ok:true};setTimeout(shutdown,100).unref();}
       else if(operation==='check-update')answer=await updater.check(true);

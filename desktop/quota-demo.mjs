@@ -14,7 +14,7 @@ export function quotaFixture(now = Date.UTC(2026, 9, 18, 12)) {
         snapshots.push({at, scope: 'history', bucket: 'codex', weeklyUsed, weeklyReset, fiveUsed: tick * 11, fiveReset});
         if (tick) {
           const input = (160000 + day * 5000) * delta * (model === 'Luna' ? 1.4 : model === 'Astra' ? .8 : 1);
-          requests.push({id: `demo-${week}-${day}-${tick}`, at: at - 1000, thread: `chat-${day}`, name: ['项目设计', '代码检查', '资料整理'][day % 3], project: ['Context Manager', 'Research'][day % 2], model, input: Math.floor(input), output: 1200 + tick * 100, cached: Math.floor(input * (.25 + day * .09))});
+          requests.push({id: `demo-${week}-${day}-${tick}`, at: at - 1000, thread: `chat-${day}`, name: ['项目设计', '代码检查', '资料整理'][day % 3], project: ['Context Manager', 'Research'][day % 2], model, input: Math.floor(input), output: 1200 + tick * 100, usd: input / 1e6 * 0.6 + (1200 + tick * 100) / 1e6 * 5, cached: Math.floor(input * (.25 + day * .09))});
         }
       }
     }

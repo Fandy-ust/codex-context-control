@@ -34,4 +34,4 @@ The quota indicator reads account rate limits through a short-lived official Cod
 
 When the official API supplies a numeric credit balance, it is shown in the account menu and cached only in memory. No generic availability message is substituted for a missing balance.
 
-Quota analytics keeps numeric observations, response IDs, model/project metadata and incremental file cursors in the local data directory. Account grouping uses a locally salted hash; emails, credentials and message bodies are not stored. Records are retained for 90 days and survive upgrades. See [analytics definitions](../QUOTA_ANALYTICS.md).
+Quota analytics keeps numeric observations, response IDs, model/project metadata and incremental file cursors in the local data directory. Account grouping uses a locally salted hash; emails, credentials and message bodies are not stored. Records are retained for 366 days and survive upgrades. See [analytics definitions](../QUOTA_ANALYTICS.md).

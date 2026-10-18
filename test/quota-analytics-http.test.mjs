@@ -12,6 +12,10 @@ test('authenticated analytics scans local numeric records and rejects invalid fi
   const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json'))),url=`http://127.0.0.1:${c.port}/quota/analytics`,headers={authorization:`Bearer ${c.token}`};
   assert.equal((await fetch(url,{method:'POST',body:'{}'})).status,403);
   assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify({days:999})})).status,400);
+  assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify({model:42})})).status,400);
+  for(const filter of [{costDate:'2026-02-30'},{costDate:'bad'},{costStart:now},{costStart:now,costEnd:now-1},{costStart:now-367*86400000,costEnd:now}])assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify(filter)})).status,400);
+  const costResult=await fetch(url,{method:'POST',headers,body:JSON.stringify({costStart:now-650000,costEnd:now-550000})});assert.equal(costResult.status,200);const costReport=await costResult.json();assert.equal(costReport.costCalendar.customRange,true);assert.equal(costReport.costCalendar.daily.reduce((n,p)=>n+p.requests,0),1);
+  const filtered=await fetch(url,{method:'POST',headers,body:JSON.stringify({model:'Missing'})});assert.equal(filtered.status,200);const filteredReport=await filtered.json();assert.equal(filteredReport.model,'Missing');assert.equal(filteredReport.quality.requests,0);
   const r=await fetch(url,{method:'POST',headers,body:'{}'});assert.equal(r.status,200);const report=await r.json();assert.equal(report.quality.requests,3);assert.equal(report.charts.length,16);
   const saved=JSON.parse(fs.readFileSync(path.join(control,'state.json')));assert.equal(saved.version,9);assert.equal(saved.policies.preserved.window,400000);
  } finally {d.web.closeAllConnections();await new Promise(r=>d.web.close(r));await new Promise(r=>d.ipcServer.close(r));await new Promise(r=>setTimeout(r,150));fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});}

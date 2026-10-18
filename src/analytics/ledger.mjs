@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {canonicalLocalPath, pathInside} from '../local-path.mjs';
 import {DAY} from '../core/quota-statistics.mjs';
 
-const RETENTION = 90 * DAY;
+const RETENTION = 366 * DAY;
 const MAX_RECORD = 1024 * 1024;
 const text = (value, max = 160) => typeof value === 'string' && value.length <= max && !/[\r\n]/.test(value) ? value : null;
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
@@ -55,8 +55,10 @@ export class QuotaLedger {
     const schema = this.db.prepare('SELECT value FROM meta WHERE key=?').get('schema');
     if (schema && schema.value !== '1') {this.db.close();throw Error('Unsupported quota ledger version');}
     this.db.prepare('INSERT OR IGNORE INTO meta VALUES (?,?)').run('schema', '1');
+    // Revisit existing files once to backfill the longer cost history and write counts.
+    if(this.metadata('costHistoryVersion')!==1){this.db.exec('DELETE FROM sources');this.setMetadata('costHistoryVersion',1);}
     this.putSource = this.db.prepare('INSERT OR REPLACE INTO sources VALUES (?,?)');
-    this.putRequest = this.db.prepare('INSERT OR IGNORE INTO requests VALUES (?,?,?,?)');
+    this.putRequest = this.db.prepare("INSERT INTO requests VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE requests.source=excluded.source AND json_extract(requests.data,'$.written') IS NULL AND json_extract(excluded.data,'$.written') IS NOT NULL");
     this.putQuota = this.db.prepare('INSERT INTO snapshots VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET at=excluded.at,data=excluded.data WHERE excluded.at>=snapshots.at');
   }
   metadata(key) {const row = this.db.prepare('SELECT value FROM meta WHERE key=?').get(key);return row ? JSON.parse(row.value) : null;}
@@ -88,7 +90,7 @@ export class QuotaLedger {
       if (!id) {source.unidentifiedRequests = (source.unidentifiedRequests || 0) + 1;return;}
       const rawCached = count(usage.cached_input_tokens), cached = rawCached != null && rawCached <= input ? rawCached : null;
       const record = {id, at, thread: source.id, model: source.model || null, project: source.project, name: source.name,
-        input, output, cached};
+        input, output, cached, written:count(usage.cache_write_input_tokens)};
       this.putRequest.run(id, source.id, at, JSON.stringify(record));
     }
     if (event.type === 'event_msg' && p.type === 'token_count') {
@@ -157,7 +159,7 @@ export class QuotaLedger {
     this.db.exec('PRAGMA wal_checkpoint(PASSIVE)');
   }
   read(days = 84) {
-    const cutoff = this.now() - Math.min(90, Math.max(1, days)) * DAY;
+    const cutoff = this.now() - Math.min(366, Math.max(1, days)) * DAY;
     return {requests: this.db.prepare('SELECT data FROM requests WHERE at>=? ORDER BY at').all(cutoff).map(p => JSON.parse(p.data)),
       snapshots: this.db.prepare('SELECT data FROM snapshots WHERE at>=? ORDER BY at').all(cutoff).map(p => JSON.parse(p.data)),
       currentScope: this.metadata('currentScope'), progress: this.metadata('progress') || this.progress};

@@ -4,7 +4,7 @@ One repository, one `main`, one shared core, two native platform experiences.
 
 ## Branches and review
 
-Start short-lived feature branches from current `main` and merge through a PR. Sync frequently; do not maintain independent Mac and Windows product histories. A platform UI change does not require redesigning the other UI. The Windows maintainer reviews Windows integration and packaging; the Mac maintainer reviews SwiftUI/AppKit. Changes to shared rules, persisted data, contracts, and releases need review from both platform maintainers.
+Start short-lived feature branches from current `main` and merge through a PR. Sync frequently; do not maintain independent Mac and Windows product histories. Apply product and UI changes to both platforms together, while preserving native SwiftUI/AppKit features on Mac and existing Windows platform capabilities on Windows. The Windows maintainer reviews Windows integration and packaging; the Mac maintainer reviews SwiftUI/AppKit. Changes to shared rules, persisted data, contracts, and releases need review from both platform maintainers.
 
 Keep each PR focused. State the behavior change, affected platforms, migration impact, and actual validation. A skipped test is not a pass. Do not merge a Windows port by overwriting the Mac directory or replace shared core changes with a platform copy.
 

@@ -167,7 +167,49 @@ if(args.includes('--quit')){app.quit();}else{
         try{if(!globalShortcut.register(probe,()=>{})||!globalShortcut.isRegistered(probe))throw Error('Native shortcut registration failed');globalShortcut.setSuspended(true);if(!globalShortcut.isSuspended())throw Error('Native shortcut suspension failed');globalShortcut.setSuspended(false);}finally{globalShortcut.setSuspended(false);globalShortcut.unregister(probe);}
         if(globalShortcut.isRegistered(probe))throw Error('Native shortcut release failed');console.log('NATIVE_SHORTCUT_PROBE passed');
       }
-      await Promise.all([loaded(main),loaded(trayWindow)]);await new Promise(r=>setTimeout(r,1200));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){const directory=path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR);fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'sidebar-quota.png'),(await main.webContents.capturePage()).toPNG());const footer=await main.webContents.executeJavaScript("(()=>{const r=document.querySelector('.sidebar-footer-row').getBoundingClientRect();return {x:8,y:Math.floor(r.top-10),width:Math.ceil(r.right),height:Math.ceil(r.height+20)}})()");fs.writeFileSync(path.join(directory,'quota-footer.png'),(await main.webContents.capturePage(footer)).toPNG());}const analyticsSmoke=await main.webContents.executeJavaScript('window.__contextQuotaSmoke({preview:true})');if(!analyticsSmoke.ok)throw Error(JSON.stringify(analyticsSmoke));main.showInactive();await new Promise(r=>setTimeout(r,250));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR)fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-analytics.png'),(await main.webContents.capturePage()).toPNG());await main.webContents.executeJavaScript('window.__contextQuotaSmoke()');console.log('QUOTA_ANALYTICS_SMOKE '+JSON.stringify(analyticsSmoke));const results=await Promise.all([main,trayWindow].map(w=>w.webContents.executeJavaScript('window.__contextSmoke()')));if(results.some(r=>!r.ok))throw Error(JSON.stringify(results));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await main.webContents.executeJavaScript('window.__contextSmoke({preview:true})');await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'timeline-settings.png'),(await main.webContents.capturePage()).toPNG());}
+      await Promise.all([loaded(main),loaded(trayWindow)]);await new Promise(r=>setTimeout(r,1200));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){const directory=path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR);fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'sidebar-quota.png'),(await main.webContents.capturePage()).toPNG());const footer=await main.webContents.executeJavaScript("(()=>{const r=document.querySelector('.sidebar-footer-row').getBoundingClientRect();return {x:8,y:Math.floor(r.top-10),width:Math.ceil(r.right),height:Math.ceil(r.height+20)}})()");fs.writeFileSync(path.join(directory,'quota-footer.png'),(await main.webContents.capturePage(footer)).toPNG());}const analyticsSmoke=await main.webContents.executeJavaScript('window.__contextQuotaSmoke({preview:true})');if(!analyticsSmoke.ok)throw Error(JSON.stringify(analyticsSmoke));main.showInactive();await new Promise(r=>setTimeout(r,250));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR)fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-analytics.png'),(await main.webContents.capturePage()).toPNG());if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){
+        await main.webContents.executeJavaScript(`document.querySelector('.qa-analysis-heading').scrollIntoView();new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+        await new Promise(resolve=>setTimeout(resolve,200));
+        fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-advanced.png'),(await main.webContents.capturePage()).toPNG());
+          await main.webContents.executeJavaScript(`document.querySelector('.cost-calendar').scrollIntoView();document.querySelector('.main').scrollTop-=85;new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+          await new Promise(resolve=>setTimeout(resolve,220));
+          fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'cost-heatmap.png'),(await main.webContents.capturePage()).toPNG());
+          await main.webContents.executeJavaScript(`document.querySelector('[data-action="cost-mode"][data-mode="line"]').click();document.querySelector('.cost-calendar').scrollIntoView();document.querySelector('.main').scrollTop-=85;new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+          await new Promise(resolve=>setTimeout(resolve,220));
+          await main.webContents.executeJavaScript(`(()=>{const point=document.querySelector('.cost-calendar [data-qa-point]');if(point){const r=point.getBoundingClientRect();point.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:r.x,clientY:r.y}));}})()`);
+          await new Promise(resolve=>setTimeout(resolve,100));
+          fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'cost-line.png'),(await main.webContents.capturePage()).toPNG());
+          await main.webContents.executeJavaScript(`document.querySelector('[data-action="cost-mode"][data-mode="heatmap"]').click()`);
+          await main.webContents.executeJavaScript(`document.querySelector('[data-action="qa-mode"][data-mode="simple"]').click();document.querySelector('.qa-analysis-heading').scrollIntoView();new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+          await new Promise(resolve=>setTimeout(resolve,220));
+          fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-simple.png'),(await main.webContents.capturePage()).toPNG());
+          await main.webContents.executeJavaScript(`document.querySelector('[data-action="qa-mode"][data-mode="advanced"]').click();document.querySelector('[data-qa-chart="weekly-scatter"]').scrollIntoView();new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+          await new Promise(resolve=>setTimeout(resolve,220));
+          fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-statistics.png'),(await main.webContents.capturePage()).toPNG());
+      }
+      await main.webContents.executeJavaScript('window.__contextQuotaSmoke()');console.log('QUOTA_ANALYTICS_SMOKE '+JSON.stringify(analyticsSmoke));const results=await Promise.all([main,trayWindow].map(w=>w.webContents.executeJavaScript('window.__contextSmoke()')));if(results.some(r=>!r.ok))throw Error(JSON.stringify(results));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await main.webContents.executeJavaScript('window.__contextSmoke({preview:true})');await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'timeline-settings.png'),(await main.webContents.capturePage()).toPNG());}
+      // Use native wheel input so Chromium's scroll latching is exercised.
+      const sliderPoint=await main.webContents.executeJavaScript("window.__contextSliderSmoke('prepare')");
+      main.webContents.sendInputEvent({type:'mouseMove',...sliderPoint});
+      main.webContents.sendInputEvent({type:'mouseDown',...sliderPoint,button:'left',clickCount:1});
+      await new Promise(resolve=>setTimeout(resolve,30));
+      const grab=await main.webContents.executeJavaScript("window.__contextSliderSmoke('grab')");if(!grab.ok)throw Error('Maximum handle jumped or selected compression on mouse down');
+      for(let i=1;i<=8;i++){main.webContents.sendInputEvent({type:'mouseMove',x:sliderPoint.x-15*i,y:sliderPoint.y,modifiers:['leftButtonDown']});await new Promise(resolve=>setTimeout(resolve,20));}
+      main.webContents.sendInputEvent({type:'mouseUp',x:sliderPoint.x-120,y:sliderPoint.y,button:'left',clickCount:1});
+      await new Promise(resolve=>setTimeout(resolve,30));
+      const sliderResult=await main.webContents.executeJavaScript("window.__contextSliderSmoke('result')");if(!sliderResult.ok)throw Error(JSON.stringify(sliderResult));console.log('SLIDER_ENDPOINT_SMOKE '+JSON.stringify(sliderResult));
+      const point=await main.webContents.executeJavaScript("window.__contextScrollSmoke('prepare')");
+      for(let i=0;i<24;i++){
+        main.webContents.sendInputEvent({type:'mouseMove',...point});
+        main.webContents.sendInputEvent({type:'mouseWheel',...point,deltaY:i<12?-45:45,deltaX:0,canScroll:true});
+        await new Promise(r=>setTimeout(r,25));
+        const sample=await main.webContents.executeJavaScript("window.__contextScrollSmoke('check')");
+        if(!sample.active||!sample.stable)throw Error('Wheel gesture replaced its active scroll container');
+      }
+      const scrollResult=await main.webContents.executeJavaScript("window.__contextScrollSmoke('result')");
+      if(!scrollResult.ok)throw Error(JSON.stringify(scrollResult));
+      console.log('TIMELINE_SCROLL_SMOKE '+JSON.stringify(scrollResult));
+      await new Promise(r=>setTimeout(r,250));
       // Exercise the real window state: visible in the background must focus in one press.
       const waitFor=async check=>{const end=Date.now()+3000;while(!check()&&Date.now()<end)await new Promise(r=>setTimeout(r,25));if(!check())throw Error('Shortcut window focus transition timed out');};
       const covering=new BrowserWindow({width:320,height:240,show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});

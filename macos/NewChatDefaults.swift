@@ -35,7 +35,7 @@ struct NewChatDefaultsView:View {
             if model.newChatDefaultsLimits==nil {Text(L("等待 Codex 模型上限信息")).font(.caption).foregroundStyle(.secondary)}
             if model.newChatDefaultsPending {Label(L("首次接入需完整退出并重开 Codex；之后改默认值无需重启。"),systemImage:"arrow.clockwise").font(.caption).foregroundStyle(.orange)}
             if let notice {Text(L(notice)).font(.callout).foregroundStyle(failed ? .orange:.secondary)}
-            HStack{Button(L(onClose == nil ? "关闭":"返回")){if let onClose{onClose()}else{dismiss()}}.keyboardShortcut(.cancelAction);Spacer();if saving{ProgressView().controlSize(.small)};Button(L("保存默认")){Task{await save()}}.buttonStyle(.borderedProminent).disabled(!edited || saving || !model.serviceAvailable || model.newChatDefaultsLimits==nil).keyboardShortcut(.defaultAction)}
+            HStack{if onClose == nil{Button(L("关闭")){dismiss()}.buttonStyle(.bordered).keyboardShortcut(.cancelAction)};Spacer();if saving{ProgressView().controlSize(.small)};Button(L("保存默认")){Task{await save()}}.buttonStyle(.borderedProminent).disabled(!edited || saving || !model.serviceAvailable || model.newChatDefaultsLimits==nil).keyboardShortcut(.defaultAction)}
         }.padding(compact ? 20:28).frame(width:compact ? 360:650).background(Color(white:0.095)).preferredColorScheme(.dark)
             .onAppear{load()}.onChange(of:model.newChatDefaults?.revision){_,_ in if !edited{load()}}.onChange(of:model.newChatDefaultsLimits){_,_ in load()}
     }
