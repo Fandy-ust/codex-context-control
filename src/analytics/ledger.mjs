@@ -43,7 +43,7 @@ export class QuotaLedger {
     this.file = file;this.home = home;this.now = now;this.progress = {files: 0, pending: 0, unreadable: 0, bytesRead: 0};
     fs.mkdirSync(path.dirname(file), {recursive: true, mode: 0o700});
     this.db = new DatabaseSync(file);fs.chmodSync(file, 0o600);
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+    this.db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, source TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL);

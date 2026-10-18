@@ -6,6 +6,7 @@ let lastScan = 0;
 parentPort.on('message', ({id, action, params = {}}) => {
   try {
     let result;
+    if (action === 'close') {ledger.close();parentPort.close();return;}
     if (action === 'record') ledger.recordLive(params);
     else if (action === 'scan') {result = ledger.scan();lastScan = Date.now();}
     else if (action === 'report') {

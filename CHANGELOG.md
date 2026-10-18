@@ -1,5 +1,11 @@
 # Changes
 
+## 0.20.1 — Reliable analytics worker restarts
+
+- Close the quota ledger before retiring its worker and wait for that worker to exit before opening another one.
+- Apply SQLite lock waiting before switching journal mode, preventing transient Windows startup failures.
+- Exercise repeated idle/restart cycles and inspect privacy only after the ledger is closed.
+
 ## 0.20.0 — Cross-platform quota analytics
 
 - Align Mac with the current Windows sidebar, Credits indicator, settings entry and details toolbar.
