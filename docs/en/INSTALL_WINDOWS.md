@@ -17,7 +17,7 @@ This preview is not publisher-signed. It is available from [GitHub Releases](htt
 
 ## Use and update
 
-Click the tray icon for recent chats, or open the main window. Settings are available from the bottom-left gear. The default global shortcut is **Ctrl + Shift + M** and can be changed in Settings.
+Click the tray icon for recent chats, or open the main window. Settings are available from the gear in the sidebar header. The default global shortcut is **Ctrl + Shift + M** and can be changed in Settings.
 
 Update checks are automatic; installation requires a click. Running a newer Setup.exe also updates the existing installation. Budgets, cached usage, language and shortcut preferences are preserved. Verified old program versions are removed once no running process needs them.
 

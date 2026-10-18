@@ -10,7 +10,7 @@ Hover over a chat to reveal its budget slider, or click it to open the main wind
 
 ## Language
 
-Open Settings from the bottom left and use **Language**:
+Open Settings from the sidebar header and use **Language**:
 
 - **Automatic (time zone):** Chinese for mainland China, Hong Kong, Macao, and Taiwan zone identifiers; English elsewhere.
 - **中文:** always use Chinese.
