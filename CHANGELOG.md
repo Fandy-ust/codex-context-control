@@ -1,6 +1,6 @@
 # Changes
 
-## 0.19.6 — Shared core and cross-platform maintenance (unreleased)
+## 0.19.6 — Shared core and cross-platform maintenance
 
 - Integrate main 0.18.3 update recovery and approved Mac quota/control-panel design with the Windows 0.19.5 port.
 - Separate pure budget/state/update rules, control API contracts, presentation and OS adapters; both interfaces submit visible budgets to the same authority.

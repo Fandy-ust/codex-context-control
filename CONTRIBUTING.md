@@ -31,6 +31,8 @@ Windows builds additionally require the pinned Electron runtime (`npm ci`, then 
 
 ## Releases and user data
 
-Use one product version and publish Mac DMG, Windows Setup EXE, and Windows updater ZIP together after both jobs pass. `Build Windows and macOS` may publish an existing draft when explicitly requested. A platform-only packaging run must not replace Latest with a partial release.
+Mac and Windows always use the same product version from root `package.json`. A UI-only fix increments the shared patch version; release both platforms together even when one platform has no behavior change. Build IDs are internal identifiers, not separate public UI versions.
+
+Use one product version and publish Mac DMG, Windows Setup EXE, and Windows updater ZIP together after both jobs pass. Pushing a `v<version>-preview.1` tag runs `Build Windows and macOS`, which creates and publishes the release automatically after validation. Manual dispatch with publishing enabled is also supported. A platform-only packaging run must not replace Latest with a partial release.
 
 Do not rename/delete persisted fields casually. Preserve budgets, defaults, language, unknown fields, and caches. Version changes keep one configuration snapshot. Never delete a current or active installation. Windows cleanup waits while a desktop can still reference old shims. Keep `update.json` for 0.18.x Mac clients and `update-v2.json` for multi-platform clients.

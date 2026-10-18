@@ -3,12 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: Publish an existing draft after both platforms pass validation
+        description: Create and publish a release after both platforms pass validation
         type: boolean
         default: false
   push:
     branches:
       - 'codex/cross-platform-*'
+    tags:
+      - 'v*-preview.1'
 permissions:
   contents: read
 concurrency:
@@ -18,11 +20,14 @@ jobs:
   build:
     uses: ./.github/workflows/_build-desktop.yml
   publish:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+    if: ${{ startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish_release) }}
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    concurrency:
+      group: desktop-release
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -38,11 +43,27 @@ jobs:
         run: |
           version=$(node -p "require('./package.json').version")
           tag="v${version}-preview.1"
-          test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "$tag"; fi
           existing=$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null || true)
           if [ -n "$existing" ]; then
             test "$(gh api "repos/$GH_REPO/commits/$tag" --jq '.sha')" = "$GITHUB_SHA"
           fi
-          gh release edit "$tag" --target "$GITHUB_SHA"
+          cat > release-notes.md <<EOF
+          ## Download / 下载
+          - **macOS · Apple Silicon:** [Context Manager $version.dmg](https://github.com/$GH_REPO/releases/download/$tag/Context-Manager-$version-macos-arm64.dmg)
+          - **Windows · x64:** [Context Manager $version Setup.exe](https://github.com/$GH_REPO/releases/download/$tag/Context-Manager-$version-windows-x64-Setup.exe)
+
+          Both platforms use the same product version and shared core. Download one installer for your system; no development tools are required.
+
+          两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。
+
+          The ZIP and JSON files are for automatic updates. See [changes](https://github.com/$GH_REPO/blob/$tag/CHANGELOG.md) and [installation guides](https://github.com/$GH_REPO/blob/$tag/README.md).
+          EOF
+          if gh release view "$tag" --json isDraft > release-state.json 2>/dev/null; then
+            test "$(node -p "require('./release-state.json').isDraft")" = true
+            gh release edit "$tag" --target "$GITHUB_SHA" --notes-file release-notes.md
+          else
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "Context Manager $version · macOS & Windows" --notes-file release-notes.md
+          fi
           gh release upload "$tag" release/*.dmg release/*.exe release/*.zip release/*.sha256 release/*.json release/README-FIRST.txt --clobber
           gh release edit "$tag" --draft=false --latest
