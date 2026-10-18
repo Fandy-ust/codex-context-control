@@ -8,9 +8,15 @@ func quotaPeriod(_ window:QuotaWindow)->String {
     return L("{0}分钟",minutes)
 }
 
+func quotaCreditLabel(_ raw:String?)->String? {
+    guard let raw,let value=Double(raw),value.isFinite,value>=0 else{return nil}
+    let amount=value>0 && value<0.01 ? "<0.01":value.formatted(.number.precision(.fractionLength(0...2)).locale(Localization.locale))
+    return "\(amount) credits"
+}
+
 @MainActor func quotaBarsStatusImage(bucket:QuotaBucket?,stale:Bool)->NSImage {
     let remaining=[bucket?.primary,bucket?.secondary].compactMap{$0?.remainingPercent}.min().map{max(0,min(1,$0/100))}
-    let image=NSImage(size:NSSize(width:48,height:24));image.lockFocus()
+    let image=NSImage(size:NSSize(width:44,height:24));image.lockFocus()
     let opacity:CGFloat=remaining == nil ? 0.35:stale ? 0.45:1
     let bolt=NSBezierPath();bolt.move(to:NSPoint(x:18,y:23));bolt.line(to:NSPoint(x:2,y:10));bolt.line(to:NSPoint(x:10,y:10));bolt.line(to:NSPoint(x:5,y:0));bolt.line(to:NSPoint(x:23,y:14));bolt.line(to:NSPoint(x:14,y:14));bolt.close()
     for x:CGFloat in [1,4.2,7.4,10.6,13.8,17,20.2] {
@@ -40,7 +46,7 @@ struct AccountQuotaSection:View {
             if (model.quota?.buckets.count ?? 0)>1 {
                 Picker(L("额度类型"),selection:$model.selectedQuotaID){ForEach(model.quota?.buckets ?? []){bucket in Text(bucket.name).tag(bucket.id)}}.labelsHidden()
             }
-            if windows.isEmpty {
+            if windows.isEmpty && model.selectedQuota?.creditBalance == nil {
                 Text(L(model.quotaRefreshing || model.quota?.loading == true ? "正在读取额度…":"额度暂不可用")).font(.system(size:12)).foregroundStyle(.secondary)
             } else {
                 ForEach(Array(windows.enumerated()),id:\.offset){_,window in
@@ -52,8 +58,8 @@ struct AccountQuotaSection:View {
                         if let reset=window.resetsAt{Text(Date(timeIntervalSince1970:Double(reset)),format:.dateTime.month(.abbreviated).day().hour().minute()).foregroundStyle(.tertiary).help(L("重置时间"))}
                     }.font(.system(size:12))
                 }
-                if model.selectedQuota?.hasCredits == true || model.selectedQuota?.unlimitedCredits == true {Text(L("额外额度可用")).font(.system(size:11)).foregroundStyle(.secondary)}
             }
+            if let credit=quotaCreditLabel(model.selectedQuota?.creditBalance){Text(credit).font(.system(size:11)).monospacedDigit().foregroundStyle(.secondary)}
             if stale{Text(L("上次记录，待刷新")).font(.system(size:11)).foregroundStyle(.orange)}
         }.padding(10).frame(maxWidth:.infinity,alignment:.leading).background(.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:9)).padding(.horizontal,4)
     }

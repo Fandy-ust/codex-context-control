@@ -1,6 +1,12 @@
 # Changes
 
 
+## 0.18.2 — Compact menu item and concrete credits
+
+- Reduce the menu item width from 56 to 44 points and trim unused image canvas, without shrinking the bolt or percentage text.
+- Replace the generic extra-credit availability message with the reported numeric credit balance. Hide the line when no finite balance is provided.
+
+
 ## 0.18.1 — Striped lightning quota indicator
 
 - Apply the approved B design: vertical stripes form a lightning bolt, progressively emptying as remaining quota decreases.

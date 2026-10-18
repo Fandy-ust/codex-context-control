@@ -2,7 +2,7 @@
 
 在 Mac 菜单栏管理每个 Codex 聊天的上下文，最高 **920K**。
 
-## [下载 Mac 最新版 0.18.1 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.1-preview.1/Context-Manager-0.18.1-macos-arm64.dmg)
+## [下载 Mac 最新版 0.18.2 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.2-preview.1/Context-Manager-0.18.2-macos-arm64.dmg)
 
 Apple Silicon · macOS 14+ · DMG，45 MB · 中文 / English
 
