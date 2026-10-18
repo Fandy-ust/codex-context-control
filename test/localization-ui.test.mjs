@@ -39,7 +39,9 @@ import Vision
     let english=try capture(view,"en"),panelEnglish=try capture(panel,"en-panel");precondition(english.contains("Compact now") && panelEnglish.contains("Account usage") && panelEnglish.contains("Language") && panelEnglish.contains("Global defaults") && english.contains("Context window") && english.contains("Context details") && english.contains("Task queue"),"English UI was not rendered: "+english+"\nSettings: "+panelEnglish)
     precondition(!english.contains("全局默认") && model.selected!.policy! == original)
     model.setLanguage(.zh);try await Task.sleep(for:.milliseconds(350));let chinese=try capture(view,"zh"),panelChinese=try capture(panel,"zh-panel")
-    precondition(chinese.contains("手动压缩") && panelChinese.contains("账户额度") && panelChinese.contains("全局默认") && chinese.contains("应用") && chinese.contains("上下文详情") && chinese.contains("任务队列"),"Chinese UI did not refresh: "+chinese+"\nSettings: "+panelChinese)
+    // Vision consistently confuses the Chinese details headline glyphs (详/洋).
+    // Assert the same panel's stable empty state plus the new queue controls.
+    precondition(chinese.contains("手动压缩") && panelChinese.contains("账户额度") && panelChinese.contains("全局默认") && chinese.contains("应用") && chinese.contains("暂无上下文统计") && chinese.contains("任务队列"),"Chinese UI did not refresh: "+chinese+"\nSettings: "+panelChinese)
     precondition(model.selected!.policy! == original && model.selected!.title=="Project title · 原文")
     print("English/Chinese native rendering, immediate switch, original chat title and unchanged budget passed")
     app.terminate(nil)
