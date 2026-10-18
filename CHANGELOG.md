@@ -1,5 +1,11 @@
 # Changes
 
+## 0.20.2 — Quota projection under rounded readings
+
+- Base the central quota projection on consumption per observed hour, with hourly aggregation for slower/faster scenarios.
+- Prevent long stretches of unchanged integer percentages from producing a flat forecast despite ongoing usage.
+- Retain 0.20.1 worker lifecycle fixes and the shared cross-platform analytics UI.
+
 ## 0.20.1 — Reliable analytics worker restarts
 
 - Close the quota ledger before retiring its worker and wait for that worker to exit before opening another one.

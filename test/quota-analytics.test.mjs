@@ -69,3 +69,9 @@ test('weekly-only accounts retain efficiency and weekly analysis without synthet
  assert.equal(report.charts.find(c=>c.id==='efficiency').xLabel,'Weekly 周期');
  for(const id of ['windows','five-hour-scatter'])assert.equal(report.charts.find(c=>c.id===id).points.length,0,id);
 });
+test('rounded flat samples do not imply zero future consumption in the central projection',()=>{
+ const snapshots=Array.from({length:61},(_,i)=>point(now-(60-i)*300000,10+Math.floor(i/12)));
+ const report=buildQuotaAnalytics({snapshots},{now});const points=report.charts.find(c=>c.id==='forecast').points.filter(p=>p.series==='平均速度');
+ assert.ok(points.length>1);assert.equal(points[0].y,15);assert.ok(points.at(-1).y>15);
+ assert.ok(Math.abs((points[1].y-points[0].y)/points[1].x-1)<1e-9,'five points over five observed hours means one point per hour');
+});

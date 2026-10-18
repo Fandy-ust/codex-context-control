@@ -183,9 +183,13 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   const recent = weeklyPairs.filter(p => p.cycle===currentWeek&&now-p.end<=DAY), hours=sum(recent.map(p=>p.duration))/HOUR;
   const forecast = [];
   if (latestWeekly && now - latestWeekly.at < HOUR && recent.filter(p=>p.pp>0).length >= 3 && hours >= 1) {
-    const rates = distribution(recent.map(p => p.pp * HOUR / p.duration));
+    // Quota percentages are often integer-quantized. A median of five-minute
+    // deltas can be zero despite sustained usage; aggregate time first.
+    const mean=sum(recent.map(p=>p.pp))/hours;
+    const hourlyRates=[...aggregateBy(recent,p=>Math.floor(p.end/HOUR)).values()].map(values=>sum(values.map(p=>p.pp))*HOUR/sum(values.map(p=>p.duration)));
+    const rates=distribution(hourlyRates);
     const horizon = Math.min(72, (Number(currentWeek) * 1000 - latestWeekly.at) / HOUR);
-    for (const [label, rate] of [['较慢', rates.q1], ['中位速度', rates.median], ['较快', rates.q3]]) {
+    for (const [label, rate] of [['较慢', Math.min(mean,rates?.q1??mean)], ['平均速度', mean], ['较快', Math.max(mean,rates?.q3??mean)]]) {
       if (!(rate >= 0)) continue;
       for (let i = 0; i <= 24; i++) {const x = horizon * i / 24;forecast.push({id: label + i, at:latestWeekly.at+x*HOUR, x, y: Math.min(100, latestWeekly.weeklyUsed + rate * x), series: label});}
     }
