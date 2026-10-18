@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
-import {cleanupOldRuntimes} from '../src/runtime-cleanup.mjs';
+import {cleanupMacRuntimes as cleanupOldRuntimes} from '../src/runtime-cleanup.mjs';
 const pin=JSON.parse(fs.readFileSync(new URL('../runtime-patches/manifest.json',import.meta.url)));
 test('cleanup removes only unused installation-owned runtimes and preserves current, running and user files',()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-cleanup-')),dir=path.join(home,'runtime');fs.mkdirSync(dir);

@@ -2,7 +2,7 @@ const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)
 // Migrations are additive and never downgrade a future document's marker.
 // Reject invalid documents before any write instead of silently resetting data.
 export function normalizeStateDocument(value){
- if(!object(value)||!object(value.policies??{})||!object(value.threads??{}))throw Error('Invalid saved controller state');
+ if(!object(value)||(Object.hasOwn(value,'policies')&&!object(value.policies))||(Object.hasOwn(value,'threads')&&!object(value.threads)))throw Error('Invalid saved controller state');
  const oldVersion=value.version??1;
  if(!Number.isSafeInteger(oldVersion)||oldVersion<0)throw Error('Invalid controller state schema version');
  const threads=Object.fromEntries(Object.entries(value.threads??{}).map(([id,original])=>{

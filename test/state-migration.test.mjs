@@ -11,7 +11,7 @@ test('opening corrupt or incompatible saved state never replaces the original fi
   try {
     const {Store} = await import('../src/store.mjs');
     const file = path.join(home, 'state.json');
-    for (const text of ['{"version":2,"policies":', '{"version":2,"threads":[]}']) {
+    for (const text of ['{"version":2,"policies":', '{"version":2,"threads":[]}', '{"version":2,"policies":null}']) {
       fs.writeFileSync(file, text);
       assert.throws(() => new Store());
       assert.equal(fs.readFileSync(file, 'utf8'), text);
