@@ -9,10 +9,11 @@ export function quotaFixture(now = Date.UTC(2026, 9, 18, 12)) {
       const model = ['Sol', 'Luna', 'Astra'][day % 3];
       for (let tick = 0; tick < 7; tick++) {
         const at = start + tick * 10 * 60000;if (at > now) continue;
-        const weeklyUsed = day * 9 + tick * (1 + (week % 2) * .3);
+        const weeklyUsed = day * 9 + tick * (.7 + (week % 2) * .2) + .05 * tick * (tick + 1);
+        const delta = .7 + (week % 2) * .2 + .1 * tick;
         snapshots.push({at, scope: 'history', bucket: 'codex', weeklyUsed, weeklyReset, fiveUsed: tick * 11, fiveReset});
         if (tick) {
-          const input = (130000 + tick * 17000 + day * 8000) * (model === 'Luna' ? 1.7 : model === 'Astra' ? .7 : 1);
+          const input = (160000 + day * 5000) * delta * (model === 'Luna' ? 1.4 : model === 'Astra' ? .8 : 1);
           requests.push({id: `demo-${week}-${day}-${tick}`, at: at - 1000, thread: `chat-${day}`, name: ['项目设计', '代码检查', '资料整理'][day % 3], project: ['Context Manager', 'Research'][day % 2], model, input: Math.floor(input), output: 1200 + tick * 100, cached: Math.floor(input * (.25 + day * .09))});
         }
       }
