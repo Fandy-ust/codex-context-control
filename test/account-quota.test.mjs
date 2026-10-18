@@ -53,3 +53,8 @@ test('legacy credit baselines import only against the matching balance and never
  manager.resetCredits('codex',{last:70,baseline:100});assert.equal(manager.state().creditBaselines.codex.baseline,100);
  manager.resetCredits('codex');manager.resetCredits('codex',{last:70,baseline:200});assert.equal(manager.state().creditBaselines.codex.baseline,70);
 });
+test('quota values and credit baselines become visible together after an observation finishes',async()=>{
+ let finish;const observed=new Promise(r=>finish=r),manager=createQuotaManager({read:async()=>({rateLimits:{credits:{balance:'100'}}}),onObservation:()=>observed});
+ const pending=manager.refresh();await new Promise(r=>setImmediate(r));assert.equal(manager.state().buckets.length,0);assert.equal(manager.state().updatedAt,null);
+ finish('account:test');await pending;assert.equal(manager.state().buckets[0].creditBalance,'100');assert.equal(manager.state().creditBaselines.codex.baseline,100);
+});

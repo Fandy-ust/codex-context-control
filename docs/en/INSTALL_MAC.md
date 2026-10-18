@@ -6,7 +6,7 @@ The preview targets Apple Silicon (M-series) Macs with macOS 14 or later. Instal
 
 ## Install or update
 
-1. [Download the 0.19.6 Apple Silicon DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.6-preview.1/Context-Manager-0.19.6-macos-arm64.dmg) and open it.
+1. [Download the Apple Silicon DMG](https://github.com/Fandy-ust/codex-context-control/releases/latest) and open it.
 2. Open **Install Context Manager.app**.
 3. Select **Automatic (time zone)**, **中文**, or **English** if desired.
 4. Choose **Install / Update**.
@@ -15,7 +15,7 @@ The preview targets Apple Silicon (M-series) Macs with macOS 14 or later. Instal
 
 Users do not need Node, npm, Homebrew, Xcode, an administrator password, or an Apple developer membership. The installer copies the runtime to a stable user support directory, so deleting the downloaded installer does not break the app.
 
-The 0.19.6 English / Chinese preview is published and publicly downloadable. Mac and Windows installers are published together with the same product version.
+The 0.20.0 English / Chinese preview is published and publicly downloadable. Mac and Windows installers are published together with the same product version.
 
 ## Opening a preview
 
@@ -53,7 +53,7 @@ Enable context extension in Settings for up to 920K and restart Codex after chan
 
 ## Updates and local cache
 
-Install 0.19.6 once to enable in-app updates. The app checks GitHub at startup (cached for six hours) and every six hours. Click Install update to download, verify, and install; restart Codex afterward. Budgets, language, and caches are retained. Local chats load at startup, update incrementally in the background, and can be refreshed with Sync local chats. Cached observations are historical, not a live connection. Missing remote-only histories remain unavailable until synchronized by Codex.
+After the first installation, updates are available in the app. The app checks GitHub at startup (cached for six hours) and every six hours. Click Install update to download, verify, and install; restart Codex afterward. Budgets, language, and caches are retained. Local chats load at startup, update incrementally in the background, and can be refreshed with Sync local chats. Cached observations are historical, not a live connection. Missing remote-only histories remain unavailable until synchronized by Codex.
 
 Successful updates replace the old app and code, remove unused bundled runtimes and the disabled patched core, and delete OTA downloads after installation. Runtimes still used by a process are retained temporarily and checked again every five minutes after the app starts. Budgets, language, chat caches, and user backups are preserved. Manually downloaded DMGs are not deleted.
 

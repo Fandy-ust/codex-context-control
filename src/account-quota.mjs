@@ -52,10 +52,11 @@ export function createQuotaManager({read=()=>readAccountQuota({includeAccount:tr
  async function refresh(force=false){
   if(pending){await pending;return state();}if(checkedAt&&now()-checkedAt<(force?10000:interval))return state();checkedAt=now();
   pending=(async()=>{try{
-    const response=await read();buckets=normalizeQuota(response);updatedAt=now();error=buckets.length?null:'当前账户暂无额度数据';
-    if(onObservation)try{const scope=await onObservation({buckets,at:updatedAt,account:response.account??null});if(typeof scope==='string'&&scope!==creditScope){creditScope=scope;creditBaselines=creditAccounts[scope]??{};}}catch{/* History failure does not hide current quota. */}
-    const next={...creditBaselines};for(const bucket of buckets)if(!['__proto__','constructor','prototype'].includes(bucket.id))next[bucket.id]=observeCreditBalance(next[bucket.id],bucket.creditBalance);
+    const response=await read(),observed=normalizeQuota(response),observedAt=now();
+    if(onObservation)try{const scope=await onObservation({buckets:observed,at:observedAt,account:response.account??null});if(typeof scope==='string'&&scope!==creditScope){creditScope=scope;creditBaselines=creditAccounts[scope]??{};}}catch{/* History failure does not hide current quota. */}
+    const next={...creditBaselines};for(const bucket of observed)if(!['__proto__','constructor','prototype'].includes(bucket.id))next[bucket.id]=observeCreditBalance(next[bucket.id],bucket.creditBalance);
     if(JSON.stringify(next)!==JSON.stringify(creditBaselines)){creditBaselines=next;saveBaselines();}
+    buckets=observed;updatedAt=observedAt;error=buckets.length?null:'当前账户暂无额度数据';
   }catch{error='暂时无法读取额度';}return state();})().finally(()=>{pending=null;});
   await pending;return state();
  }

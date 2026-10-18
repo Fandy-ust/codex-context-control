@@ -26,7 +26,7 @@ import Vision
    "observedWindow":920000,"expectedWindow":920000,"freshUsage":true,"revision":1,"lastUsage":["totalTokens":1000],
    "policy":["window":1022223,"compact":904000,"reserve":16000,"retainedFloor":0,"revision":1,"enabled":true],
    "modelMetadata":["max_context_window":1022223,"effective_context_window_percent":90,"context_ceiling":920000,"context_compact_ceiling":904000,"context_catalog_ready":true]]
-  model.chats=[try JSONDecoder().decode(Chat.self,from:JSONSerialization.data(withJSONObject:raw))];model.selectedID="language-fixture";model.serviceAvailable=true;model.bridgeCount=1;model.notice="已接入 Codex。";model.fill()
+  model.chats=[try JSONDecoder().decode(Chat.self,from:JSONSerialization.data(withJSONObject:raw))];model.selectedID="language-fixture";model.serviceAvailable=true;model.supportsQuotaAnalytics=true;model.bridgeCount=1;model.notice="已接入 Codex。";model.fill()
   model.sidebar=ChatSidebar(projects:[SidebarProject(id:"project-fixture",name:"Project group · 分组",roots:["/fixture/project"],threadIds:["language-fixture"]),SidebarProject(id:"empty-project",name:"Empty project",roots:[],threadIds:[])],standaloneThreadIds:[])
   let original=model.selected!.policy!
   let view=NSHostingView(rootView:ContentView(model:model).frame(width:1040,height:900))
@@ -39,7 +39,7 @@ import Vision
     let english=try capture(view,"en"),panelEnglish=try capture(panel,"en-panel");precondition(english.contains("Quota analytics") && panelEnglish.contains("Language") && panelEnglish.contains("Global defaults") && english.contains("Context window"),"English UI was not rendered: "+english)
     precondition(!english.contains("全局默认") && model.selected!.policy! == original)
     model.setLanguage(.zh);try await Task.sleep(for:.milliseconds(350));let chinese=try capture(view,"zh"),panelChinese=try capture(panel,"zh-panel")
-    precondition(chinese.contains("额度分析") && panelChinese.contains("全局默认") && chinese.contains("上下文窗口"),"Chinese UI did not refresh: "+chinese)
+    precondition(chinese.contains("额度分析") && panelChinese.contains("全局默认") && chinese.contains("应用到此聊天"),"Chinese UI did not refresh: "+chinese)
     precondition(model.selected!.policy! == original && model.selected!.title=="Project title · 原文")
     print("English/Chinese native rendering, immediate switch, original chat title and unchanged budget passed")
     app.terminate(nil)
