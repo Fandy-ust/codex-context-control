@@ -11,11 +11,11 @@ import Foundation
     }
     static func near(_ a:Double?,_ b:Double){precondition(a != nil && abs(a!-b)<0.00001,"\(String(describing:a)) != \(b)")}
     static func main() throws {
-        let changed=try TimelineData(responses:[response(0),response(1,model:"next",effort:"xhigh",tier:"priority"),response(2,model:"next",effort:"xhigh",tier:"fast"),response(3,model:"next",effort:"xhigh",tier:"ultrafast")],events:[],revision:"changes",period:40,limit:1)
-        precondition(changed.buckets[0].settingsChanges.count==4)
-        precondition(changed.buckets[0].settingsChanges[0].from=="test" && changed.buckets[0].settingsChanges[0].to=="next")
-        precondition(changed.buckets[0].settingsChanges[1].field=="effort" && changed.buckets[0].settingsChanges[1].responseIndex==2)
-        precondition(changed.buckets[0].speedModes==["fast","ultrafast"])
+        let settingsTimeline=try TimelineData(responses:[response(0),response(1,model:"next",effort:"xhigh",tier:"priority"),response(2,model:"next",effort:"xhigh",tier:"fast"),response(3,model:"next",effort:"xhigh",tier:"ultrafast")],events:[],revision:"changes",period:40,limit:1)
+        precondition(settingsTimeline.buckets[0].settingsChanges.count==4)
+        precondition(settingsTimeline.buckets[0].settingsChanges[0].from=="test" && settingsTimeline.buckets[0].settingsChanges[0].to=="next")
+        precondition(settingsTimeline.buckets[0].settingsChanges[1].field=="effort" && settingsTimeline.buckets[0].settingsChanges[1].responseIndex==2)
+        precondition(settingsTimeline.buckets[0].speedModes==["fast","ultrafast"])
         let ema=try TimelineData(responses:[response(0,speed:10),response(1,speed:30)],events:[],revision:"ema",period:3)
         near(ema.speed[0].value,10);near(ema.speed[1].value,20)
         let off=try TimelineData(responses:[response(0,speed:10),response(1,speed:30)],events:[],revision:"off",period:0)
