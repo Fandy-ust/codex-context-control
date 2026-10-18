@@ -29,8 +29,10 @@ export function createUpdateManager({home=root,current,fetcher=fetch,launch,now=
   if(checking){await checking;return status();}const old=read();
   if(['downloading','installing'].includes(old.phase)){try{process.kill(old.pid,0);return status();}catch{atomicJSON(file,{...old,phase:'error',pid:null,error:'上次更新已中断，请重试'});old.phase='error';}}
   const time=now();
-  if(time<(old.retryAt??0)||(old.checkedAt&&time-old.checkedAt<30000))return status();
-  if(!force&&!old.error&&old.checkedAt&&time-old.checkedAt<6*60*60*1000)return status();
+  if(old.checkedVersion===current){
+   if(time<(old.retryAt??0)||(old.checkedAt&&time-old.checkedAt<30000))return status();
+   if(!force&&!old.error&&old.checkedAt&&time-old.checkedAt<6*60*60*1000)return status();
+  }
   checking=(async()=>{
    const cooldowns={...(old.sourceCooldowns??{})},failures=[];
    for(const [source,url] of [['release-file',releaseManifestURL],['github-api',releaseAPI]]){
@@ -42,7 +44,7 @@ export function createUpdateManager({home=root,current,fetcher=fetch,launch,now=
      try{const document=await response.json();if(source==='release-file'){const candidate=manifestCandidate(document);update=newerVersion(candidate.version,current)?candidate:null;}else update=releaseUpdate(document,current);}
      catch{throw Object.assign(Error('更新来源返回了无效版本信息，可从发布页下载。'),{retryAt:now()+60000,code:'invalid_metadata',source});}
      delete cooldowns[source];
-     atomicJSON(file,{...old,checkedAt:now(),update,phase:'idle',error:null,errorCode:null,retryAt:null,source,sourceCooldowns:cooldowns});return;
+     atomicJSON(file,{...old,checkedVersion:current,checkedAt:now(),update,phase:'idle',error:null,errorCode:null,retryAt:null,source,sourceCooldowns:cooldowns});return;
     }catch(error){
      const failure=error.retryAt?error:Object.assign(Error('无法连接更新来源，请稍后重试或从发布页下载。'),{retryAt:now()+60000,code:'unavailable',source});
      cooldowns[source]=failure.retryAt;failures.push(failure);
@@ -50,7 +52,7 @@ export function createUpdateManager({home=root,current,fetcher=fetch,launch,now=
    }
    const failure=failures.find(e=>e.code==='rate_limited')??failures.at(-1);
    const retryAt=Math.min(...Object.values(cooldowns).filter(t=>t>now()));
-   atomicJSON(file,{...old,checkedAt:now(),phase:'idle',error:failure?.message??old.error??'更新来源暂不可用',errorCode:failure?.code??old.errorCode,sourceCooldowns:cooldowns,retryAt:Number.isFinite(retryAt)?retryAt:now()+60000});
+   atomicJSON(file,{...old,checkedVersion:current,checkedAt:now(),phase:'idle',error:failure?.message??old.error??'更新来源暂不可用',errorCode:failure?.code??old.errorCode,sourceCooldowns:cooldowns,retryAt:Number.isFinite(retryAt)?retryAt:now()+60000});
   })().finally(()=>{checking=null;});await checking;return status();
  }
 

@@ -59,3 +59,11 @@ test('a manifest checksum mismatch stops installation before writing the image',
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-feed-hash-')),update=manifestCandidate(manifest());
  try{await assert.rejects(downloadVerified(update,home,{fetcher:async()=>new Response('b'.repeat(64)+'  '+update.filename)}),/不一致/);assert.deepEqual(fs.readdirSync(home),[]);}finally{fs.rmSync(home,{recursive:true,force:true});}
 });
+
+test('upgrading does not keep an older updater error cached for six hours',async()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-feed-migration-'));let calls=0;
+ try{fs.writeFileSync(path.join(home,'updates.json'),JSON.stringify({checkedAt:Date.now(),error:'更新检查失败：HTTP 403',phase:'idle'}));
+ const manager=createUpdateManager({home,current:'0.18.3',fetcher:async()=>{calls++;return new Response(JSON.stringify(manifest()));}});
+ const result=await manager.check();assert.equal(calls,1);assert.equal(result.error,null);assert.equal(result.source,'release-file');
+ }finally{fs.rmSync(home,{recursive:true,force:true});}
+});
