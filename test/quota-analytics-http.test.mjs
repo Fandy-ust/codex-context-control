@@ -1,0 +1,18 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {DatabaseSync} from 'node:sqlite';
+test('authenticated analytics scans local numeric records and rejects invalid filters without changing budgets',async()=>{
+ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'qa-http-')),home=path.join(temp,'codex'),control=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(control);
+ process.env.CONTEXT_CONTROL_HOME=control;process.env.CONTEXT_CONTROL_CODEX_HOME=home;
+ const now=Date.now(),file=path.join(home,'a.jsonl'),lines=[];
+ for(let i=0;i<3;i++){const timestamp=new Date(now-600000+i*120000).toISOString();lines.push({timestamp,type:'event_msg',payload:{type:'token_count',rate_limits:{limit_id:'codex',primary:{used_percent:20+i,window_minutes:10080,resets_at:Math.floor(now/1000)+86400}}}});lines.push({timestamp,type:'token_usage_record',payload:{response_id:'response-'+i,thread_id:'a',usage:{input_tokens:100,output_tokens:20,cached_input_tokens:50}}});}
+ fs.writeFileSync(file,lines.map(x=>JSON.stringify(x)).join('\n')+'\n');
+ const db=new DatabaseSync(path.join(home,'state_5.sqlite'));db.exec('CREATE TABLE threads (id TEXT,rollout_path TEXT,cwd TEXT)');db.prepare('INSERT INTO threads VALUES (?,?,?)').run('a',file,temp);db.close();
+ fs.writeFileSync(path.join(control,'state.json'),JSON.stringify({version:9,threads:{},policies:{preserved:{window:400000,compact:350000}}}));
+ const {startDaemon}=await import('../src/daemon.mjs');const d=await startDaemon();
+ try {
+  const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json'))),url=`http://127.0.0.1:${c.port}/quota/analytics`,headers={authorization:`Bearer ${c.token}`};
+  assert.equal((await fetch(url,{method:'POST',body:'{}'})).status,403);
+  assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify({days:999})})).status,400);
+  const r=await fetch(url,{method:'POST',headers,body:'{}'});assert.equal(r.status,200);const report=await r.json();assert.equal(report.quality.requests,3);assert.equal(report.charts.length,16);
+  const saved=JSON.parse(fs.readFileSync(path.join(control,'state.json')));assert.equal(saved.version,9);assert.equal(saved.policies.preserved.window,400000);
+ } finally {d.web.closeAllConnections();await new Promise(r=>d.web.close(r));await new Promise(r=>d.ipcServer.close(r));await new Promise(r=>setTimeout(r,150));fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
+});

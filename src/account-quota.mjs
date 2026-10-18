@@ -1,10 +1,13 @@
 import {spawn} from 'node:child_process';
 import readline from 'node:readline';
 import {realBinary,codexHome} from './paths.mjs';
+import path from 'node:path';
+import {readJSON,atomicJSON} from './paths.mjs';
+import {observeCreditBalance} from './credit-baseline.mjs';
 
 // A read-only native app-server session: no thread creation, model requests,
 // credentials export, or dependence on an already-open desktop chat.
-export function readAccountQuota({binary=realBinary(),timeout=20000,launcherArgs=[]}={}){
+export function readAccountQuota({binary=realBinary(),timeout=20000,launcherArgs=[],includeAccount=false}={}){
  return new Promise((resolve,reject)=>{
   const child=spawn(binary,[...launcherArgs,'app-server','--listen','stdio://'],{windowsHide:true,stdio:['pipe','pipe','ignore'],env:{...process.env,CODEX_HOME:codexHome}});
   let done=false,sequence=0,total=0;const pending=new Map();
@@ -15,7 +18,12 @@ export function readAccountQuota({binary=realBinary(),timeout=20000,launcherArgs
   child.on('error',error=>finish(error));child.stdin.on('error',error=>finish(error));
   child.on('exit',()=>{if(!done)finish(Error('额度连接已关闭'));});
   lines.on('line',line=>{total+=line.length;if(total>2*1024*1024){finish(Error('额度响应过大'));return;}let message;try{message=JSON.parse(line);}catch{return;}const p=pending.get(message.id);if(p){pending.delete(message.id);message.error?p.reject(Error(message.error.message??'额度不可用')):p.resolve(message.result);}});
-  (async()=>{try{await call('initialize',{clientInfo:{name:'context_manager_quota',version:'1'}});child.stdin.write(JSON.stringify({method:'initialized'})+'\n');finish(null,await call('account/rateLimits/read'));}catch(error){finish(error);}})();
+  (async()=>{try{
+    await call('initialize',{clientInfo:{name:'context_manager_quota',version:'1'}});child.stdin.write(JSON.stringify({method:'initialized'})+'\n');
+    const response=await call('account/rateLimits/read');
+    if(includeAccount){let accountTimer;try{const info=await Promise.race([call('account/read',{refreshToken:false}).catch(()=>null),new Promise(resolve=>{accountTimer=setTimeout(()=>resolve(null),1500);})]);response.account=info?.account??null;}finally{clearTimeout(accountTimer);}}
+    finish(null,response);
+  }catch(error){finish(error);}})();
  });
 }
 function window(value){
@@ -33,13 +41,31 @@ export function normalizeQuota(response){
  const entries=source&&typeof source==='object'&&Object.keys(source).length?Object.entries(source):response?.rateLimits?[['codex',response.rateLimits]]:[];
  return entries.map(([id,value])=>({id,name:typeof value?.limitName==='string'?value.limitName.slice(0,100):id,primary:window(value?.primary),secondary:window(value?.secondary),creditBalance:creditBalance(value?.credits),hasCredits:value?.credits?.hasCredits===true,unlimitedCredits:value?.credits?.unlimited===true})).filter(v=>v.primary||v.secondary||v.creditBalance!=null||v.hasCredits||v.unlimitedCredits).sort((a,b)=>(a.id==='codex'?-1:b.id==='codex'?1:a.id.localeCompare(b.id)));
 }
-export function createQuotaManager({read=readAccountQuota,now=Date.now,interval=5*60*1000}={}){
+export function createQuotaManager({read=()=>readAccountQuota({includeAccount:true}),now=Date.now,interval=5*60*1000,home=null,onObservation=null}={}){
  let buckets=[],updatedAt=null,checkedAt=0,error=null,pending;
- function state(){return {buckets,updatedAt,loading:!!pending,stale:!!error||!!updatedAt&&now()-updatedAt>interval*2,error};}
+ const preferencesFile=home?path.join(home,'quota-preferences.json'):null;
+ let preferences;try{preferences=preferencesFile?readJSON(preferencesFile,{}):{};}catch{preferences={};}
+ let creditBaselines=preferences?.creditBaselines??{},creditScope=preferences?.creditScope??null;
+ const creditAccounts=preferences?.creditAccounts??{};
+ const saveBaselines=()=>{if(creditScope)creditAccounts[creditScope]=creditBaselines;if(preferencesFile)atomicJSON(preferencesFile,{...preferences,creditScope,creditAccounts,creditBaselines});};
+ function state(){return {buckets,creditBaselines,updatedAt,loading:!!pending,stale:!!error||!!updatedAt&&now()-updatedAt>interval*2,error};}
  async function refresh(force=false){
   if(pending){await pending;return state();}if(checkedAt&&now()-checkedAt<(force?10000:interval))return state();checkedAt=now();
-  pending=(async()=>{try{buckets=normalizeQuota(await read());updatedAt=now();error=buckets.length?null:'当前账户暂无额度数据';}catch{error='暂时无法读取额度';}return state();})().finally(()=>{pending=null;});
+  pending=(async()=>{try{
+    const response=await read();buckets=normalizeQuota(response);updatedAt=now();error=buckets.length?null:'当前账户暂无额度数据';
+    if(onObservation)try{const scope=await onObservation({buckets,at:updatedAt,account:response.account??null});if(typeof scope==='string'&&scope!==creditScope){creditScope=scope;creditBaselines=creditAccounts[scope]??{};}}catch{/* History failure does not hide current quota. */}
+    const next={...creditBaselines};for(const bucket of buckets)if(!['__proto__','constructor','prototype'].includes(bucket.id))next[bucket.id]=observeCreditBalance(next[bucket.id],bucket.creditBalance);
+    if(JSON.stringify(next)!==JSON.stringify(creditBaselines)){creditBaselines=next;saveBaselines();}
+  }catch{error='暂时无法读取额度';}return state();})().finally(()=>{pending=null;});
   await pending;return state();
  }
- return {state,refresh};
+ function resetCredits(id,legacy=null){
+  const bucket=buckets.find(b=>b.id===id);
+  if(!bucket||['__proto__','constructor','prototype'].includes(id)||state().stale||pending||bucket.unlimitedCredits||bucket.creditBalance==null)throw Error('请先刷新有效的 Credits 余额');
+  const originKey=(creditScope??'unidentified')+':'+id;preferences.creditSources??={};
+  if(legacy){if(preferences.creditSources[originKey]||!Number.isFinite(legacy.last)||legacy.last!==Number(bucket.creditBalance)||!Number.isFinite(legacy.baseline)||legacy.baseline<legacy.last)return state();creditBaselines={...creditBaselines,[id]:{last:legacy.last,baseline:legacy.baseline}};preferences.creditSources[originKey]='legacy';}
+  else{creditBaselines={...creditBaselines,[id]:observeCreditBalance(null,bucket.creditBalance)};preferences.creditSources[originKey]='manual';}
+  saveBaselines();return state();
+ }
+ return {state,refresh,resetCredits};
 }

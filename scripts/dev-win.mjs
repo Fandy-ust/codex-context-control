@@ -6,7 +6,7 @@ import os from 'node:os';
 import {removeInstallationTree} from '../src/platform/windows-install.mjs';
 const repo=fileURLToPath(new URL('../',import.meta.url));
 const at=process.argv.indexOf('--packaged'),packaged=at>=0?process.argv[at+1]:null;
-const electron=packaged?path.resolve(packaged):path.join(repo,'node_modules/electron/dist/electron.exe');
+const electron=packaged?path.resolve(packaged):path.join(repo,'node_modules/electron/dist',process.platform==='darwin'?'Electron.app/Contents/MacOS/Electron':process.platform==='win32'?'electron.exe':'electron');
 if(!fs.existsSync(electron))throw Error('Run npm ci first');
 const env={...process.env,CONTEXT_CONTROL_NODE:process.execPath};delete env.ELECTRON_RUN_AS_NODE;
 const smoke=process.argv.includes('--smoke-test'),temporary=smoke?fs.mkdtempSync(path.join(os.tmpdir(),'ctc-ui-smoke-')):null;

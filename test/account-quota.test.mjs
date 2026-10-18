@@ -26,3 +26,30 @@ test('only concrete finite credit balances are exposed, including credit-only ac
  for(const value of [null,{}, {hasCredits:true}, {balance:'Available'}, {balance:'-1'}, {balance:'Infinity'}, {balance:''}, {balance:'0',unlimited:true}])assert.equal(creditBalance(value),null);
  assert.equal(normalizeQuota({rateLimits:{credits:{balance:'25'}}})[0].creditBalance,'25');
 });
+
+test('credit baselines persist across restarts, reset on request, and remain separated by account observation',async()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'qa-credit-state-'));let at=1000000,balance='100',scope='account:a';
+ const options={home,now:()=>at,read:async()=>({rateLimits:{credits:{balance}}}),onObservation:async()=>scope};
+ try{let manager=createQuotaManager(options);await manager.refresh();assert.equal(manager.state().creditBaselines.codex.baseline,100);
+ at+=300001;balance='70';await manager.refresh();assert.equal(manager.state().creditBaselines.codex.baseline,100);
+ manager=createQuotaManager(options);at+=300001;await manager.refresh();assert.equal(manager.state().creditBaselines.codex.baseline,100);manager.resetCredits('codex');assert.equal(manager.state().creditBaselines.codex.baseline,70);
+ scope='account:b';at+=300001;balance='20';await manager.refresh();assert.equal(manager.state().creditBaselines.codex.baseline,20);
+ scope='account:a';at+=300001;balance='65';await manager.refresh();assert.equal(manager.state().creditBaselines.codex.baseline,70);
+ await assert.rejects(async()=>manager.resetCredits('__proto__'));
+ }finally{fs.rmSync(home,{recursive:true,force:true});}
+});
+
+test('optional account metadata uses a read-only request and is never exposed in quota state',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'qa-account-')),file=path.join(dir,'fixture.cjs'),log=path.join(dir,'calls.jsonl');
+ try{fs.writeFileSync(file,`const fs=require('fs');require('readline').createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({method:m.method,params:m.params})+'\\n');if(m.id)process.stdout.write(JSON.stringify({id:m.id,result:m.method==='account/read'?{account:{type:'chatgpt',email:'fixture@example.test',planType:'plus'}}:m.method==='account/rateLimits/read'?{rateLimits:{primary:{usedPercent:2,windowDurationMins:300}}}:{}})+'\\n');});`);
+ const response=await readAccountQuota({binary:process.execPath,launcherArgs:[file],includeAccount:true});assert.equal(response.account.email,'fixture@example.test');
+ const calls=fs.readFileSync(log,'utf8').trim().split('\n').map(JSON.parse);assert.deepEqual(calls.find(p=>p.method==='account/read').params,{refreshToken:false});assert.ok(!calls.some(p=>/login|logout|consume/.test(p.method)));
+ const manager=createQuotaManager({read:async()=>response});await manager.refresh();assert.ok(!JSON.stringify(manager.state()).includes('fixture@example.test'));
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('legacy credit baselines import only against the matching balance and never replace an explicit reset',async()=>{
+ let now=1000000;const manager=createQuotaManager({now:()=>now,read:async()=>({rateLimits:{credits:{balance:'70'}}})});await manager.refresh();
+ manager.resetCredits('codex',{last:60,baseline:200});assert.equal(manager.state().creditBaselines.codex.baseline,70);
+ manager.resetCredits('codex',{last:70,baseline:100});assert.equal(manager.state().creditBaselines.codex.baseline,100);
+ manager.resetCredits('codex');manager.resetCredits('codex',{last:70,baseline:200});assert.equal(manager.state().creditBaselines.codex.baseline,70);
+});

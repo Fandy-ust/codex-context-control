@@ -2,6 +2,7 @@ import net from 'node:net';
 import {normalizeBudgetCommand} from './core/budget-command.mjs';
 import {CONTROL_API_VERSION,controlOperation} from './contracts/control-api.mjs';
 import {createQuotaManager} from './account-quota.mjs';
+import {createQuotaAnalyticsService} from './quota-analytics-service.mjs';
 import {version,buildId} from './version.mjs';
 import {cleanupOldRuntimes} from './runtime-cleanup.mjs';
 import os from 'node:os';
@@ -49,7 +50,10 @@ export async function startDaemon() {
   for(const t of Object.values(store.data.threads)){t.freshUsage=false;t.usageFresh=false;t.phase='disconnected';}
   store.save();
   const bridges=new Map();const owners=new Map();
-  const quota=createQuotaManager();
+  const quotaAnalytics=createQuotaAnalyticsService();
+  const quota=createQuotaManager({home:root,onObservation:observation=>quotaAnalytics.record(observation)});
+  let analyticsTimer;
+  if(root===defaultRoot()){const scan=async()=>{let delay=60000;try{const progress=await quotaAnalytics.scan();if(progress.pending)delay=1000;}catch{}analyticsTimer=setTimeout(scan,delay);analyticsTimer.unref();};analyticsTimer=setTimeout(scan,3000);analyticsTimer.unref();}
   if(root===defaultRoot()){const initial=setTimeout(()=>quota.refresh().catch(()=>{}),1500);initial.unref();const polling=setInterval(()=>quota.refresh().catch(()=>{}),5*60*1000);polling.unref();}
   const updater=createUpdateManager({current:JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url))).version});
   if(root===defaultRoot()){const timer=setTimeout(()=>updater.check().catch(()=>{}),5000);timer.unref();const interval=setInterval(()=>updater.check().catch(()=>{}),6*60*60*1000);interval.unref();}
@@ -69,7 +73,7 @@ export async function startDaemon() {
   function state(){
     store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);
     const threads=Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity);
-    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true},buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
+    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true},buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
   }
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version,buildId};
@@ -179,6 +183,13 @@ export async function startDaemon() {
       let answer;const operation=controlOperation(req.method,route);
       if(operation==='state')answer=state();
       else if(operation==='quota-refresh')answer=await quota.refresh(true);
+      else if(operation==='quota-credit-baseline')answer=quota.resetCredits(params.id,params.legacy??null);
+      else if(operation==='quota-analytics'){
+        if(params.days!=null&&![28,56,84].includes(params.days))throw Error('Invalid quota history range');
+        if(params.scope!=null&&(typeof params.scope!=='string'||params.scope.length>80))throw Error('Invalid quota history scope');
+        if(params.pool!=null&&(typeof params.pool!=='string'||params.pool.length>160))throw Error('Invalid quota pool');
+        answer=await quotaAnalytics.report({days:params.days??28,scope:params.scope,pool:params.pool,refresh:params.refresh===true,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
+      }
       else if(operation==='shutdown'){if(Object.values(store.data.threads).some(t=>t.phase==='reloading'))throw Error('A budget transaction is still active');answer={ok:true};setTimeout(shutdown,100).unref();}
       else if(operation==='check-update')answer=await updater.check(true);
       else if(operation==='install-update')answer=await updater.install();
@@ -208,6 +219,7 @@ export async function startDaemon() {
   const cleanupStart=setTimeout(cleanup,30000);cleanupStart.unref();
   const cleanupTimer=setInterval(cleanup,5*60*1000);cleanupTimer.unref();
   const scanTimer=setInterval(()=>store.refreshMetadata(),15000);scanTimer.unref();
+  web.once('close',()=>{clearTimeout(analyticsTimer);quotaAnalytics.close();});
   const shutdown=()=>{try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};

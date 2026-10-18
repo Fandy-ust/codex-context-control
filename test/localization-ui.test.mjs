@@ -32,14 +32,14 @@ import Vision
   let view=NSHostingView(rootView:ContentView(model:model).frame(width:1040,height:900))
   let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1040,height:900),styleMask:[.borderless],backing:.buffered,defer:false);window.contentView=view;window.display()
   let panel=NSHostingView(rootView:MainControlPanelView(model:model))
-  let panelWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:360,height:560),styleMask:[.borderless],backing:.buffered,defer:false);panelWindow.contentView=panel;panelWindow.display()
+  let panelWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:760,height:560),styleMask:[.borderless],backing:.buffered,defer:false);panelWindow.contentView=panel;panelWindow.display()
   Task{@MainActor in
    do{
     try await Task.sleep(for:.milliseconds(350));model.setLanguage(.en);try await Task.sleep(for:.milliseconds(350))
-    let english=try capture(view,"en"),panelEnglish=try capture(panel,"en-panel");precondition(english.contains("Control panel") && panelEnglish.contains("Language") && panelEnglish.contains("Global defaults") && english.contains("Context window"),"English UI was not rendered: "+english)
+    let english=try capture(view,"en"),panelEnglish=try capture(panel,"en-panel");precondition(english.contains("Quota analytics") && panelEnglish.contains("Language") && panelEnglish.contains("Global defaults") && english.contains("Context window"),"English UI was not rendered: "+english)
     precondition(!english.contains("全局默认") && model.selected!.policy! == original)
     model.setLanguage(.zh);try await Task.sleep(for:.milliseconds(350));let chinese=try capture(view,"zh"),panelChinese=try capture(panel,"zh-panel")
-    precondition(chinese.contains("主控制面板") && panelChinese.contains("全局默认") && chinese.contains("上下文窗口"),"Chinese UI did not refresh: "+chinese)
+    precondition(chinese.contains("额度分析") && panelChinese.contains("全局默认") && chinese.contains("上下文窗口"),"Chinese UI did not refresh: "+chinese)
     precondition(model.selected!.policy! == original && model.selected!.title=="Project title · 原文")
     print("English/Chinese native rendering, immediate switch, original chat title and unchanged budget passed")
     app.terminate(nil)

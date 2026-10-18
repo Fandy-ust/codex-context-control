@@ -33,3 +33,5 @@ Automatic update checks contact this public GitHub repository for release metada
 The quota indicator reads account rate limits through a short-lived official Codex app-server session. It does not open chats or request model output. Only quota percentages, window lengths, and reset times are retained in memory, with a five-minute refresh interval; authentication remains inside the official runtime.
 
 When the official API supplies a numeric credit balance, it is shown in the account menu and cached only in memory. No generic availability message is substituted for a missing balance.
+
+Quota analytics keeps numeric observations, response IDs, model/project metadata and incremental file cursors in the local data directory. Account grouping uses a locally salted hash; emails, credentials and message bodies are not stored. Records are retained for 90 days and survive upgrades. See [analytics definitions](../QUOTA_ANALYTICS.md).

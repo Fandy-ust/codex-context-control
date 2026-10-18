@@ -1,0 +1,38 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import {QuotaLedger, projectQuota} from '../src/analytics/ledger.mjs';
+const now = Date.now();
+const event = (type, payload, at = now - 60000) => JSON.stringify({timestamp: new Date(at).toISOString(), type, payload}) + '\n';
+const usage = (id = 'response-a', thread = 'a') => event('token_usage_record', {response_id: id, thread_id: thread, usage: {input_tokens: 100, output_tokens: 20, cached_input_tokens: 80, reasoning_output_tokens: 10}});
+const limits = () => event('event_msg', {type: 'token_count', rate_limits: {limit_id: 'codex', primary: {used_percent: 20, window_minutes: 10080, resets_at: Math.floor(now / 1000) + 3600}}});
+function fixture() {const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quota-ledger-'));const home = path.join(dir, 'codex');fs.mkdirSync(home);const file = path.join(home, 'a.jsonl');return {dir, home, file, row: {id: 'a', rollout_path: file, cwd: path.join(dir, 'project'), name: 'Fixture'}, ledger: new QuotaLedger({file: path.join(dir, 'history.sqlite'), home, now: () => now})};}
+test('incremental scans persist offsets, deduplicate requests and retain only numeric observations', () => {
+ const f = fixture();try {
+ fs.writeFileSync(f.file, event('turn_context', {model: 'Sol'}) + event('response_item', {role: 'user', content: 'PRIVATE MESSAGE'}) + usage() + limits());
+ f.ledger.scan({rows: [f.row]});let report = f.ledger.read();assert.equal(report.requests.length, 1);assert.equal(report.snapshots.length, 1);assert.equal(report.requests[0].input + report.requests[0].output, 120);
+ assert.ok(!JSON.stringify(report).includes('PRIVATE MESSAGE'));
+ assert.equal(f.ledger.scan({rows: [f.row]}).bytesRead, 0);
+ fs.appendFileSync(f.file, usage() + usage('response-b'));
+ f.ledger.scan({rows: [f.row]});assert.equal(f.ledger.read().requests.length, 2);
+ const second = path.join(f.home, 'b.jsonl');fs.writeFileSync(second, usage('response-b', 'a'));
+ f.ledger.scan({rows: [{...f.row, id: 'b', rollout_path: second}]});assert.equal(f.ledger.read().requests.length, 2, 'copied parent usage is not billed to the fork');
+ } finally {f.ledger.close();fs.rmSync(f.dir, {recursive: true, force: true});}
+});
+test('partial lines, large message records, replacements and unsafe paths are handled without resetting history', () => {
+ const f = fixture();try {
+ const record = usage();fs.writeFileSync(f.file, record.slice(0, -1));f.ledger.scan({rows: [f.row]});assert.equal(f.ledger.read().requests.length, 0);
+ fs.appendFileSync(f.file, '\n');f.ledger.scan({rows: [f.row]});assert.equal(f.ledger.read().requests.length, 1);
+ fs.appendFileSync(f.file, event('response_item', {content: 'x'.repeat(2 * 1024 * 1024)}) + usage('response-c'));
+ f.ledger.scan({rows: [f.row]});assert.equal(f.ledger.read().requests.length, 2);
+ fs.writeFileSync(f.file, usage('response-new'));f.ledger.scan({rows: [f.row]});assert.equal(f.ledger.read().requests.length,3,'replacing history does not refund earlier requests');
+ const outside = path.join(f.dir, 'outside.jsonl');fs.writeFileSync(outside, usage('outside'));f.ledger.scan({rows: [{...f.row, rollout_path: outside}]});assert.equal(f.ledger.read().requests.length, 3);
+ } finally {f.ledger.close();fs.rmSync(f.dir, {recursive: true, force: true});}
+});
+test('cycle identification uses reported duration rather than primary/secondary position', () => {
+ const p = projectQuota({primary: {usedPercent: 17, windowDurationMins: 10080, resetsAt: 1000}, secondary: {usedPercent: 25, windowDurationMins: 300, resetsAt: 2000}}, {at: now});
+ assert.equal(p.weeklyUsed, 17);assert.equal(p.fiveUsed, 25);
+ assert.equal(projectQuota({primary: {usedPercent: 20, windowDurationMins: 15, resetsAt: 1000}}, {at: now}), null);
+});

@@ -1,3 +1,4 @@
+import {quotaAnalyticsView,bindQuotaAnalytics} from './quota-analytics.mjs';
 import {observeCreditBalance} from '../../src/credit-baseline.mjs';
 import {draftLimits as legacyDraftLimits,resizeDraft as legacyResizeDraft,policyForDraft as legacyPolicyForDraft} from '../../src/core/default-budget-editor.mjs';
 import {threadDraft as appleThreadDraft,threadDraftLimits as appleDraftLimits,resizeThreadDraft as appleResizeDraft,policyForThreadDraft as applePolicyForDraft} from '../../src/core/budget-editor.mjs';
@@ -36,9 +37,15 @@ const resizeDraft=(...args)=>(useLegacyBudget()?legacyResizeDraft:appleResizeDra
 const policyForDraft=(...args)=>(useLegacyBudget()?legacyPolicyForDraft:applePolicyForDraft)(...args);
 const editorRoot=()=>settingsOpen?root.querySelector('.settings-body'):root.querySelector('.main');
 const chatName=chat=>chat?.name||chat?.title||chat?.cwd?.split(/[\\/]/).filter(Boolean).at(-1)||chat?.id?.slice(0,12)||t('未命名聊天','Untitled chat');
+let qaReport=null,qaLoading=false,qaError='',qaSection='overview',qaDays=28,qaScope='',qaPool='',qaEpoch=0,qaLastLoad=0;
+let creditMigrationAttempted=false;
 let creditBaselines={};
 try{const saved=JSON.parse(localStorage.getItem('credit-baselines')||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))creditBaselines=saved;}catch{}
 function observeCredits(quota){
+  if(quota?.creditBaselines){
+    if(!creditMigrationAttempted&&quota.updatedAt&&!quota.stale){creditMigrationAttempted=true;try{const legacy=JSON.parse(localStorage.getItem('credit-baselines')||'{}');for(const bucket of quota.buckets||[]){const value=legacy[bucket.id];if(value&&Number(bucket.creditBalance)===value.last)void api.invoke('quota-credit-baseline',{id:bucket.id,legacy:value}).then(next=>{creditBaselines=next.creditBaselines;if(state)state.quota=next;if(mode==='main')render();}).catch(()=>{});}}catch{}}
+    creditBaselines=quota.creditBaselines;return;
+  }
   if(mode!=='main'||quota?.stale!==false||quota.loading)return;
   let changed=false;
   for(const bucket of quota.buckets||[]){
@@ -71,7 +78,7 @@ function statusText(thread){return thread.connected?phase(thread):t(thread.lastU
 function sidebar(){
   const connected=state?.bridgeCount>0;
   const navigation=projectSidebar({threads:state?.threads,sidebar:state?.sidebar,selected,expanded:projectExpansion,t,escape:e,chatName,statusText});
-  return `<aside class="sidebar"><div class="brand row"><span class="dot ${connected?'on':''}"></span><span>Codex</span>${preferences.demo?`<span class="preview-pill">${e(t('预览','Preview'))}</span>`:''}<span class="grow"></span><button class="settings-trigger" data-action="settings" title="${e(t('设置','Settings'))}" aria-label="${e(t('设置','Settings'))}" aria-haspopup="dialog" aria-expanded="${settingsOpen}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m9.5 3-.7 2.2-2 .9-2.1-.5-2.5 4.3 1.5 1.7v2.3l-1.5 1.7 2.5 4.3 2.1-.5 2 .9.7 2.2h5l.7-2.2 2-.9 2.1.5 2.5-4.3-1.5-1.7v-2.3l1.5-1.7-2.5-4.3-2.1.5-2-.9-.7-2.2Z"/><circle cx="12" cy="12.8" r="3"/></svg></button><span class="tiny">v${e(preferences.version||'')}</span></div>${navigation}<div class="sidebar-footer-row">${sidebarCredits({quota:state?.quota,pool:preferences.quotaPool,available:serviceAvailable,observation:creditBaselines[selectedQuota(state?.quota,preferences.quotaPool)?.id],t,escape:e})}${sidebarQuota({quota:state?.quota,pool:preferences.quotaPool,available:serviceAvailable,t,escape:e,language:preferences.language})}</div></aside>`;
+  return `<aside class="sidebar"><div class="brand row"><span class="dot ${connected?'on':''}"></span><span>Codex</span>${preferences.demo?`<span class="preview-pill">${e(t('预览','Preview'))}</span>`:''}<span class="grow"></span><button class="settings-trigger" data-action="settings" title="${e(t('设置','Settings'))}" aria-label="${e(t('设置','Settings'))}" aria-haspopup="dialog" aria-expanded="${settingsOpen}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m9.5 3-.7 2.2-2 .9-2.1-.5-2.5 4.3 1.5 1.7v2.3l-1.5 1.7 2.5 4.3 2.1-.5 2 .9.7 2.2h5l.7-2.2 2-.9 2.1.5 2.5-4.3-1.5-1.7v-2.3l1.5-1.7-2.5-4.3-2.1.5-2-.9-.7-2.2Z"/><circle cx="12" cy="12.8" r="3"/></svg></button><span class="tiny">v${e(preferences.version||'')}</span></div>${navigation}<button class="qa-nav ${view==='quota'?'active':''}" data-action="quota-analytics">▥ ${e(t('额度分析','Quota analytics'))}</button><div class="sidebar-footer-row">${sidebarCredits({quota:state?.quota,pool:preferences.quotaPool,available:serviceAvailable,observation:creditBaselines[selectedQuota(state?.quota,preferences.quotaPool)?.id],t,escape:e})}${sidebarQuota({quota:state?.quota,pool:preferences.quotaPool,available:serviceAvailable,t,escape:e,language:preferences.language})}</div></aside>`;
 }
 function slider(value,model,{single=false,id='main'}={}){
   const limit=draftLimits(model,value.window,value.reserve),max=limit?.maximum||1,white=value.window/max*100,blue=value.compact/max*100;
@@ -178,15 +185,22 @@ function render(){
   const oldMain=root.querySelector('.main'),same=oldMain?.dataset.view===view&&oldMain?.dataset.chatId===selected,open=same?[...oldMain.querySelectorAll('details')].map((d,i)=>d.open?i:-1).filter(i=>i>=0):[],scroll=same?oldMain.scrollTop:0;
   const settingsScroll=root.querySelector('.settings-body')?.scrollTop||0;
   const focusID=document.activeElement?.closest('.details-page')?document.activeElement.id:null;
-  const body=settingsOpen?settingsUnderlay:detailsOpen?detailsPage():`${preferences.demo?demoBanner():''}${editingDefaults()?defaultsPage():chatPage()}`;
+  const body=settingsOpen?settingsUnderlay:view==='quota'?quotaAnalyticsView({report:qaReport,section:qaSection,loading:qaLoading,error:qaError,days:qaDays,e,t}):detailsOpen?detailsPage():`${preferences.demo?demoBanner():''}${editingDefaults()?defaultsPage():chatPage()}`;
   root.innerHTML=`<div class="shell" style="--sidebar-width:${visibleSidebarWidth()}px" ${settingsOpen?'inert':''}>${sidebar()}<main class="main" id="main-content" data-view="${view}" data-chat-id="${e(selected)}">${body}</main></div>${settingsOpen?settingsDialog():''}`;
   const newMain=root.querySelector('.main');for(const [i,d]of [...newMain.querySelectorAll('details')].entries())if(open.includes(i))d.open=true;const targetScroll=detailsOpen?(detailsRestoreScroll??(same?scroll:detailsScrollByChat.get(selected)||0)):scroll;
   if(newMain.querySelector('#phase')){newMain.querySelector('#phase').textContent=phase(current());newMain.querySelector('#phase-message').textContent=t(current()?.message||'接入后，设置会在轮次之间应用。');}
   if(settingsOpen)root.querySelector('.settings-body').scrollTop=settingsScroll;
-  bindSliders();bindSidebar();if(detailsOpen&&stats)drawCharts();
+  bindSliders();bindSidebar();if(view==='quota')bindQuotaAnalytics(root);if(detailsOpen&&stats)drawCharts();
   newMain.scrollTop=targetScroll;if(detailsOpen&&stats&&!statsLoading)detailsRestoreScroll=null;
   if(focusID)document.getElementById(focusID)?.focus({preventScroll:true});
 }
+async function loadQuotaAnalytics(force=false){
+  const epoch=++qaEpoch;qaLoading=true;qaError='';render();
+  try{const report=await api.invoke('quota-analytics',{days:qaDays,scope:qaScope||undefined,pool:qaPool||preferences.quotaPool||undefined,refresh:force});if(epoch!==qaEpoch)return;qaReport=report;qaScope=report.scope;qaPool=report.pool;qaLastLoad=Date.now();}
+  catch(error){if(epoch===qaEpoch)qaError=error.message;}
+  finally{if(epoch===qaEpoch){qaLoading=false;if(view==='quota')render();}}
+}
+function openQuotaAnalytics(){if(settingsOpen)closeSettings();if(detailsOpen)closeDetails();view='quota';render();void loadQuotaAnalytics();}
 function demoBanner(){return `<div class="demo-banner row between"><div><strong>${e(t('合成数据预览 · 3 个示例聊天','Preview · 3 sample chats'))}</strong><p class="tiny">${e(t('这里不读取真实聊天；切换到本地模式可查看你的聊天。','Preview does not read real chats. Switch to local mode to see your chats.'))}</p></div><button class="small" data-action="open-live">${e(t('查看真实聊天','View real chats'))} ↗</button></div>`;}
 function integrationSettings(){
   const integration=preferences.integration||{enabled:false,available:false};
@@ -200,7 +214,7 @@ function quotaPanel(compact=false){
   const quota=state?.quota,buckets=quota?.buckets||[],bucket=selectedQuota(quota,preferences.quotaPool),windows=quotaWindows(bucket),stale=quotaStale(quota);
   const period=window=>quotaPeriod(window,t);
   const credit=observeCreditBalance(null,bucket?.creditBalance),baseline=creditBaselines[bucket?.id]?.baseline;
-  const creditControls=compact?'':`<div class="stack"><div class="row wrap"><button data-action="credit-baseline-reset" ${!credit||bucket?.unlimitedCredits||stale||quota?.loading||!serviceAvailable?'disabled':''}>${e(t('重置 Credits 基准','Reset Credits baseline'))}</button>${Number.isFinite(baseline)?`<span class="tiny muted">${e(t('当前基准：{0}','Current baseline: {0}',baseline.toLocaleString(preferences.language==='zh'?'zh-CN':'en-US',{maximumFractionDigits:20})))}</span>`:''}</div><p class="tiny muted">${e(t('将当前余额设为新的 100%；余额增加时也会自动更新基准。','Use the current balance as the new 100%. Balance increases also reset the baseline automatically.'))}</p></div>`;
+  const creditControls=compact?'':`<div class="stack"><button data-action="quota-analytics">▥ ${e(t('额度分析','Quota analytics'))}</button><div class="row wrap"><button data-action="credit-baseline-reset" ${!credit||bucket?.unlimitedCredits||stale||quota?.loading||!serviceAvailable?'disabled':''}>${e(t('重置 Credits 基准','Reset Credits baseline'))}</button>${Number.isFinite(baseline)?`<span class="tiny muted">${e(t('当前基准：{0}','Current baseline: {0}',baseline.toLocaleString(preferences.language==='zh'?'zh-CN':'en-US',{maximumFractionDigits:20})))}</span>`:''}</div><p class="tiny muted">${e(t('将当前余额设为新的 100%；余额增加时也会自动更新基准。','Use the current balance as the new 100%. Balance increases also reset the baseline automatically.'))}</p></div>`;
   return `<section class="quota-panel ${compact?'compact':'card stack'}"><div class="row between"><h2>${e(t('账户额度','Account quota'))}</h2><button class="small" data-action="quota-refresh" ${busy||quota?.loading?'disabled':''} aria-label="${e(t('刷新额度','Refresh quota'))}">↻ ${e(t('刷新','Refresh'))}</button></div>${buckets.length>1?`<label class="stack tiny" for="quota-pool">${e(t('额度类型','Quota pool'))}<select id="quota-pool">${buckets.map(item=>`<option value="${e(item.id)}" ${item.id===bucket?.id?'selected':''}>${e(item.name)}</option>`).join('')}</select></label>`:''}${windows.map(window=>`<div class="quota-window ${quotaLevel(window.remainingPercent)}"><div class="row between"><span class="muted">${e(period(window))}</span><strong class="num">${e(t('剩余 {0}%','{0}% remaining',Math.round(window.remainingPercent)))}</strong></div><div class="quota-meter"><i style="width:${Math.max(0,Math.min(100,window.remainingPercent))}%"></i></div><div class="tiny muted quota-reset">${quotaReset(window,{t,escape:e,language:preferences.language})}</div></div>`).join('')||`<p class="tiny muted">${e(quota?.loading?t('正在读取额度…','Reading quota…'):t(quota?.error||'额度暂不可用','Quota unavailable'))}</p>`}${bucket?.creditBalance!=null||bucket?.hasCredits||bucket?.unlimitedCredits?`<p class="tiny muted">${e(bucket?.unlimitedCredits?t('额外额度不限量','Unlimited extra credits'):bucket?.creditBalance!=null?t('额外额度：{0}','Extra credits: {0}',bucket.creditBalance):t('额外额度可用','Extra credits available'))}</p>`:''}${creditControls}${stale&&windows.length?`<span class="tiny error">${e(t('上次记录，待刷新','Cached observation; refresh needed'))}</span>`:''}${compact?'':`<p class="tiny muted">${e(t('通过官方运行时读取，每五分钟缓存刷新；不创建聊天或生成模型回复。','Read through the official runtime and cached for five minutes, without creating chats or model output.'))}</p>`}</section>`;
 }
 function generalSettings(){
@@ -402,7 +416,7 @@ function selectChat(id){
   render();if(remainInDetails)void loadStats(true);
 }
 function loadDraft(){if(editingDefaults()){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else{const next=threadDraft(current());if(draft?.expectedRevision!==next?.expectedRevision){budgetText={};budgetInputError='';}draft=next;}dirty=false;}
-async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen&&!detailsOpen)refreshBudgetValidity();if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select')){if(view==='stats'&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if((!dirty&&!detailsOpen)||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
+async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(view==='quota'&&!settingsOpen){if(!qaLoading&&Date.now()-qaLastLoad>(qaReport?.quality?.progress?.pending?1500:15000))await loadQuotaAnalytics();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}}return;}if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen&&!detailsOpen)refreshBudgetValidity();if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select')){if(view==='stats'&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if((!dirty&&!detailsOpen)||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
   try{
     if(action==='settings'){openSettings();return;}
@@ -415,10 +429,15 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action==='credit-baseline-reset'){
       const bucket=selectedQuota(state?.quota,preferences.quotaPool),next=observeCreditBalance(null,bucket?.creditBalance);
       if(!next||bucket?.unlimitedCredits||quotaStale(state?.quota,serviceAvailable)||state?.quota?.loading)return;
+      if(state?.capabilities?.creditBaseline){const quota=await run('quota-credit-baseline',{id:bucket.id});state.quota=quota;observeCredits(quota);render();notify(t('Credits 基准已重置','Credits baseline reset'));return;}
       const saved={...creditBaselines,[bucket.id]:next};
       localStorage.setItem('credit-baselines',JSON.stringify(saved));creditBaselines=saved;render();
       notify(t('Credits 基准已重置','Credits baseline reset'));return;
     }
+    if(action==='quota-analytics'){openQuotaAnalytics();return;}
+    if(action==='qa-close'){++qaEpoch;qaLoading=false;view='chat';render();return;}
+    if(action==='qa-section'){qaSection=button.dataset.section;render();return;}
+    if(action==='qa-refresh'){await run('quota-refresh');await loadQuotaAnalytics(true);return;}
     if(action==='quota-refresh'){await run('quota-refresh');await refresh();if(settingsOpen)render();return;}
     if(action==='integration-toggle'){
       const enabled=preferences.integration?.enabled!==true;
@@ -494,7 +513,8 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
 root.addEventListener('pointerdown',event=>{if(event.target.id==='smoothing')smoothingInteracting=true;});
 window.addEventListener('pointerup',()=>{if(smoothingInteracting){smoothingInteracting=false;queueMicrotask(applyDeferredStats);}});
 window.addEventListener('pointercancel',()=>{smoothingInteracting=false;});
-root.addEventListener('change',async event=>{const target=event.target;try{
+root.addEventListener('change',async event=>{
+  if(['qa-days','qa-scope','qa-pool'].includes(event.target.id)){if(event.target.id==='qa-days')qaDays=Number(event.target.value);else if(event.target.id==='qa-scope'){qaScope=event.target.value;qaPool='';}else qaPool=event.target.value;qaReport=null;await loadQuotaAnalytics(true);return;}const target=event.target;try{
   if(target.id==='auto-check-updates'){const result=await api.invoke('update-preferences',{enabled:target.checked});preferences.autoCheckUpdates=result.enabled;}
   if(target.id==='language'){await api.invoke('language',{selection:target.value});preferences=await api.invoke('preferences');render();}
   if(target.id==='quota-pool'){await api.invoke('quota-select',{id:target.value});preferences.quotaPool=target.value;render();}
@@ -637,3 +657,5 @@ await refresh();
 setInterval(()=>{if(!document.hidden&&!dragging&&hover==null)refresh();},2000);
 
 setInterval(()=>{if(!document.hidden)for(const node of root.querySelectorAll("[data-quota-reset]"))node.textContent=quotaCountdown(Number(node.dataset.quotaReset),t,Date.now(),node.dataset.quotaCompact==='true');},1000);
+
+window.__contextQuotaSmoke=async function({preview=false}={}){openQuotaAnalytics();while(qaLoading)await new Promise(r=>setTimeout(r,20));const result={ok:!qaError&&root.querySelectorAll('[data-qa-chart]').length===6&&root.querySelectorAll('.qa-tabs button').length===4,charts:root.querySelectorAll('[data-qa-chart]').length,error:qaError};if(!preview){view='chat';render();}return result;};

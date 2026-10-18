@@ -78,13 +78,8 @@ struct ContextDetailsButton:View {
     @State private var interactionRefresh:Task<Void,Never>?
     var body:some View {
         VStack(alignment:.leading,spacing:16){
-            HStack(alignment:.top){
-                VStack(alignment:.leading,spacing:5){Text(L("上下文详情")).font(.title2.weight(.semibold));Text(title).font(.callout).foregroundStyle(.secondary).lineLimit(1)}
-                Spacer()
-                if loading{ProgressView().controlSize(.small)}
-                Button(L("刷新"),systemImage:"arrow.clockwise"){Task{await reload(force:true)}}.disabled(loading)
-                Button(L("返回预算"),systemImage:"arrow.left"){if let onBack{onBack()}else{dismiss()}}.keyboardShortcut(.cancelAction)
-            }
+            HStack{Button(L("返回预算"),systemImage:"arrow.left"){if let onBack{onBack()}else{dismiss()}}.keyboardShortcut(.cancelAction);Spacer();if loading{ProgressView().controlSize(.small)};Button(L("刷新"),systemImage:"arrow.clockwise"){Task{await reload(force:true)}}.disabled(loading)}.buttonStyle(.bordered)
+            Text(L("上下文详情")).font(.title2.weight(.semibold)).padding(.top,8)
             HStack {Text(statistics.map{ $0.snapshotKind=="last_request" ? L("最近请求快照 · {0}", timestamp($0.snapshotAt)):L("本地保留历史 · 尚无可对齐用量") } ?? L("正在读取所选聊天…")).font(.caption).foregroundStyle(.secondary);Spacer();Toggle(L("自动刷新"),isOn:$autoRefresh).toggleStyle(.switch).controlSize(.small).font(.caption)}
             if let error{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
             ScrollView {

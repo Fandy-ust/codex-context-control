@@ -29,8 +29,9 @@ struct NewChatDefaultsLimits:Decodable,Equatable {let maximumUsableWindow:Int;le
 struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:Bool;let version:String?;let phase:String;let error:String?;let retryAt:Int?}
 struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPercent:Double;let windowDurationMins:Int?;let resetsAt:Int?}
 struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?;let creditBalance:String?}
-struct QuotaState:Decodable,Equatable {let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
-struct ControlCapabilities:Decodable {let visibleBudget:Bool?}
+struct CreditBaseline:Decodable,Equatable {let last:Double;let baseline:Double}
+struct QuotaState:Decodable,Equatable {let creditBaselines:[String:CreditBaseline?]?;let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
+struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics:Bool?;let creditBaseline:Bool?}
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
 struct ChatSidebar:Decodable,Equatable {let projects:[SidebarProject];let standaloneThreadIds:[String]}
 struct RuntimeState: Decodable {let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
@@ -54,12 +55,16 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var chats:[Chat]=[]
     @Published var sidebar:ChatSidebar?
     @Published var selectedID:String?
+    @Published var showQuotaAnalytics=false
+    @Published var supportsQuotaAnalytics=false
+    @Published var appVersion=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "—"
     @Published var updateState:UpdateState?
     @Published var checkingUpdates=false
     @Published var quota:QuotaState?
     @Published var quotaRefreshing=false
     @Published var selectedQuotaID="codex"
     var selectedQuota:QuotaBucket? {quota?.buckets.first{$0.id==selectedQuotaID} ?? quota?.buckets.first}
+    var selectedCreditBaseline:CreditBaseline? {guard let id=selectedQuota?.id,let entries=quota?.creditBaselines,let value=entries[id] else{return nil};return value}
     @Published var supportsVisibleBudget=false
     @Published var bridgeCount=0
     @Published var contextCeilingPending=false
@@ -95,12 +100,12 @@ struct ServiceSettings: Decodable {let node:String}
         let connection=try JSONDecoder().decode(Connection.self,from:Data(contentsOf:home.appendingPathComponent("connection.json")))
         var request=URLRequest(url:URL(string:"http://127.0.0.1:\(connection.port)\(route)")!)
         request.setValue("Bearer \(connection.token)",forHTTPHeaderField:"Authorization")
-        request.timeoutInterval=30
+        request.timeoutInterval=route==ControlAPI.quotaAnalytics ? 60:30
         if let body {request.httpMethod="POST";request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.httpBody=try JSONSerialization.data(withJSONObject:body)}
         let (data,response)=try await URLSession.shared.data(for:request)
         guard (response as? HTTPURLResponse)?.statusCode==200 else {
             let object=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any]
-            throw NSError(domain:"ContextControl",code:1,userInfo:[NSLocalizedDescriptionKey:object?["error"] as? String ?? L("本地服务暂时不可用")])
+            throw NSError(domain:"ContextControl",code:1,userInfo:[NSLocalizedDescriptionKey:L(object?["error"] as? String ?? "本地服务暂时不可用")])
         }
         return data
     }
@@ -108,7 +113,7 @@ struct ServiceSettings: Decodable {let node:String}
         if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api(ControlAPI.state))
             guard !menuDragInProgress else{return}
-            supportsVisibleBudget=state.capabilities?.visibleBudget == true
+            supportsVisibleBudget=state.capabilities?.visibleBudget == true;supportsQuotaAnalytics=state.capabilities?.quotaAnalytics == true;appVersion=state.version
             if quota != state.quota{acceptQuota(state.quota)}
             if updateState != state.update{updateState=state.update;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
             if chats != state.threads{chats=state.threads}
@@ -130,6 +135,10 @@ struct ServiceSettings: Decodable {let node:String}
     func acceptQuota(_ value:QuotaState?){
         quota=value
         if value?.buckets.contains(where:{$0.id==selectedQuotaID}) != true,let first=value?.buckets.first{selectedQuotaID=first.id}
+    }
+    func resetCredits() async {
+        guard let id=selectedQuota?.id else{return};quotaRefreshing=true;defer{quotaRefreshing=false}
+        do{acceptQuota(try JSONDecoder().decode(QuotaState.self,from:await api(ControlAPI.quotaCreditBaseline,body:["id":id])));notice=L("Credits 基准已重置")}catch{notice=error.localizedDescription}
     }
     func refreshQuota() async {
         guard !quotaRefreshing else{return};quotaRefreshing=true;defer{quotaRefreshing=false}
@@ -233,7 +242,7 @@ func phaseName(_ value:String?) -> String {
     switch value {case "extension_pending":return L("等待重开 Codex");case "compacting":return L("正在保护性压缩");case "confirmed":return L("窗口已确认");case "awaiting_runtime_confirmation":return L("等待下一轮确认");case "reloading":return L("正在应用");case "waiting_for_idle","queued":return L("等待轮次结束");case "needs_compaction":return L("需要先压缩");case "needs_observation":return L("等待用量记录");case "error","mismatch":return L("需要处理");case "saved":return L("已保存");default:return L("尚未接入")}
 }
 
-private enum PanelStyle {
+enum PanelStyle {
     static let background=Color(white:0.095)
     static let surface=Color(white:0.16)
     static let border=Color.white.opacity(0.09)
@@ -523,6 +532,7 @@ struct ContentView: View {
     @ObservedObject var model:Controller
     @State private var confirmCompact=false
     @State private var showControlPanel=false
+    @State private var controlTab="general"
     @State private var showDetails=false
     @State private var selectedThumb:BudgetThumb = .window
     private var maxMode:Bool {model.selected?.modelMetadata?.context_ceiling==920000 && Int(model.windowK)==920}
@@ -535,21 +545,22 @@ struct ContentView: View {
                 HStack(spacing:7){
                     Circle().fill((model.serviceAvailable && model.bridgeCount>0) ? Color.green:Color.gray).frame(width:7,height:7)
                     Text("Codex").font(.system(size:11)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button{controlTab="general";showControlPanel=true}label:{Image(systemName:"gearshape").font(.system(size:17))}.buttonStyle(.plain).help(L("设置")).accessibilityIdentifier("control-panel-button")
+                    Text("v"+model.appVersion).font(.system(size:10)).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth:.infinity,alignment:.leading)
                 .accessibilityElement(children:.ignore)
                 .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 .help((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 ProjectChatSidebar(model:model).frame(maxHeight:.infinity)
-                AccountQuotaSection(model:model)
-                Button{showControlPanel.toggle()} label:{
-                    HStack(spacing:10){Image(systemName:"slider.horizontal.3");Text(L("主控制面板")).font(.system(size:13,weight:.medium));Spacer();Image(systemName:showControlPanel ? "chevron.down":"chevron.up").font(.system(size:10,weight:.semibold)).foregroundStyle(.secondary)}
-                        .padding(12).frame(maxWidth:.infinity).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:12)).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier("control-panel-button")
-                    .popover(isPresented:$showControlPanel,attachmentAnchor:.rect(.bounds),arrowEdge:.bottom){MainControlPanelView(model:model,close:{showControlPanel=false})}
-            }.padding().frame(minWidth:235,idealWidth:270,maxWidth:340).background(PanelStyle.background)
+                Button{showDetails=false;model.showQuotaAnalytics=true}label:{Label(L("额度分析"),systemImage:"chart.xyaxis.line").font(.system(size:12)).frame(maxWidth:.infinity,alignment:.leading).padding(8).contentShape(Rectangle())}.buttonStyle(.plain).disabled(!model.supportsQuotaAnalytics)
+                QuotaSidebarView(model:model,open:{controlTab="quota";showControlPanel=true})
+            }.padding().frame(minWidth:310,idealWidth:340,maxWidth:380).background(PanelStyle.background)
             Group {
-                if showDetails,let chat=model.selected {
+                if model.showQuotaAnalytics {
+                    QuotaAnalyticsView(model:model,onBack:{model.showQuotaAnalytics=false})
+                } else if showDetails,let chat=model.selected {
                     ContextDetailsView(chatID:chat.id,title:chat.title,model:model,onBack:{showDetails=false}).id(chat.id)
                 } else {
             ScrollView {
@@ -588,7 +599,8 @@ struct ContentView: View {
         .frame(minWidth:960,minHeight:670)
         .background(PanelStyle.background)
         .preferredColorScheme(.dark).tint(PanelStyle.blue).environment(\.locale,Localization.locale)
-        .onChange(of:model.selectedID){_,_ in model.fill()}
+        .onChange(of:model.selectedID){_,_ in model.showQuotaAnalytics=false;model.fill()}
+        .sheet(isPresented:$showControlPanel){MainControlPanelView(model:model,initialTab:controlTab,close:{showControlPanel=false})}
         .confirmationDialog(L("请求 Codex 原生压缩？"),isPresented:$confirmCompact,titleVisibility:.visible){Button(L("请求压缩")){Task{await model.act("compact")}};Button(L("取消"),role:.cancel){}}message:{Text(L("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。"))}
     }
     func budgetEditor()->some View {

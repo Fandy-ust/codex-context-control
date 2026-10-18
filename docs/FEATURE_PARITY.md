@@ -2,6 +2,7 @@
 
 | Capability | Shared authority | Mac presentation | Windows presentation | Validation |
 | --- | --- | --- | --- | --- |
+| Quota analytics and credit baselines | core/quota-analytics, quota ledger, account-quota | Native charts and Credits ring | SVG charts and Credits ring | Shared report fixtures, HTTP, ledger and UI checks |
 | Visible window and compaction | core/budget, budget-command, policy | Native sliders | Web/native tray sliders | Core fixtures + Swift parity |
 | Default budgets and forks | core/new-chat-defaults, fork-budget | Floating control panel | Settings overlay | API and bridge tests |
 | Fresh versus cached usage | store, thread-cache, confirmation | Labels and rings | Labels and rings | Cache, lifecycle and confirmation tests |
