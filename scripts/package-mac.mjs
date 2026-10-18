@@ -83,7 +83,11 @@ const imageRoot=fs.mkdtempSync(path.join(output,'dmg-stage-'));
 try{
  fs.cpSync(app,path.join(imageRoot,path.basename(app)),{recursive:true});
  fs.copyFileSync(path.join(output,'README-FIRST.txt'),path.join(imageRoot,'README-FIRST.txt'));
- run('/usr/bin/hdiutil',['create','-ov','-format','UDZO','-volname','Context Manager','-srcfolder',imageRoot,image]);
+ // APFS clones/sparse files can make hdiutil's source-folder estimate too small.
+ // Size the image from logical file lengths, plus filesystem and copy headroom.
+ const logicalBytes=directory=>fs.readdirSync(directory,{withFileTypes:true}).reduce((sum,entry)=>sum+(entry.isDirectory()?logicalBytes(path.join(directory,entry.name)):fs.statSync(path.join(directory,entry.name)).size),0);
+ const imageMB=Math.max(256,Math.ceil(logicalBytes(imageRoot)*1.35/1024/1024)+64);
+ run('/usr/bin/hdiutil',['create','-ov','-format','UDZO','-fs','HFS+','-size',`${imageMB}m`,'-volname','Context Manager','-srcfolder',imageRoot,image]);
 }finally{fs.rmSync(imageRoot,{recursive:true,force:true});}
 const imageSHA=hash(image);
 fs.writeFileSync(image+'.sha256',imageSHA+'  '+path.basename(image)+'\n');
