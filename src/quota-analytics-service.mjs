@@ -4,15 +4,16 @@ import crypto from 'node:crypto';
 import {Worker} from 'node:worker_threads';
 import {root, codexHome} from './paths.mjs';
 
-export function createQuotaAnalyticsService({home = root, historyHome = codexHome, timeout = 60000} = {}) {
-  let worker, sequence = 0, salt, closed = false, scanPending, reportPending;
+export function createQuotaAnalyticsService({home = root, historyHome = codexHome, timeout = 60000, idleMs = 30000} = {}) {
+  let worker, sequence = 0, salt, closed = false, scanPending, reportPending, idleTimer;
   const pending = new Map();
-  const stop = error => {for (const item of pending.values()) {clearTimeout(item.timer);item.reject(error);}pending.clear();worker?.terminate();worker = null;};
+  const stop = error => {clearTimeout(idleTimer);for (const item of pending.values()) {clearTimeout(item.timer);item.reject(error);}pending.clear();worker?.terminate();worker = null;};
   function ensureWorker() {
+    clearTimeout(idleTimer);
     if (closed) throw Error('Analytics service closed');
     if (worker) return worker;
     const instance = worker = new Worker(new URL('./analytics/worker.mjs', import.meta.url), {workerData: {file: path.join(home, 'quota-history.sqlite'), home: historyHome}, resourceLimits: {maxOldGenerationSizeMb: 256}, execArgv: []});
-    worker.on('message', reply => {const item = pending.get(reply.id);if (!item) return;pending.delete(reply.id);clearTimeout(item.timer);reply.error ? item.reject(Error(reply.error)) : item.resolve(reply.result);if (!pending.size) worker?.unref();});
+    worker.on('message', reply => {const item = pending.get(reply.id);if (!item) return;pending.delete(reply.id);clearTimeout(item.timer);reply.error ? item.reject(Error(reply.error)) : item.resolve(reply.result);if (!pending.size){worker?.unref();idleTimer=setTimeout(()=>{const old=worker;worker=null;void old?.terminate();},idleMs);idleTimer.unref();}});
     worker.on('error', () => {if(worker===instance)stop(Error('额度历史读取失败，请刷新重试'));});
     worker.on('exit', () => {if(worker!==instance)return;if (pending.size) stop(Error('额度统计进程已退出，请重试'));worker = null;});
     worker.unref();return worker;

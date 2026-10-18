@@ -686,5 +686,6 @@
   "额度历史读取失败，请刷新重试": "Quota history could not be read; refresh to retry",
   "额度统计进程已退出，请重试": "Quota analysis stopped; please retry",
   "额度统计耗时过长，请稍后重试": "Quota analysis timed out; please retry",
-  "部分聊天记录不在本机，相关 token 可能缺失": "Some chat records are unavailable locally; their tokens may be missing"
+  "部分聊天记录不在本机，相关 token 可能缺失": "Some chat records are unavailable locally; their tokens may be missing",
+  "周期天数": "Days into cycle"
 }

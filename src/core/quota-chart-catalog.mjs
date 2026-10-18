@@ -6,12 +6,12 @@ export const QUOTA_SECTIONS = [
   {id: 'windows', title: '窗口与明细', chartIds: ['windows', 'anomalies', 'ratio', 'ranking']}
 ];
 export const QUOTA_CHARTS = [
-  {id: 'weekly', title: 'Weekly 消耗曲线', kind: 'line', xLabel: '周期第几天', yLabel: 'Weekly 已用 %', wide: true},
+  {id: 'weekly', title: 'Weekly 消耗曲线', kind: 'line', xLabel: '周期天数', yLabel: 'Weekly 已用 %', wide: true},
   {id: 'windows', title: '5h 窗口消耗贡献', kind: 'bar', xLabel: '5h 窗口', yLabel: 'Weekly 百分点', wide: true},
   {id: 'weekly-scatter', title: 'Token vs Weekly %', kind: 'scatter', xLabel: '本机观测 token', yLabel: 'Weekly 百分点'},
   {id: 'five-hour-scatter', title: 'Token vs 5h %', kind: 'scatter', xLabel: '本机观测 token', yLabel: '5h 百分点'},
   {id: 'efficiency', title: 'Token / 1% 效率', kind: 'bar', xLabel: '5h 窗口', yLabel: 'Token / Weekly 百分点'},
-  {id: 'weeks', title: '多周消耗热力图', kind: 'heatmap', xLabel: '周期第几天', yLabel: 'Weekly 周期'},
+  {id: 'weeks', title: '多周消耗热力图', kind: 'heatmap', xLabel: '周期天数', yLabel: 'Weekly 周期'},
   {id: 'cumulative', title: '累计 Token 与额度', kind: 'dual', xLabel: '时间', yLabel: '累计 token', rightLabel: '观测 Weekly 百分点', wide: true},
   {id: 'models', title: '模型消耗对比', kind: 'bar', xLabel: '模型', yLabel: 'Weekly 百分点 / 1M token'},
   {id: 'cache', title: '缓存与额度消耗', kind: 'scatter', xLabel: '缓存占比 %', yLabel: 'Weekly 百分点 / 1M token'},

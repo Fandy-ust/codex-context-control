@@ -177,7 +177,8 @@ private struct QuotaAnalysisCard:View {
         .chartXScale(domain:bounds).chartYScale(domain:0...(chart.kind=="heatmap" ? max(1,Double(chart.labels.count)):maxY))
         .chartLegend(.hidden)
         .chartXAxis{
-            if chart.kind=="heatmap" {AxisMarks(values:stride(from:0.5,to:chart.xMax ?? 7,by:chart.xMax==24 ? 3:1).map{$0}){value in AxisValueLabel{if let x=value.as(Double.self){Text(String(Int(x)+(chart.xMax==7 ? 1:0))).font(.system(size:10))}}}}
+            if chart.id=="weekly" {AxisMarks(values:Array(0...7).map{Double($0)}){value in AxisGridLine().foregroundStyle(.white.opacity(0.04));AxisValueLabel{if let x=value.as(Double.self){Text(quotaNumber(x)).font(.system(size:10))}}}}
+            else if chart.kind=="heatmap" {AxisMarks(values:stride(from:0.5,to:chart.xMax ?? 7,by:chart.xMax==24 ? 3:1).map{$0}){value in AxisValueLabel{if let x=value.as(Double.self){Text(String(Int(x)+(chart.xMax==7 ? 1:0))).font(.system(size:10))}}}}
             else {AxisMarks(values:.automatic(desiredCount:5)){value in AxisGridLine().foregroundStyle(.white.opacity(0.04));AxisValueLabel{if let x=value.as(Double.self){Text(xLabel(x)).font(.system(size:10))}}}}
         }
         .chartYAxis{

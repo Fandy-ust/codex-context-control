@@ -61,7 +61,7 @@ English | 中文
 1. Install Codex / ChatGPT Desktop first.
 2. Open the DMG, open Install Context Manager.app, and choose Install / Update.
 3. Fully quit and reopen Codex after initial installation or a bridge upgrade.
-4. Click the ring icon in the menu bar. Choose Automatic (time zone), 中文, or English in the app or installer.
+4. Click the quota icon in the menu bar. Choose Automatic (time zone), 中文, or English in the app or installer.
 5. Optionally review the Stop hook in Codex’s /hooks for Hook stats.
 
 No Node, npm, Homebrew, Xcode, or administrator password is required. Budgets, language, and feature preferences are preserved on updates. The installer can be deleted after installation or reopened to uninstall.
@@ -74,7 +74,7 @@ Original project code is MIT licensed. Third-party components retain their licen
 
 提前压缩修复已停用：它需要替换 Codex 核心，修改版缺少 Codex 官方签名身份，会导致 Computer Use 无法使用。920K 扩展仅调整配置，继续使用官方运行时，无需修改核心。
 
-中文：先安装 Codex 桌面客户端，打开 DMG 后打开安装器，选择「安装 / 更新」，再完整退出并重开 Codex。菜单栏圆环提供设置入口，App 与安装器均可选择「自动（按时区）／中文／English」。更新保留预算、语言和开关。本测试包尚未 Apple 公证；确认来源后按「隐私与安全」提示允许打开。项目使用 MIT 许可，第三方组件保留各自许可。
+中文：先安装 Codex 桌面客户端，打开 DMG 后打开安装器，选择「安装 / 更新」，再完整退出并重开 Codex。菜单栏额度图标提供设置入口，App 与安装器均可选择「自动（按时区）／中文／English」。更新保留预算、语言和开关。本测试包尚未 Apple 公证；确认来源后按「隐私与安全」提示允许打开。项目使用 MIT 许可，第三方组件保留各自许可。
 
 https://github.com/Fandy-ust/codex-context-control
 `);
