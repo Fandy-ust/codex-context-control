@@ -64,6 +64,10 @@
     "quota-credit-baseline": {
       "method": "POST",
       "path": "/quota/credits/reset"
+    },
+    "task-queue": {
+      "method": "POST",
+      "path": "/task-queue"
     }
   }
 }

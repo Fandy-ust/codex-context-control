@@ -1,3 +1,4 @@
+import {queueStrip,queueManager,queueDetail} from './task-queues.mjs';
 import {quotaAnalyticsView,bindQuotaAnalytics} from './quota-analytics.mjs';
 import {observeCreditBalance} from '../../src/credit-baseline.mjs';
 import {draftLimits as legacyDraftLimits,resizeDraft as legacyResizeDraft,policyForDraft as legacyPolicyForDraft} from '../../src/core/default-budget-editor.mjs';
@@ -20,6 +21,8 @@ import {budgetView,chatView,detailsView,statisticsView,chartDetailView,chartTool
 const api=window.contextManager,root=document.querySelector('#app'),mode=new URLSearchParams(location.search).get('mode')||'main';
 let state=null,preferences={language:'zh',selection:'auto',english:{}},selected=null,view='chat',draft=null,dirty=false,dragging=false,busy=false,stats=null,statsJSON='',timeline=null,period=0,hover=null,pinned=null,page=0,auto=true,lastStats=0,toastTimer,refreshing=false,interactionId=null;
 let shortcutDraft=DEFAULT_SHORTCUT,shortcutEnabled=true,shortcutRecording=false,shortcutDirty=false;
+let queueID=null,queueReturnSettings=false;
+const queueFormDrafts=new Map();
 let settingsOpen=false,settingsTab='general',settingsSnapshot=null,settingsUnderlay='';
 let integrationError='',integrationPending=false;
 let detailsOpen=false,detailsRestoreScroll=null,statsLoading=false,statsError='',rawSelectedID=null,lastDetailBucket=null,smoothingTimer,deferredStats=null;
@@ -138,7 +141,7 @@ function settingsBudgetCard(value,model,{defaults=false}={}){
 function chatPage(){
   const chat=current();let previewError=budgetInputError;
   if(chat&&!previewError){try{if(!draft)throw Error('等待当前模型的原生窗口信息');applePolicyForDraft(draft,chat.modelMetadata);}catch(error){previewError=error.message;}}
-  return chatView({chat:chat?{...chat,name:chatName(chat)}:null,draft,observedTitle:observedWindowTitle(chat),modelName:modelDisplayName(chat?.model||''),canEdit:!!draft&&chat?.modelMetadata?.context_catalog_ready!==false,previewError,budgetCard,details:detailsPage(),notice:mainNotice,noticeError:mainNoticeError,e,t,tokens});
+  return chatView({chat:chat?{...chat,name:chatName(chat)}:null,draft,observedTitle:observedWindowTitle(chat),modelName:modelDisplayName(chat?.model||''),canEdit:!!draft&&chat?.modelMetadata?.context_catalog_ready!==false,previewError,budgetCard,details:queueStrip({chat,queues:state?.taskQueues,e,t})+detailsPage(),notice:mainNotice,noticeError:mainNoticeError,e,t,tokens});
 }
 
 function defaultModel(){const l=state?.newChatDefaultsLimits;return l?{max_context_window:Math.ceil(l.maximumUsableWindow*100/l.effectivePercent),effective_context_window_percent:l.effectivePercent,...(l.extended?{context_ceiling:920000,context_compact_ceiling:904000}:{})}:null;}
@@ -190,11 +193,12 @@ function render(){
   const oldMain=root.querySelector('.main'),same=oldMain?.dataset.view===view&&oldMain?.dataset.chatId===selected,open=same?[...oldMain.querySelectorAll('details')].map((d,i)=>d.open?i:-1).filter(i=>i>=0):[],scroll=same?oldMain.scrollTop:0;
   const settingsScroll=root.querySelector('.settings-body')?.scrollTop||0;
   const focusID=document.activeElement?.closest('.details-page')?document.activeElement.id:null;
-  const body=settingsOpen?settingsUnderlay:view==='quota'?quotaAnalyticsView({report:qaReport,section:qaSection,period:qaPeriod,costPeriod:qaCostPeriod,costMode:qaCostMode,analysisMode:qaAnalysisMode,costDate:qaCostDate,costStartText:qaCostStart,costEndText:qaCostEnd,loading:qaLoading,error:qaError,days:qaDays,selectedScope:qaScope,selectedModel:qaModel,e,t}):`${preferences.demo?demoBanner():''}${editingDefaults()?defaultsPage():chatPage()}`;
+  const body=settingsOpen?settingsUnderlay:view==='queue'?queueDetail({id:queueID,queues:state?.taskQueues,chats:state?.threads??[],e,t}):view==='quota'?quotaAnalyticsView({report:qaReport,section:qaSection,period:qaPeriod,costPeriod:qaCostPeriod,costMode:qaCostMode,analysisMode:qaAnalysisMode,costDate:qaCostDate,costStartText:qaCostStart,costEndText:qaCostEnd,loading:qaLoading,error:qaError,days:qaDays,selectedScope:qaScope,selectedModel:qaModel,e,t}):`${preferences.demo?demoBanner():''}${editingDefaults()?defaultsPage():chatPage()}`;
   root.innerHTML=`<div class="shell ${view==='quota'?'analytics-shell':''}" style="--sidebar-width:${visibleSidebarWidth()}px" ${settingsOpen?'inert':''}>${view==='quota'?'':sidebar()}<main class="main" id="main-content" data-view="${view}" data-chat-id="${e(selected)}">${body}</main></div>${settingsOpen?settingsDialog():''}`;
   const newMain=root.querySelector('.main');for(const [i,d]of [...newMain.querySelectorAll('details')].entries())if(open.includes(i))d.open=true;const targetScroll=detailsOpen?(detailsRestoreScroll??(same?scroll:detailsScrollByChat.get(selected)||0)):scroll;
   if(newMain.querySelector('#phase')){newMain.querySelector('#phase').textContent=phase(current());newMain.querySelector('#phase').title=t(current()?.message||'');}
   if(settingsOpen)root.querySelector('.settings-body').scrollTop=settingsScroll;
+  for(const form of root.querySelectorAll('#queue-add,#queue-config')){const values=queueFormDrafts.get(queueID+':'+form.id);if(values)for(const input of form.querySelectorAll('[name]'))if(input.name in values){if(input.type==='checkbox')input.checked=values[input.name];else input.value=values[input.name];}}
   bindSliders();bindSidebar();bindQuotaAnalytics(root);if(detailsOpen&&stats&&!settingsOpen&&view==='chat')drawCharts();
   newMain.scrollTop=targetScroll;if(detailsOpen&&stats&&!statsLoading)detailsRestoreScroll=null;
   if(focusID)document.getElementById(focusID)?.focus({preventScroll:true});
@@ -227,8 +231,8 @@ function generalSettings(){
   return `<section class="card stack"><h2>${e(t('通用','General'))}</h2><label class="stack tiny" for="language">${e(t('语言','Language'))}<select id="language"><option value="auto" ${preferences.selection==='auto'?'selected':''}>${e(t('自动（按时区）','Automatic (time zone)'))}</option><option value="zh" ${preferences.selection==='zh'?'selected':''}>中文</option><option value="en" ${preferences.selection==='en'?'selected':''}>English</option></select></label><div class="row wrap"><button data-action="scan">↻ ${e(t('同步本地聊天','Sync local chats'))}</button><button data-action="open-codex">↗ ${e(t('打开 Codex','Open Codex'))}</button></div><div class="extension"><div class="row between"><span>${e(t('拓展上下文','Extended context'))}</span><input type="checkbox" id="extension" class="switch" aria-label="${e(t('拓展上下文','Extended context'))}" ${ext?.enabled?'checked':''} ${!ext?.available||!ext?.compatible?'disabled':''}></div><p class="tiny muted">${e(t(ext?.message||'等待 Codex 连接','Waiting for Codex'))}</p></div><div class="extension"><label class="row between" for="auto-check-updates"><span>${e(t('启动时自动检查更新','Check for updates on startup'))}</span><input type="checkbox" id="auto-check-updates" class="switch" ${preferences.autoCheckUpdates!==false?'checked':''}></label><p class="tiny muted">${e(t('发现新版本时提示，由你决定是否安装。','Show a prompt when an update is available. You choose when to install.'))}</p></div><div class="row wrap"><button data-action="update" ${['downloading','installing'].includes(u.phase)?'disabled':''}>↓ ${e(['downloading','installing'].includes(u.phase)?t('正在更新…','Updating…'):u.available?t('安装更新 {0}','Install update {0}',u.version):t('检查更新','Check for updates'))}</button><span class="tiny muted">v${e(preferences.version||'')}</span></div>${u.error?`<span class="tiny error" role="status">${e(t(u.error))}</span>`:''}<div class="row wrap"><button data-action="diagnostics">${e(t('诊断','Diagnostics'))}</button><button data-action="open-logs">${e(t('打开接入日志','Open integration logs'))}</button></div><div class="feature-note"><strong>${e(t('提前压缩修复','Early compaction fix'))}</strong><p class="tiny muted">${e(t('上游已停用此旧版补丁，Windows 不提供该开关。原生自动压缩与聊天页的压缩触发阈值仍可使用。','The legacy patch is disabled upstream and unavailable on Windows. Native automatic compaction and per-chat thresholds remain available.'))}</p></div></section>`;
 }
 function settingsDialog(){
-  const tabs=[['general',t('通用','General')],['defaults',t('全局默认','Global defaults')],['quota',t('账户额度','Account quota')],['integration',t('Codex 接入','Codex integration')],['shortcut',t('快捷键','Shortcut')]];
-  const content=settingsTab==='general'?generalSettings():settingsTab==='defaults'?(state?defaultsPage():''):settingsTab==='quota'?quotaPanel():settingsTab==='integration'?integrationSettings():shortcutSettings();
+  const tabs=[['general',t('通用','General')],['defaults',t('全局默认','Global defaults')],['queues',t('任务队列','Task queues')],['quota',t('账户额度','Account quota')],['integration',t('Codex 接入','Codex integration')],['shortcut',t('快捷键','Shortcut')]];
+  const content=settingsTab==='queues'?queueManager({queues:state?.taskQueues,chats:state?.threads??[],e,t}):settingsTab==='general'?generalSettings():settingsTab==='defaults'?(state?defaultsPage():''):settingsTab==='quota'?quotaPanel():settingsTab==='integration'?integrationSettings():shortcutSettings();
   return `<div class="settings-backdrop" data-action="settings-dismiss"><section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><header class="settings-header row between"><h1 id="settings-title">${e(t('设置','Settings'))}</h1><button class="settings-close flat" data-action="settings-close" aria-label="${e(t('关闭设置','Close settings'))}">×</button></header><nav class="settings-tabs" role="tablist" aria-label="${e(t('设置分类','Settings sections'))}">${tabs.map(([id,label])=>`<button role="tab" id="settings-tab-${id}" aria-controls="settings-panel" aria-selected="${id===settingsTab}" class="${id===settingsTab?'active':''}" data-action="settings-tab" data-tab="${id}">${e(label)}</button>`).join('')}</nav><div class="settings-body" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab-${settingsTab}">${content}</div></section></div>`;
 }
 function openSettings(tab='general'){
@@ -244,7 +248,7 @@ function closeSettings(){
   settingsSnapshot=null;settingsUnderlay='';if(!dirty)loadDraft();render();root.querySelector('.settings-trigger')?.focus();
 }
 function switchSettingsTab(tab){
-  if(!['general','defaults','quota','integration','shortcut'].includes(tab))return;
+  if(!['general','defaults','quota','queues','integration','shortcut'].includes(tab))return;
   if(shortcutRecording)finishShortcutRecording();
   settingsTab=tab;
   if(tab==='defaults')loadDraft();else if(settingsSnapshot){draft=settingsSnapshot.draft;dirty=settingsSnapshot.dirty;}
@@ -427,9 +431,25 @@ function selectChat(id){
   if(current()&&mode==='main')openDetails();else render();
 }
 function loadDraft(){if(editingDefaults()){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else{const next=threadDraft(current());if(draft?.expectedRevision!==next?.expectedRevision){budgetText={};budgetInputError='';}draft=next;}dirty=false;}
-async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(view==='quota'&&!settingsOpen){if(!qaLoading&&Date.now()-qaLastLoad>(qaReport?.quality?.progress?.pending?1500:15000))await loadQuotaAnalytics();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}}return;}if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen){if(!detailsOpen&&view==='chat'&&current()){openDetails();}refreshBudgetValidity();}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
+async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(view==='quota'&&!settingsOpen){if(!qaLoading&&Date.now()-qaLastLoad>(qaReport?.quality?.progress?.pending?1500:15000))await loadQuotaAnalytics();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}}return;}if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen){if(!detailsOpen&&view==='chat'&&current()){openDetails();}refreshBudgetValidity();}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select,textarea')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
   try{
+    if(action==='queue-open'){queueID=button.dataset.id;queueReturnSettings=settingsOpen;if(settingsOpen)closeSettings();view='queue';render();return;}
+    if(action==='queue-back'){view='chat';render();if(queueReturnSettings)openSettings('queues');return;}
+    if(action==='queue-toggle'){const id=button.dataset.id,q=state?.taskQueues?.queues.find(q=>q.id===id);await queueCommand({id,action:'enable',enabled:!q?.enabled});return;}
+    if(action==='queue-resume'){await queueCommand({id:queueID,action:'enable',enabled:true});return;}
+    if(action==='queue-disable-all'){await queueCommand({action:'disable-all'});return;}
+    if(action.startsWith('queue-')){
+      const q=state?.taskQueues?.queues.find(q=>q.id===queueID),taskId=button.dataset.taskId;
+      if(action==='queue-pause-cycle'){await queueCommand({id:queueID,action:'pause-cycle'});return;}
+      if(action==='queue-edit'){
+        const task=q.tasks.find(t=>t.id===taskId),card=button.closest('.queue-task');const form=document.createElement('form');form.className='stack';form.dataset.queueEdit=taskId;
+        const input=document.createElement('textarea');input.name='prompt';input.value=task.prompt;input.rows=4;input.maxLength=16000;input.required=true;
+        const save=document.createElement('button');save.type='submit';save.textContent=t('保存');form.append(input,save);card.querySelector('.queue-prompt').replaceWith(form);input.focus();return;
+      }
+      if(['queue-delete','queue-retry','queue-stop'].includes(action)){await queueCommand({id:queueID,taskId,action:action.slice(6)});return;}
+      if(['queue-up','queue-down'].includes(action)){const order=q.tasks.map(t=>t.id),from=order.indexOf(taskId),to=from+(action==='queue-up'?-1:1);[order[from],order[to]]=[order[to],order[from]];await queueCommand({id:queueID,action:'reorder',order});return;}
+    }
     if(action==='settings'){openSettings();return;}
     if(action==='settings-close'){closeSettings();return;}
     if(action==='settings-dismiss'){if(event.target===button)closeSettings();return;}
@@ -771,3 +791,37 @@ window.__contextScrollSmoke=async function(action){
   }
   return {ok:scrollProbe.stable&&scrollProbe.down&&scrollProbe.up,stable:scrollProbe.stable,down:scrollProbe.down,up:scrollProbe.up};
 };
+
+async function queueCommand(params){const q=state?.taskQueues?.queues.find(q=>q.id===params.id);const result=await run('task-queue',{expectedRevision:q?.revision??0,...params});if(result){state.taskQueues=result;render();}return result;}
+root.addEventListener('submit',async event=>{
+ const form=event.target;if(!['queue-add','queue-config'].includes(form.id)&&!form.dataset.queueEdit)return;event.preventDefault();const values=new FormData(form);
+ try{
+ if(form.id==='queue-add'){const result=await queueCommand({id:queueID,action:'add',prompt:values.get('prompt')});if(result){queueFormDrafts.delete(queueID+':queue-add');document.querySelector('#queue-add')?.reset();}}
+ else if(form.dataset.queueEdit)await queueCommand({id:queueID,action:'edit',taskId:form.dataset.queueEdit,prompt:values.get('prompt')});
+ else{const config={pool:values.get('pool'),resume:values.get('resume')};for(const period of ['fiveHour','weekly']){config[period]={reserve:Number(values.get(period+'-reserve')),stages:[0,1].filter(i=>values.has(`${period}-${i}-enabled`)).map(i=>({minutes:Number(values.get(`${period}-${i}-minutes`)),reserve:Number(values.get(`${period}-${i}-reserve`))}))};}await queueCommand({id:queueID,action:'config',config});}
+ }catch(error){notify(error.message);}
+});
+let queueDrag=null;
+root.addEventListener('dragstart',event=>{const card=event.target.closest('[data-task-id].queue-task');if(card){queueDrag=card.dataset.taskId;event.dataTransfer.setData('text/plain',queueDrag);}});
+root.addEventListener('dragover',event=>{if(queueDrag&&event.target.closest('.queue-task'))event.preventDefault();});
+root.addEventListener('drop',async event=>{const card=event.target.closest('.queue-task');if(!queueDrag||!card)return;event.preventDefault();const order=state.taskQueues.queues.find(q=>q.id===queueID).tasks.map(t=>t.id),from=order.indexOf(queueDrag),to=order.indexOf(card.dataset.taskId);queueDrag=null;if(from<0||to<0)return;order.splice(to,0,order.splice(from,1)[0]);try{await queueCommand({id:queueID,action:'reorder',order});}catch(error){notify(error.message);}});
+root.addEventListener('dragend',()=>{queueDrag=null;});
+
+window.__contextQueueSmoke=async()=>{
+ if(!preferences.demo)return {ok:false};
+ queueID=selected;view='queue';render();
+ await queueCommand({id:queueID,action:'add',prompt:'第一项完整任务：实现 UI 并验证'});
+ await queueCommand({id:queueID,action:'add',prompt:'第二项完整任务：修复 Bug 并运行测试'});
+ let q=state.taskQueues.queues.find(q=>q.id===queueID);
+ await queueCommand({id:queueID,action:'reorder',order:q.tasks.map(t=>t.id).reverse()});
+ const ordered=state.taskQueues.queues.find(q=>q.id===queueID).tasks[0].prompt.startsWith('第二项');
+ const controls=!!document.querySelector('#queue-add textarea')&&!!document.querySelector('#queue-config')&&document.querySelectorAll('.queue-task').length===2;
+ const scroller=document.querySelector('.main');scroller.scrollTop=500;await new Promise(r=>requestAnimationFrame(r));const back=document.querySelector('[data-action="queue-back"]').getBoundingClientRect(),parent=scroller.getBoundingClientRect();
+ const sticky=back.top>=parent.top&&back.bottom<parent.bottom;
+ await queueCommand({id:queueID,action:'disable-all'});
+ const off=state.taskQueues.queues.every(q=>!q.enabled)&&!state.taskQueues.sleepPrevented;
+ openSettings('queues');const manager=!!document.querySelector('[data-action="queue-disable-all"]');closeSettings();view='queue';render();
+ return {ok:ordered&&controls&&sticky&&off&&manager,ordered,controls,sticky,off,manager};
+};
+
+root.addEventListener('input',event=>{const form=event.target.closest('#queue-add,#queue-config');if(form){const values={};for(const input of form.querySelectorAll('[name]'))values[input.name]=input.type==='checkbox'?input.checked:input.value;queueFormDrafts.set(queueID+':'+form.id,values);}});

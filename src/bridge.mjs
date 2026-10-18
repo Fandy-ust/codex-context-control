@@ -33,6 +33,7 @@ export class Bridge {
     if((this.contextCeiling||this.nativeBudgetSupport)&&m.method==='thread/resume'&&m.id!=null&&m.params?.threadId&&!m.params?.path&&!m.params?.ephemeral&&!preparedFork?.resume){this.prepareResume(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if(this.contextCeiling&&['thread/start','thread/resume'].includes(m.method)&&!m.params?.ephemeral){m.params={...m.params,config:ceilingConfig(m.params?.config)};line=JSON.stringify(m);}
     const id=m.params?.threadId;const record=this.records.get(id);
+    if(m.method==='turn/start'&&record?.automaticTask?.status==='starting'){this.rejectTurn(m,'队列正在提交任务，请稍后再发送。');return;}
     if(m.method==='turn/start'&&record&&!record.locked&&record.status==='idle'&&record.policy&&record.appliedRevision!==record.policy.revision){
       // Acquire the reload lock synchronously before letting a new turn use an
       // intermediate budget; apply() still performs the normal safety checks.
@@ -113,7 +114,7 @@ export class Bridge {
         if(t?.id&&['thread/start','thread/resume','thread/fork'].includes(pending.method)) {
           const record=this.record(t.id);record.seed={...record.seed,...pending.seed,config:{...record.seed.config,...pending.seed.config}};
           Object.assign(record,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput','threadSource']));
-          record.model=m.result.model||record.model;record.status=t.status?.type||'idle';record.snapshot=m.result;
+          record.model=m.result.model||record.model;record.status=t.status?.type||'idle';record.snapshot=m.result;const activeTurn=t.turns?.findLast(turn=>['inProgress','in_progress'].includes(turn.status));if(activeTurn)record.turnId=activeTurn.id;
           if(pending.method==='thread/start'&&pending.fork?.newChatPolicy&&!t.ephemeral&&t.canAcceptDirectInput!==false&&!t.forkedFromId){const policy=pending.fork.newChatPolicy;Object.assign(record,{newChatPolicy:policy,policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已沿用新对话默认设置，等待首次窗口读回。'});}
           if(pending.fork?.resumePolicy){const policy=pending.fork.resumePolicy;Object.assign(record,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已保留原聊天预算，等待下一轮窗口读回。'});}
           if(pending.method==='thread/fork'&&pending.fork?.policy&&t.id!==pending.threadId&&!t.ephemeral&&t.canAcceptDirectInput!==false){
@@ -145,9 +146,9 @@ export class Bridge {
           this.notify(record);
         }
         if(m.method==='thread/status/changed'){record.status=p.status.type;this.notify(record);if(record.status==='idle')this.schedule(record);}
-        if(m.method==='turn/started'){record.lastStartedAt=timestampMs(p.turn?.startedAt)??Date.now();record.status='active';record.turnId=p.turn.id;record.usageFresh=false;this.notify(record);}
+        if(m.method==='turn/started'){record.lastStartedAt=timestampMs(p.turn?.startedAt)??Date.now();record.status='active';record.turnId=p.turn.id;if(record.automaticTask?.status==='starting'){record.automaticTask.turnId=p.turn.id;record.automaticTask.status='running';}record.usageFresh=false;this.notify(record);}
         if(m.method==='error'&&record.compactionWait)record.compactionWait.reject(new Error(p.error?.message||'原生压缩失败'));
-        if(m.method==='turn/completed'){record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error?record.compactionWait.reject(new Error(p.turn.error.message||'原生压缩失败')):record.compactionWait.resolve();}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.schedule(record);}
+        if(m.method==='turn/completed'){record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error?record.compactionWait.reject(new Error(p.turn.error.message||'原生压缩失败')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.schedule(record);}
         if(m.method==='thread/name/updated'){record.name=p.name;this.notify(record);}
       }
     }
@@ -170,7 +171,21 @@ export class Bridge {
     if(ready)this.fromClient(line,null,true);
     const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
   }
-  publicRecord(record){return pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt']);}
+  publicRecord(record){return pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask']);}
+  async startAutomatic(id,task){
+    const r=this.records.get(id);if(!r||r.ephemeral||r.canAcceptDirectInput===false)throw Error('聊天不支持直接输入');
+    if(r.automaticTask?.executionId===task.executionId)return r.automaticTask;
+    if(task.adoptTurnId){if(r.status!=='active'||r.turnId!==task.adoptTurnId)throw Error('当前轮次已经变化');r.automaticTask={executionId:task.executionId,taskId:task.taskId,turnId:r.turnId,status:'running'};await this.notify(r);return r.automaticTask;}
+    if(r.status!=='idle'||r.locked||r.initializing||[...this.external.values()].some(p=>p.threadId===id&&p.method==='turn/start'))throw Error('请等待聊天空闲');
+    if(r.policy&&r.appliedRevision!==r.policy.revision)throw Error('请先完成上下文预算应用');
+    if(typeof task.prompt!=='string'||!task.prompt.trim()||task.prompt.length>16000)throw Error('任务提示词无效');
+    const input=[{type:'text',text:task.prompt,text_elements:[]}];
+    if(this.contextCeiling){const incoming=incomingTokens(input),cap=Math.min(r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,MAX_CONTEXT_INPUT),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if((r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve))throw Error('上下文接近上限，请先手动压缩后重试任务');}
+    r.automaticTask={executionId:task.executionId,taskId:task.taskId,status:'starting'};await this.notify(r);
+    try{const result=await this.rpc('turn/start',{...pick(r.seed,stickyFields),...r.sticky,threadId:id,input});if(!result?.turn?.id)throw Error('运行时未返回任务轮次');if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
+    catch(error){r.automaticTask.status='error';r.automaticTask.error=error.message;await this.notify(r);throw error;}
+  }
+  async interruptAutomatic(id,executionId){const r=this.records.get(id),task=r?.automaticTask;if(task?.executionId!==executionId||task.status!=='running'||r.status!=='active'||r.turnId!==task.turnId)throw Error('队列轮次已变化，未中断其他任务');await this.rpc('turn/interrupt',{threadId:id,turnId:task.turnId});return {ok:true};}
   notify(record){
     return Promise.resolve(this.publish(this.publicRecord(record))).then(reply=>{
       if(reply?.model?.slug===record.model)record.modelInfo=reply.model;

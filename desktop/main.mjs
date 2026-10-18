@@ -1,3 +1,4 @@
+import {createTaskQueues} from '../src/task-queues.mjs';
 import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell,dialog} from 'electron';
 import fs from 'node:fs';
 import {assertControlOperation} from '../src/contracts/control-api.mjs';
@@ -25,6 +26,7 @@ const {integrationLogDirectory}=await import('../src/diagnostic-log.mjs');
 const {ensureDaemon}=await import('../src/service.mjs');
 const {resolveLanguage,languagePreference,localize}=await import('../src/localization.mjs');
 const {demoState,demoStatistics}=await import('./demo.mjs');
+const demoQueues=demo?createTaskQueues({quota:{state:()=>({...demoState.quota,updatedAt:Date.now()}),refresh:async()=>{}},thread:id=>demoState.threads.find(t=>t.id===id),start:async(id,task)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='active';chat.automaticTask={executionId:task.executionId,status:'running'};},interrupt:async(id)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='idle';if(chat.automaticTask)chat.automaticTask.status='interrupted';}}):null;
 const pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
 app.setName('Context Manager');app.setAppUserModelId('io.github.codex-context-control');
 app.setPath('userData',path.join(root,'ui-profile'));
@@ -53,7 +55,8 @@ app.on('window-all-closed',()=>{});
 app.on('activate',()=>showMain());
 async function api(action,params={}){
   if(demo){
-    if(action==='state')return structuredClone(demoState);
+    if(action==='state')return structuredClone({...demoState,taskQueues:demoQueues.list()});
+    if(action==='task-queue')return demoQueues.command(params);
     if(action==='statistics')return structuredClone({...demoStatistics,threadId:params.id});
     if(action==='quota-refresh')return structuredClone(demoState.quota);
     if(action==='quota-analytics')return demoQuotaAnalytics(params);
@@ -210,6 +213,8 @@ if(args.includes('--quit')){app.quit();}else{
       if(!scrollResult.ok)throw Error(JSON.stringify(scrollResult));
       console.log('TIMELINE_SCROLL_SMOKE '+JSON.stringify(scrollResult));
       await new Promise(r=>setTimeout(r,250));
+      const queueSmoke=await main.webContents.executeJavaScript('window.__contextQueueSmoke()');if(!queueSmoke.ok)throw Error(JSON.stringify(queueSmoke));console.log('TASK_QUEUE_SMOKE '+JSON.stringify(queueSmoke));
+      if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR)fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'task-queue.png'),(await main.webContents.capturePage()).toPNG());
       // Exercise the real window state: visible in the background must focus in one press.
       const waitFor=async check=>{const end=Date.now()+3000;while(!check()&&Date.now()<end)await new Promise(r=>setTimeout(r,25));if(!check())throw Error('Shortcut window focus transition timed out');};
       const covering=new BrowserWindow({width:320,height:240,show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});

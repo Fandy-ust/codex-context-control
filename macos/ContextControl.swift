@@ -35,7 +35,7 @@ struct QuotaState:Decodable,Equatable {let creditBaselines:[String:CreditBaselin
 struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics:Bool?;let creditBaseline:Bool?}
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
 struct ChatSidebar:Decodable,Equatable {let projects:[SidebarProject];let standaloneThreadIds:[String]}
-struct RuntimeState: Decodable {let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct RuntimeState: Decodable {let taskQueues:TaskQueuesState?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -53,6 +53,8 @@ struct ServiceSettings: Decodable {let node:String}
     }
     deinit{for observer in languageObservers{NotificationCenter.default.removeObserver(observer)}}
     func setLanguage(_ value:LanguageChoice){do{try Localization.setChoice(value)}catch{notice=L("无法保存语言设置：{0}",error.localizedDescription)}}
+    @Published var taskQueues:TaskQueuesState?
+    @Published var queueDetailID:String?
     @Published var chats:[Chat]=[]
     @Published var sidebar:ChatSidebar?
     @Published var selectedID:String?
@@ -117,6 +119,7 @@ struct ServiceSettings: Decodable {let node:String}
             supportsVisibleBudget=state.capabilities?.visibleBudget == true;supportsQuotaAnalytics=state.capabilities?.quotaAnalytics == true;appVersion=state.version
             if quota != state.quota{acceptQuota(state.quota)}
             if updateState != state.update{updateState=state.update;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
+            if taskQueues != state.taskQueues{taskQueues=state.taskQueues}
             if chats != state.threads{chats=state.threads}
             if sidebar != state.sidebar{sidebar=state.sidebar}
             if bridgeCount != state.bridgeCount{bridgeCount=state.bridgeCount}
@@ -541,7 +544,9 @@ struct ContentView: View {
         // Keep content below the native title bar; NavigationSplitView installs
         // an automatic toolbar/sidebar chrome inside this AppKit-hosted window.
         Group {
-            if model.showQuotaAnalytics {
+            if let queueID=model.queueDetailID {
+                TaskQueueDetailView(model:model,chatID:queueID,onBack:{model.queueDetailID=nil})
+            } else if model.showQuotaAnalytics {
                 QuotaAnalyticsView(model:model,onBack:{model.showQuotaAnalytics=false})
             } else {
         HSplitView {
@@ -578,6 +583,7 @@ struct ContentView: View {
                         if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
                         if !model.notice.isEmpty{Text(L(model.notice)).font(.caption).textSelection(.enabled).foregroundStyle(.secondary)}
                         Divider()
+                        TaskQueueStrip(model:model,chatID:chat.id)
                         ContextDetailsView(chatID:chat.id,title:chat.title,model:model).id(chat.id)
                     }else{
                         ContentUnavailableView(L("等待聊天接入"),systemImage:"bubble.left.and.bubble.right",description:Text(L("照常打开 Codex 并进入聊天，控制连接会随运行时自动启动。首次安装后请正常重开一次客户端。")))

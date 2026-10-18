@@ -1,4 +1,6 @@
 import net from 'node:net';
+import {createTaskQueues} from './task-queues.mjs';
+import {createQueueSleepInhibitor} from './queue-sleep.mjs';
 import {normalizeBudgetCommand} from './core/budget-command.mjs';
 import {CONTROL_API_VERSION,controlOperation} from './contracts/control-api.mjs';
 import {createQuotaManager} from './account-quota.mjs';
@@ -52,6 +54,9 @@ export async function startDaemon() {
   const bridges=new Map();const owners=new Map();
   const quotaAnalytics=createQuotaAnalyticsService();
   const quota=createQuotaManager({home:root,onObservation:observation=>quotaAnalytics.record(observation)});
+  const queueFile=path.join(root,'task-queues.json');
+  const queueCall=(id,op,params)=>{const peers=owners.get(id)||[];if(peers.length!==1)throw Error('需要唯一的已接入运行时');return peers[0].call(op,{id,...params},30000);};
+  const taskQueues=createTaskQueues({load:()=>{try{return JSON.parse(fs.readFileSync(queueFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(queueFile,value),quota,thread:id=>Object.hasOwn(store.data.threads,id)?store.publicThread(id,owners):null,start:(id,task)=>queueCall(id,'queue-start',{task}),interrupt:(id,executionId)=>queueCall(id,'queue-interrupt',{executionId}),inhibit:createQueueSleepInhibitor()});
   let analyticsTimer;
   if(root===defaultRoot()){const scan=async()=>{let delay=60000;try{const progress=await quotaAnalytics.scan();if(progress.pending)delay=1000;}catch{}analyticsTimer=setTimeout(scan,delay);analyticsTimer.unref();};analyticsTimer=setTimeout(scan,3000);analyticsTimer.unref();}
   if(root===defaultRoot()){const initial=setTimeout(()=>quota.refresh().catch(()=>{}),1500);initial.unref();const polling=setInterval(()=>quota.refresh().catch(()=>{}),5*60*1000);polling.unref();}
@@ -73,7 +78,7 @@ export async function startDaemon() {
   function state(){
     store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);
     const threads=Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity);
-    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true},buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
+    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true},taskQueues:taskQueues.list(),buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
   }
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version,buildId};
@@ -104,7 +109,7 @@ export async function startDaemon() {
       const previousPolicy=JSON.stringify(store.data.policies[p.id]??null);
       const hadOwner=b.ids.has(p.id);
       b.ids.add(p.id);rebuildOwners();
-      const allowed=['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource'];
+      const allowed=['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource','automaticTask'];
       const clean=Object.fromEntries(allowed.filter(k=>Object.hasOwn(p,k)).map(k=>[k,p[k]]));
       if(!Object.hasOwn(clean,'usageFresh'))clean.usageFresh=clean.freshUsage===true;
       if(clean.threadSource!=null&&typeof clean.threadSource!=='string')delete clean.threadSource;
@@ -122,6 +127,8 @@ export async function startDaemon() {
       if(!Object.hasOwn(store.data.policies,p.id)&&p.newChatPolicy&&b.newChatDefaultsVersion!=null&&!p.ephemeral&&p.canAcceptDirectInput!==false&&!store.data.threads[p.id].forkedFromId){store.data.policies[p.id]={...persistedNewChatPolicy(p.newChatPolicy,runtimeModel(p.id,clean.model,b.contextCeiling===CONTEXT_CEILING_VERSION)),updatedAt:Date.now()};}
       Object.assign(store.data.threads[p.id],reconcileWindowConfirmation(store.data.threads[p.id],store.data.policies[p.id],modelFor(p.id)));
       if(inherited||previousPolicy!==JSON.stringify(store.data.policies[p.id]??null))store.save();else store.scheduleSave();
+      // Completion still reconciles when monitoring was switched off mid-turn.
+      void taskQueues.tick();
       return {policy:bridgeReady(b)?store.data.policies[p.id]||null:null,model:runtimeModel(p.id,clean.model,b.contextCeiling===CONTEXT_CEILING_VERSION)};
     }
     if(op==='preflight') {
@@ -182,6 +189,7 @@ export async function startDaemon() {
       const params=body?JSON.parse(body):{};const route=req.url;
       let answer;const operation=controlOperation(req.method,route);
       if(operation==='state')answer=state();
+      else if(operation==='task-queue')answer=taskQueues.command(params);
       else if(operation==='quota-refresh')answer=await quota.refresh(true);
       else if(operation==='quota-credit-baseline')answer=quota.resetCredits(params.id,params.legacy??null);
       else if(operation==='quota-analytics'){
@@ -222,7 +230,7 @@ export async function startDaemon() {
   const cleanupStart=setTimeout(cleanup,30000);cleanupStart.unref();
   const cleanupTimer=setInterval(cleanup,5*60*1000);cleanupTimer.unref();
   const scanTimer=setInterval(()=>store.refreshMetadata(),15000);scanTimer.unref();
-  web.once('close',()=>{clearTimeout(analyticsTimer);quotaAnalytics.close();});
+  web.once('close',()=>{clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
   const shutdown=()=>{try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};
