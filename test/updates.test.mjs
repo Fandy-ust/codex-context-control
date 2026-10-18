@@ -11,7 +11,7 @@ test('updates accept only newer complete releases and assets from this repositor
 test('automatic checks reuse cache and never launch an installation until explicitly requested',async()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-updates-'));let fetched=0,launched=0;
  try{const manager=createUpdateManager({home,current:'0.16.2',fetcher:async()=>{fetched++;return {ok:true,json:async()=>manifest()};},launch:()=>{launched++;return {pid:process.pid,unref(){}};}});
- await manager.check();await manager.check();assert.equal(fetched,1);assert.equal(launched,0);assert.equal(manager.status().available,true);
+ const [first,second]=await Promise.all([manager.check(),manager.check(true)]);assert.equal(first.available,true);assert.deepEqual(first,second);await manager.check();assert.equal(fetched,1);assert.equal(launched,0);assert.equal(manager.status().available,true);
  await manager.install();await manager.install();assert.equal(launched,1);
  }finally{fs.rmSync(home,{recursive:true,force:true});}
 });
