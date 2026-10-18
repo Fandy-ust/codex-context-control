@@ -16,7 +16,7 @@ export function projectQuota(bucket, {at, scope = 'history', bucketId = 'codex'}
   const windows = [quotaWindow(bucket?.primary), quotaWindow(bucket?.secondary)].filter(Boolean);
   const weekly = windows.find(w => w.minutes === 10080), five = windows.find(w => w.minutes === 300);
   if (!weekly && !five) return null;
-  const valid = w => w && w.used >= 0 && w.used <= 100 && Number.isSafeInteger(w.reset) && w.reset > 0;
+  const valid = w => w && w.used >= 0 && w.used <= 100 && Number.isSafeInteger(w.reset) && w.reset > 0 && w.reset < 8640000000000;
   const wk = valid(weekly) ? weekly : null, fh = valid(five) ? five : null;
   if (!wk && !fh) return null;
   return {at, scope, bucket: text(bucketId) || 'codex', weeklyUsed: wk?.used ?? null, weeklyReset: wk?.reset ?? null,

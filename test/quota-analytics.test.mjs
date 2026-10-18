@@ -56,3 +56,9 @@ test('fractional quota changes accumulate for comparisons and zero-change period
  assert.ok(cumulative.at(-1).y>0);assert.equal(cumulative.at(-1).rightY,0);
  assert.equal(flat.overview.tokensPerPP,null);
 });
+test('5h/weekly ratios use the same observed intervals when one quota stream is missing',()=>{
+ const fiveReset=reset,base=now-1800000;
+ const snapshots=[point(base,10,{fiveReset,fiveUsed:10}),point(base+600000,null,{fiveReset,fiveUsed:30}),point(base+1200000,11,{fiveReset,fiveUsed:40}),point(now,12,{fiveReset,fiveUsed:45})];
+ const report=buildQuotaAnalytics({snapshots},{now});const ratio=report.charts.find(c=>c.id==='ratio').points;
+ assert.equal(ratio.length,1);assert.equal(ratio[0].y,5);assert.equal(ratio[0].weeklyPP,1);assert.equal(ratio[0].fivePP,5);assert.equal(ratio[0].partial,true);
+});

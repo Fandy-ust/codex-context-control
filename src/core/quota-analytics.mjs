@@ -2,7 +2,7 @@ import {HOUR, DAY, WEEK, finite, sum, distribution, fitLine, usageBetween} from 
 import {QUOTA_CHARTS, QUOTA_SECTIONS} from './quota-chart-catalog.mjs';
 
 const validPercent = n => finite(n) && n >= 0 && n <= 100;
-const reset = n => Number.isSafeInteger(n) && n > 0;
+const reset = n => Number.isSafeInteger(n) && n > 0 && n < 8640000000000;
 const round = n => Math.round(n * 10000) / 10000;
 const cycleKey = (p, role) => reset(p[role + 'Reset']) ? String(p[role + 'Reset']) : null;
 const MAX_GAP = 30 * 60000;
@@ -101,13 +101,16 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
     const start = Number(id) * 1000 - 5 * HOUR, end = Number(id) * 1000;
     const observedStart = points[0].at, observedEnd = points.at(-1).at;
     const wk = weeklyPairs.filter(p => p.fiveCycle === id), fh = fivePairs.filter(p => p.cycle === id);
+    const pairKeys=new Map(fh.map(p=>[p.start+':'+p.end,p]));
+    const matched=wk.filter(p=>pairKeys.has(p.start+':'+p.end));
+    const pairedWeeklyPP=sum(matched.map(p=>p.pp)),pairedFivePP=sum(matched.map(p=>pairKeys.get(p.start+':'+p.end).pp));
     const usage = usageBetween(uniqueRequests, observedStart, observedEnd);
     const weeklyPP = wk.length ? sum(wk.map(p => p.pp)) : null;
     const fivePP = fh.length ? sum(fh.map(p => p.pp)) : null;
-    return {id, start, end, observedStart, observedEnd, weeklyCycle: wk[0]?.cycle || null, weeklyPP, fivePP,
+    return {id, start, end, observedStart, observedEnd, pairedWeeklyPP,pairedFivePP, weeklyCycle: wk[0]?.cycle || null, weeklyPP, fivePP,
       // Ratios use the tokens aligned with the same weekly deltas, not all tokens in the window.
       alignedTokens: sum(wk.map(p => p.tokens)), alignedFiveTokens: sum(fh.map(p => p.tokens)), ...usage,
-      partial: observedStart - start > 5 * 60000 || Math.min(now, end) - observedEnd > 5 * 60000,
+      partial: observedStart - start > 5 * 60000 || Math.min(now, end) - observedEnd > 5 * 60000 || points.some((p,i)=>i>0&&p.at-points[i-1].at>MAX_GAP) || matched.length<fh.length,
       label: dateLabel(start, zone) + ' ' + new Intl.DateTimeFormat('en-GB', {timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: false}).format(start)};
   });
   const comparable = comparableWeekly.intervals.filter(p => p.tokens > 0 && p.pp >= 1 && !p.unknownRequests);
@@ -191,7 +194,7 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   for (const p of weeklyPairs) {const part = localParts(p.end, zone), key = part.date + ':' + part.hour;const old = hourly.get(key);hourly.set(key, {...part, value: (old?.value || 0) + p.pp});}
   const dates = [...new Set([...hourly.values()].map(p => p.date))].sort();
   set('hours', [...hourly].map(([id, p]) => ({id, x: p.hour, y: dates.indexOf(p.date), value: p.value, label: p.date, series: 'Weekly 百分点'})), {xMax: 24, rows: dates, note: '差值记在观测结束的小时，不插值填补空白'});
-  set('ratio', windows.filter(p => p.weeklyPP >= 1 && p.fivePP != null).map((p, i) => windowPoint(p, p.fivePP / p.weeklyPP, i)), {note: '同一窗口的观测增量之比，部分窗口不代表完整消耗'});
+  set('ratio', windows.filter(p => p.pairedWeeklyPP >= 1).map((p, i) => windowPoint({...p,weeklyPP:p.pairedWeeklyPP,fivePP:p.pairedFivePP}, p.pairedFivePP / p.pairedWeeklyPP, i)), {note: '同一窗口的观测增量之比，部分窗口不代表完整消耗'});
   Object.assign(data.get('ranking'), {rows: requestRanking(uniqueRequests), note: '仅按本机 token 排序；账户额度无法精确归因到单个聊天'});
   const scopes = scopeIds.map((id, i) => ({id, label: id === 'history' ? '本机历史（账户未标识）' : id === 'unidentified' ? '未识别账户观测' : id === currentScope ? '当前账户观测' : 'Account ' + (i + 1)}));
   for(const chart of data.values()){chart.totalPoints=chart.points.length;if(chart.points.length>2000&&chart.kind!=='heatmap'){const values=chart.points;chart.points=Array.from({length:2000},(_,i)=>values[Math.floor(i*(values.length-1)/1999)]);chart.sampled=true;}}
@@ -200,5 +203,5 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
       tokens: currentUsage?.requests ? currentUsage.tokens : null, tokensPerPP: weekComparable.length ? sum(weekComparable.map(p => p.tokens)) / sum(weekComparable.map(p => p.pp)) : null,
       updatedAt: selected.at(-1)?.at || null, largestWindow: largestWindow ? {label: largestWindow.label, weeklyPP: largestWindow.weeklyPP} : null},
     quality: {snapshots: selected.length, requests: uniqueRequests.length, comparableIntervals: comparable.length, discontinuities: weekly.skipped + five.skipped, unknownAccount: scope === 'history' || scope === 'unidentified', progress,
-      notes: ['额度来自账户观测；token 仅涵盖本机记录，多设备使用可能使两者不匹配', '缓存 token 已包含在输入中，推理 token 已包含在输出中，不重复相加', '百分比取整、延迟、额度重置和缺测会影响换算；这里展示相关性，不提供固定兑换率']}};
+      notes: [...(progress?.unreadable?['部分聊天记录不在本机，相关 token 可能缺失']:[]),'额度来自账户观测；token 仅涵盖本机记录，多设备使用可能使两者不匹配', '缓存 token 已包含在输入中，推理 token 已包含在输出中，不重复相加', '百分比取整、延迟、额度重置和缺测会影响换算；这里展示相关性，不提供固定兑换率']}};
 }
