@@ -75,3 +75,32 @@ test('rounded flat samples do not imply zero future consumption in the central p
  assert.ok(points.length>1);assert.equal(points[0].y,15);assert.ok(points.at(-1).y>15);
  assert.ok(Math.abs((points[1].y-points[0].y)/points[1].x-1)<1e-9,'five points over five observed hours means one point per hour');
 });
+
+test('automatic selection uses comparable history without merging account identities; explicit selection stays explicit',()=>{
+ const snapshots=[point(now-600000,10),point(now,12),point(now-600000,17,{scope:'current'}),point(now,17,{scope:'current'})];
+ const input={snapshots,requests:[request(now-1,100)],currentScope:'current'};
+ const auto=buildQuotaAnalytics(input,{now});assert.equal(auto.scope,'history');assert.equal(auto.selection.mode,'auto');assert.equal(auto.quality.snapshots,2);assert.equal(auto.quality.comparableIntervals,1);
+ const manual=buildQuotaAnalytics(input,{now,scope:'current'});assert.equal(manual.scope,'current');assert.equal(manual.selection.mode,'manual');assert.equal(manual.quality.comparableIntervals,0);assert.match(manual.charts.find(c=>c.id==='weekly-scatter').empty,/尚未变化/);
+ const tied=buildQuotaAnalytics({...input,snapshots:snapshots.map(p=>({...p,weeklyUsed:17}))},{now});assert.equal(tied.scope,'current');
+});
+test('reset countdown jitter is normalized per account and pool while actual resets remain separate',async()=>{
+ const {normalizeQuotaCycles}=await import('../src/core/quota-observations.mjs');
+ const snapshots=[point(now-1800000,10),point(now-1200000,11,{weeklyReset:reset+1}),point(now-600000,12,{weeklyReset:reset+2}),point(now,2,{weeklyReset:reset+604800})];
+ const original=structuredClone(snapshots),report=buildQuotaAnalytics({snapshots,requests:[request(now-1500000,100),request(now-900000,200)]},{now});
+ assert.deepEqual(snapshots,original);assert.equal(report.quality.comparableIntervals,2);assert.equal(report.quality.resetTimeAdjustments,2);assert.equal(report.charts.find(c=>c.id==='weeks').rows.length,2);
+ const bounded=normalizeQuotaCycles([point(now,1),point(now,2,{weeklyReset:reset+50}),point(now,3,{weeklyReset:reset+100}),point(now,4,{scope:'other',weeklyReset:reset+1}),point(now,4,{bucket:'other',weeklyReset:reset+2})]).snapshots;
+ assert.equal(bounded[1].weeklyReset,reset);assert.equal(bounded[2].weeklyReset,reset+100);assert.equal(bounded[3].weeklyReset,reset+1);assert.equal(bounded[4].weeklyReset,reset+2);
+});
+test('same-cycle offline gaps yield labelled net changes, without inventing hourly usage',()=>{
+ const snapshots=[point(now-2*HOUR,10),point(now,13)];
+ const report=buildQuotaAnalytics({snapshots,requests:[request(now-HOUR,1000)]},{now});
+ const scatter=report.charts.find(c=>c.id==='weekly-scatter').points;
+ assert.equal(scatter.length,1);assert.equal(scatter[0].y,3);assert.equal(scatter[0].tokens,1010);assert.equal(scatter[0].estimated,true);assert.equal(scatter[0].durationHours,2);
+ assert.equal(report.charts.find(c=>c.id==='hours').points.length,0);assert.equal(report.charts.find(c=>c.id==='forecast').points.length,0);
+ const resetReport=buildQuotaAnalytics({snapshots:[snapshots[0],{...snapshots[1],weeklyReset:reset+604800}],requests:[request(now-HOUR,1000)]},{now});assert.equal(resetReport.quality.comparableIntervals,0);
+});
+test('weekly-only reports omit every five-hour chart from navigation and retain useful statistics',()=>{
+ const fixture=quotaFixture(now);fixture.snapshots=fixture.snapshots.map(p=>({...p,fiveUsed:null,fiveReset:null}));
+ const report=buildQuotaAnalytics(fixture,{now});assert.deepEqual(report.capabilities,{weekly:true,fiveHour:false});assert.deepEqual(report.sections[0].chartIds,['weekly','weekly-scatter','efficiency','weeks']);
+ for(const id of ['windows','five-hour-scatter','distribution','anomalies','ratio']){assert.ok(report.sections.every(s=>!s.chartIds.includes(id)));assert.equal(report.charts.find(c=>c.id===id).visible,false);}
+});

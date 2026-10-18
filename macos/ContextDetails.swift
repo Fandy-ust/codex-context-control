@@ -49,24 +49,11 @@ struct ContextStatistics:Decodable,Sendable {
     let compactionCount:Int;let plaintextSummaryItems:Int;let tokenizer:String;let notes:[String]
 }
 
-struct ContextDetailsButton:View {
-    let chatID:String;let title:String
-    @ObservedObject var model:Controller
-    @State private var showing=false
-    var body:some View {
-        Button {showing=true} label:{Label(L("上下文详情"),systemImage:"chart.bar.xaxis")}
-            .buttonStyle(.bordered).help(L("查看这个聊天的分类用量和消息数量"))
-            .sheet(isPresented:$showing){ContextDetailsView(chatID:chatID,title:title,model:model)}
-    }
-}
-
 @MainActor private final class DeferredContextDetails {var statistics:ContextStatistics?;var payload:Data?}
 
 @MainActor struct ContextDetailsView:View {
     let chatID:String;let title:String
     @ObservedObject var model:Controller
-    var onBack:(()->Void)?=nil
-    @Environment(\.dismiss) private var dismiss
     @State private var statistics:ContextStatistics?
     @State private var loading=false
     @State private var error:String?
@@ -78,11 +65,10 @@ struct ContextDetailsButton:View {
     @State private var interactionRefresh:Task<Void,Never>?
     var body:some View {
         VStack(alignment:.leading,spacing:16){
-            HStack{Button(L("返回预算"),systemImage:"arrow.left"){if let onBack{onBack()}else{dismiss()}}.keyboardShortcut(.cancelAction);Spacer();if loading{ProgressView().controlSize(.small)};Button(L("刷新"),systemImage:"arrow.clockwise"){Task{await reload(force:true)}}.disabled(loading)}.buttonStyle(.bordered)
-            Text(L("上下文详情")).font(.title2.weight(.semibold)).padding(.top,8)
+            HStack{Text(L("上下文详情")).font(.title3.weight(.semibold));Spacer();if loading{ProgressView().controlSize(.small)};Button(L("刷新"),systemImage:"arrow.clockwise"){Task{await reload(force:true)}}.disabled(loading)}.buttonStyle(.bordered)
             HStack {Text(statistics.map{ $0.snapshotKind=="last_request" ? L("最近请求快照 · {0}", timestamp($0.snapshotAt)):L("本地保留历史 · 尚无可对齐用量") } ?? L("正在读取所选聊天…")).font(.caption).foregroundStyle(.secondary);Spacer();Toggle(L("自动刷新"),isOn:$autoRefresh).toggleStyle(.switch).controlSize(.small).font(.caption)}
             if let error{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
-            ScrollView {
+            Group {
                 if let s=statistics {
                     VStack(alignment:.leading,spacing:16){
                         ContextSummaryView(statistics:s)
@@ -113,7 +99,7 @@ struct ContextDetailsButton:View {
                 }else if !loading{ContentUnavailableView(L("暂无上下文统计"),systemImage:"chart.bar.xaxis",description:Text(L("这个聊天需要有本地记录。正常交互后点击刷新。")))}
             }
         }
-        .padding(26).frame(maxWidth:.infinity,maxHeight:.infinity).background(Color(white:0.095)).preferredColorScheme(.dark)
+        .frame(maxWidth:.infinity,alignment:.leading).preferredColorScheme(.dark)
         .task(id:chatID){
             await reload(force:false)
             while !Task.isCancelled {do{try await Task.sleep(for:.seconds(10))}catch{break};if autoRefresh && !chartInteracting{await reload(force:false)}}

@@ -2,6 +2,9 @@ import SwiftUI
 import Charts
 
 struct QuotaAnalyticsReport:Decodable {
+    struct Capabilities:Decodable {let weekly:Bool;let fiveHour:Bool}
+    struct Selection:Decodable {let mode:String;let label:String}
+    let capabilities:Capabilities?;let selection:Selection?
     struct Option:Decodable,Identifiable {let id:String;let label:String}
     struct Section:Decodable,Identifiable {let id:String;let title:String;let chartIds:[String]}
     struct Overview:Decodable {
@@ -17,7 +20,7 @@ struct QuotaAnalyticsReport:Decodable {
 }
 struct QuotaAnalysisPoint:Decodable,Identifiable {
     let id:String;let x:Double;let y:Double;let series:String?;let segment:String?;let label:String?;let at:Double?
-    let value:Double?;let rightY:Double?;let tokens:Double?;let alignedTokens:Double?;let weeklyPP:Double?;let fivePP:Double?;let cacheRate:Double?;let partial:Bool?
+    let value:Double?;let rightY:Double?;let tokens:Double?;let alignedTokens:Double?;let weeklyPP:Double?;let fivePP:Double?;let cacheRate:Double?;let partial:Bool?;let estimated:Bool?;let durationHours:Double?
     let low:Double?;let high:Double?;let q1:Double?;let q3:Double?
 }
 struct QuotaAnalysisChart:Decodable,Identifiable {
@@ -57,6 +60,9 @@ struct QuotaAnalyticsView:View {
     @State private var failure:String?
     @State private var epoch=0
     init(model:Controller,onBack:@escaping ()->Void,fixture:QuotaAnalyticsReport?=nil){self.model=model;self.onBack=onBack;self.fixture=fixture != nil;_report=State(initialValue:fixture)}
+    private var hasWeekly:Bool {report?.capabilities?.weekly ?? true}
+    private var hasFive:Bool {report?.capabilities?.fiveHour ?? true}
+    private var metricCount:Int {1 + (hasWeekly ? 2:0) + (hasFive ? 1:0)}
     private var loadKey:String {"\(days):\(scope):\(pool)"}
     private var cards:[QuotaAnalysisChart] {
         guard let report else{return []};let selected=report.sections.first{$0.id==section} ?? report.sections.first
@@ -71,9 +77,9 @@ struct QuotaAnalyticsView:View {
                     filters
                     if let failure{Text(failure).font(.callout).foregroundStyle(.orange)}
                     if let pending=report?.quality.progress?.pending,pending>0{Text("\(L("正在增量导入历史")) · \(pending) \(L("个文件待处理"))").font(.caption).foregroundStyle(.orange)}
-                    LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:12),count:4),spacing:12){
-                        metric("Weekly 已用",report?.overview.weeklyUsed.map{quotaNumber($0)+"%"});metric("5h 已用",report?.overview.fiveUsed.map{quotaNumber($0)+"%"})
-                        metric("本周期本机 Token",quotaNumber(report?.overview.tokens));metric("Token / Weekly 1%",quotaNumber(report?.overview.tokensPerPP))
+                    LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:12),count:metricCount),spacing:12){
+                        if hasWeekly{metric("Weekly 已用",report?.overview.weeklyUsed.map{quotaNumber($0)+"%"})};if hasFive{metric("5h 已用",report?.overview.fiveUsed.map{quotaNumber($0)+"%"})}
+                        metric("本周期本机 Token",quotaNumber(report?.overview.tokens));if hasWeekly{metric("Token / Weekly 1%",quotaNumber(report?.overview.tokensPerPP))}
                     }
                     if let window=report?.overview.largestWindow{Text("\(L("观测消耗最高窗口")) · \(window.label) · \(quotaNumber(window.weeklyPP)) pp").font(.caption).foregroundStyle(.secondary)}
                     if let report {
@@ -90,7 +96,7 @@ struct QuotaAnalyticsView:View {
     }
     private var filters:some View {
         HStack(alignment:.bottom,spacing:14){
-            VStack(alignment:.leading,spacing:6){Text(L("记录来源"));Picker(L("记录来源"),selection:Binding(get:{scope.isEmpty ? report?.scope ?? "":scope},set:{scope=$0;pool=""})){ForEach(report?.scopes ?? []){p in Text(L(p.label)).tag(p.id)}}.labelsHidden().frame(maxWidth:240)}
+            VStack(alignment:.leading,spacing:6){Text(L("记录来源"));Picker(L("记录来源"),selection:Binding(get:{scope},set:{scope=$0;pool=""})){Text(L("自动")+(report?.selection.map{" · "+L($0.label)} ?? "")).tag("");ForEach(report?.scopes ?? []){p in Text(L(p.label)).tag(p.id)}}.labelsHidden().frame(maxWidth:240)}
             VStack(alignment:.leading,spacing:6){Text(L("额度类型"));Picker(L("额度类型"),selection:Binding(get:{pool.isEmpty ? report?.pool ?? "":pool},set:{pool=$0})){ForEach(report?.pools ?? []){p in Text(p.label).tag(p.id)}}.labelsHidden().frame(maxWidth:180)}
             VStack(alignment:.leading,spacing:6){Text(L("时间范围"));Picker(L("时间范围"),selection:$days){ForEach([28,56,84],id:\.self){n in Text("\(n/7) "+L("周")).tag(n)}}.labelsHidden().frame(width:100)}
             Spacer(minLength:0)
@@ -114,7 +120,7 @@ struct QuotaAnalyticsView:View {
         do {
             var params:[String:Any]=["days":days,"refresh":force];if !scope.isEmpty{params["scope"]=scope};if !pool.isEmpty{params["pool"]=pool}
             let data=try await model.api(ControlAPI.quotaAnalytics,body:params);try Task.checkCancellation()
-            let value=try JSONDecoder().decode(QuotaAnalyticsReport.self,from:data);guard epoch==key else{return};report=value;if scope.isEmpty && !value.scopes.isEmpty{scope=value.scope};if pool.isEmpty && !value.pools.isEmpty{pool=value.pool}
+            let value=try JSONDecoder().decode(QuotaAnalyticsReport.self,from:data);guard epoch==key else{return};report=value;if pool.isEmpty && !value.pools.isEmpty{pool=value.pool}
         }catch is CancellationError{}catch{if epoch==key{failure=error.localizedDescription}}
     }
 }
@@ -215,7 +221,7 @@ private struct QuotaAnalysisCard:View {
         var values=[p.label,p.series.map{L($0)},L(chart.yLabel)+": "+quotaNumber(chart.kind=="heatmap" ? p.value:p.y)].compactMap{$0}
         if let at=p.at{values.append(Date(timeIntervalSince1970:at/1000).formatted(.dateTime.month(.twoDigits).day().hour().minute()))}
         if let tokens=p.tokens{values.append("Token: "+quotaNumber(tokens))};if let weekly=p.weeklyPP{values.append("Weekly: \(quotaNumber(weekly)) pp")};if let five=p.fivePP{values.append("5h: \(quotaNumber(five)) pp")}
-        if p.partial==true{values.append(L("部分窗口"))};return values.joined(separator:" · ")
+        if p.partial==true{values.append(L("部分窗口"))};if p.estimated==true{values.append(L("断档期间的净变化")+" · "+quotaNumber(p.durationHours)+" h")};return values.joined(separator:" · ")
     }
     private var ranking:some View {
         VStack(spacing:0){HStack{Text(L("类型")).frame(width:42,alignment:.leading);Text(L("名称"));Spacer();Text("Token").frame(width:80,alignment:.trailing);Text(L("请求数")).frame(width:55,alignment:.trailing)}.font(.caption).foregroundStyle(.secondary).padding(.bottom,8)

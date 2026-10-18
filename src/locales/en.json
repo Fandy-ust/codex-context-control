@@ -688,5 +688,17 @@
   "额度统计耗时过长，请稍后重试": "Quota analysis timed out; please retry",
   "部分聊天记录不在本机，相关 token 可能缺失": "Some chat records are unavailable locally; their tokens may be missing",
   "周期天数": "Days into cycle",
-  "平均速度": "Average pace"
+  "平均速度": "Average pace",
+  "自动": "Automatic",
+  "断档期间的净变化": "Net change across a recording gap",
+  "还需要至少两次额度观测": "At least two quota observations are needed",
+  "已读取记录，但这段时间额度读数尚未变化": "Records loaded; quota readings have not changed yet",
+  "有额度变化，但对应时段缺少本机 token 记录": "Quota changed, but local token records are missing for that period",
+  "额度变化不足 1 个百分点，暂不计算换算率": "Less than one percentage point of change; no conversion estimate yet",
+  "明细": "Details",
+  "本机记录": "Local records",
+  "较长间隔按两次读数的净变化计算，不推断中间消耗时间": "Long gaps use the net change between readings without inferring when usage occurred",
+  "尚无可识别的单模型比较区间": "No comparable single-model intervals yet",
+  "仅汇总单模型区间；少量样本仅作参考，混合模型不强行归因": "Single-model intervals only; sparse samples are for reference and mixed models are not attributed",
+  "预算已保存，实际窗口将在下一轮请求后确认。": "Budget saved. The actual window will be confirmed after the next request."
 }

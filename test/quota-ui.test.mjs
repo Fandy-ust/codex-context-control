@@ -41,3 +41,11 @@ import AppKit
   const run=spawnSync(binary,[path.join(temp,'report.json'),screenshot],{env:{...process.env,CONTEXT_CONTROL_HOME:temp},encoding:'utf8',timeout:15000});assert.equal(run.status,0,run.stdout+run.stderr);assert.ok(fs.statSync(screenshot).size>5000);
  }finally{fs.rmSync(temp,{recursive:true,force:true});}
 });
+
+test('weekly-only UI hides unsupported metrics and keeps Automatic selected across reports',async()=>{
+ const {quotaFixture}=await import('../desktop/quota-demo.mjs'),{buildQuotaAnalytics}=await import('../src/core/quota-analytics.mjs');
+ const fixture=quotaFixture();fixture.snapshots=fixture.snapshots.map(p=>({...p,fiveUsed:null,fiveReset:null}));
+ const report=buildQuotaAnalytics(fixture),html=quotaAnalyticsView({report,e:escape,t:s=>s});
+ assert.equal((html.match(/data-qa-chart=/g)||[]).length,4);assert.equal((html.match(/class="qa-metric"/g)||[]).length,3);assert.ok(!html.includes('5h'));assert.match(html,/<option value="" selected>/);
+ const manual=quotaAnalyticsView({report,selectedScope:report.scope,e:escape,t:s=>s});assert.ok(!manual.includes('<option value="" selected>'));
+});

@@ -1,5 +1,12 @@
 # Changes
 
+## 0.20.3 — Inline details and useful quota history
+
+- Show context details directly below one compact budget editor on both platforms; Apply remains explicit and dragging never saves.
+- Remove redundant main-panel actions while retaining backend safety checks.
+- Automatically select useful observation history, preserve manual source choices, and hide unsupported 5h metrics and charts.
+- Normalize reset countdown jitter and support labelled same-cycle net changes across recording gaps, without fabricating hourly usage.
+
 ## 0.20.2 — Quota projection under rounded readings
 
 - Base the central quota projection on consumption per observed hour, with hourly aggregation for slower/faster scenarios.

@@ -1,5 +1,6 @@
 import {HOUR, DAY, WEEK, finite, sum, distribution, fitLine, usageBetween} from './quota-statistics.mjs';
 import {QUOTA_CHARTS, QUOTA_SECTIONS} from './quota-chart-catalog.mjs';
+import {normalizeQuotaCycles} from './quota-observations.mjs';
 
 const validPercent = n => finite(n) && n >= 0 && n <= 100;
 const reset = n => Number.isSafeInteger(n) && n > 0 && n < 8640000000000;
@@ -16,22 +17,23 @@ function localParts(at, zone) {
 // contribute tokens to the next change. Resets, backwards readings and gaps
 // start a new anchor; none of those are reported as consumption.
 export function quotaIntervals(snapshots, requests, role, {maxGap = MAX_GAP, minDelta = Number.EPSILON} = {}) {
-  const result = []; let anchor = null, previous = null, skipped = 0;
+  const result = []; let anchor = null, previous = null, skipped = 0, gapMs=0;
   for (const p of snapshots) {
     const key = cycleKey(p, role), value = p[role + 'Used'];
-    if (!key || !validPercent(value)) {anchor = previous = null;continue;}
+    if (!key || !validPercent(value)) {anchor = previous = null;gapMs=0;continue;}
     if (!previous || key !== cycleKey(previous, role) || p.at - previous.at > maxGap || p.at <= previous.at || value < previous[role + 'Used']) {
       if (previous) skipped++;
-      anchor = previous = p; continue;
+      anchor = previous = p;gapMs=0;continue;
     }
+    if(p.at-previous.at>MAX_GAP)gapMs=Math.max(gapMs,p.at-previous.at);
     const delta = round(value - anchor[role + 'Used']);
     if (delta >= minDelta) {
       const usage = usageBetween(requests, anchor.at, p.at);
       result.push({id: `${role}:${anchor.at}:${p.at}`, start: anchor.at, end: p.at, cycle: key, pp: delta,
         fiveCycle: cycleKey(anchor, 'five') === cycleKey(p, 'five') ? cycleKey(p, 'five') : null,
         weeklyCycle: cycleKey(anchor, 'weekly') === cycleKey(p, 'weekly') ? cycleKey(p, 'weekly') : null,
-        duration: p.at - anchor.at, ...usage});
-      anchor = p;
+        duration: p.at - anchor.at, estimated:gapMs>0, gapMs, ...usage});
+      anchor = p;gapMs=0;
     }
     previous = p;
   }
@@ -73,23 +75,33 @@ function requestRanking(requests) {
 }
 function chartPoints(intervals) {
   return intervals.filter(p => p.tokens > 0 && !p.unknownRequests && p.pp >= 1).map(p => ({id: p.id, x: p.tokens, y: p.pp, series: p.model, at: p.end,
-    tokens: p.tokens, pp: p.pp, cacheRate: p.cacheRate, requests: p.requests, start: p.start, end: p.end}));
+    tokens: p.tokens, pp: p.pp, estimated:p.estimated, durationHours:p.duration/HOUR, cacheRate: p.cacheRate, requests: p.requests, start: p.start, end: p.end}));
 }
 
 export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope = null, progress = null} = {}, options = {}) {
   const now = finite(options.now) ? options.now : Date.now(), days = [28, 56, 84].includes(options.days) ? options.days : 28;
   let zone = options.timeZone || 'UTC';try {localParts(now, zone);} catch {zone = 'UTC';}
   const cutoff = now - days * DAY;
-  const all = snapshots.filter(p => finite(p.at) && p.at <= now + 60000 && p.at >= cutoff && typeof p.scope === 'string' && typeof p.bucket === 'string').sort((a, b) => a.at - b.at);
-  const scopeIds = [...new Set(all.map(p => p.scope))];
-  const scope = scopeIds.includes(options.scope) ? options.scope : scopeIds.includes(currentScope) ? currentScope : scopeIds.at(-1) || 'history';
-  const poolIds = [...new Set(all.filter(p => p.scope === scope).map(p => p.bucket))];
-  const pool = poolIds.includes(options.pool) ? options.pool : poolIds.includes('codex') ? 'codex' : poolIds[0] || 'codex';
-  const selected = all.filter(p => p.scope === scope && p.bucket === pool);
+  const normalized=normalizeQuotaCycles(snapshots.filter(p=>finite(p.at)&&p.at<=now+60000&&p.at>=cutoff&&typeof p.scope==='string'&&typeof p.bucket==='string'));
+  const all=normalized.snapshots.sort((a,b)=>a.at-b.at);
+  const scopeIds=[...new Set(all.map(p=>p.scope))];
   const validRequests = requests.filter(p => finite(p.at) && p.at >= cutoff && p.at <= now && Number.isSafeInteger(p.input) && p.input >= 0 && Number.isSafeInteger(p.output) && p.output >= 0).sort((a, b) => a.at - b.at);
   const uniqueRequests = [...new Map(validRequests.map(p => [p.id, p])).values()].sort((a, b) => a.at - b.at);
+  const profiles=scopeIds.map(id=>{
+    const rows=all.filter(p=>p.scope===id),pools=[...new Set(rows.map(p=>p.bucket))];
+    const pool=pools.includes(options.pool)?options.pool:pools.includes('codex')?'codex':pools[0];
+    const selected=rows.filter(p=>p.bucket===pool);
+    const score=quotaIntervals(selected,uniqueRequests,'weekly',{minDelta:1,maxGap:WEEK}).intervals.filter(p=>p.tokens>0&&!p.unknownRequests).length
+      +quotaIntervals(selected,uniqueRequests,'five',{minDelta:1,maxGap:5*HOUR}).intervals.filter(p=>p.tokens>0&&!p.unknownRequests).length;
+    return {id,pools,pool,selected,score};
+  });
+  const manual=profiles.find(p=>p.id===options.scope);
+  const eligible=options.pool?profiles.filter(p=>p.pools.includes(options.pool)):profiles;
+  const ranked=[...(eligible.length?eligible:profiles)].sort((a,b)=>b.score-a.score||Number(b.id===currentScope)-Number(a.id===currentScope)||b.selected.length-a.selected.length);
+  const chosen=manual||ranked[0];
+  const scope=chosen?.id||'history',poolIds=chosen?.pools||[],pool=chosen?.pool||'codex',selected=chosen?.selected||[];
   const weekly = quotaIntervals(selected, uniqueRequests, 'weekly'), five = quotaIntervals(selected, uniqueRequests, 'five');
-  const comparableWeekly=quotaIntervals(selected,uniqueRequests,'weekly',{minDelta:1}),comparableFive=quotaIntervals(selected,uniqueRequests,'five',{minDelta:1});
+  const comparableWeekly=quotaIntervals(selected,uniqueRequests,'weekly',{minDelta:1,maxGap:WEEK}),comparableFive=quotaIntervals(selected,uniqueRequests,'five',{minDelta:1,maxGap:5*HOUR});
   const weeklyPairs=observedQuotaPairs(selected,uniqueRequests,'weekly'),fivePairs=observedQuotaPairs(selected,uniqueRequests,'five');
   const weeklyCycles = groupCycles(selected, 'weekly'), fiveCycles = groupCycles(selected, 'five');
   const latestWeekly = [...selected].reverse().find(p => validPercent(p.weeklyUsed) && reset(p.weeklyReset));
@@ -116,6 +128,7 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   const comparable = comparableWeekly.intervals.filter(p => p.tokens > 0 && p.pp >= 1 && !p.unknownRequests);
   const weekComparable = comparable.filter(p => p.cycle === currentWeek);
   const largestWindow = windows.filter(p => p.weeklyCycle===currentWeek && p.weeklyPP != null).sort((a, b) => b.weeklyPP - a.weeklyPP)[0] || null;
+  const capabilities={weekly:weeklyCycles.length>0,fiveHour:fiveCycles.length>0};
   const data = new Map(QUOTA_CHARTS.map(spec => [spec.id, {...spec, points: [], empty: '尚无足够的可比较记录'}]));
   const set = (id, points, extra = {}) => Object.assign(data.get(id), {points}, extra);
 
@@ -142,14 +155,17 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   const windowPoint = (p, y, index) => ({id: p.id, x: index, y, label: p.label, at: p.start, tokens: p.tokens, alignedTokens: p.alignedTokens, weeklyPP: p.weeklyPP, fivePP: p.fivePP, partial: p.partial, series: '本机观测'});
   set('windows', windows.filter(p => p.weeklyPP != null).map((p, i) => windowPoint(p, p.weeklyPP, i)), {empty: fiveCycles.length ? '尚无可归入单个 5h 窗口的 Weekly 变化' : '该账户尚无 5h 窗口记录', note: '仅统计观测到的区间；跨重置的差值不分配给窗口'});
   for (const [id, intervals] of [['weekly-scatter', comparableWeekly.intervals], ['five-hour-scatter', comparableFive.intervals]]) {
-    const points = chartPoints(intervals);set(id, points, {fit: fitLine(points), note: '本机相关观测，并非官方 token 换算公式'});
+    const points = chartPoints(intervals),role=id==='weekly-scatter'?'weekly':'five',values=selected.filter(p=>validPercent(p[role+'Used']));
+    const unchanged=values.length>1&&new Set(values.map(p=>p[role+'Used'])).size===1;
+    const empty=values.length<2?'还需要至少两次额度观测':unchanged?'已读取记录，但这段时间额度读数尚未变化':intervals.some(p=>p.pp>=1)?'有额度变化，但对应时段缺少本机 token 记录':'额度变化不足 1 个百分点，暂不计算换算率';
+    set(id, points, {fit: fitLine(points),empty,note: '本机相关观测，并非官方 token 换算公式'});
   }
   const efficiencyPoints=windows.filter(p => p.weeklyPP >= 1 && p.alignedTokens > 0).map((p, i) => windowPoint(p, p.alignedTokens / p.weeklyPP, i));
   if(!fiveCycles.length)for(const [id,values] of aggregateBy(comparable,p=>p.cycle)){
     const totalTokens=sum(values.map(p=>p.tokens)),weeklyPP=sum(values.map(p=>p.pp));
     efficiencyPoints.push({id,x:efficiencyPoints.length,y:totalTokens/weeklyPP,label:dateLabel(Number(id)*1000-WEEK,zone),series:'本机观测',tokens:totalTokens,weeklyPP,at:Number(id)*1000-WEEK});
   }
-  set('efficiency',efficiencyPoints,{xLabel:fiveCycles.length?'5h 窗口':'Weekly 周期',summary:distribution(efficiencyPoints.map(p=>p.y)),note:'使用与 Weekly 变化对齐的 token；不足 1 个百分点不换算'});
+  set('efficiency',efficiencyPoints,{xLabel:fiveCycles.length?'5h 窗口':'Weekly 周期',summary:distribution(efficiencyPoints.map(p=>p.y)),empty:data.get('weekly-scatter').empty,note:'使用与 Weekly 变化对齐的 token；不足 1 个百分点不换算'});
   const heat = [];
   weeklyCycles.forEach(([id], row) => {
     const start = Number(id) * 1000 - WEEK;
@@ -166,10 +182,9 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   set('cumulative', cumulative, {note: '仅累加可观测区间，断档期间不估算'});
   const modelPoints = [];
   for (const [model, values] of aggregateBy(comparable.filter(p => p.model !== '多模型' && p.model !== '未识别模型'), p => p.model)) {
-    if (values.length < 3) continue;
     modelPoints.push({id: model, x: modelPoints.length, y: sum(values.map(p => p.pp)) / sum(values.map(p => p.tokens)) * 1e6, label: model, series: model, samples: values.length});
   }
-  set('models', modelPoints, {note: '仅展示至少三个单模型区间；混合模型不强行归因'});
+  set('models', modelPoints, {empty:'尚无可识别的单模型比较区间',note: '仅汇总单模型区间；少量样本仅作参考，混合模型不强行归因'});
   set('cache', comparable.filter(p => p.cacheRate != null).map(p => ({id: p.id, x: p.cacheRate * 100, y: p.pp / p.tokens * 1e6, series: p.model, at: p.end, tokens: p.tokens})), {xMax: 100});
   const histogram = new Map();
   for (const p of windows.filter(p => p.weeklyPP != null)) {const bin = Math.floor(p.weeklyPP / 2) * 2;histogram.set(bin, (histogram.get(bin) || 0) + 1);}
@@ -206,10 +221,16 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   Object.assign(data.get('ranking'), {rows: requestRanking(uniqueRequests), note: '仅按本机 token 排序；账户额度无法精确归因到单个聊天'});
   const scopes = scopeIds.map((id, i) => ({id, label: id === 'history' ? '本机历史（账户未标识）' : id === 'unidentified' ? '未识别账户观测' : id === currentScope ? '当前账户观测' : 'Account ' + (i + 1)}));
   for(const chart of data.values()){chart.totalPoints=chart.points.length;if(chart.points.length>2000&&chart.kind!=='heatmap'){const values=chart.points;chart.points=Array.from({length:2000},(_,i)=>values[Math.floor(i*(values.length-1)/1999)]);chart.sampled=true;}}
-  return {schemaVersion: 1, generatedAt: now, timeZone: zone, days, scope, pool, scopes, pools: poolIds.map(id => ({id, label: id})), sections: QUOTA_SECTIONS, charts: [...data.values()],
+  const fiveOnly=new Set(['windows','five-hour-scatter','distribution','anomalies','ratio']);
+  const supported=id=>(capabilities.fiveHour||!fiveOnly.has(id))&&(capabilities.weekly||['five-hour-scatter','ranking'].includes(id));
+  for(const chart of data.values())chart.visible=supported(chart.id);
+  const sections=QUOTA_SECTIONS.map(s=>({...s,title:s.id==='windows'&&!capabilities.fiveHour?'明细':s.title,chartIds:s.chartIds.filter(supported)}));
+  if(!sections[0].chartIds.length)sections[0].chartIds=['ranking'];
+  const visibleSections=sections.filter(s=>s.chartIds.length);
+  return {schemaVersion: 1, generatedAt: now, timeZone: zone, days, scope, pool, capabilities,selection:{mode:manual?'manual':'auto',label:scopes.find(p=>p.id===scope)?.label||'本机记录'},scopes, pools: poolIds.map(id => ({id, label: id})), sections: visibleSections, charts: [...data.values()],
     overview: {weeklyUsed: currentWeek ? latestWeekly.weeklyUsed : null, fiveUsed: latestFive?.fiveReset * 1000 > now ? latestFive.fiveUsed : null,
-      tokens: currentUsage?.requests ? currentUsage.tokens : null, tokensPerPP: weekComparable.length ? sum(weekComparable.map(p => p.tokens)) / sum(weekComparable.map(p => p.pp)) : null,
+      tokens: currentUsage?.requests ? currentUsage.tokens : !capabilities.weekly&&uniqueRequests.length?sum(uniqueRequests.map(p=>p.input+p.output)):null, tokensPerPP: weekComparable.length ? sum(weekComparable.map(p => p.tokens)) / sum(weekComparable.map(p => p.pp)) : null,
       updatedAt: selected.at(-1)?.at || null, largestWindow: largestWindow ? {label: largestWindow.label, weeklyPP: largestWindow.weeklyPP} : null},
-    quality: {snapshots: selected.length, requests: uniqueRequests.length, comparableIntervals: comparable.length, discontinuities: weekly.skipped + five.skipped, unknownAccount: scope === 'history' || scope === 'unidentified', progress,
-      notes: [...(progress?.unreadable?['部分聊天记录不在本机，相关 token 可能缺失']:[]),'额度来自账户观测；token 仅涵盖本机记录，多设备使用可能使两者不匹配', '缓存 token 已包含在输入中，推理 token 已包含在输出中，不重复相加', '百分比取整、延迟、额度重置和缺测会影响换算；这里展示相关性，不提供固定兑换率']}};
+    quality: {snapshots: selected.length, requests: uniqueRequests.length, comparableIntervals: comparable.length,estimatedIntervals:comparable.filter(p=>p.estimated).length,resetTimeAdjustments:normalized.adjusted,discontinuities: weekly.skipped + five.skipped, unknownAccount: scope === 'history' || scope === 'unidentified', progress,
+      notes: [...(comparable.some(p=>p.estimated)?['较长间隔按两次读数的净变化计算，不推断中间消耗时间']:[]),...(progress?.unreadable?['部分聊天记录不在本机，相关 token 可能缺失']:[]),'额度来自账户观测；token 仅涵盖本机记录，多设备使用可能使两者不匹配', '缓存 token 已包含在输入中，推理 token 已包含在输出中，不重复相加', '百分比取整、延迟、额度重置和缺测会影响换算；这里展示相关性，不提供固定兑换率']}};
 }

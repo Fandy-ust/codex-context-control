@@ -530,13 +530,9 @@ struct ProjectChatSidebar:View {
 
 struct ContentView: View {
     @ObservedObject var model:Controller
-    @State private var confirmCompact=false
     @State private var showControlPanel=false
     @State private var controlTab="general"
-    @State private var showDetails=false
     @State private var selectedThumb:BudgetThumb = .window
-    private var maxMode:Bool {model.selected?.modelMetadata?.context_ceiling==920000 && Int(model.windowK)==920}
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         // Keep content below the native title bar; NavigationSplitView installs
         // an automatic toolbar/sidebar chrome inside this AppKit-hosted window.
@@ -554,43 +550,33 @@ struct ContentView: View {
                 .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 .help((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 ProjectChatSidebar(model:model).frame(maxHeight:.infinity)
-                Button{showDetails=false;model.showQuotaAnalytics=true}label:{Label(L("额度分析"),systemImage:"chart.xyaxis.line").font(.system(size:12)).frame(maxWidth:.infinity,alignment:.leading).padding(8).contentShape(Rectangle())}.buttonStyle(.plain).disabled(!model.supportsQuotaAnalytics)
+                Button{model.showQuotaAnalytics=true}label:{Label(L("额度分析"),systemImage:"chart.xyaxis.line").font(.system(size:12)).frame(maxWidth:.infinity,alignment:.leading).padding(8).contentShape(Rectangle())}.buttonStyle(.plain).disabled(!model.supportsQuotaAnalytics)
                 QuotaSidebarView(model:model,open:{controlTab="quota";showControlPanel=true})
             }.padding().frame(minWidth:310,idealWidth:340,maxWidth:380).background(PanelStyle.background)
             Group {
                 if model.showQuotaAnalytics {
                     QuotaAnalyticsView(model:model,onBack:{model.showQuotaAnalytics=false})
-                } else if showDetails,let chat=model.selected {
-                    ContextDetailsView(chatID:chat.id,title:chat.title,model:model,onBack:{showDetails=false}).id(chat.id)
                 } else {
             ScrollView {
                 VStack(alignment:.leading,spacing:24){
                     if let chat=model.selected {
                         VStack(alignment:.leading,spacing:7){Text(chat.title).font(.system(size:20,weight:.medium)).lineLimit(2).truncationMode(.tail);Text(chat.model.map{modelDisplayName($0)} ?? L("模型将在接入后识别")).font(.callout).foregroundStyle(.secondary)}
-                        VStack(alignment:.leading,spacing:12){
-                            HStack(spacing:28){metric(chat.observedWindowTitle,formatted(chat.observedWindow));metric(L("最近请求用量"),formatted(chat.lastUsage?.totalTokens))}
-                            if let target=chat.targetWindow,let policy=chat.policy {
-                                Text(L("已保存：可用窗口 {0} · 压缩阈值 {1}{2}", formatted(target), formatted(min(policy.compact,policy.window*90/100)), chat.windowConfirmed ? L("（窗口已确认）"):L("（窗口待确认）"))).font(.callout).textSelection(.enabled)
-                            }
-                            if chat.phase=="awaiting_runtime_confirmation" {
-                                Label(L("新预算已提交。上方仍是调整前的读回值，下一个正常请求完成后更新。"),systemImage:"clock").font(.callout).foregroundStyle(.orange)
-                            }
-                        }
-                        HStack {Spacer();Button{showDetails=true}label:{Label(L("上下文详情"),systemImage:"chart.bar.xaxis")}.buttonStyle(.bordered)}
-                        Divider()
                         budgetEditor().disabled(!model.canEditBudget)
-                        HStack {
-                            Button(L("预检")){Task{await model.act("preflight")}}.buttonStyle(QuietButtonStyle()).disabled(model.preview==nil)
-                            Button(chat.connected ? L("应用到此聊天"):L("保存，接入后应用")){Task{await model.act("policy")}}.buttonStyle(ApplyButtonStyle()).disabled(model.preview==nil)
-                            Button(L("原生压缩…")){confirmCompact=true}.buttonStyle(QuietButtonStyle()).disabled(!chat.connected)
+                        HStack(alignment:.center,spacing:16){
+                            VStack(alignment:.leading,spacing:4){
+                                Text(chat.observedWindowTitle+" · "+formatted(chat.observedWindow)).font(.callout).foregroundStyle(.secondary)
+                                Text(phaseName(chat.phase)).font(.caption).foregroundStyle(.secondary).help(L(chat.message ?? ""))
+                            }
                             Spacer()
-                            Button(L("停止自动应用")){Task{await model.act("clear")}}.buttonStyle(QuietButtonStyle())
-                        }.disabled(model.working)
-                        VStack(alignment:.leading,spacing:7){Label(phaseName(chat.phase),systemImage:chat.phase=="confirmed" ? "checkmark.circle":"clock").font(.callout.weight(.medium));Text(L(chat.message ?? L("接入后，设置会在轮次之间应用。"))).font(.caption).foregroundStyle(.secondary)}.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:16))
+                            Button(L("应用")){Task{await model.act("policy")}}.buttonStyle(ApplyButtonStyle()).disabled(model.preview==nil || model.working)
+                        }
+                        if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
+                        if !model.notice.isEmpty{Text(L(model.notice)).font(.caption).textSelection(.enabled).foregroundStyle(.secondary)}
+                        Divider()
+                        ContextDetailsView(chatID:chat.id,title:chat.title,model:model).id(chat.id)
                     }else{
                         ContentUnavailableView(L("等待聊天接入"),systemImage:"bubble.left.and.bubble.right",description:Text(L("照常打开 Codex 并进入聊天，控制连接会随运行时自动启动。首次安装后请正常重开一次客户端。")))
                     }
-                    Divider();Text(L(model.notice)).font(.callout).textSelection(.enabled).foregroundStyle(.secondary)
                 }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity)
             }
                 }
@@ -601,83 +587,23 @@ struct ContentView: View {
         .preferredColorScheme(.dark).tint(PanelStyle.blue).environment(\.locale,Localization.locale)
         .onChange(of:model.selectedID){_,_ in model.showQuotaAnalytics=false;model.fill()}
         .sheet(isPresented:$showControlPanel){MainControlPanelView(model:model,initialTab:controlTab,close:{showControlPanel=false})}
-        .confirmationDialog(L("请求 Codex 原生压缩？"),isPresented:$confirmCompact,titleVisibility:.visible){Button(L("请求压缩")){Task{await model.act("compact")}};Button(L("取消"),role:.cancel){}}message:{Text(L("压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。"))}
+
     }
-    func budgetEditor()->some View {
-        VStack(alignment:.leading,spacing:18){
-            if maxMode {Label("MAX CONTEXT · 920K",systemImage:"bolt.fill").font(.callout.weight(.semibold)).foregroundStyle(.secondary)}
-            rangeEditor()
-            Text(model.selected?.modelMetadata?.context_ceiling != nil ? L("920K 硬上限 · 最晚 904K 压缩 · 预留至少 16K") : L("将蓝色压缩点往左拉，灰色压缩窗口余量随之增加。每步 1K，应用后生效。"))
-                .font(.system(size:11)).foregroundStyle(.secondary)
-            if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
-            DisclosureGroup(L("高级设置")){
-                VStack(alignment:.leading,spacing:12){
-                    Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:14){
-                        field(L("下一轮预留"),text:$model.reserve,hint:L("为新输入和工具结果留空间"))
-                        field(L("必须保留量"),text:$model.floor,hint:L("可选的手动下限；0 表示未指定"))
-                    }
-                    Text(L("窗口是容量上限。最近请求用量是当前占用的近似值；压缩后保留多少无法预先保证。联动阈值向下取整到 1K。"))
-                        .font(.caption).foregroundStyle(.secondary)
-                    if let budget=model.preview,let percent=model.selected?.modelMetadata?.effective_context_window_percent{
-                        Text(L("底层配置已自动换算为 {0}，按 {1}% 读回 {2}。压缩按完整上下文计数。", formatted(budget.rawWindow), percent, formatted(budget.usableWindow))).font(.caption).foregroundStyle(.secondary)
-                    }
-                }.padding(.top,12)
-            }.font(.callout).foregroundStyle(.secondary)
-        }
-    }
-    private func rangeEditor()->some View {
-        VStack(spacing:16){
-            HStack(alignment:.center){
-                rangeValue(L("压缩触发"),value:model.compactK,color:PanelStyle.blue,thumb:.compact)
+    private func budgetEditor()->some View {
+        VStack(alignment:.leading,spacing:12){
+            HStack {
+                budgetValue(L("压缩触发"),value:model.compactK,color:PanelStyle.blue,thumb:.compact)
                 Spacer()
-                VStack(spacing:5){Text("\(Int(max(0,model.windowK-model.compactK)))K").font(.system(size:22,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(PanelStyle.headroom);Text(L("压缩窗口余量")).font(.system(size:11)).foregroundStyle(.secondary)}
-                Spacer()
-                rangeValue(L("上下文窗口"),value:model.windowK,color:.white,thumb:.window)
-                Button {model.fill()} label:{Image(systemName:"arrow.counterclockwise").font(.system(size:14)).frame(width:22,height:26)}
-                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel(L("重新载入已保存预算")).help(L("重新载入已保存预算"))
+                budgetValue(L("上下文窗口"),value:model.windowK,color:.white,thumb:.window)
+                Button{model.fill()}label:{Image(systemName:"arrow.counterclockwise")}.buttonStyle(.plain).foregroundStyle(.secondary).help(L("重新载入已保存预算"))
             }
             BudgetRangeSlider(window:Binding(get:{model.windowK},set:{model.setWindowK($0)}),compact:Binding(get:{model.compactK},set:{model.setCompactK($0)}),selection:$selectedThumb,maximumWindow:model.maximumWindowK,maximumCompact:model.maximumCompactK)
-            HStack {Text("0K");Spacer();Text(L("模型上限 {0}K", model.maximumWindowK))}.font(.system(size:10)).foregroundStyle(.tertiary).monospacedDigit()
-            Divider().overlay(.white.opacity(0.02))
-            HStack(spacing:7){
-                microAdjust(L("压缩"),value:Binding(get:{model.compactK},set:{model.setCompactK($0)}),minimum:1,maximum:model.maximumCompactK,color:PanelStyle.blue)
-                Text("\(percentage(model.compactPercent))%").font(.system(size:11)).foregroundStyle(.secondary).monospacedDigit().frame(width:44)
-                Spacer(minLength:4)
-                ForEach([80,85,90],id:\.self){ratio in Button("\(ratio)%"){model.setRatio(ratio)}.buttonStyle(QuietButtonStyle(selected:abs(model.compactPercent-Double(ratio))<0.2))}
-                Button(L("最大")){model.setCompactK(Double(model.maximumCompactK))}.buttonStyle(QuietButtonStyle(selected:Int(model.compactK)==model.maximumCompactK))
-            }
-            HStack(spacing:7){
-                microAdjust(L("窗口"),value:Binding(get:{model.windowK},set:{model.setWindowK($0)}),minimum:2,maximum:model.maximumWindowK,color:.white)
-                Spacer(minLength:4)
-                ForEach([200,400,800],id:\.self){k in Button("\(k)K"){model.setWindowK(Double(k))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==k)).disabled(k>model.maximumWindowK)}
-                Button(L("最大")){model.setWindowK(Double(model.maximumWindowK))}.buttonStyle(QuietButtonStyle(selected:Int(model.windowK)==model.maximumWindowK))
-            }
+            HStack{Text("0K");Spacer();Text(L("模型上限 {0}K",model.maximumWindowK))}.font(.caption2).foregroundStyle(.tertiary)
         }
-        .padding(24)
-        .background(PanelStyle.surface,in:RoundedRectangle(cornerRadius:26,style:.continuous))
-        .overlay(RoundedRectangle(cornerRadius:26,style:.continuous).strokeBorder(PanelStyle.border,lineWidth:1))
     }
-    private func rangeValue(_ title:String,value:Double,color:Color,thumb:BudgetThumb)->some View {
-        Button {selectedThumb=thumb} label:{
-            VStack(spacing:5){
-                Text("\(Int(value))K").font(.system(size:28,weight:.medium,design:.rounded)).monospacedDigit().foregroundStyle(color)
-                    .contentTransition(.numericText()).animation(reduceMotion ? nil:.easeOut(duration:0.18),value:value)
-                HStack(spacing:5){Circle().fill(color).frame(width:5,height:5);Text(title).font(.system(size:12)).foregroundStyle(.secondary)}
-            }.padding(.vertical,4).padding(.horizontal,8).background(selectedThumb==thumb ? .white.opacity(0.035):.clear,in:RoundedRectangle(cornerRadius:10))
-        }.buttonStyle(.plain).accessibilityLabel(L("选择{0}滑块，{1}K", title, Int(value))).help(L("选中后，可用轨道上的左右方向键逐 K 调整"))
+    private func budgetValue(_ title:String,value:Double,color:Color,thumb:BudgetThumb)->some View {
+        Button{selectedThumb=thumb}label:{HStack(spacing:8){Text(title).foregroundStyle(.secondary);Text("\(Int(value))K").foregroundStyle(color).monospacedDigit()}.font(.callout)}.buttonStyle(.plain).accessibilityLabel(L("选择{0}滑块，{1}K",title,Int(value)))
     }
-    private func microAdjust(_ title:String,value:Binding<Double>,minimum:Int,maximum:Int,color:Color)->some View {
-        HStack(spacing:6){
-            Text(title).font(.system(size:11)).foregroundStyle(color).frame(width:Localization.language == .en ? 64:28,alignment:.leading)
-            Button {value.wrappedValue-=1} label:{Image(systemName:"minus").font(.system(size:10,weight:.medium)).frame(width:22,height:22).background(.white.opacity(0.05),in:Circle())}
-                .buttonStyle(.plain).accessibilityLabel(L("{0}减少 1K", title)).disabled(value.wrappedValue<=Double(minimum))
-            Button {value.wrappedValue+=1} label:{Image(systemName:"plus").font(.system(size:10,weight:.medium)).frame(width:22,height:22).background(.white.opacity(0.05),in:Circle())}
-                .buttonStyle(.plain).accessibilityLabel(L("{0}增加 1K", title)).disabled(value.wrappedValue>=Double(maximum))
-        }.foregroundStyle(.secondary)
-    }
-    func percentage(_ value:Double)->String {value.formatted(.number.precision(.fractionLength(0...1)))}
-    func metric(_ title:String,_ value:String)->some View {VStack(alignment:.leading,spacing:7){Text(title).font(.caption).foregroundStyle(.secondary);Text(value).font(.title2.monospacedDigit().weight(.semibold))}.frame(maxWidth:.infinity,alignment:.leading)}
-    func field(_ label:String,text:Binding<String>,hint:String)->some View {GridRow{Text(label);VStack(alignment:.leading,spacing:4){TextField(label,text:text).textFieldStyle(.roundedBorder).frame(maxWidth:250);Text(hint).font(.caption).foregroundStyle(.secondary)}}}
 }
 
 @main @MainActor final class ContextControlApp:NSObject,NSApplicationDelegate,NSWindowDelegate {
