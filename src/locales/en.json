@@ -526,5 +526,13 @@
   "额外额度可用": "Extra credits available",
   "主控制面板": "Control panel",
   "返回": "Back",
-  "剩余 {0}%": "{0}% remaining"
+  "剩余 {0}%": "{0}% remaining",
+  "下次可重试": "Retry after",
+  "从发布页手动下载": "Download from releases",
+  "GitHub 请求已限流，请稍后重试或从发布页下载。": "GitHub has rate-limited requests. Retry later or download from releases.",
+  "GitHub 拒绝了更新检查（HTTP 403），请检查网络或从发布页下载。": "GitHub refused the update check (HTTP 403). Check your network or download from releases.",
+  "更新来源暂不可用（HTTP {0}），可从发布页下载。": "Update source unavailable (HTTP {0}). Download from releases.",
+  "无法连接更新来源，请稍后重试或从发布页下载。": "Cannot reach update sources. Retry later or download from releases.",
+  "更新检查被拒绝（HTTP 403），请检查网络或从发布页下载。": "The update check was refused (HTTP 403). Check your network or download from releases.",
+  "更新来源返回了无效版本信息，可从发布页下载。": "The update source returned invalid version information. Download from releases."
 }

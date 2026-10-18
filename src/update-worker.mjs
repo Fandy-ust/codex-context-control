@@ -14,6 +14,7 @@ export async function downloadVerified(update,directory,{fetcher=fetch}={}){
  const options={signal:AbortSignal.timeout(180000)};
  const checksum=await fetcher(update.checksumURL,options);if(!checksum.ok)throw Error('无法下载更新校验文件');
  const expected=expectedChecksum(await checksum.text(),update.filename);
+ if(update.sha256&&update.sha256!==expected)throw Error('版本文件与下载校验值不一致');
  const response=await fetcher(update.url,options);if(!response.ok||!response.body)throw Error('无法下载更新');
  const target=path.join(directory,update.filename),stage=target+'.partial';let bytes=0;const hash=crypto.createHash('sha256');
  const handle=await fsp.open(stage,'w',0o600);

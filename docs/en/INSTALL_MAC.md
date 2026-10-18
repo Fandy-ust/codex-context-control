@@ -6,7 +6,7 @@ The preview targets Apple Silicon (M-series) Macs with macOS 14 or later. Instal
 
 ## Install or update
 
-1. [Download the 0.18.2 Apple Silicon DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.2-preview.1/Context-Manager-0.18.2-macos-arm64.dmg) and open it.
+1. [Download the 0.18.3 Apple Silicon DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.3-preview.1/Context-Manager-0.18.3-macos-arm64.dmg) and open it.
 2. Open **Install Context Manager.app**.
 3. Select **Automatic (time zone)**, **中文**, or **English** if desired.
 4. Choose **Install / Update**.
@@ -15,7 +15,7 @@ The preview targets Apple Silicon (M-series) Macs with macOS 14 or later. Instal
 
 Users do not need Node, npm, Homebrew, Xcode, an administrator password, or an Apple developer membership. The installer copies the runtime to a stable user support directory, so deleting the downloaded installer does not break the app.
 
-The 0.18.2 English / Chinese preview is published and publicly downloadable. The demo release contains a video, not an installer. Older drafts remain maintainer review artifacts.
+The 0.18.3 English / Chinese preview is published and publicly downloadable. The demo release contains a video, not an installer. Older drafts remain maintainer review artifacts.
 
 ## Opening a preview
 
@@ -53,8 +53,10 @@ Enable context extension in Settings for up to 920K and restart Codex after chan
 
 ## Updates and local cache
 
-Install 0.18.2 once to enable in-app updates. The app checks GitHub at startup (cached for six hours) and every six hours. Click Install update to download, verify, and install; restart Codex afterward. Budgets, language, and caches are retained. Local chats load at startup, update incrementally in the background, and can be refreshed with Sync local chats. Cached observations are historical, not a live connection. Missing remote-only histories remain unavailable until synchronized by Codex.
+Install 0.18.3 once to enable in-app updates. The app checks GitHub at startup (cached for six hours) and every six hours. Click Install update to download, verify, and install; restart Codex afterward. Budgets, language, and caches are retained. Local chats load at startup, update incrementally in the background, and can be refreshed with Sync local chats. Cached observations are historical, not a live connection. Missing remote-only histories remain unavailable until synchronized by Codex.
 
 Successful updates replace the old app and code, remove unused bundled runtimes and the disabled patched core, and delete OTA downloads after installation. Runtimes still used by a process are retained temporarily and checked again every five minutes after the app starts. Budgets, language, chat caches, and user backups are preserved. Manually downloaded DMGs are not deleted.
 
 Upgrade inheritance keeps unknown preference fields and all existing user data. Before a version change, one configuration snapshot is saved in `upgrade-backup/` under the support directory; it excludes apps, runtimes and chat caches. Same-version reinstalls reuse the existing snapshot.
+
+Update checks prefer the public `update.json` release asset and fall back to the GitHub API. Rate-limited sources respect retry/reset headers; repeated manual checks are throttled. When checking is unavailable, use the release-page link. Users whose older updater shows HTTP 403 should manually install this version once; no GitHub token is required. Network restrictions on GitHub downloads can still require another network or manual download.

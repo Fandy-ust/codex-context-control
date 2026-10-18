@@ -2,7 +2,7 @@
 
 Manage each Codex chat’s context from your Mac menu bar. Up to **920K**.
 
-## [Download 0.18.2 for Mac ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.2-preview.1/Context-Manager-0.18.2-macos-arm64.dmg)
+## [Download 0.18.3 for Mac ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.3-preview.1/Context-Manager-0.18.3-macos-arm64.dmg)
 
 Apple Silicon · macOS 14+ · DMG, 45 MB · English / 中文
 

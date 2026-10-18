@@ -1,6 +1,14 @@
 # Changes
 
 
+## 0.18.3 — Resilient update checks
+
+- Prefer the public release manifest instead of depending on anonymous GitHub REST API requests; retain API fallback for older releases.
+- Distinguish rate limiting, access refusal, network failure, and invalid metadata. Honor per-source retry/reset times and coalesce/throttle repeated checks.
+- Offer retry timing and a manual release-page download link without asking users for tokens.
+- Bind downloads to the manifest checksum as well as the existing sidecar and installer payload checks.
+
+
 ## 0.18.2 — Compact menu item and concrete credits
 
 - Reduce the menu item width from 56 to 44 points and trim unused image canvas, without shrinking the bolt or percentage text.

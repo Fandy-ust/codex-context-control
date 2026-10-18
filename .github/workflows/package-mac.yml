@@ -39,6 +39,7 @@ jobs:
           path: |
             build/distribution/*.dmg
             build/distribution/*.sha256
+            build/distribution/update.json
             build/distribution/package-info.json
             build/distribution/README-FIRST.txt
           retention-days: 30
@@ -63,5 +64,5 @@ jobs:
           tag="v${version}-preview.1"
           test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
           gh release edit "$tag" --target "$GITHUB_SHA"
-          gh release upload "$tag" release/*.dmg release/*.sha256 release/package-info.json release/README-FIRST.txt --clobber
+          gh release upload "$tag" release/*.dmg release/*.sha256 release/package-info.json release/README-FIRST.txt release/update.json --clobber
           gh release edit "$tag" --draft=false --latest

@@ -27,6 +27,10 @@ struct MainControlPanelView:View {
                     } else {
                         action(model.updateState?.available == true ? L("安装更新 {0}",model.updateState?.version ?? ""):L("检查更新"),icon:"arrow.down.circle"){Task{await model.updateApp(install:model.updateState?.available == true);feedback=model.notice}}.disabled(model.checkingUpdates)
                     }
+                    if model.updateState?.error != nil {
+                        if let retry=model.updateState?.retryAt,Date(timeIntervalSince1970:Double(retry)/1000)>Date(){HStack{Text(L("下次可重试"));Text(Date(timeIntervalSince1970:Double(retry)/1000),style:.time)}.font(.caption).foregroundStyle(.secondary)}
+                        Link(L("从发布页手动下载"),destination:URL(string:"https://github.com/Fandy-ust/codex-context-control/releases/latest")!).font(.callout)
+                    }
                     action(L("打开 Codex"),icon:"arrow.up.forward.app"){close();model.launchCodex()}
                     if let feedback{Text(L(feedback)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)}
                 }.padding(20).frame(width:360).fixedSize(horizontal:false,vertical:true).background(Color(white:0.095))
