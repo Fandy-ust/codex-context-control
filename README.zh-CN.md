@@ -6,8 +6,8 @@
 
 | 平台 | 安装包 | 系统要求 |
 | --- | --- | --- |
-| macOS | [下载 0.20.3 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.3-preview.1/Context-Manager-0.20.3-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [下载 0.20.3 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.3-preview.1/Context-Manager-0.20.3-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [下载 0.21.0 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.21.0-preview.1/Context-Manager-0.21.0-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [下载 0.21.0 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.21.0-preview.1/Context-Manager-0.21.0-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac 安装说明](docs/INSTALL_MAC.md) · [Windows 安装说明](docs/INSTALL_WINDOWS.md) · [版本说明](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [English](README.md)
 
@@ -30,7 +30,7 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 - **账户额度**：显示剩余额度与重置时间，Mac 使用逐渐空心的闪电图标，Windows 适配系统托盘。
 - **Credits**：侧栏余额与本机进度基准，悬停查看完整数额，可在额度设置中手动重置基准。
 - **主控制面板**：两端从侧栏顶部齿轮打开设置，统一栏目和操作顺序。
-- **额度分析**：自动选择有可比较记录的来源，展示 Weekly 曲线、Token／额度关系、效率和热力图；有 5h 配额时才显示相关图表。
+- **额度预测**：分别估算 5 小时与 Weekly 能否在重置前用完、预计提前多久用完，以及重置时还剩多少；历史图表收进高级分析。
 - **本地缓存**：启动即显示聊天和最近用量，后台增量同步。
 - **项目侧栏**：上方展开本机项目及聊天，下方「最近」实时显示全部聊天；显示项目名与接入状态，独立滚动并记住展开状态。
 - **在线更新**：自动检查，点击后安装并保留预算和偏好；Windows 支持启动提示、本次跳过和自动检查开关。
