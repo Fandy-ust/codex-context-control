@@ -28,13 +28,14 @@ struct QuotaSidebarView:View {
     private var stale:Bool{!model.serviceAvailable || model.quota?.stale==true}
     private var windows:[QuotaWindow]{[model.selectedQuota?.primary,model.selectedQuota?.secondary].compactMap{$0}.sorted{($0.windowDurationMins ?? 0)<($1.windowDurationMins ?? 0)}}
     private var credits:Double?{model.selectedQuota?.creditBalance.flatMap(Double.init)}
+    private var shortCredits:String{guard let value=credits else{return "—"};let scale:Double=value>=1e12 ? 1e12:value>=1e9 ? 1e9:value>=1e6 ? 1e6:value>=1e3 ? 1e3:1;let suffix=scale==1e12 ? "T":scale==1e9 ? "B":scale==1e6 ? "M":scale==1e3 ? "K":"";return (value/scale).formatted(.number.precision(.fractionLength(0...1)).locale(Locale(identifier:"en_US")))+suffix}
     private var creditRemaining:Double{if model.selectedQuota?.unlimitedCredits==true{return 100};guard let credits,let baseline=model.selectedCreditBaseline?.baseline,baseline>0 else{return 0};return min(100,max(0,credits/baseline*100))}
     private func compactCountdown(_ reset:Int,now:Date)->String {let seconds=max(0,reset-Int(now.timeIntervalSince1970)),days=seconds/86400,hours=seconds%86400/3600,minutes=seconds%3600/60;if days>0{return "\(days)d\(hours)h"};if hours>0{return "\(hours)h\(minutes)m"};return "\(minutes)m"}
     var body:some View {
         TimelineView(.periodic(from:.now,by:1)){timeline in
             HStack(spacing:10){
                 if credits != nil || model.selectedQuota?.unlimitedCredits==true {
-                    Button(action:open){VStack(spacing:1){Text("Credits").font(.system(size:9)).foregroundStyle(.secondary);Text(model.selectedQuota?.unlimitedCredits==true ? "∞":quotaNumber(credits)).font(.system(size:10,weight:.medium)).monospacedDigit()}.frame(width:44,height:44).background(QuotaProgressBorder(remaining:creditRemaining,stale:stale))}.buttonStyle(.plain).help("Credits: "+(model.selectedQuota?.creditBalance ?? L("不限量")))
+                    Button(action:open){VStack(spacing:1){Text("Credits").font(.system(size:9)).foregroundStyle(.secondary);Text(model.selectedQuota?.unlimitedCredits==true ? "∞":shortCredits).font(.system(size:10,weight:.medium)).monospacedDigit()}.frame(width:44,height:44).background(QuotaProgressBorder(remaining:creditRemaining,stale:stale))}.buttonStyle(.plain).help("Credits: "+(model.selectedQuota?.creditBalance ?? L("不限量")))
                 }
                 Button(action:open){HStack(spacing:6){
                     if windows.isEmpty {Text(L("额度暂不可用")).font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,minHeight:44)}

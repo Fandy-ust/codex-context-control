@@ -1,5 +1,13 @@
 # Changes
 
+## 0.20.0 — Cross-platform quota analytics
+
+- Align Mac with the current Windows sidebar, Credits indicator, settings entry and details toolbar.
+- Add six primary quota charts and advanced trends, model/cache comparisons, distributions, projections, anomalies and token rankings from one shared analytics report.
+- Backfill numeric observations from local history, deduplicate response usage, and resume bounded incremental scans in a worker with a persistent ledger.
+- Separate account observations, missing cycles, resets and gaps; present token/percentage relationships as local correlations rather than official exchange rates.
+- Share and preserve Credits baseline preferences, including compatible Windows legacy baselines.
+
 ## 0.19.20 — Credits balance and context details
 
 相较于 0.19.18，本版本改进 Windows 侧栏与上下文详情：
