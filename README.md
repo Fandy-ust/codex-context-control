@@ -1,20 +1,24 @@
 # Context Manager
 
-Manage each Codex chat’s context from your Mac menu bar. Up to **920K**.
+Manage Codex chat context and account quota from your **Mac menu bar or Windows system tray**. Up to **920K**.
 
-## [Download 0.18.3 for Mac ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.3-preview.1/Context-Manager-0.18.3-macos-arm64.dmg)
+## Download
 
-Apple Silicon · macOS 14+ · DMG, 45 MB · English / 中文
+| Platform | Installer | Requirements |
+| --- | --- | --- |
+| macOS | [Download 0.18.3 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.3-preview.1/Context-Manager-0.18.3-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [Download 0.19.6 preview · build artifact](https://github.com/Fandy-ust/codex-context-control/actions/runs/39100081846/artifacts/12125834393) | Windows 11 · x64 |
 
-[Release notes](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [简体中文](README.zh-CN.md)
+[Mac installation](docs/en/INSTALL_MAC.md) · [Windows installation](docs/en/INSTALL_WINDOWS.md) · [Release notes](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [简体中文](README.zh-CN.md)
 
 ### Install
 
-1. Install Codex Desktop, then download and open the DMG above.
-2. Open **Install Context Manager.app** and choose **Install / Update**.
-3. Restart Codex and click the menu bar quota indicator. Enable **Context extension** for up to 920K; restart Codex after switching.
+Install Codex Desktop first, then Context Manager for your platform.
 
-[Installation help](docs/en/INSTALL_MAC.md)
+- **Mac:** open the DMG, launch **Install Context Manager.app**, and choose **Install / Update**.
+- **Windows:** the preview is available through GitHub build artifacts. Sign in to GitHub, download and extract the artifact, then run the included **Setup.exe**. No development tools are required.
+
+Fully quit and reopen Codex, then click the quota icon in your menu bar or system tray. Enable **Context extension** for up to 920K; restart Codex after switching.
 
 ## Demo
 
@@ -22,22 +26,17 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 ## Features
 
-- **Control panel:** settings open from one compact button at the bottom left.
+- **Per-chat budgets:** adjust context windows and compaction thresholds; set new-chat defaults and inherit budgets when forking.
+- **Account quota:** view remaining quota and reset times, with a gradually emptying lightning indicator on Mac and a tray-adapted icon on Windows.
+- **Control panel:** open settings from the bottom left, with an interface tailored to each platform.
+- **Local cache:** see chats and recent usage at startup, with incremental background sync.
+- **Updates:** automatic checks, click-to-install, preserved budgets and preferences, and safe cleanup of unused versions.
+- **Usage statistics:** track context, cache, estimated cost, and response speed.
 
-- **Quota indicator:** vertical stripes form a lightning bolt that empties as quota decreases.
-
-- **Local cache:** chats and recent usage appear at startup, with incremental background sync.
-- **Updates:** automatic checks; install only when you click.
-
-- Adjust each chat’s context window and compaction threshold.
-- Set defaults for new chats; forks inherit their parent’s budget.
-- Track usage, cache, estimated cost, and response speed.
-- No app-name or version allowlist. Uses the official Codex runtime.
+Both platforms share the same core. No app-name or version allowlist; the official Codex runtime is preserved.
 
 The early-compaction patch is disabled because its modified core lacks the official signing identity required for Computer Use. **920K stays available without modifying the core.**
 
-The **0.19.6 integration preview** adds Windows with a shared core and independent native Mac / Electron Windows interfaces. [Windows installation](docs/INSTALL_WINDOWS.md) · [Cross-platform development](docs/MULTIPLATFORM_DEVELOPMENT.md) · [Contributing](CONTRIBUTING.md). The public download above remains the released Mac version.
-
-[Usage](docs/en/USAGE.md) · [Development](docs/en/DEVELOPMENT.md) · [Privacy](docs/en/PRIVACY.md) · [Changelog](CHANGELOG.md)
+[Usage](docs/en/USAGE.md) · [Cross-platform development](docs/MULTIPLATFORM_DEVELOPMENT.md) · [Build and release](docs/CROSS_PLATFORM_BUILD.md) · [Contributing](CONTRIBUTING.md) · [Privacy](docs/en/PRIVACY.md)
 
 [MIT](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES.md) · Independent project, not affiliated with OpenAI.

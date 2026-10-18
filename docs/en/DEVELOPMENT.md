@@ -2,23 +2,29 @@
 
 **English** | [简体中文](../DEVELOPMENT.md) · [Home](../../README.md)
 
-Use Node.js 22.13+; the installer pins Node 22.23.3. Native UI compilation requires Apple Command Line Tools and macOS. The first distribution targets Apple Silicon with macOS 14+.
+Use Node.js 22.13+. Mac uses SwiftUI/AppKit and requires Apple Command Line Tools; Windows uses Electron with a native C# launcher. Build each platform on its own OS.
+
+See [contribution rules](../../CONTRIBUTING.md), [shared-core boundaries](../MULTIPLATFORM_DEVELOPMENT.md), and [dual-platform builds](../CROSS_PLATFORM_BUILD.md) for the current workflow.
 
 ```sh
-npm ci --ignore-scripts
-npm test
-npm run build:mac
-npm run install:local
+npm ci
+npm run check:architecture
+npm run test:ci
+npm run build
 ```
+
+On Mac, use `npm ci --ignore-scripts` to avoid downloading Electron. `build` selects the current platform. Installation is a separate action; see the platform installation guide.
 
 ## Layout
 
-- `src/`: controller, runtime bridge, policy rules, local statistics, and shared translations.
-- `macos/`: native SwiftUI/AppKit UI and chart interaction.
-- `packaging/`: GUI installer and runtime pin metadata.
-- `scripts/`: local installation, packaging, validation, and opt-in research tools.
-- `test/`: isolated regression and integration checks.
-- `docs/en/`: English guides; Chinese guides remain in `docs/`.
+- `src/core/`: pure budget, inheritance, state and update rules.
+- `src/contracts/`: shared control routes and generated native bindings.
+- `src/platform/`: OS paths, processes, registration and installation lifecycle.
+- Other `src/` modules: controller, runtime bridge, storage and statistics.
+- `macos/`: SwiftUI/AppKit interface.
+- `desktop/` and `windows/`: Electron interface and Windows native entry points.
+- `packaging/` and `scripts/`: installers, builds and release validation.
+- `test/`: isolated tests and shared behavior fixtures.
 
 ## Isolation and testing
 

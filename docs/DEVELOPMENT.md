@@ -11,8 +11,11 @@ macos/ContextControl.swift  原生界面
 macos/BudgetMath.swift      原生输入解析、可用窗口反算与压缩比例
 src/bridge.mjs             JSON-RPC 透传、目标聊天队列及重新加载事务
 src/daemon.mjs             本地控制服务、连接路由和认证接口
-src/policy.mjs             输入与容量预检
-src/budget.mjs             可用窗口/比例换算与历史预算展示
+src/core/                  共用预算、继承、状态和更新规则
+src/contracts/             控制接口规范与原生绑定
+src/platform/              系统路径、进程和安装生命周期
+desktop/                   Windows Electron 界面
+windows/                   Windows 原生启动器与安装器
 src/store.mjs              预算、可观测元数据和模型目录
 src/wrapper.mjs            Codex 启动包装器
 src/automatic-startup.mjs  用户 GUI 登录环境登记、诊断与恢复
