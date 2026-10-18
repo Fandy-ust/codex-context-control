@@ -4,7 +4,7 @@ import Charts
 struct QuotaAnalyticsReport:Decodable {
     struct Capabilities:Decodable {let weekly:Bool;let fiveHour:Bool}
     struct Selection:Decodable {let mode:String;let label:String}
-    let capabilities:Capabilities?;let selection:Selection?
+    let capabilities:Capabilities?;let selection:Selection?;let dashboard:QuotaOutlook?
     struct Option:Decodable,Identifiable {let id:String;let label:String}
     struct Section:Decodable,Identifiable {let id:String;let title:String;let chartIds:[String]}
     struct Overview:Decodable {
@@ -18,9 +18,55 @@ struct QuotaAnalyticsReport:Decodable {
     let schemaVersion:Int;let generatedAt:Double;let timeZone:String;let days:Int;let scope:String;let pool:String
     let scopes:[Option];let pools:[Option];let sections:[Section];let charts:[QuotaAnalysisChart];let overview:Overview;let quality:Quality
 }
+struct QuotaOutlook:Decodable {
+    struct Period:Decodable,Identifiable {
+        let id:String;let title:String;let status:String;let observedAt:Double;let resetAt:Double
+        let remainingPercent:Double;let hoursUntilReset:Double;let hoursRemaining:Double?;let projectedRemaining:Double?
+        let finishesBeforeReset:Bool?;let hoursBeforeReset:Double?;let chart:QuotaAnalysisChart
+    }
+    let pool:String?;let pools:[QuotaAnalyticsReport.Option];let verified:Bool;let periods:[Period]
+}
+func quotaDuration(_ hours:Double?)->String {
+    guard let hours,hours.isFinite else{return "—"}
+    let minutes=max(0,Int((hours*60).rounded()))
+    if minutes<1{return L("不足 1 分钟")}
+    let days=minutes/1440,h=minutes%1440/60,m=minutes%60
+    return [days>0 ? "\(days) "+L("天"):"",h>0 ? "\(h) "+L("小时"):"",days==0 && m>0 ? "\(m) "+L("分钟"):""].filter{!$0.isEmpty}.joined(separator:" ")
+}
+private struct QuotaOutlookCard:View {
+    let period:QuotaOutlook.Period
+    private var verdict:String {
+        if period.status=="ready" {
+            if period.finishesBeforeReset==true && (period.hoursBeforeReset ?? 0)<1/60{return L("预计接近重置时用完")}
+            return period.finishesBeforeReset==true ? L("预计提前")+" "+quotaDuration(period.hoursBeforeReset)+" "+L("用完") : L("预计重置时还有")+" "+quotaNumber(period.projectedRemaining)+"% "+L("未使用")
+        }
+        switch period.status {
+        case "exhausted":return L("额度已用完，等待重置")
+        case "stale":return L("观测已过期，刷新后再预测")
+        case "awaiting_reset":return L("已到重置时间，等待新读数")
+        case "unidentified":return L("账户尚未识别，暂时无法预测")
+        case "flat":return L("近期额度读数未变，暂时无法预测")
+        default:return L("观测还不够，暂时无法预测")
+        }
+    }
+    var body:some View {
+        VStack(alignment:.leading,spacing:22){
+            HStack{Text(L(period.title)).font(.system(size:16,weight:.semibold));Spacer();Text(quotaDuration(period.hoursUntilReset)+" "+L("后重置")).font(.caption).foregroundStyle(.secondary).help(Date(timeIntervalSince1970:period.resetAt/1000).formatted())}
+            HStack(alignment:.top,spacing:16){
+                metric(["stale","awaiting_reset"].contains(period.status) ? "上次剩余":"当前剩余",quotaNumber(period.remainingPercent)+"%",color:PanelStyle.blue)
+                metric("用完还需",quotaDuration(period.hoursRemaining))
+                metric("重置时预计剩余",period.projectedRemaining.map{quotaNumber($0)+"%"} ?? "—")
+            }
+            Text(verdict).font(.callout).foregroundStyle(period.finishesBeforeReset==true ? Color.orange:PanelStyle.blue)
+        }.padding(22).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).strokeBorder(.white.opacity(0.08)))
+    }
+    private func metric(_ title:String,_ value:String,color:Color = .primary)->some View {
+        VStack(alignment:.leading,spacing:10){Text(L(title)).font(.caption).foregroundStyle(.secondary);Text(value).font(.system(size:24,weight:.medium)).monospacedDigit().foregroundStyle(color).fixedSize(horizontal:false,vertical:true)}.frame(maxWidth:.infinity,alignment:.leading)
+    }
+}
 struct QuotaAnalysisPoint:Decodable,Identifiable {
     let id:String;let x:Double;let y:Double;let series:String?;let segment:String?;let label:String?;let at:Double?
-    let value:Double?;let rightY:Double?;let tokens:Double?;let alignedTokens:Double?;let weeklyPP:Double?;let fivePP:Double?;let cacheRate:Double?;let partial:Bool?;let estimated:Bool?;let durationHours:Double?
+    let value:Double?;let rightY:Double?;let tokens:Double?;let alignedTokens:Double?;let weeklyPP:Double?;let fivePP:Double?;let cacheRate:Double?;let partial:Bool?;let estimated:Bool?;let durationHours:Double?;let projected:Bool?
     let low:Double?;let high:Double?;let q1:Double?;let q3:Double?
 }
 struct QuotaAnalysisChart:Decodable,Identifiable {
@@ -28,15 +74,15 @@ struct QuotaAnalysisChart:Decodable,Identifiable {
     struct Summary:Decodable {let count:Int;let min:Double;let median:Double;let max:Double}
     struct Ranking:Decodable,Identifiable {let id:String;let category:String;let label:String;let tokens:Double;let requests:Int}
     let id:String;let title:String;let kind:String;let xLabel:String;let yLabel:String;let rightLabel:String?;let wide:Bool?
-    let points:[QuotaAnalysisPoint];let empty:String?;let note:String?;let xMax:Double?;let yMax:Double?;let fit:Fit?;let summary:Summary?
+    let points:[QuotaAnalysisPoint];let empty:String?;let note:String?;let xMax:Double?;let xMin:Double?;let timeAxis:String?;let yMax:Double?;let fit:Fit?;let summary:Summary?
     var labels:[String]=[];var ranking:[Ranking]=[]
-    enum CodingKeys:String,CodingKey {case id,title,kind,xLabel,yLabel,rightLabel,wide,points,empty,note,xMax,yMax,fit,summary,rows}
+    enum CodingKeys:String,CodingKey {case id,title,kind,xLabel,yLabel,rightLabel,wide,points,empty,note,xMax,xMin,timeAxis,yMax,fit,summary,rows}
     init(from decoder:Decoder)throws {
         let c=try decoder.container(keyedBy:CodingKeys.self)
         id=try c.decode(String.self,forKey:.id);title=try c.decode(String.self,forKey:.title);kind=try c.decode(String.self,forKey:.kind)
         xLabel=try c.decode(String.self,forKey:.xLabel);yLabel=try c.decode(String.self,forKey:.yLabel);rightLabel=try c.decodeIfPresent(String.self,forKey:.rightLabel);wide=try c.decodeIfPresent(Bool.self,forKey:.wide)
         points=try c.decode([QuotaAnalysisPoint].self,forKey:.points);empty=try c.decodeIfPresent(String.self,forKey:.empty);note=try c.decodeIfPresent(String.self,forKey:.note)
-        xMax=try c.decodeIfPresent(Double.self,forKey:.xMax);yMax=try c.decodeIfPresent(Double.self,forKey:.yMax);fit=try c.decodeIfPresent(Fit.self,forKey:.fit);summary=try c.decodeIfPresent(Summary.self,forKey:.summary)
+        xMax=try c.decodeIfPresent(Double.self,forKey:.xMax);xMin=try c.decodeIfPresent(Double.self,forKey:.xMin);timeAxis=try c.decodeIfPresent(String.self,forKey:.timeAxis);yMax=try c.decodeIfPresent(Double.self,forKey:.yMax);fit=try c.decodeIfPresent(Fit.self,forKey:.fit);summary=try c.decodeIfPresent(Summary.self,forKey:.summary)
         if kind=="table" {ranking=(try? c.decode([Ranking].self,forKey:.rows)) ?? []}else{labels=(try? c.decode([String].self,forKey:.rows)) ?? []}
     }
 }
@@ -52,7 +98,8 @@ struct QuotaAnalyticsView:View {
     var onBack:()->Void
     private let fixture:Bool
     @State private var report:QuotaAnalyticsReport?
-    @State private var section="overview"
+    @State private var section="summary"
+    @State private var period=""
     @State private var days=28
     @State private var scope=""
     @State private var pool=""
@@ -72,10 +119,11 @@ struct QuotaAnalyticsView:View {
         GeometryReader{geometry in
             ScrollView {
                 VStack(alignment:.leading,spacing:20){
-                    HStack{Button(L("返回预算"),systemImage:"arrow.left",action:onBack);Spacer();if loading{ProgressView().controlSize(.small)};Button(L("刷新"),systemImage:"arrow.clockwise"){Task{await model.refreshQuota();await reload(force:true)}}.disabled(loading)}.buttonStyle(.bordered)
-                    VStack(alignment:.leading,spacing:10){Text(L("额度分析")).font(.system(size:22,weight:.semibold));Text(L("账户额度变化 × 本机 Token 观测")).font(.callout).foregroundStyle(.secondary);if let at=report?.overview.updatedAt{Text(L("观测截止")+" · "+Date(timeIntervalSince1970:at/1000).formatted(.dateTime.month().day().hour().minute())).font(.caption).foregroundStyle(.secondary)}}
-                    filters
+                    HStack{Button(L("返回预算"),systemImage:"arrow.left",action:onBack);Spacer();Button(L(section=="summary" ? "高级分析":"返回预测")){section=section=="summary" ? "overview":"summary"};if loading{ProgressView().controlSize(.small)};Button(L("刷新"),systemImage:"arrow.clockwise"){Task{await model.refreshQuota();await reload(force:true)}}.disabled(loading)}.buttonStyle(.bordered)
+                    Text(L(section=="summary" ? "额度预测":"高级分析")).font(.system(size:22,weight:.semibold))
                     if let failure{Text(failure).font(.callout).foregroundStyle(.orange)}
+                    if section=="summary" {outlook} else {
+                    filters
                     if let pending=report?.quality.progress?.pending,pending>0{Text("\(L("正在增量导入历史")) · \(pending) \(L("个文件待处理"))").font(.caption).foregroundStyle(.orange)}
                     LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:12),count:metricCount),spacing:12){
                         if hasWeekly{metric("Weekly 已用",report?.overview.weeklyUsed.map{quotaNumber($0)+"%"})};if hasFive{metric("5h 已用",report?.overview.fiveUsed.map{quotaNumber($0)+"%"})}
@@ -89,10 +137,20 @@ struct QuotaAnalyticsView:View {
                             VStack(alignment:.leading,spacing:8){ForEach(report.quality.notes,id:\.self){Text(L($0))};Text("\(L("可比较区间")): \(report.quality.comparableIntervals) · \(L("重置或断档")): \(report.quality.discontinuities) · \(report.timeZone)")}.font(.caption).foregroundStyle(.secondary).padding(.top,12)
                         }.font(.callout).padding(16).background(.white.opacity(0.025),in:RoundedRectangle(cornerRadius:10))
                     } else {Text(L(loading ? "正在读取额度历史…":"刷新以读取额度历史")).foregroundStyle(.secondary).frame(maxWidth:.infinity,minHeight:200)}
+                    }
                 }.padding(28).frame(maxWidth:1120,alignment:.leading).frame(maxWidth:.infinity)
             }
         }.background(PanelStyle.background)
         .task(id:loadKey){guard !fixture else{return};await reload();while !Task.isCancelled{do{try await Task.sleep(for:.seconds((report?.quality.progress?.pending ?? 0)>0 ? 2:15))}catch{return};await reload()}}
+    }
+    @ViewBuilder private var outlook:some View {
+        if let dashboard=report?.dashboard,!dashboard.periods.isEmpty {
+            if dashboard.pools.count>1{Picker(L("额度类型"),selection:Binding(get:{pool.isEmpty ? dashboard.pool ?? "":pool},set:{pool=$0})){ForEach(dashboard.pools){p in Text(p.label).tag(p.id)}}.frame(maxWidth:240)}
+            ForEach(dashboard.periods){p in QuotaOutlookCard(period:p)}
+            let selected=dashboard.periods.first{$0.id==period} ?? dashboard.periods[0]
+            HStack{Text(L("按近期速度估算，使用节奏变化后会更新")).font(.caption).foregroundStyle(.secondary);Spacer();if dashboard.periods.count>1{Picker(L("选择额度周期"),selection:Binding(get:{selected.id},set:{period=$0})){ForEach(dashboard.periods){p in Text(L(p.title)).tag(p.id)}}.pickerStyle(.segmented).labelsHidden().frame(maxWidth:260)}}
+            QuotaAnalysisCard(chart:selected.chart).id(selected.id)
+        }else{Text(L(report==nil ? "正在读取额度历史…":"等待当前账户额度，历史记录可在高级分析查看")).foregroundStyle(.secondary).frame(maxWidth:.infinity,minHeight:190)}
     }
     private var filters:some View {
         HStack(alignment:.bottom,spacing:14){
@@ -120,7 +178,7 @@ struct QuotaAnalyticsView:View {
         do {
             var params:[String:Any]=["days":days,"refresh":force];if !scope.isEmpty{params["scope"]=scope};if !pool.isEmpty{params["pool"]=pool}
             let data=try await model.api(ControlAPI.quotaAnalytics,body:params);try Task.checkCancellation()
-            let value=try JSONDecoder().decode(QuotaAnalyticsReport.self,from:data);guard epoch==key else{return};report=value;if pool.isEmpty && !value.pools.isEmpty{pool=value.pool}
+            let value=try JSONDecoder().decode(QuotaAnalyticsReport.self,from:data);guard epoch==key else{return};report=value
         }catch is CancellationError{}catch{if epoch==key{failure=error.localizedDescription}}
     }
 }
@@ -134,7 +192,7 @@ private struct QuotaAnalysisCard:View {
     private var maxRight:Double {max(1,chart.points.compactMap{$0.rightY}.max() ?? 1)}
     private var bounds:ClosedRange<Double> {
         if chart.kind=="bar" || chart.kind=="box" {return -0.6...max(0.6,Double(chart.points.count)-0.4)}
-        let lo=chart.xMax != nil ? 0:chart.points.map{$0.x}.min() ?? 0,hi=chart.xMax ?? chart.points.map{$0.x}.max() ?? 1
+        let lo=chart.xMin ?? (chart.xMax != nil ? 0:chart.points.map{$0.x}.min() ?? 0),hi=chart.xMax ?? chart.points.map{$0.x}.max() ?? 1
         return lo...max(lo+1,hi)
     }
     private func color(_ p:QuotaAnalysisPoint)->Color{colors[(groups.firstIndex(of:p.series ?? "") ?? 0)%colors.count]}
@@ -169,7 +227,7 @@ private struct QuotaAnalysisCard:View {
                 } else if chart.kind=="scatter" {
                     PointMark(x:.value("x",p.x),y:.value("y",p.y)).foregroundStyle(color(p).opacity(0.85)).symbolSize(25)
                 } else {
-                    LineMark(x:.value("x",p.x),y:.value("y",p.y),series:.value("series",p.segment ?? p.series ?? "line")).foregroundStyle(color(p)).lineStyle(StrokeStyle(lineWidth:2))
+                    LineMark(x:.value("x",p.x),y:.value("y",p.y),series:.value("series",p.segment ?? p.series ?? "line")).foregroundStyle(color(p)).lineStyle(StrokeStyle(lineWidth:2,dash:p.projected==true ? [6,4]:[]))
                     PointMark(x:.value("x",p.x),y:.value("y",p.y)).foregroundStyle(color(p)).symbolSize(8)
                     if chart.kind=="dual",let right=p.rightY {
                         LineMark(x:.value("x",p.x),y:.value("y",right/maxRight*maxY),series:.value("series","weekly-right"+(p.segment ?? ""))).foregroundStyle(colors[3]).lineStyle(StrokeStyle(lineWidth:1.5,dash:[6,4]))
@@ -209,6 +267,7 @@ private struct QuotaAnalysisCard:View {
         return pow(Double(x-location.x),2)+(chart.kind=="bar" || chart.kind=="line" || chart.kind=="dual" ? 0:pow(Double(y-location.y),2))
     }
     private func xLabel(_ x:Double)->String {
+        if let axis=chart.timeAxis{let date=Date(timeIntervalSince1970:x/1000);return axis=="hours" ? date.formatted(.dateTime.hour().minute()):date.formatted(.dateTime.month(.twoDigits).day().hour())}
         if chart.kind=="dual" {return Date(timeIntervalSince1970:x/1000).formatted(.dateTime.month(.twoDigits).day(.twoDigits))}
         if chart.kind=="bar" || chart.kind=="box" {return chart.points.first{abs($0.x-x)<0.1}?.label ?? ""}
         return quotaNumber(x)

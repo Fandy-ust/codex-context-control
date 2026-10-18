@@ -10,8 +10,8 @@ import {quotaAnalyticsView} from '../desktop/renderer/quota-analytics.mjs';
 const escape=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
 test('web analytics renders the shared six-chart contract with escaped observation labels',()=>{
  const report=demoQuotaAnalytics();report.scopes[0].label='<script>unsafe</script>';
- const html=quotaAnalyticsView({report,e:escape,t:s=>s});
- assert.equal((html.match(/data-qa-chart=/g)||[]).length,6);assert.equal((html.match(/data-action="qa-section"/g)||[]).length,4);
+ const html=quotaAnalyticsView({report,section:'overview',e:escape,t:s=>s});
+ assert.equal((html.match(/data-qa-chart=/g)||[]).length,6);assert.equal((html.match(/<nav class="qa-tabs"[^>]*>(.*?)<\/nav>/)?.[1].match(/data-action="qa-section"/g)||[]).length,4);
  assert.ok(!html.includes('<script>unsafe'));assert.ok(!html.includes('NaN'));assert.ok(!html.includes('Infinity'));
  for(const section of report.sections)assert.ok(quotaAnalyticsView({report,section:section.id,e:escape,t:s=>s}).includes('data-qa-chart='));
 });
@@ -27,7 +27,7 @@ import AppKit
  static func main() throws {
   let app=NSApplication.shared;app.setActivationPolicy(.prohibited);try Localization.setChoice(.zh)
   let report=try JSONDecoder().decode(QuotaAnalyticsReport.self,from:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[1])))
-  precondition(report.sections[0].chartIds.count==6 && report.charts.count==16)
+  precondition(report.sections[0].chartIds.count==6 && report.charts.count==16 && report.dashboard?.periods.count==2)
   let model=Controller(),view=NSHostingView(rootView:QuotaAnalyticsView(model:model,onBack:{},fixture:report).frame(width:820,height:1000))
   let window=NSWindow(contentRect:NSRect(x:0,y:0,width:820,height:1000),styleMask:[.borderless],backing:.buffered,defer:false);window.contentView=view;window.display()
   Task{@MainActor in
@@ -45,7 +45,18 @@ import AppKit
 test('weekly-only UI hides unsupported metrics and keeps Automatic selected across reports',async()=>{
  const {quotaFixture}=await import('../desktop/quota-demo.mjs'),{buildQuotaAnalytics}=await import('../src/core/quota-analytics.mjs');
  const fixture=quotaFixture();fixture.snapshots=fixture.snapshots.map(p=>({...p,fiveUsed:null,fiveReset:null}));
- const report=buildQuotaAnalytics(fixture),html=quotaAnalyticsView({report,e:escape,t:s=>s});
+ const report=buildQuotaAnalytics(fixture),html=quotaAnalyticsView({report,section:'overview',e:escape,t:s=>s});
  assert.equal((html.match(/data-qa-chart=/g)||[]).length,4);assert.equal((html.match(/class="qa-metric"/g)||[]).length,3);assert.ok(!html.includes('5h'));assert.match(html,/<option value="" selected>/);
- const manual=quotaAnalyticsView({report,selectedScope:report.scope,e:escape,t:s=>s});assert.ok(!manual.includes('<option value="" selected>'));
+ const manual=quotaAnalyticsView({report,section:'overview',selectedScope:report.scope,e:escape,t:s=>s});assert.ok(!manual.includes('<option value="" selected>'));
+});
+
+
+test('default outlook shows both reset predictions and a single current-cycle curve',()=>{
+ const report=demoQuotaAnalytics(),html=quotaAnalyticsView({report,e:escape,t:s=>s});
+ assert.equal((html.match(/data-qa-period=/g)||[]).length,2);assert.equal((html.match(/data-qa-chart=/g)||[]).length,1);
+ assert.ok(html.includes('预计提前'));assert.ok(html.includes('预计重置时还有'));assert.ok(html.includes('stroke-dasharray="6 4"'));
+ assert.ok(!html.includes('id="qa-days"'));assert.ok(!html.includes('Token / Weekly'));
+ assert.ok(quotaAnalyticsView({report,period:'weekly',e:escape,t:s=>s}).includes('data-qa-chart="outlook-weekly"'));
+ report.dashboard.periods=report.dashboard.periods.filter(p=>p.id==='weekly');
+ const weekly=quotaAnalyticsView({report,e:escape,t:s=>s});assert.equal((weekly.match(/data-qa-period=/g)||[]).length,1);assert.ok(!weekly.includes('5 小时'));
 });

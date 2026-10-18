@@ -17,7 +17,7 @@ export const QUOTA_CHARTS = [
   {id: 'cache', title: '缓存与额度消耗', kind: 'scatter', xLabel: '缓存占比 %', yLabel: 'Weekly 百分点 / 1M token'},
   {id: 'distribution', title: '窗口消耗分布', kind: 'bar', xLabel: 'Weekly 百分点区间', yLabel: '窗口数'},
   {id: 'boxplot', title: '各周效率分布', kind: 'box', xLabel: 'Weekly 周期', yLabel: 'Token / Weekly 百分点'},
-  {id: 'forecast', title: '剩余额度趋势预测', kind: 'line', xLabel: '未来小时', yLabel: 'Weekly 已用 %', wide: true},
+  {id: 'forecast', title: '历史速度外推', kind: 'line', xLabel: '未来小时', yLabel: 'Weekly 已用 %', wide: true},
   {id: 'anomalies', title: '异常窗口', kind: 'scatter', xLabel: '本机观测 token', yLabel: 'Weekly 百分点'},
   {id: 'hours', title: '日内消耗热力图', kind: 'heatmap', xLabel: '本地小时', yLabel: '日期'},
   {id: 'ratio', title: '5h / Weekly 比值', kind: 'bar', xLabel: '5h 窗口', yLabel: '5h 百分点 / Weekly 百分点'},

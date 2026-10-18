@@ -1,5 +1,12 @@
 # Changes
 
+## 0.21.0 — Quota outlook for 5-hour and weekly limits
+
+- Make remaining quota, time to use it all, and expected unused quota at reset the default analytics view on both platforms.
+- Forecast each reported cycle independently from fresh observations of the current account; keep unknown historical accounts separate.
+- Display a single current-cycle curve with actual timestamps and dashed projections, ending at depletion or reset.
+- Move historical comparison charts into Advanced analysis; explain unavailable predictions instead of inventing a result.
+
 ## 0.20.3 — Inline details and useful quota history
 
 - Show context details directly below one compact budget editor on both platforms; Apply remains explicit and dragging never saves.

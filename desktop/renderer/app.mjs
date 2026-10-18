@@ -36,7 +36,7 @@ const resizeDraft=(...args)=>(useLegacyBudget()?legacyResizeDraft:appleResizeDra
 const policyForDraft=(...args)=>(useLegacyBudget()?legacyPolicyForDraft:applePolicyForDraft)(...args);
 const editorRoot=()=>settingsOpen?root.querySelector('.settings-body'):root.querySelector('.main');
 const chatName=chat=>chat?.name||chat?.title||chat?.cwd?.split(/[\\/]/).filter(Boolean).at(-1)||chat?.id?.slice(0,12)||t('未命名聊天','Untitled chat');
-let qaReport=null,qaLoading=false,qaError='',qaSection='overview',qaDays=28,qaScope='',qaPool='',qaEpoch=0,qaLastLoad=0;
+let qaReport=null,qaLoading=false,qaError='',qaSection='summary',qaPeriod='',qaDays=28,qaScope='',qaPool='',qaEpoch=0,qaLastLoad=0;
 let creditMigrationAttempted=false;
 let creditBaselines={};
 try{const saved=JSON.parse(localStorage.getItem('credit-baselines')||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))creditBaselines=saved;}catch{}
@@ -182,7 +182,7 @@ function render(){
   const oldMain=root.querySelector('.main'),same=oldMain?.dataset.view===view&&oldMain?.dataset.chatId===selected,open=same?[...oldMain.querySelectorAll('details')].map((d,i)=>d.open?i:-1).filter(i=>i>=0):[],scroll=same?oldMain.scrollTop:0;
   const settingsScroll=root.querySelector('.settings-body')?.scrollTop||0;
   const focusID=document.activeElement?.closest('.details-page')?document.activeElement.id:null;
-  const body=settingsOpen?settingsUnderlay:view==='quota'?quotaAnalyticsView({report:qaReport,section:qaSection,loading:qaLoading,error:qaError,days:qaDays,selectedScope:qaScope,e,t}):`${preferences.demo?demoBanner():''}${editingDefaults()?defaultsPage():chatPage()}`;
+  const body=settingsOpen?settingsUnderlay:view==='quota'?quotaAnalyticsView({report:qaReport,section:qaSection,period:qaPeriod,loading:qaLoading,error:qaError,days:qaDays,selectedScope:qaScope,e,t}):`${preferences.demo?demoBanner():''}${editingDefaults()?defaultsPage():chatPage()}`;
   root.innerHTML=`<div class="shell" style="--sidebar-width:${visibleSidebarWidth()}px" ${settingsOpen?'inert':''}>${sidebar()}<main class="main" id="main-content" data-view="${view}" data-chat-id="${e(selected)}">${body}</main></div>${settingsOpen?settingsDialog():''}`;
   const newMain=root.querySelector('.main');for(const [i,d]of [...newMain.querySelectorAll('details')].entries())if(open.includes(i))d.open=true;const targetScroll=detailsOpen?(detailsRestoreScroll??(same?scroll:detailsScrollByChat.get(selected)||0)):scroll;
   if(newMain.querySelector('#phase')){newMain.querySelector('#phase').textContent=phase(current());newMain.querySelector('#phase').title=t(current()?.message||'');}
@@ -193,7 +193,7 @@ function render(){
 }
 async function loadQuotaAnalytics(force=false){
   const epoch=++qaEpoch;qaLoading=true;qaError='';render();
-  try{const report=await api.invoke('quota-analytics',{days:qaDays,scope:qaScope||undefined,pool:qaPool||preferences.quotaPool||undefined,refresh:force});if(epoch!==qaEpoch)return;qaReport=report;qaPool=report.pool;qaLastLoad=Date.now();}
+  try{const report=await api.invoke('quota-analytics',{days:qaDays,scope:qaScope||undefined,pool:qaPool||preferences.quotaPool||undefined,refresh:force});if(epoch!==qaEpoch)return;qaReport=report;qaLastLoad=Date.now();}
   catch(error){if(epoch===qaEpoch)qaError=error.message;}
   finally{if(epoch===qaEpoch){qaLoading=false;if(view==='quota')render();}}
 }
@@ -429,7 +429,8 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     }
     if(action==='quota-analytics'){openQuotaAnalytics();return;}
     if(action==='qa-close'){++qaEpoch;qaLoading=false;view='chat';openDetails();return;}
-    if(action==='qa-section'){qaSection=button.dataset.section;render();return;}
+    if(action==='qa-section'){qaSection=button.dataset.section;render();root.querySelector('.main').scrollTop=0;return;}
+    if(action==='qa-period'){qaPeriod=button.dataset.period;render();return;}
     if(action==='qa-refresh'){await run('quota-refresh');await loadQuotaAnalytics(true);return;}
     if(action==='quota-refresh'){await run('quota-refresh');await refresh();if(settingsOpen)render();return;}
     if(action==='integration-toggle'){
@@ -648,4 +649,11 @@ setInterval(()=>{if(!document.hidden&&!dragging&&hover==null)refresh();},2000);
 
 setInterval(()=>{if(!document.hidden)for(const node of root.querySelectorAll("[data-quota-reset]"))node.textContent=quotaCountdown(Number(node.dataset.quotaReset),t,Date.now(),node.dataset.quotaCompact==='true');},1000);
 
-window.__contextQuotaSmoke=async function({preview=false}={}){openQuotaAnalytics();while(qaLoading)await new Promise(r=>setTimeout(r,20));const result={ok:!qaError&&root.querySelectorAll('[data-qa-chart]').length===6&&root.querySelectorAll('.qa-tabs button').length===4,charts:root.querySelectorAll('[data-qa-chart]').length,error:qaError};if(!preview){view='chat';openDetails();}return result;};
+window.__contextQuotaSmoke=async function({preview=false}={}){
+  qaSection='summary';openQuotaAnalytics();while(qaLoading)await new Promise(r=>setTimeout(r,20));
+  const result={ok:!qaError&&root.querySelectorAll('[data-qa-period]').length===2&&root.querySelectorAll('[data-qa-chart]').length===1&&!root.querySelector('#qa-days'),periods:root.querySelectorAll('[data-qa-period]').length,error:qaError};
+  root.querySelector('[data-action="qa-period"][data-period="weekly"]').click();result.ok=result.ok&&!!root.querySelector('[data-qa-chart="outlook-weekly"]');
+  root.querySelector('[data-action="qa-section"][data-section="overview"]').click();result.ok=result.ok&&root.querySelectorAll('[data-qa-chart]').length===6&&root.querySelectorAll('.qa-tabs button').length===4;
+  root.querySelector('[data-action="qa-section"][data-section="summary"]').click();result.ok=result.ok&&root.querySelectorAll('[data-qa-chart]').length===1;
+  if(!preview){view='chat';openDetails();}return result;
+};

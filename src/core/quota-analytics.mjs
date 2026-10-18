@@ -1,6 +1,7 @@
 import {HOUR, DAY, WEEK, finite, sum, distribution, fitLine, usageBetween} from './quota-statistics.mjs';
 import {QUOTA_CHARTS, QUOTA_SECTIONS} from './quota-chart-catalog.mjs';
 import {normalizeQuotaCycles} from './quota-observations.mjs';
+import {buildQuotaOutlook} from './quota-outlook.mjs';
 
 const validPercent = n => finite(n) && n >= 0 && n <= 100;
 const reset = n => Number.isSafeInteger(n) && n > 0 && n < 8640000000000;
@@ -227,7 +228,7 @@ export function buildQuotaAnalytics({snapshots = [], requests = [], currentScope
   const sections=QUOTA_SECTIONS.map(s=>({...s,title:s.id==='windows'&&!capabilities.fiveHour?'明细':s.title,chartIds:s.chartIds.filter(supported)}));
   if(!sections[0].chartIds.length)sections[0].chartIds=['ranking'];
   const visibleSections=sections.filter(s=>s.chartIds.length);
-  return {schemaVersion: 1, generatedAt: now, timeZone: zone, days, scope, pool, capabilities,selection:{mode:manual?'manual':'auto',label:scopes.find(p=>p.id===scope)?.label||'本机记录'},scopes, pools: poolIds.map(id => ({id, label: id})), sections: visibleSections, charts: [...data.values()],
+  return {dashboard:buildQuotaOutlook(all,{currentScope,pool:options.pool,now}),schemaVersion: 1, generatedAt: now, timeZone: zone, days, scope, pool, capabilities,selection:{mode:manual?'manual':'auto',label:scopes.find(p=>p.id===scope)?.label||'本机记录'},scopes, pools: poolIds.map(id => ({id, label: id})), sections: visibleSections, charts: [...data.values()],
     overview: {weeklyUsed: currentWeek ? latestWeekly.weeklyUsed : null, fiveUsed: latestFive?.fiveReset * 1000 > now ? latestFive.fiveUsed : null,
       tokens: currentUsage?.requests ? currentUsage.tokens : !capabilities.weekly&&uniqueRequests.length?sum(uniqueRequests.map(p=>p.input+p.output)):null, tokensPerPP: weekComparable.length ? sum(weekComparable.map(p => p.tokens)) / sum(weekComparable.map(p => p.pp)) : null,
       updatedAt: selected.at(-1)?.at || null, largestWindow: largestWindow ? {label: largestWindow.label, weeklyPP: largestWindow.weeklyPP} : null},

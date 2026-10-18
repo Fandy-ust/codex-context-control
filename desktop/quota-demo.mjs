@@ -21,4 +21,8 @@ export function quotaFixture(now = Date.UTC(2026, 9, 18, 12)) {
   }
   return {snapshots, requests, progress: {files: 7, pending: 0, unreadable: 0, bytesRead: 0}};
 }
-export function demoQuotaAnalytics(options = {}) {return buildQuotaAnalytics(quotaFixture(), {now: Date.UTC(2026, 9, 18, 12), days: 28, timeZone: 'Asia/Hong_Kong', ...options});}
+export function demoQuotaAnalytics(options = {}) {
+  const now=Date.UTC(2026,9,18,12),fixture=quotaFixture(),currentScope='account:demo';
+  for(let i=0;i<=18;i++)fixture.snapshots.push({scope:currentScope,bucket:'codex',at:now-(18-i)*5*60000,weeklyUsed:10+i*.1,weeklyReset:Math.floor((now+2*DAY)/1000),fiveUsed:24+i*2,fiveReset:Math.floor((now+2*HOUR)/1000)});
+  return buildQuotaAnalytics({...fixture,currentScope},{now,days:28,timeZone:'Asia/Hong_Kong',...options});
+}
