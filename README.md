@@ -2,7 +2,7 @@
 
 Manage each Codex chat’s context from your Mac menu bar. Up to **920K**.
 
-## [Download 0.18.0 for Mac ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.0-preview.1/Context-Manager-0.18.0-macos-arm64.dmg)
+## [Download 0.18.1 for Mac ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.1-preview.1/Context-Manager-0.18.1-macos-arm64.dmg)
 
 Apple Silicon · macOS 14+ · DMG, 45 MB · English / 中文
 
@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 - **Control panel:** settings open from one compact button at the bottom left.
 
-- **Quota indicator:** stepped bars gradually empty beside a remaining-percentage label.
+- **Quota indicator:** vertical stripes form a lightning bolt that empties as quota decreases.
 
 - **Local cache:** chats and recent usage appear at startup, with incremental background sync.
 - **Updates:** automatic checks; install only when you click.

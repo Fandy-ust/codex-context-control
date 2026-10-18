@@ -612,6 +612,7 @@ struct ContentView: View {
         let item=NSStatusBar.system.statusItem(withLength:56)
         item.button?.title=""
         item.button?.imagePosition = .imageOnly
+        item.button?.imageScaling = .scaleProportionallyDown
         item.button?.setButtonType(.pushOnPushOff)
         item.button?.target=self;item.button?.action=#selector(toggleContextPopover)
         statusItem=item

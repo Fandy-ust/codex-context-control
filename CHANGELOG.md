@@ -1,6 +1,13 @@
 # Changes
 
 
+## 0.18.1 — Striped lightning quota indicator
+
+- Apply the approved B design: vertical stripes form a lightning bolt, progressively emptying as remaining quota decreases.
+- Bring the transparent percentage label 2.5 points closer to the bolt, keeping its lower-right placement.
+- Preserve the shared dropdown, floating control panel, budgets, preferences, and caches.
+
+
 ## 0.18.0 — Quota indicator and floating control panel
 
 - Consolidate sidebar settings in a bottom-left floating control panel, including inline navigation to global defaults.

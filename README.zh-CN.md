@@ -2,7 +2,7 @@
 
 在 Mac 菜单栏管理每个 Codex 聊天的上下文，最高 **920K**。
 
-## [下载 Mac 最新版 0.18.0 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.0-preview.1/Context-Manager-0.18.0-macos-arm64.dmg)
+## [下载 Mac 最新版 0.18.1 ↓](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.18.1-preview.1/Context-Manager-0.18.1-macos-arm64.dmg)
 
 Apple Silicon · macOS 14+ · DMG，45 MB · 中文 / English
 
@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 - **主控制面板**：左下角一键展开设置浮窗，点击外部收起。
 
-- **额度指示**：阶梯条形随额度减少变空心，右下角直接显示剩余百分比。
+- **额度指示**：竖条组成闪电，额度减少时逐渐空心，右下角紧贴显示剩余百分比。
 
 - **本地缓存**：启动即显示聊天和最近用量，后台增量同步。
 - **在线更新**：自动检查，点击后下载安装。
