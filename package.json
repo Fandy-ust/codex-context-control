@@ -1,9 +1,9 @@
 {
   "name": "codex-context-control",
-  "version": "0.23.3",
+  "version": "0.23.4",
   "private": true,
   "type": "module",
-  "description": "Cross-platform per-chat context budgets and account quota for Codex Desktop",
+  "description": "Local Codex extension for context control and quota-aware task queues",
   "engines": {
     "node": ">=22.13.0"
   },

@@ -1,6 +1,6 @@
 # Context Manager CLI and skill
 
-The CLI shares the app's controller on both platforms. It supports global status/quota analysis, new-chat defaults, per-chat context budgets, observed speed analysis and task queues. Context sizes are user-visible tokens; the controller owns conversion and validation. Speed is read-only: no model/tier switching or fixed tokens/s control.
+Context Manager is a local Codex extension for context control and quota-aware task queues. Its CLI and desktop panel share one controller on both platforms. It supports global status/quota analysis, new-chat defaults, per-chat context budgets, observed speed analysis and task queues. Context sizes are user-visible tokens; the controller owns conversion and validation. Speed is read-only: no model/tier switching or fixed tokens/s control.
 
 See [queue CLI](QUEUE_CLI.md) for installed launcher paths. From source, run `node src/cli.mjs --help`.
 
@@ -21,9 +21,9 @@ Speed results group recorded generation throughput by model, effort, service tie
 
 ## Install the skill
 
-The [context-manager skill](../../skills/context-manager/SKILL.md) lives in this GitHub repository and ships with both installers. It teaches an agent to inspect quota, adjust context budgets and manage queues through the app's CLI. Speed remains read-only analysis.
+The [context-manager skill](../../skills/context-manager/SKILL.md) lives in this GitHub repository and ships with both installers. Written in English, it guides an agent to control context budgets and schedule queues around 5-hour and weekly quota windows through the extension's CLI. Speed remains read-only analysis.
 
-After installing the app, run once:
+After installing the extension, run once:
 
 **macOS**
 
@@ -39,6 +39,6 @@ After installing the app, run once:
 
 The default is `~/.codex/skills/context-manager`, or `$CODEX_HOME/skills/context-manager` when configured. Reopen Codex and invoke `$context-manager`, or ask it to use Context Manager in natural language.
 
-Run the same command after app updates to update the skill. It replaces unmodified managed `SKILL.md` content, preserves unrelated files and stops if you edited the skill; `--force` explicitly replaces local edits. Installing the app alone does not modify any agent's skills.
+Run the same command after extension updates to update the skill. It replaces unmodified managed `SKILL.md` content, preserves unrelated files and stops if you edited the skill; `--force` explicitly replaces local edits. Installing the extension alone does not modify any agent's skills.
 
-For another agent supporting `SKILL.md`, choose its skills parent directory with `skill install --path "/path/to/agent/skills"`. `skill path` locates the bundled copy. Alternatively copy the repository's `skills/context-manager` folder into the agent's skills directory; the app and its CLI are still required.
+For another agent supporting `SKILL.md`, choose its skills parent directory with `skill install --path "/path/to/agent/skills"`. `skill path` locates the bundled copy. Alternatively copy the repository's `skills/context-manager` folder into the agent's skills directory; the extension and its CLI are still required.

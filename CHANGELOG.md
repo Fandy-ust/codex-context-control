@@ -1,5 +1,11 @@
 # Changes
 
+## 0.23.4 — Codex extension skill in English
+
+- Rewrite the bundled skill in English and describe Context Manager as a local Codex extension for context control and quota-aware task queues.
+- Explain reserves, release stages and pause/resume scheduling around 5-hour and weekly quota windows, with the existing CLI entry points and installation method.
+- Align English/Chinese introductions and CLI guides with this positioning.
+
 ## 0.23.3 — Stable slim sidebar scrolling
 
 - Keep a fixed narrow scrollbar gutter on both platforms, with a thin grey track and thumb that do not widen or flash white during interaction. Expanding Recent no longer changes the content width.

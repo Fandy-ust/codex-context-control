@@ -1,6 +1,6 @@
 # Context Manager
 
-Manage Codex chat context and account quota from your **Mac menu bar or Windows system tray**. Up to **920K**.
+A local extension for Codex: **context control and quota-aware task queues**, built around 5-hour and weekly quota windows. Available from your **Mac menu bar or Windows system tray**, with context windows up to **920K**.
 
 ## Download
 

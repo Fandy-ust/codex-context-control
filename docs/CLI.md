@@ -1,6 +1,6 @@
 # Context Manager CLI 与配套 skill
 
-CLI 与 Mac／Windows 界面使用同一个控制服务。它可以读全局状态、改新聊天默认预算、调节单聊天上下文、分析速度，以及管理队列。窗口以用户可用容量输入，由 App 换算和应用；速度是只读分析，不提供快慢模式切换。
+Context Manager 是 Codex 的本地扩展，提供上下文控制和按额度调度的任务队列。CLI 与 Mac／Windows 面板使用同一个控制服务。它可以读全局状态、改新聊天默认预算、调节单聊天上下文、分析速度，以及管理队列。窗口以用户可用容量输入，由扩展换算和应用；速度是只读分析，不提供快慢模式切换。
 
 安装后入口及队列详细用法见 [队列 CLI](QUEUE_CLI.md)。从源码可运行 `node src/cli.mjs`。
 
@@ -29,9 +29,9 @@ CM="$HOME/Library/Application Support/CodexContextControl/bin/context-manager"
 
 ## 配套 skill
 
-[context-manager skill](../skills/context-manager/SKILL.md) 与源码一起维护在 GitHub，并随两端安装包分发。它教 agent 通过 CLI 查询额度、调整上下文和管理队列；速度只用于分析。
+[context-manager skill](../skills/context-manager/SKILL.md) 与源码一起维护在 GitHub，并随两端安装包分发。技能使用英文编写，引导 agent 通过 CLI 控制上下文、管理队列，并围绕 5 小时和每周额度设置保留量、暂停与恢复策略。速度只用于分析。
 
-安装 App 后，执行一次：
+安装扩展后，执行一次：
 
 **macOS**
 
@@ -47,6 +47,6 @@ CM="$HOME/Library/Application Support/CodexContextControl/bin/context-manager"
 
 默认安装到 `~/.codex/skills/context-manager`；设置了 `CODEX_HOME` 时使用其下的 `skills/context-manager`。重新打开 Codex 后可直接说“用 Context Manager 调整这个聊天的上下文”，或显式调用 `$context-manager`。
 
-App 更新后重新运行同一命令即可更新 skill。安装器仅替换自己管理且未经修改的 `SKILL.md`，保留其他文件；本地内容被修改时会停止，确认要覆盖后可加 `--force`。App 安装过程不会自动改动 agent 的 skills。
+扩展更新后重新运行同一命令即可更新 skill。安装器仅替换自己管理且未经修改的 `SKILL.md`，保留其他文件；本地内容被修改时会停止，确认要覆盖后可加 `--force`。扩展安装过程不会自动改动 agent 的 skills。
 
-其他支持 `SKILL.md` 的 agent 可指定 skills 父目录：`context-manager skill install --path "/path/to/agent/skills"`。`skill path` 返回 App 内置副本的位置。从 GitHub 手动安装时，把 `skills/context-manager` 文件夹放入 agent 的 skills 目录即可；仍需安装带 CLI 的 Context Manager。
+其他支持 `SKILL.md` 的 agent 可指定 skills 父目录：`context-manager skill install --path "/path/to/agent/skills"`。`skill path` 返回 扩展内置副本的位置。从 GitHub 手动安装时，把 `skills/context-manager` 文件夹放入 agent 的 skills 目录即可；仍需安装带 CLI 的 Context Manager。
