@@ -466,9 +466,31 @@ struct RuntimeFixControl:View {
     }
 }
 
+private struct ProjectFolderIcon:Shape {
+    let expanded:Bool
+    func path(in rect:CGRect)->Path {
+        var p=Path()
+        p.move(to:CGPoint(x:3,y:expanded ? 17:8));p.addLine(to:CGPoint(x:3,y:5))
+        p.addQuadCurve(to:CGPoint(x:5,y:3),control:CGPoint(x:3,y:3))
+        p.addLine(to:CGPoint(x:9,y:3));p.addLine(to:CGPoint(x:12,y:6));p.addLine(to:CGPoint(x:19,y:6))
+        p.addQuadCurve(to:CGPoint(x:21,y:8),control:CGPoint(x:21,y:6))
+        if expanded {
+            p.addLine(to:CGPoint(x:21,y:10))
+            p.move(to:CGPoint(x:3,y:17));p.addLine(to:CGPoint(x:6.5,y:10));p.addLine(to:CGPoint(x:22,y:10));p.addLine(to:CGPoint(x:18,y:19))
+            p.addQuadCurve(to:CGPoint(x:16.2,y:20),control:CGPoint(x:17.5,y:20))
+        }else{
+            p.addLine(to:CGPoint(x:21,y:18));p.addQuadCurve(to:CGPoint(x:19,y:20),control:CGPoint(x:21,y:20))
+        }
+        p.addLine(to:CGPoint(x:5,y:20));p.addQuadCurve(to:CGPoint(x:3,y:18),control:CGPoint(x:3,y:20));p.closeSubpath()
+        if !expanded {p.move(to:CGPoint(x:3,y:8));p.addLine(to:CGPoint(x:21,y:8))}
+        return p.applying(CGAffineTransform(scaleX:rect.width/24,y:rect.height/24).concatenating(CGAffineTransform(translationX:rect.minX,y:rect.minY)))
+    }
+}
+
 struct ProjectChatSidebar:View {
     @ObservedObject var model:Controller
     @AppStorage("project-sidebar-expanded") private var expandedJSON="[]"
+    @State private var hoveredProject:String?
     private var expanded:Set<String> {Set((try? JSONDecoder().decode([String].self,from:Data(expandedJSON.utf8))) ?? [])}
     private var projects:[SidebarProject] {model.sidebar?.projects ?? []}
     private var recent:[Chat] {model.chats.sorted{($0.lastActivityAt ?? 0)>($1.lastActivityAt ?? 0)}}
@@ -490,8 +512,7 @@ struct ProjectChatSidebar:View {
                     ScrollView{LazyVStack(spacing:4){
                         if recent.isEmpty{empty("暂无最近聊天")}
                         ForEach(recent){chat in chatRow(chat)}
-                    }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,28)}
-                    .overlay(alignment:.bottom){bottomFade}
+                    }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,4)}
                 }.frame(maxHeight:.infinity)
             }
         }
@@ -505,29 +526,31 @@ struct ProjectChatSidebar:View {
             ScrollView{LazyVStack(alignment:.leading,spacing:2){
                 if projects.isEmpty{empty("暂无本地项目")}
                 ForEach(projects){project in
-                    DisclosureGroup(isExpanded:Binding(get:{expanded.contains(project.id)},set:{setExpanded(project.id,$0)})){
-                        LazyVStack(spacing:4){
-                            if project.threadIds.isEmpty{empty("暂无聊天")}
-                            ForEach(project.threadIds.compactMap{byID[$0]}){chat in chatRow(chat)}
-                        }.padding(.leading,6)
-                    }label:{
-                        HStack(spacing:7){
-                            Image(systemName:"folder").foregroundStyle(.secondary)
-                            Text(project.name).font(.system(size:12,weight:.medium)).lineLimit(1).truncationMode(.middle)
-                            Spacer(minLength:2)
-                            Text("\(project.threadIds.count)").font(.caption).foregroundStyle(.secondary)
-                        }.padding(.vertical,4).help(project.roots.joined(separator:"\n"))
-                    }.padding(.horizontal,8)
+                    let open=expanded.contains(project.id)
+                    VStack(alignment:.leading,spacing:2){
+                        Button{setExpanded(project.id,!open)}label:{
+                            HStack(spacing:7){
+                                ProjectFolderIcon(expanded:open).stroke(style:StrokeStyle(lineWidth:1.7,lineCap:.round,lineJoin:.round)).foregroundStyle(.secondary).frame(width:17,height:17)
+                                Text(project.name).font(.system(size:12,weight:.medium)).lineLimit(1).truncationMode(.middle)
+                                Spacer(minLength:2)
+                                Text("\(project.threadIds.count)").font(.caption).foregroundStyle(.secondary)
+                            }.padding(.horizontal,10).padding(.vertical,6).frame(maxWidth:.infinity,alignment:.leading)
+                                .background(Color.white.opacity(hoveredProject==project.id ? 0.065:0),in:RoundedRectangle(cornerRadius:8))
+                                .overlay(RoundedRectangle(cornerRadius:8).stroke(Color.white.opacity(hoveredProject==project.id ? 0.1:0),lineWidth:1))
+                                .contentShape(Rectangle())
+                        }.buttonStyle(.plain).help(project.roots.joined(separator:"\n"))
+                            .accessibilityLabel(project.name).accessibilityValue(L(open ? "已展开":"已折叠"))
+                            .onHover{inside in if inside{hoveredProject=project.id}else if hoveredProject==project.id{hoveredProject=nil}}
+                        if open {
+                            LazyVStack(spacing:4){
+                                if project.threadIds.isEmpty{empty("暂无聊天")}
+                                ForEach(project.threadIds.compactMap{byID[$0]}){chat in chatRow(chat)}
+                            }.padding(.leading,14)
+                        }
+                    }
                 }
-            }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,28)}
-            .overlay(alignment:.bottom){bottomFade}
+            }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,4)}
         }
-    }
-    private var bottomFade:some View {
-        Rectangle().fill(.ultraThinMaterial).frame(height:28)
-            .overlay(LinearGradient(colors:[.clear,PanelStyle.background],startPoint:.top,endPoint:.bottom))
-            .mask(LinearGradient(colors:[.clear,.black],startPoint:.top,endPoint:.bottom))
-            .allowsHitTesting(false).accessibilityHidden(true)
     }
     private func heading(_ title:String,count:Int)->some View {
         HStack{Text(L(title));Spacer();Text("\(count)")}.font(.system(size:11,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,10)

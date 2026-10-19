@@ -15,7 +15,7 @@ export function createWindowsZip(source, destination) {
   const temporary = destination + '.' + randomUUID() + '.zip';
   try {
     if (sevenZip) {
-      const result = spawnSync(sevenZip, ['a', '-tzip', '-mm=Deflate', '-mx=9', '-mfb=258', '-mpass=15', '-mmt=2', '-mcu=on', '-y', temporary, '*'], {cwd: source, encoding: 'utf8', windowsHide: true, timeout: 600000});
+      const result = spawnSync(sevenZip, ['a', '-tzip', '-mm=Deflate', '-mx=9', '-mfb=258', '-mpass=5', '-mmt=2', '-mcu=on', '-y', temporary, '*'], {cwd: source, encoding: 'utf8', windowsHide: true, timeout: 600000});
       if (result.error || result.status !== 0) throw Error(result.error?.message || result.stdout + result.stderr);
     } else {
       powershell('Add-Type -AssemblyName System.IO.Compression.FileSystem;[System.IO.Compression.ZipFile]::CreateFromDirectory($env:CONTEXT_CONTROL_PACKAGE,$env:CONTEXT_CONTROL_ZIP,[System.IO.Compression.CompressionLevel]::Optimal,$false)', {CONTEXT_CONTROL_PACKAGE: source, CONTEXT_CONTROL_ZIP: temporary}, {timeout: 180000});

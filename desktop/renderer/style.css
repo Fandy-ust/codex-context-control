@@ -17,7 +17,8 @@
 .sidebar-scroll{min-height:0;overflow:auto;overscroll-behavior:contain;flex:1}.sidebar-empty{font-size:11px;color:var(--muted);padding:8px 12px}
 .projects-section .sidebar-section-title{padding-bottom:3px}
 .project-toggle{display:flex;align-items:center;gap:7px;width:100%;border:0;background:transparent;text-align:left;padding:6px 9px;margin:1px 0}.project-toggle.contains-selection{color:#a4c1ff}.project-toggle .truncate{min-width:0}
-.project-chevron{width:10px;font-size:16px;line-height:1;text-align:center;flex:none}.project-folder{font-size:18px;line-height:1;color:var(--muted)}
+.project-folder{width:17px;height:17px;flex:none;color:var(--muted)}
+.project-toggle:hover:not(:disabled){background:#ffffff11;box-shadow:inset 0 0 0 1px #ffffff1a}
 .project-chats{margin-left:17px;padding-left:6px;border-left:1px solid var(--line)}.project-chats .chat-button{padding:9px 10px}
 html:root{--radius-control:10px;--radius-card:26px;--radius:var(--radius-card)}
 body button,body select,body input[type=number],body input[type=text],body .pill,body .actions .primary,body .range-value,body .chat-button,body .tray-top{border-radius:var(--radius-control)}
@@ -73,12 +74,12 @@ input[type=text]{background:#ffffff08;color:inherit;border:1px solid var(--line)
 .quota-window.critical strong{color:#ff6b72}
 .warning .quota-meter i{background:#edc45a}
 .critical .quota-meter i{background:#ff6b72}
-/* Blur content into the sidebar surface, leaving the last row fully reachable. */
+/* Keep both lists clear at their edges; no material or blur overlays. */
 .sidebar-section{position:relative}
-.sidebar-section::after{content:"";position:absolute;bottom:0;left:0;right:7px;height:30px;pointer-events:none;background:linear-gradient(transparent,var(--bg));backdrop-filter:blur(5px);mask-image:linear-gradient(transparent,#000)}
-.sidebar-scroll{padding-bottom:30px}
+
+.sidebar-scroll{padding-bottom:4px}
 .recent-section{border-top:0}
-@media(forced-colors:active){.sidebar-section::after{display:none}.warning .quota-meter i,.critical .quota-meter i{background:Highlight}.quota-window strong,.sidebar-quota-window strong{color:CanvasText}}
+@media(forced-colors:active){.warning .quota-meter i,.critical .quota-meter i{background:Highlight}.quota-window strong,.sidebar-quota-window strong{color:CanvasText}}
 
 .timeline-settings{display:flex;flex-direction:column;gap:5px;margin-top:9px;padding-top:8px;border-top:1px solid var(--line);overflow-wrap:anywhere}
 .timeline-speed-badge{font-size:10px;color:#edc45a;background:#edc45a12;border:1px solid #edc45a30;border-radius:5px;padding:2px 6px;white-space:nowrap}

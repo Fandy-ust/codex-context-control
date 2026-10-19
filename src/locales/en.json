@@ -1023,5 +1023,7 @@
   "切换模型，等待新用量后补偿": "Model changed. Waiting for fresh usage before compensation.",
   "请先取得新用量或手动压缩，再切换模型": "Wait for fresh usage or compact manually before changing models.",
   "有更新": "Update",
-  "更新中": "Updating"
+  "更新中": "Updating",
+  "已展开": "Expanded",
+  "已折叠": "Collapsed"
 }
