@@ -17,7 +17,7 @@ export function createUpdateManager({home=root,current,fetcher=fetch,launch,now=
   if(['downloading','installing'].includes(old.phase)){try{process.kill(old.pid,0);return status();}catch{atomicJSON(file,{...old,phase:'error',pid:null,error:'上次更新已中断，请重试'});old.phase='error';}}
   const time=now();
   if(old.checkedVersion===current){
-   if(time<(old.retryAt??0)||(old.checkedAt&&time-old.checkedAt<30000))return status();
+   if(time<(old.retryAt??0))return status();
    if(!force&&!old.error&&old.checkedAt&&time-old.checkedAt<6*60*60*1000)return status();
   }
   checking=(async()=>{
@@ -25,7 +25,7 @@ export function createUpdateManager({home=root,current,fetcher=fetch,launch,now=
    for(const [source,url] of [['release-file',platform==='win32'?releaseMatrixURL:releaseManifestURL],['github-api',releaseAPI]]){
     if(now()<(cooldowns[source]??0))continue;
     try{
-     const response=await fetcher(url,{headers:{Accept:'application/json','User-Agent':'Context-Manager'},signal:AbortSignal.timeout(10000)});
+     const response=await fetcher(url,{headers:{Accept:'application/json','User-Agent':'Context-Manager','Cache-Control':'no-cache'},signal:AbortSignal.timeout(10000)});
      if(!response.ok)throw await updateSourceError(response,source,now());
      let update;
      try{const document=await response.json();if(source==='release-file'){const candidate=manifestCandidate(document,target);if(candidate===null)continue;update=candidate&&newerVersion(candidate.version,current)?candidate:null;}else update=releaseUpdate(document,current,{platform,arch});}
@@ -45,8 +45,14 @@ export function createUpdateManager({home=root,current,fetcher=fetch,launch,now=
 
  async function install(){
   if(checking)await checking;
-  const s=read();if(!artifactForTarget(s.update,target)||!newerVersion(s.update.version,current))throw Error('没有可安装的更新');
+  let s=read();
   if(['downloading','installing'].includes(s.phase)){try{process.kill(s.pid,0);return status();}catch{}}
+  // A previously offered release can be stale. Refresh immediately before
+  // installation; a failed refresh must not silently install the cached build.
+  await check(true);s=read();
+  if(['downloading','installing'].includes(s.phase)){try{process.kill(s.pid,0);return status();}catch{}}
+  if(s.error)throw Error(s.error);
+  if(!artifactForTarget(s.update,target)||!newerVersion(s.update.version,current))throw Error('没有可安装的更新');
   // This path is called only by the explicit Install update button.
   atomicJSON(file,{...s,phase:'downloading',error:null,pid:process.pid});
   let child;

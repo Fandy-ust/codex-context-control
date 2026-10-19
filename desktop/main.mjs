@@ -26,6 +26,7 @@ const {windowsIntegrationStatus,setWindowsIntegration,codexLaunchEnvironment}=aw
 const {integrationLogDirectory}=await import('../src/diagnostic-log.mjs');
 const {ensureDaemon}=await import('../src/service.mjs');
 const {resolveLanguage,languagePreference,localize}=await import('../src/localization.mjs');
+if(process.platform==='win32')app.commandLine.appendSwitch('lang',resolveLanguage(languagePreference())==='zh'?'zh-CN':'en-US');
 const {demoState,demoStatistics}=await import('./demo.mjs');
 const demoQueues=demo?createTaskQueues({quota:{state:()=>({...demoState.quota,updatedAt:Date.now()}),refresh:async()=>{}},thread:id=>demoState.threads.find(t=>t.id===id),start:async(id,task)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='active';chat.automaticTask={executionId:task.executionId,status:'running'};},interrupt:async(id)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='idle';if(chat.automaticTask)chat.automaticTask.status='interrupted';}}):null;
 const pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
@@ -176,6 +177,11 @@ if(args.includes('--quit')){app.quit();}else{
   const refresh=async()=>{try{lastState=await api('state');serviceOnline=true;updateTray();}catch{serviceOnline=false;if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};updateTray();}if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting&&!main.isDestroyed()&&!trayWindow.isDestroyed())timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
   if(!demo&&!smoke)main.webContents.once('did-finish-load',()=>{updatePrompt.run(true).then(refreshUpdateUI).catch(error=>console.error('Startup update check:',error.message));});
   if(smoke){
+    if(process.platform==='win32'){
+      const expected=resolveLanguage(languagePreference())==='zh'?'zh-CN':'en-US';
+      if(app.getLocale()!==expected)throw Error('Packaged locale mismatch: '+app.getLocale());
+      console.log('CHROMIUM_LOCALE '+app.getLocale());
+    }
     const loaded=win=>new Promise((resolve,reject)=>{if(!win.webContents.isLoading())resolve();else{win.webContents.once('did-finish-load',resolve);win.webContents.once('did-fail-load',(_e,code,message)=>reject(Error(`${code}: ${message}`)));}});
     try{
       if(args.includes('--shortcut-probe')){

@@ -7,6 +7,7 @@ import {rcedit} from 'rcedit';
 import {powershell} from '../src/platform/index.mjs';
 import {compileWindowsInstaller} from './windows-installer.mjs';
 import {pruneTokenizer} from './prune-tokenizer.mjs';
+import {pruneElectron} from './prune-electron.mjs';
 
 if(process.platform!=='win32')throw Error('Build Windows packages on Windows');
 const repo=fileURLToPath(new URL('../',import.meta.url)),pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
@@ -42,7 +43,8 @@ if(!fs.existsSync(path.join(electron,'electron.exe'))){
   const install=spawnSync(process.execPath,[installer],{cwd:repo,stdio:'inherit',windowsHide:true,timeout:300000,env:{...process.env,ELECTRON_INSTALL_ARCH:arch,ELECTRON_INSTALL_PLATFORM:'win32'}});
   if(install.error||install.status!==0||!fs.existsSync(path.join(electron,'electron.exe')))throw Error(install.error?.message||'Electron binary preparation failed');
 }
-const payload=path.join(out,'payload');fs.mkdirSync(payload,{recursive:true});fs.cpSync(electron,payload,{recursive:true});
+const payload=path.join(out,'payload');fs.rmSync(payload,{recursive:true,force:true});fs.mkdirSync(payload,{recursive:true});fs.cpSync(electron,payload,{recursive:true});
+pruneElectron(payload);
 fs.renameSync(path.join(payload,'electron.exe'),path.join(payload,'ContextManager.exe'));
 await rcedit(path.join(payload,'ContextManager.exe'),{icon,'file-version':pkg.version,'product-version':pkg.version,'version-string':{ProductName:'Context Manager',FileDescription:'Context Manager',CompanyName:'Fandy-ust',OriginalFilename:'ContextManager.exe',InternalName:'ContextManager'}});
 const app=path.join(payload,'resources/app');fs.mkdirSync(app,{recursive:true});

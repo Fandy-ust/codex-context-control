@@ -159,6 +159,7 @@ struct ServiceSettings: Decodable {let node:String}
         do{acceptQuota(try JSONDecoder().decode(QuotaState.self,from:await api(ControlAPI.quotaRefresh,body:[:])))}catch{notice=L("暂时无法读取额度")}
     }
     func updateApp(install:Bool=false) async {
+        guard !checkingUpdates else{return}
         checkingUpdates=true;defer{checkingUpdates=false}
         do{updateState=try JSONDecoder().decode(UpdateState.self,from:await api(install ? ControlAPI.installUpdate:ControlAPI.checkUpdate,body:[:]));if let error=updateState?.error{notice=error}else{notice=install ? L("正在下载更新，安装后请重开 Codex"):L(updateState?.available == true ? "发现新版本":"已是最新版本")}}catch{notice=error.localizedDescription}
     }
@@ -570,10 +571,17 @@ struct ContentView: View {
                     Text("Codex").font(.system(size:11)).foregroundStyle(.secondary)
                     Spacer()
                     Text("v"+model.appVersion).font(.system(size:10)).foregroundStyle(.secondary)
+                    if model.updateState?.available==true || ["downloading","installing"].contains(model.updateState?.phase ?? "") {
+                        let updating=["downloading","installing"].contains(model.updateState?.phase ?? "")
+                        Button{Task{await model.updateApp(install:true)}}label:{
+                            HStack(spacing:4){Image(systemName:updating ? "arrow.triangle.2.circlepath":"arrow.down.circle");Text(L(updating ? "更新中":"有更新"))}.font(.system(size:10,weight:.medium)).padding(.horizontal,7).padding(.vertical,4)
+                        }.buttonStyle(.plain).foregroundStyle(.green).background(Color.green.opacity(0.1),in:RoundedRectangle(cornerRadius:7)).disabled(updating || model.checkingUpdates)
+                        .help(model.updateState?.error ?? L("安装更新 {0}",model.updateState?.version ?? "")).accessibilityIdentifier("quick-update-button")
+                    }
                     Button{controlTab="general";showControlPanel=true}label:{Image(systemName:"gearshape").font(.system(size:17))}.buttonStyle(.plain).help(L("设置")).accessibilityIdentifier("control-panel-button")
                 }
                 .frame(maxWidth:.infinity,alignment:.leading)
-                .accessibilityElement(children:.ignore)
+                .accessibilityElement(children:.contain)
                 .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 .help((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 ProjectChatSidebar(model:model).frame(maxHeight:.infinity)

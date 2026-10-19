@@ -1,7 +1,11 @@
 # Changes
 
-## Unreleased
+## 0.23.2 — Smaller Windows packages and fresh update checks
 
+- Show a compact update action beside the version in both sidebar headers, including the running update state.
+- Keep Check for updates available after finding a release on both desktops; manual checks bypass the successful-result cache, and installation refreshes the release before launching. Failed refreshes preserve the offer without silently installing stale builds.
+- Package only the supported English/Chinese Electron locales, preserve the graphics/runtime components and independent Node, and use stronger compatible ZIP/Deflate compression when 7-Zip is available at build time.
+- Validate the packaged Windows interface in both languages as well as installation and OTA.
 - Trim unused tokenizer encodings and duplicate bundles from Windows packages using the same packaging rule as macOS. Keep input-budget checks and statistics unchanged.
 
 ## 0.23.1 — One-command skill installation

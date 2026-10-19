@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {powershell} from '../src/platform/index.mjs';
+import {createWindowsZip} from './windows-zip.mjs';
 import {verifyWindowsPayload} from '../src/platform/windows-install.mjs';
 import {compileWindowsInstaller} from './windows-installer.mjs';
 const repo=fileURLToPath(new URL('../',import.meta.url)),pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
@@ -14,13 +14,13 @@ if(!updateOnly){
 const setupName=process.env.CONTEXT_CONTROL_SETUP_NAME||name+'-Setup.exe';
 if(path.basename(setupName)!==setupName||!setupName.endsWith('.exe'))throw Error('Setup output must be an .exe filename');
 const native=path.join(repo,'build/windows-native'),embedded=path.join(native,name+'-payload.zip'),setup=path.join(repo,'build',setupName);
-powershell('Add-Type -AssemblyName System.IO.Compression.FileSystem;if(Test-Path -LiteralPath $env:CONTEXT_CONTROL_ZIP){Remove-Item -LiteralPath $env:CONTEXT_CONTROL_ZIP};[System.IO.Compression.ZipFile]::CreateFromDirectory($env:CONTEXT_CONTROL_PACKAGE,$env:CONTEXT_CONTROL_ZIP)',{CONTEXT_CONTROL_PACKAGE:path.join(folder,'payload'),CONTEXT_CONTROL_ZIP:embedded},{timeout:180000});
+createWindowsZip(path.join(folder,'payload'),embedded);
 fs.writeFileSync(embedded+'.sha256',crypto.createHash('sha256').update(fs.readFileSync(embedded)).digest('hex')+'\n');
 compileWindowsInstaller({output:setup,icon:path.join(native,'ContextManager.ico'),archive:embedded,checksum:embedded+'.sha256'});
 fs.writeFileSync(setup+'.sha256',crypto.createHash('sha256').update(fs.readFileSync(setup)).digest('hex')+'  '+path.basename(setup)+'\n');
 console.log(setup);
 }
 if(updateOnly||process.argv.includes('--with-update-zip')){
-powershell('Add-Type -AssemblyName System.IO.Compression.FileSystem;if(Test-Path -LiteralPath $env:CONTEXT_CONTROL_ZIP){Remove-Item -LiteralPath $env:CONTEXT_CONTROL_ZIP};[System.IO.Compression.ZipFile]::CreateFromDirectory($env:CONTEXT_CONTROL_PACKAGE,$env:CONTEXT_CONTROL_ZIP)',{CONTEXT_CONTROL_PACKAGE:folder,CONTEXT_CONTROL_ZIP:zip},{timeout:180000});
+createWindowsZip(folder,zip);
 fs.writeFileSync(zip+'.sha256',crypto.createHash('sha256').update(fs.readFileSync(zip)).digest('hex')+'  '+path.basename(zip)+'\n');console.log(zip);
 }

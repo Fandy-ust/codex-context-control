@@ -19,7 +19,7 @@ This preview is not publisher-signed. It is available from [GitHub Releases](htt
 
 Click the tray icon for recent chats, or open the main window. Settings are available from the gear in the sidebar header. The default global shortcut is **Ctrl + Shift + M** and can be changed in Settings.
 
-Update checks are automatic; installation requires a click. Running a newer Setup.exe also updates the existing installation. Budgets, cached usage, language and shortcut preferences are preserved. Verified old program versions are removed once no running process needs them.
+Update checks are automatic; installation requires a click. Check for updates stays available after finding a release, and installation refreshes the latest release first. Running a newer Setup.exe also updates the existing installation. Budgets, cached usage, language and shortcut preferences are preserved. Verified old program versions are removed once no running process needs them.
 
 Uninstall through Windows Settings or the installer. Uninstallation preserves user data; files still used by Codex remain until they can be safely removed. The data directory is `%LOCALAPPDATA%\CodexContextControl`.
 

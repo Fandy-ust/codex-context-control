@@ -39,7 +39,11 @@ struct MainControlPanelView:View {
             }.padding(12).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
             Divider()
             if model.updateState?.phase=="downloading" || model.updateState?.phase=="installing" {HStack{ProgressView().controlSize(.small);Text(L("正在更新…"))}}
-            else{HStack{Button(model.updateState?.available==true ? L("安装更新 {0}",model.updateState?.version ?? ""):L("检查更新"),systemImage:"arrow.down.circle"){Task{await model.updateApp(install:model.updateState?.available==true);feedback=model.notice}}.disabled(model.checkingUpdates);Text("v"+model.appVersion).font(.caption).foregroundStyle(.secondary)}}
+            else{HStack{
+                if model.updateState?.available==true {Button(L("安装更新 {0}",model.updateState?.version ?? ""),systemImage:"arrow.down.circle"){Task{await model.updateApp(install:true);feedback=model.notice}}.disabled(model.checkingUpdates)}
+                Button(L("检查更新"),systemImage:"arrow.clockwise"){Task{await model.updateApp();feedback=model.notice}}.disabled(model.checkingUpdates)
+                Text("v"+model.appVersion).font(.caption).foregroundStyle(.secondary)
+            }}
             if model.updateState?.error != nil {Link(L("从发布页手动下载"),destination:URL(string:"https://github.com/Fandy-ust/codex-context-control/releases/latest")!).font(.callout)}
         }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
     }

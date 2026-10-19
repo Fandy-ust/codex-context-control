@@ -157,3 +157,5 @@ input[type=text]{background:#ffffff08;color:inherit;border:1px solid var(--line)
 @container(max-width:900px){.qa-card>header:has(.qa-tabs){padding-bottom:46px}.qa-cycle-controls .qa-tabs,.qa-chart-options>.qa-tabs{top:auto;bottom:0}.qa-chart-footer .qa-legend{min-width:150px}.qa-chart-footer .qa-outlook-range{margin-left:auto}}
 
 .qa-forecast-controls{justify-content:flex-end}.qa-card>header:has(.qa-forecast-controls)>.qa-chart-options{min-height:36px}
+
+.brand .quick-update{flex-shrink:0;white-space:nowrap;padding:4px 7px;font-size:10px;line-height:14px;color:#85d99f;background:#4fc57a18;border-color:#4fc57a35;border-radius:7px}.brand .quick-update:hover:not(:disabled){background:#4fc57a28}
