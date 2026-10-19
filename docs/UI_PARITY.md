@@ -42,3 +42,49 @@ Windows 趋势图增加左侧数值刻度、线条及事件图例，以及跟随
 ## 0.19.5 拖动同步与渐进加速
 
 预算填充、余量与滑块在同一帧更新，移除填充宽度过渡。粒子仍按压缩 80%、窗口 20% 加权，改用平方加速曲线；从左到右逐渐加速，右侧变化更明显。保持随机分布与漂移，拖动时只调整播放速率，不重置粒子相位；合并动画查询以减少样式计算。
+
+
+## 0.22.1 实验性任务队列
+
+| 功能 | Windows | macOS | 共用实现 |
+| --- | --- | --- | --- |
+| 开关、完成自动关闭与统一关闭 | Electron 原生窗口内开关 | SwiftUI Toggle switch | task-queues 引擎 |
+| 任务卡片与独立编辑 | 两栏卡片、固定返回与保存 | SwiftUI 卡片、原生 sheet 与固定页头 | 同一任务协议和持久化 |
+| 默认值与每任务独立限额 | 默认限额折叠表单、内容/额度分页 | DisclosureGroup、segmented Picker | queue-config / task-settings |
+| 三个释放梯度 | 三行表单 | 原生 Toggle / TextField | 相同次序与额度校验 |
+| 模型和思考程度 | 模型目录下拉选择 | 原生 Picker | 同一模型目录与提交前能力检查 |
+| 图片与普通文件 | 系统选择器、文件拖放 | 原生 fileImporter | 同一附件字段、路径校验与原生图片输入 |
+| 后台加载聊天 | 不切换 Codex 页面 | 不切换 Codex 页面 | 唯一兼容 Bridge、thread/resume |
+
+按用户要求，0.22.1 验证限于共享逻辑和 Windows；macOS 仅同步源码，未执行编译、原生渲染或运行测试。平台交互采用各自 UI 控件，没有为 Windows 单独实现一套调度逻辑。
+
+
+## 0.22.2 编辑器与命令
+
+Windows 编辑器放大保留侧栏，占满右侧区域；Mac 从原生 sheet 展开到右侧内容区。两端都支持粘贴图片、附件方框与移除、紧凑模型/程度面板、没有 5h 时隐藏 5h 额度设置。Windows 使用系统剪贴板与本地文件缩略图，Mac 使用 AppKit NSTextView 粘贴入口、ImageIO 缩略图和 SwiftUI 原生控件。`/compact` 的识别、执行、完成判断与失败保护由共享队列引擎和 Bridge 实现。此版本没有在 macOS 上编译或运行验证。
+
+
+## 0.22.3
+
+- Shared service: 10-second quota reads, intra-minute percentage/Credits changes retained, existing JSONL quota sources rescanned once, same account isolation and conservative prediction requirements.
+- Both UIs: complete reset-cycle graph bounds, single-point observations, Credits balance history, custom date/time ranges, thinner lines and smaller visible markers while retaining hover targets.
+- Queue history is projected by shared core code: unfinished execution order preserved, completed tasks newest first, completed history archived after 12 hours without polling or a sleep assertion. Both UIs expose a collapsible archive.
+- macOS uses SwiftUI DatePicker, segmented Picker, DisclosureGroup and Charts. Native compilation/testing deferred at user request; Windows/shared checks performed locally.
+
+- Date controls use two compact start/end fields in the lower-right corner inside each graph card, auto-apply valid selections, and retain a small reset action. Explanatory cost details live behind an info hint.
+
+- USD per 1 percentage point and cycle overlays use shared core calculations for 5h/Weekly, default to six observed cycles, preserve gaps/resets, reject incomplete pricing, and retain precise small values in ticks/hover readouts. Both graph headers place metric selection beside the title, period selection centrally and overlay controls on the right; date inputs remain in the lower-right corner. Mac uses native menu/segmented pickers and a mini switch. Native compilation remains deferred.
+
+
+## 0.22.4
+
+- Both task composers use a larger unified input/attachment surface, plus attachment menu, single-line model/effort trigger with a popup and bolt icon, and circular arrow submission. No microphone or Hook button.
+- Shared task settings validate and persist approval mode; default inherits the chat. Explicit modes map to the same native runtime fields on both platforms. Queue capability version 4 rejects older bridges that cannot honor these settings.
+- Budget revision synchronization and missing-observation startup fixes live in the shared bridge. Unsafe policy preflight and reload failures still block submission.
+- macOS uses native Menu/Popover/Slider controls. Native build/testing remains deferred by user request.
+
+## 0.22.5
+
+- Both composers place square image/file cards before the text, remove expansion and the model chevron, and align footer actions. Windows uses Electron 44 ClipboardItem/Blob and native file URI lists; macOS retains AppKit pasteboard/file handling with native SwiftUI menus/popovers.
+- Both platforms retain the current-cycle forecast first and default its overlay off; historical remaining-quota and USD/percentage comparisons follow, with independent overlay controls. Period pickers are centered relative to their card; date fields share the legend row. Hover values only appear in the hover card.
+- Shared core supplies adjustable segmented smoothing, raw hover readings, and unsmoothed forecast overlays. Both platforms slightly increase line weight. Release builds and macOS compilation are validated through GitHub Actions.

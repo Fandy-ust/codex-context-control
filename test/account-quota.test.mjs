@@ -58,3 +58,10 @@ test('quota values and credit baselines become visible together after an observa
  const pending=manager.refresh();await new Promise(r=>setImmediate(r));assert.equal(manager.state().buckets.length,0);assert.equal(manager.state().updatedAt,null);
  finish('account:test');await pending;assert.equal(manager.state().buckets[0].creditBalance,'100');assert.equal(manager.state().creditBaselines.codex.baseline,100);
 });
+
+test('default quota polling observes changes every ten seconds with concurrent reads coalesced',async()=>{
+ let clock=100000,reads=0;const observations=[];
+ const manager=createQuotaManager({now:()=>clock,read:async()=>{reads++;return {rateLimits:{primary:{usedPercent:reads,windowDurationMins:300}}}},onObservation:p=>observations.push(p)});
+ await manager.refresh();clock+=9999;await manager.refresh();assert.equal(reads,1);
+ clock++;await Promise.all([manager.refresh(),manager.refresh()]);assert.equal(reads,2);assert.equal(observations.length,2);
+});

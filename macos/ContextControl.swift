@@ -7,6 +7,8 @@ struct Metadata: Decodable,Equatable { let max_context_window:Int?;let effective
 struct Chat: Identifiable, Decodable,Equatable {
     let id:String;let name:String?;let model:String?;let cwd:String?;let status:String?
     let connected:Bool;let ambiguous:Bool;let phase:String?;let message:String?
+    let taskQueueSupported:Bool?;let taskQueueRestartRequired:Bool?
+    var queueRestartRequired:Bool{taskQueueRestartRequired == true || (connected && taskQueueSupported == false)}
     let ephemeral:Bool?;let canAcceptDirectInput:Bool?;let threadSource:String?;let lastActivityAt:Int?;let lastStartedAt:Int?;let lastCompletedAt:Int?
     let observedWindow:Int?;let expectedWindow:Int?;let lastUsage:Usage?;let freshUsage:Bool?;let revision:Int?
     let policy:Budget?;let modelMetadata:Metadata?
@@ -35,7 +37,7 @@ struct QuotaState:Decodable,Equatable {let creditBaselines:[String:CreditBaselin
 struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics:Bool?;let creditBaseline:Bool?}
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
 struct ChatSidebar:Decodable,Equatable {let projects:[SidebarProject];let standaloneThreadIds:[String]}
-struct RuntimeState: Decodable {let taskQueues:TaskQueuesState?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct RuntimeState: Decodable {let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -53,6 +55,8 @@ struct ServiceSettings: Decodable {let node:String}
     }
     deinit{for observer in languageObservers{NotificationCenter.default.removeObserver(observer)}}
     func setLanguage(_ value:LanguageChoice){do{try Localization.setChoice(value)}catch{notice=L("无法保存语言设置：{0}",error.localizedDescription)}}
+    @Published var queueModels:[QueueModel]=[]
+    @Published var queueTaskEditID:String?
     @Published var taskQueues:TaskQueuesState?
     @Published var queueDetailID:String?
     @Published var chats:[Chat]=[]
@@ -120,6 +124,7 @@ struct ServiceSettings: Decodable {let node:String}
             if quota != state.quota{acceptQuota(state.quota)}
             if updateState != state.update{updateState=state.update;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
             if taskQueues != state.taskQueues{taskQueues=state.taskQueues}
+            if queueModels != (state.queueModels ?? []){queueModels=state.queueModels ?? []}
             if chats != state.threads{chats=state.threads}
             if sidebar != state.sidebar{sidebar=state.sidebar}
             if bridgeCount != state.bridgeCount{bridgeCount=state.bridgeCount}

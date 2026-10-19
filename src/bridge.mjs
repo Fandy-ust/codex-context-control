@@ -1,4 +1,7 @@
 import readline from 'node:readline';
+import {taskCommand} from './core/task-command.mjs';
+import fs from 'node:fs';
+import {normalizeTaskSettings,taskInput} from './core/task-settings.mjs';
 import {randomUUID} from 'node:crypto';
 import {Tiktoken} from 'js-tiktoken/lite';
 import ranks from 'js-tiktoken/ranks/o200k_base';
@@ -148,7 +151,7 @@ export class Bridge {
         if(m.method==='thread/status/changed'){record.status=p.status.type;this.notify(record);if(record.status==='idle')this.schedule(record);}
         if(m.method==='turn/started'){record.lastStartedAt=timestampMs(p.turn?.startedAt)??Date.now();record.status='active';record.turnId=p.turn.id;if(record.automaticTask?.status==='starting'){record.automaticTask.turnId=p.turn.id;record.automaticTask.status='running';}record.usageFresh=false;this.notify(record);}
         if(m.method==='error'&&record.compactionWait)record.compactionWait.reject(new Error(p.error?.message||'原生压缩失败'));
-        if(m.method==='turn/completed'){record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error?record.compactionWait.reject(new Error(p.turn.error.message||'原生压缩失败')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.schedule(record);}
+        if(m.method==='turn/completed'){record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error||['failed','interrupted'].includes(p.turn?.status)?record.compactionWait.reject(new Error(p.turn?.error?.message||'原生压缩未完成')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.schedule(record);}
         if(m.method==='thread/name/updated'){record.name=p.name;this.notify(record);}
       }
     }
@@ -172,17 +175,67 @@ export class Bridge {
     const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
   }
   publicRecord(record){return pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask']);}
+  async prepareAutomatic(id){
+    if(this.records.has(id)){await this.notify(this.records.get(id));return {ok:true};}
+    const resolved=await this.resolveFork(id),policy=resolved?.policy?.enabled?(this.contextCeiling?migrateCeilingPolicy(resolved.policy,resolved.model):policyForModel(resolved.policy,resolved.model)):null;
+    let config=policy?{model_context_window:policy.window,model_auto_compact_token_limit:policy.compact}:undefined;
+    if(this.contextCeiling)config=ceilingConfig(config);
+    const result=await this.rpc('thread/resume',{threadId:id,...(config?{config}:{})});
+    if(result.thread?.id!==id)throw Error('后台加载返回了不同的聊天');
+    const t=result.thread;if(t.ephemeral||t.canAcceptDirectInput===false||t.threadSource&&t.threadSource!=='user')throw Error('聊天不支持直接输入');
+    const r=this.record(id);Object.assign(r,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput','threadSource']));r.seed=pick(result,resumeFields);r.seed.cwd??=t.cwd;r.model=result.model??t.model;r.status=t.status?.type??'idle';r.snapshot=result;
+    const active=t.turns?.findLast(turn=>['inProgress','in_progress'].includes(turn.status));if(active)r.turnId=active.id;
+    if(policy){Object.assign(r,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,phase:'awaiting_runtime_confirmation',modelInfo:resolved.model,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??resolved.model?.effective_context_window_percent??95)/100)});}
+    await this.notify(r);return {ok:true};
+  }
   async startAutomatic(id,task){
     const r=this.records.get(id);if(!r||r.ephemeral||r.canAcceptDirectInput===false)throw Error('聊天不支持直接输入');
     if(r.automaticTask?.executionId===task.executionId)return r.automaticTask;
     if(task.adoptTurnId){if(r.status!=='active'||r.turnId!==task.adoptTurnId)throw Error('当前轮次已经变化');r.automaticTask={executionId:task.executionId,taskId:task.taskId,turnId:r.turnId,status:'running'};await this.notify(r);return r.automaticTask;}
     if(r.status!=='idle'||r.locked||r.initializing||[...this.external.values()].some(p=>p.threadId===id&&p.method==='turn/start'))throw Error('请等待聊天空闲');
-    if(r.policy&&r.appliedRevision!==r.policy.revision)throw Error('请先完成上下文预算应用');
+    if(r.policy&&r.appliedRevision!==r.policy.revision){
+      if(this.sameRuntimeBudget(r,r.policy)){r.appliedRevision=r.policy.revision;r.revision=r.policy.revision;}
+      else await this.apply(r);
+      // A fresh usage record can only arrive after the next turn. Like a manual
+      // turn, allow that observation under the runtime's current configuration;
+      // do not shrink/reload history without preflight or mark the task failed.
+      if(r.policy&&r.appliedRevision!==r.policy.revision&&r.phase!=='needs_observation')throw Error(r.message||'请先完成上下文预算应用');
+      if(r.status!=='idle'||r.locked||r.initializing)throw Error('请等待聊天空闲');
+    }
     if(typeof task.prompt!=='string'||!task.prompt.trim()||task.prompt.length>16000)throw Error('任务提示词无效');
-    const input=[{type:'text',text:task.prompt,text_elements:[]}];
+    const settings=normalizeTaskSettings(task.settings);
+    const command=taskCommand(task.prompt);
+    if(command){
+      if(settings.attachments.length)throw Error('压缩指令不需要附件，请将附件放到下一项任务');
+      r.automaticTask={executionId:task.executionId,taskId:task.taskId,command:'compact',status:'starting'};await this.notify(r);
+      try{await this.compact(id,(success,error)=>{if(r.automaticTask?.executionId!==task.executionId)return;r.automaticTask.status=success?'completed':'error';r.automaticTask.error=error?.message??null;void this.notify(r);});if(r.automaticTask.status==='starting')r.automaticTask.status='running';await this.notify(r);return r.automaticTask;}
+      catch(error){r.automaticTask.status='error';r.automaticTask.error=error.message;await this.notify(r);throw error;}
+    }
+    for(const file of settings.attachments){try{if(!fs.statSync(file.path).isFile())throw Error();}catch{throw Error('附件不存在或无法读取：'+file.name);}}
+    let selectedModel=settings.model||r.model,selectedEffort=settings.effort;
+    if(settings.model||settings.effort||settings.attachments.some(f=>f.kind==='image')){
+      let cursor=null,catalogModel;
+      for(let page=0;page<20;page++){const result=await this.rpc('model/list',{limit:100,includeHidden:false,...(cursor?{cursor}:{})});catalogModel=result.data?.find(m=>m.model===selectedModel||m.id===selectedModel);if(catalogModel||!result.nextCursor)break;cursor=result.nextCursor;}
+      if(!catalogModel)throw Error('所选模型当前不可用，请重新选择');
+      if(selectedEffort&&!catalogModel.supportedReasoningEfforts?.some(e=>e.reasoningEffort===selectedEffort))throw Error('所选模型不支持此思考程度');
+      if(settings.attachments.some(f=>f.kind==='image')&&catalogModel.inputModalities&&!catalogModel.inputModalities.includes('image'))throw Error('所选模型不支持图片输入');
+      if(settings.model&&!selectedEffort)selectedEffort=catalogModel.defaultReasoningEffort??'';
+    }
+    // Catalog reads are asynchronous; recheck turn ownership before submitting.
+    if(r.status!=='idle'||r.locked||r.initializing||[...this.external.values()].some(p=>p.threadId===id&&p.method==='turn/start'))throw Error('请等待聊天空闲');
+    const input=taskInput(task.prompt,settings),params={...pick(r.seed,stickyFields),...r.sticky,threadId:id,input};
+    if(settings.approval!=='inherit'){
+      params.permissions=null;
+      params.approvalPolicy=settings.approval==='full'?'never':'on-request';
+      params.approvalsReviewer=settings.approval==='auto'?'auto_review':'user';
+      params.sandboxPolicy=settings.approval==='full'?{type:'dangerFullAccess'}:{type:'workspaceWrite',networkAccess:false};
+    }
+    if(settings.model)params.model=selectedModel;
+    if(selectedEffort)params.effort=selectedEffort;
+    if(params.collaborationMode&&(settings.model||selectedEffort))params.collaborationMode={...params.collaborationMode,settings:{...params.collaborationMode.settings,...(settings.model?{model:selectedModel}:{}),...(selectedEffort?{reasoning_effort:selectedEffort}:{})}};
     if(this.contextCeiling){const incoming=incomingTokens(input),cap=Math.min(r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,MAX_CONTEXT_INPUT),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if((r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve))throw Error('上下文接近上限，请先手动压缩后重试任务');}
     r.automaticTask={executionId:task.executionId,taskId:task.taskId,status:'starting'};await this.notify(r);
-    try{const result=await this.rpc('turn/start',{...pick(r.seed,stickyFields),...r.sticky,threadId:id,input});if(!result?.turn?.id)throw Error('运行时未返回任务轮次');if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
+    try{const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
     catch(error){r.automaticTask.status='error';r.automaticTask.error=error.message;await this.notify(r);throw error;}
   }
   async interruptAutomatic(id,executionId){const r=this.records.get(id),task=r?.automaticTask;if(task?.executionId!==executionId||task.status!=='running'||r.status!=='active'||r.turnId!==task.turnId)throw Error('队列轮次已变化，未中断其他任务');await this.rpc('turn/interrupt',{threadId:id,turnId:task.turnId});return {ok:true};}
@@ -199,11 +252,18 @@ export class Bridge {
     const id=this.prefix+(++this.sequence);
     return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.internal.delete(key(id));reject(new Error(`${method} 超时`));},timeout);this.internal.set(key(id),{resolve,reject,timer});this.writeBackend(JSON.stringify({id,method,params}));});
   }
+  sameRuntimeBudget(record,policy){
+    const config=record.seed?.config;
+    return record.appliedRevision!=null&&record.configuredWindow===policy.window&&config?.model_context_window===policy.window&&config?.model_auto_compact_token_limit===policy.compact;
+  }
   setPolicy(id,policy,model){
     const r=this.records.get(id);if(!r)throw new Error('此连接尚未加载聊天');
     if(policy.revision<(r.policyVersion||0)||(policy.revision===r.policyVersion&&!r.policy))return {ignored:true};
     if(policy.revision===r.policyVersion){if(model)r.modelInfo=model;this.schedule(r);return {queued:r.appliedRevision!==policy.revision};}
     r.policy=policy;r.policyVersion=policy.revision;if(model)r.modelInfo=model;
+    if(this.sameRuntimeBudget(r,policy)){
+      r.appliedRevision=policy.revision;r.revision=policy.revision;r.phase='awaiting_runtime_confirmation';r.message='预算配置未变，等待下一轮实际窗口读回。';this.notify(r);return {queued:false};
+    }
     const plan=preflight(r,policy,r.modelInfo);
     r.phase=r.locked?'reloading':plan.allowed?'queued':plan.code;
     r.message=r.locked?'已收到最新预算；正在完成重新加载。':plan.allowed?'等待轮次结束与预检。':plan.message;
@@ -211,7 +271,7 @@ export class Bridge {
   }
   clearPolicy(id,revision){const r=this.records.get(id);if(r){const next=revision??(r.policyVersion||0)+1;if(next<(r.policyVersion||0))return {ignored:true};r.policyVersion=next;r.policy=null;r.phase='saved';r.message='已停止自动应用；当前窗口保持现值。';this.notify(r);}return {ok:true};}
   schedule(record){if(record.locked||!record.policy||record.appliedRevision===record.policy.revision||record.status!=='idle')return;queueMicrotask(()=>this.apply(record).catch(()=>{}));}
-  async compact(id){
+  async compact(id,onFinished){
     const r=this.records.get(id);
     if(!r||r.status!=='idle'||r.locked||r.initializing||r.ephemeral||r.canAcceptDirectInput===false||[...this.external.values()].some(p=>p.threadId===id&&['turn/start','thread/compact/start'].includes(p.method)))throw new Error('请等待当前轮次结束后再压缩');
     r.locked=true;r.freshUsage=false;r.usageFresh=false;r.phase='compacting';r.message='正在手动压缩上下文';this.notify(r);
@@ -219,10 +279,11 @@ export class Bridge {
     const completed=new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(new Error('手动压缩等待超时，请刷新聊天状态后重试')),120000);timer.unref?.();r.compactionWait={resolve,reject};});
     completed.catch(()=>{});
     const finish=async()=>{
-      let success=false;
+      let success=false,failure=null;
       try{await completed;success=true;r.phase='needs_observation';r.message='已请求原生压缩；完成后请等待下一轮用量记录。';}
-      catch(error){r.phase='error';r.message=error.message;}
+      catch(error){failure=error;r.phase='error';r.message=error.message;}
       finally{clearTimeout(timer);r.compactionWait=null;r.locked=false;this.notify(r);}
+      onFinished?.(success,failure);
       const queued=r.queue.splice(0);r.queueBytes=0;
       for(const line of queued){if(success)this.fromClient(line);else{try{this.rejectTurn(JSON.parse(line),r.message);}catch{}}}
       if(success)this.schedule(r);
@@ -277,7 +338,7 @@ export class Bridge {
       return true;
     }catch(error){
       if(detached&&originalParams){try{await this.rpc('thread/resume',originalParams);}catch{}}
-      record.phase='error';record.message=error.message;record.appliedRevision=policy.revision;
+      record.phase='error';record.message=error.message;
       return false;
     }
   }

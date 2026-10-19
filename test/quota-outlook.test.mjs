@@ -56,3 +56,24 @@ test('account changes and explicit pools keep independent predictions',()=>{
  const pooled=buildQuotaAnalytics({...data,snapshots:[...data.snapshots,...data.snapshots.map(p=>({...p,bucket:'review',fiveUsed:99}))]},{now,pool:'review'}).dashboard;
  assert.equal(pooled.pool,'review');assert.equal(pooled.periods[0].remainingPercent,1);assert.equal(pooled.periods[0].status,'flat');
 });
+
+
+test('one reading displays within the complete reset cycle and each observed percentage survives sampling',()=>{
+ const data=input();data.snapshots=data.snapshots.slice(-1);const one=outlook(data);
+ assert.equal(one.periods[0].chart.points.length,1);
+ assert.equal(one.periods[0].chart.xMin,one.periods[0].resetAt-5*HOUR);
+ assert.equal(one.periods[1].chart.xMin,one.periods[1].resetAt-7*DAY);
+ const dense=input();dense.snapshots=Array.from({length:8},(_,i)=>({...dense.snapshots.at(-1),at:now-(7-i)*10000,weeklyUsed:10+i}));
+ assert.equal(outlook(dense).periods[1].chart.points.length,8);
+});
+test('historical ranges show actual readings without forecasts and Credits remain balances',()=>{
+ const data=input();data.snapshots.forEach((p,i)=>p.credits=180-i);
+ const start=now-HOUR,end=now-HOUR/2;
+ const dashboard=buildQuotaAnalytics(data,{now,outlookStart:start,outlookEnd:end}).dashboard;
+ assert.equal(dashboard.customRange,true);assert.equal(dashboard.periods[0].chart.xMin,start);assert.equal(dashboard.periods[0].chart.xMax,end);
+ assert.ok(dashboard.periods[0].chart.points.every(p=>!p.projected&&p.x>=start&&p.x<=end));
+ assert.equal(dashboard.credits.balance,162);assert.ok(dashboard.credits.chart.points.every(p=>p.y>100));
+ const creditOnly=outlook({currentScope,snapshots:[{scope:currentScope,bucket:'codex',at:now,credits:150}]});
+ assert.equal(creditOnly.periods.length,0);assert.equal(creditOnly.credits.chart.points.length,1);
+ assert.throws(()=>buildQuotaAnalytics(data,{now,outlookStart:end,outlookEnd:start}));
+});

@@ -41,7 +41,7 @@ export function normalizeQuota(response){
  const entries=source&&typeof source==='object'&&Object.keys(source).length?Object.entries(source):response?.rateLimits?[['codex',response.rateLimits]]:[];
  return entries.map(([id,value])=>({id,name:typeof value?.limitName==='string'?value.limitName.slice(0,100):id,primary:window(value?.primary),secondary:window(value?.secondary),creditBalance:creditBalance(value?.credits),hasCredits:value?.credits?.hasCredits===true,unlimitedCredits:value?.credits?.unlimited===true})).filter(v=>v.primary||v.secondary||v.creditBalance!=null||v.hasCredits||v.unlimitedCredits).sort((a,b)=>(a.id==='codex'?-1:b.id==='codex'?1:a.id.localeCompare(b.id)));
 }
-export function createQuotaManager({read=()=>readAccountQuota({includeAccount:true}),now=Date.now,interval=5*60*1000,home=null,onObservation=null}={}){
+export function createQuotaManager({read=()=>readAccountQuota({includeAccount:true}),now=Date.now,interval=10000,home=null,onObservation=null}={}){
  let buckets=[],updatedAt=null,checkedAt=0,error=null,pending;
  const preferencesFile=home?path.join(home,'quota-preferences.json'):null;
  let preferences;try{preferences=preferencesFile?readJSON(preferencesFile,{}):{};}catch{preferences={};}

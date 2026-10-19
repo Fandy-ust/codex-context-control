@@ -1,6 +1,7 @@
 import {createTaskQueues} from '../src/task-queues.mjs';
-import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell,dialog} from 'electron';
+import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell,dialog,clipboard} from 'electron';
 import fs from 'node:fs';
+import {readClipboardAttachments} from './clipboard-attachments.mjs';
 import {assertControlOperation} from '../src/contracts/control-api.mjs';
 import path from 'node:path';
 import os from 'node:os';
@@ -18,7 +19,7 @@ if(app.isPackaged)process.chdir(repo);
 if(fs.existsSync(path.join(repo,'vendor/node.exe')))process.env.CONTEXT_CONTROL_NODE=path.join(repo,'vendor/node.exe');
 const demo=args.includes('--demo'),smoke=args.includes('--smoke-test');
 const liveHome=process.env.CONTEXT_CONTROL_LIVE_HOME||defaultRoot();
-if(smoke)setTimeout(()=>{console.error('UI_SMOKE_FAILED startup timeout');app.exit(1);},30000).unref();
+if(smoke)setTimeout(()=>{console.error('UI_SMOKE_FAILED startup timeout');app.exit(1);},60000).unref();
 if(demo&&!process.env.CONTEXT_CONTROL_HOME)process.env.CONTEXT_CONTROL_HOME=path.join(os.tmpdir(),'context-manager-demo');
 const {root,readJSON,atomicJSON,ensureRoot,settings}=await import('../src/paths.mjs');
 const {windowsIntegrationStatus,setWindowsIntegration,codexLaunchEnvironment}=await import('../src/windows-integration.mjs');
@@ -72,7 +73,7 @@ async function api(action,params={}){
   const response=await fetch(`http://127.0.0.1:${connection.port}${route.path}`,{method:route.method,headers:{Authorization:`Bearer ${connection.token}`},...(route.method==='POST'?{body:JSON.stringify(params)}:{}),signal:AbortSignal.timeout(['statistics','quota-analytics'].includes(action)?60000:30000)});
   const body=await response.json();if(!response.ok)throw Error(localize(body.error||'Local service error'));return body;
 }
-const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,shortcut:shortcutManager.status(),menuReady:!!tray,menuWindowVisible:!!trayWindow?.isVisible(),menuOnScreen:!!trayWindow?.isVisible(),windowVisible:!!main?.isVisible(),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow?.getBounds()});};
+const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,shortcut:shortcutManager.status(),menuReady:!!tray,menuWindowVisible:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),menuOnScreen:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),windowVisible:!!(main&&!main.isDestroyed()&&main.isVisible()),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow&&!trayWindow.isDestroyed()?trayWindow.getBounds():undefined});};
 async function ensureUiService(){return ensureDaemon();}
 function createWindow(menu=false){
   const win=new BrowserWindow({width:menu?400:1080,height:menu?450:760,minWidth:menu?320:960,minHeight:menu?180:670,show:false,frame:!menu,resizable:!menu,skipTaskbar:menu,alwaysOnTop:menu,backgroundColor:'#181818',title:'Context Manager',icon:path.join(repo,'macos/Assets/ContextManager.png'),webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
@@ -113,6 +114,18 @@ function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口
 ipcMain.handle('context-manager',async(event,action,params)=>{
   if(![main?.webContents.id,trayWindow?.webContents.id].includes(event.sender.id)||event.senderFrame!==event.sender.mainFrame)throw Error('Unknown UI sender');
   if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>65536)throw Error('Invalid UI request');
+  if(action==='queue-image-preview'){
+    const file=params.path;if(typeof file!=='string'||!path.isAbsolute(file)||!/\.(png|jpe?g|webp|gif|bmp)$/i.test(file))return {preview:null};
+    try{const stat=fs.statSync(file);if(!stat.isFile()||stat.size>32*1024*1024)return {preview:null};const image=nativeImage.createFromPath(file);if(image.isEmpty())return {preview:null};const size=image.getSize(),scale=Math.min(160/size.width,120/size.height,1);return {preview:image.resize({width:Math.max(1,Math.round(size.width*scale)),height:Math.max(1,Math.round(size.height*scale))}).toDataURL()};}catch{return {preview:null};}
+  }
+  if(action==='queue-paste-image'){
+    const source=smoke?{read:async()=>[{types:['image/png'],getType:async()=>new Blob([nativeImage.createFromBitmap(Buffer.from([245,170,90,255]),{width:1,height:1}).toPNG()],{type:'image/png'})}]}:clipboard;
+    return readClipboardAttachments({clipboard:source,nativeImage,directory:path.join(root,'queue-attachments')});
+  }
+  if(action==='queue-pick-files'){
+    const images=params.kind==='image';const result=await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender),{title:label(images?'插入图片':'插入文件',images?'Insert images':'Insert files'),properties:['openFile','multiSelections'],...(images?{filters:[{name:'Images',extensions:['png','jpg','jpeg','webp','gif','bmp']}]}:{})});
+    return {attachments:result.canceled?[]:result.filePaths.slice(0,20).map(file=>({path:file,name:path.basename(file),kind:/\.(png|jpe?g|webp|gif|bmp)$/i.test(file)?'image':'file'}))};
+  }
   if(action==='preferences')return {selection:languagePreference(),language:resolveLanguage(languagePreference()),english:JSON.parse(fs.readFileSync(path.join(repo,'src/locales/en.json'),'utf8')),version:pkg.version,demo,autoCheckUpdates:autoCheckUpdates(),quotaPool:readJSON(path.join(root,'ui-settings.json'),{}).quotaPool||null,shortcut:shortcutManager.status(),integration:demo?{enabled:false,registered:false,available:false,inactive:true}:windowsIntegrationStatus()};
   if(action==='update-preferences'){if(typeof params.enabled!=='boolean')throw Error('Invalid update preference');setAutoCheckUpdates(params.enabled);refreshUpdateUI();return {enabled:autoCheckUpdates()};}
   if(action==='check-update'){const result=await updatePrompt.run();refreshUpdateUI();return result;}
@@ -160,7 +173,7 @@ if(args.includes('--quit')){app.quit();}else{
   main=createWindow();trayWindow=createWindow(true);
   shortcutManager.start();
   if(!args.includes('--background')&&!smoke)main.once('ready-to-show',()=>showMain());
-  const refresh=async()=>{try{lastState=await api('state');serviceOnline=true;updateTray();}catch{serviceOnline=false;if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};updateTray();}if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting)timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
+  const refresh=async()=>{try{lastState=await api('state');serviceOnline=true;updateTray();}catch{serviceOnline=false;if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};updateTray();}if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting&&!main.isDestroyed()&&!trayWindow.isDestroyed())timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
   if(!demo&&!smoke)main.webContents.once('did-finish-load',()=>{updatePrompt.run(true).then(refreshUpdateUI).catch(error=>console.error('Startup update check:',error.message));});
   if(smoke){
     const loaded=win=>new Promise((resolve,reject)=>{if(!win.webContents.isLoading())resolve();else{win.webContents.once('did-finish-load',resolve);win.webContents.once('did-fail-load',(_e,code,message)=>reject(Error(`${code}: ${message}`)));}});
@@ -171,6 +184,9 @@ if(args.includes('--quit')){app.quit();}else{
         if(globalShortcut.isRegistered(probe))throw Error('Native shortcut release failed');console.log('NATIVE_SHORTCUT_PROBE passed');
       }
       await Promise.all([loaded(main),loaded(trayWindow)]);await new Promise(r=>setTimeout(r,1200));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){const directory=path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR);fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'sidebar-quota.png'),(await main.webContents.capturePage()).toPNG());const footer=await main.webContents.executeJavaScript("(()=>{const r=document.querySelector('.sidebar-footer-row').getBoundingClientRect();return {x:8,y:Math.floor(r.top-10),width:Math.ceil(r.right),height:Math.ceil(r.height+20)}})()");fs.writeFileSync(path.join(directory,'quota-footer.png'),(await main.webContents.capturePage(footer)).toPNG());}const analyticsSmoke=await main.webContents.executeJavaScript('window.__contextQuotaSmoke({preview:true})');if(!analyticsSmoke.ok)throw Error(JSON.stringify(analyticsSmoke));main.showInactive();await new Promise(r=>setTimeout(r,250));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR)fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-analytics.png'),(await main.webContents.capturePage()).toPNG());if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){
+        await main.webContents.executeJavaScript('window.__contextPricePreview()');await new Promise(resolve=>setTimeout(resolve,220));
+        fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-price-overlay.png'),(await main.webContents.capturePage()).toPNG());
+        await main.webContents.executeJavaScript('window.__contextQuotaSmoke({preview:true})');
         await main.webContents.executeJavaScript(`document.querySelector('.qa-analysis-heading').scrollIntoView();new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
         await new Promise(resolve=>setTimeout(resolve,200));
         fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-advanced.png'),(await main.webContents.capturePage()).toPNG());
@@ -215,6 +231,11 @@ if(args.includes('--quit')){app.quit();}else{
       await new Promise(r=>setTimeout(r,250));
       const queueSmoke=await main.webContents.executeJavaScript('window.__contextQueueSmoke()');if(!queueSmoke.ok)throw Error(JSON.stringify(queueSmoke));console.log('TASK_QUEUE_SMOKE '+JSON.stringify(queueSmoke));
       if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR)fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'task-queue.png'),(await main.webContents.capturePage()).toPNG());
+      if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR)for(const [tab,name]of [[null,'task-queue'],['prompt','task-editor'],['quota','task-quota']]){
+        await main.webContents.executeJavaScript(`window.__contextQueuePreview(${JSON.stringify(tab)})`);await new Promise(resolve=>setTimeout(resolve,100));
+        fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),name+'.png'),(await main.webContents.capturePage()).toPNG());
+      }
+      const composerSmoke=await main.webContents.executeJavaScript('window.__contextComposerSmoke()');if(!composerSmoke.ok)throw Error(JSON.stringify(composerSmoke));console.log('TASK_COMPOSER_SMOKE '+JSON.stringify(composerSmoke));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){for(const kind of ['base','model','full','attachments']){await main.webContents.executeJavaScript(`window.__contextComposerPreview('${kind}')`);await new Promise(r=>setTimeout(r,180));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'composer-'+kind+'-0.22.5.png'),(await main.webContents.capturePage()).toPNG());}}
       // Exercise the real window state: visible in the background must focus in one press.
       const waitFor=async check=>{const end=Date.now()+3000;while(!check()&&Date.now()<end)await new Promise(r=>setTimeout(r,25));if(!check())throw Error('Shortcut window focus transition timed out');};
       const covering=new BrowserWindow({width:320,height:240,show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});

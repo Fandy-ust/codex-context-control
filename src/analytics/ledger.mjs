@@ -15,13 +15,17 @@ function quotaWindow(value) {
 export function projectQuota(bucket, {at, scope = 'history', bucketId = 'codex'} = {}) {
   const windows = [quotaWindow(bucket?.primary), quotaWindow(bucket?.secondary)].filter(Boolean);
   const weekly = windows.find(w => w.minutes === 10080), five = windows.find(w => w.minutes === 300);
-  if (!weekly && !five) return null;
+
   const valid = w => w && w.used >= 0 && w.used <= 100 && Number.isSafeInteger(w.reset) && w.reset > 0 && w.reset < 8640000000000;
   const wk = valid(weekly) ? weekly : null, fh = valid(five) ? five : null;
-  if (!wk && !fh) return null;
+  const raw=bucket?.creditBalance ?? bucket?.credits?.balance;
+  const credits=bucket?.unlimitedCredits===true||bucket?.credits?.unlimited===true?null:typeof raw==='number'||typeof raw==='string'&&/^\d+(?:\.\d+)?$/.test(raw.trim())?Number(raw):null;
+  const balance=Number.isFinite(credits)&&credits>=0?credits:null;
+  if (!wk && !fh && balance==null) return null;
   return {at, scope, bucket: text(bucketId) || 'codex', weeklyUsed: wk?.used ?? null, weeklyReset: wk?.reset ?? null,
-    fiveUsed: fh?.used ?? null, fiveReset: fh?.reset ?? null};
+    fiveUsed: fh?.used ?? null, fiveReset: fh?.reset ?? null,credits:balance};
 }
+const snapshotId = value => JSON.stringify([value.scope,value.bucket,Math.floor(value.at/60000),value.weeklyReset,value.fiveReset,value.weeklyUsed,value.fiveUsed,value.credits??null]);
 function nativeRows(home) {
   let db;
   try {
@@ -57,6 +61,19 @@ export class QuotaLedger {
     this.db.prepare('INSERT OR IGNORE INTO meta VALUES (?,?)').run('schema', '1');
     // Revisit existing files once to backfill the longer cost history and write counts.
     if(this.metadata('costHistoryVersion')!==1){this.db.exec('DELETE FROM sources');this.setMetadata('costHistoryVersion',1);}
+    if(this.metadata('quotaSamplingVersion')!==2){
+      // Rekey saved observations before rescanning, so backfilled JSONL rows
+      // enrich history without duplicating the previous minute-level reading.
+      this.db.exec('BEGIN');
+      try{
+        const insert=this.db.prepare('INSERT OR REPLACE INTO snapshots VALUES (?,?,?,?,?)'),remove=this.db.prepare('DELETE FROM snapshots WHERE id=?');
+        for(const row of this.db.prepare('SELECT * FROM snapshots').all()){
+          const value=JSON.parse(row.data),key=snapshotId(value);
+          if(key!==row.id){insert.run(key,row.source,row.scope,row.at,row.data);remove.run(row.id);}
+        }
+        this.db.exec('DELETE FROM sources');this.setMetadata('quotaSamplingVersion',2);this.db.exec('COMMIT');
+      }catch(error){this.db.exec('ROLLBACK');throw error;}
+    }
     this.putSource = this.db.prepare('INSERT OR REPLACE INTO sources VALUES (?,?)');
     this.putRequest = this.db.prepare("INSERT INTO requests VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE requests.source=excluded.source AND json_extract(requests.data,'$.written') IS NULL AND json_extract(excluded.data,'$.written') IS NOT NULL");
     this.putQuota = this.db.prepare('INSERT INTO snapshots VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET at=excluded.at,data=excluded.data WHERE excluded.at>=snapshots.at');
@@ -65,9 +82,9 @@ export class QuotaLedger {
   setMetadata(key, value) {this.db.prepare('INSERT OR REPLACE INTO meta VALUES (?,?)').run(key, JSON.stringify(value));}
   snapshot(value, source = 'live') {
     if (!value || !Number.isFinite(value.at) || value.at < this.now() - RETENTION || value.at > this.now() + 60000) return;
-    // Keep the latest point per minute and reset identity, retaining resets even
-    // when they occur within the same minute. Identical polls do not grow a log.
-    const id = JSON.stringify([value.scope, value.bucket, Math.floor(value.at / 60000), value.weeklyReset, value.fiveReset]);
+    // Preserve every distinct observed reading within a minute. Only identical
+    // readings coalesce; do not overwrite a 1 pp change or a credit change.
+    const id = snapshotId(value);
     this.putQuota.run(id, source, value.scope, value.at, JSON.stringify(value));
   }
   recordLive({scope, buckets, at}) {

@@ -23,6 +23,15 @@ export function quotaFixture(now = Date.UTC(2026, 9, 18, 12)) {
 }
 export function demoQuotaAnalytics(options = {}) {
   const now=Date.UTC(2026,9,18,12),fixture=quotaFixture(),currentScope='account:demo';
-  for(let i=0;i<=18;i++)fixture.snapshots.push({scope:currentScope,bucket:'codex',at:now-(18-i)*5*60000,weeklyUsed:10+i*.1,weeklyReset:Math.floor((now+2*DAY)/1000),fiveUsed:24+i*2,fiveReset:Math.floor((now+2*HOUR)/1000)});
+  const addCycle=(age,key)=>{
+    for(let i=0;i<=18;i++){
+      const at=now-age-(18-i)*5*60000;
+      fixture.snapshots.push({scope:currentScope,bucket:'codex',at,credits:175-i*.5,weeklyUsed:10+i*.1,weeklyReset:Math.floor((now+2*DAY-Math.floor(age/WEEK)*WEEK)/1000),fiveUsed:24+i*2,fiveReset:Math.floor((now+2*HOUR-age)/1000)});
+      if(i)fixture.requests.push({id:`live-${key}-${i}`,at:at-1000,thread:'demo-live',name:'周期对比',project:'Context Manager',model:'Sol',input:100000,output:1000,cached:70000,usd:.08+i*.002});
+    }
+  };
+  for(let week=6;week>=1;week--)addCycle(week*WEEK,'week-'+week);
+  for(let cycle=7;cycle>=1;cycle--)addCycle(cycle*5*HOUR,'five-'+cycle);
+  addCycle(0,'current');
   return buildQuotaAnalytics({...fixture,currentScope},{now,days:28,timeZone:'Asia/Hong_Kong',...options});
 }

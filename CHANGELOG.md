@@ -1,5 +1,13 @@
 # Changes
 
+## 0.22.5 — Task composer and quota graph improvements
+
+- Fix Electron 44 image/file clipboard handling; align composer actions, remove the expand action and redundant model chevron, and place square attachments above the prompt.
+- Keep the practical current-cycle forecast first, with optional cycle overlay disabled by default. Place USD per quota percentage point and historical comparisons below, with six-cycle overlays, compact dates alongside the legend and precise hover cards.
+- Add configurable smoothing isolated by cycle/segment while preserving raw hover values and forecasts. Center period controls and slightly increase line weight.
+- Include cumulative 0.22.1–0.22.4 task settings, background chat execution, compaction commands, budget startup fixes, finer quota sampling, Credits history and automatic queue archives. Keep queues marked EXP.
+- Synchronize native SwiftUI/AppKit macOS UI and the Windows desktop; publish both platform installers together after Actions validation.
+
 ## 0.21.7 — Manual compaction and macOS parity audit
 
 - Add a bordered Compact now action beside Apply on both platforms, available only for an idle connected chat. Use native compaction with runtime checks, duplicate protection and safe handling of input arriving during compaction.

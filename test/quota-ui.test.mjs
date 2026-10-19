@@ -6,12 +6,13 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {demoQuotaAnalytics} from '../desktop/quota-demo.mjs';
-import {quotaAnalyticsView} from '../desktop/renderer/quota-analytics.mjs';
+import {quotaAnalyticsView as renderQuotaAnalytics,quotaPointText} from '../desktop/renderer/quota-analytics.mjs';
+const quotaAnalyticsView=props=>renderQuotaAnalytics({outlookMetric:'remaining',outlookOverlay:false,...props});
 const escape=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
 test('web analytics renders the shared six-chart contract with escaped observation labels',()=>{
  const report=demoQuotaAnalytics();report.scopes[0].label='<script>unsafe</script>';
  const html=quotaAnalyticsView({report,analysisMode:'advanced',section:'overview',e:escape,t:s=>s});
- assert.equal((html.match(/data-qa-chart=/g)||[]).length,7);assert.equal((html.match(/data-action="qa-section"/g)||[]).length,4);
+ assert.equal((html.match(/data-qa-chart=/g)||[]).length,8);assert.equal((html.match(/data-action="qa-section"/g)||[]).length,4);
  assert.ok(!html.includes('<script>unsafe'));assert.ok(!html.includes('NaN'));assert.ok(!html.includes('Infinity'));
  for(const section of report.sections)assert.ok(quotaAnalyticsView({report,analysisMode:'advanced',section:section.id,e:escape,t:s=>s}).includes('data-qa-chart='));
 });
@@ -63,7 +64,7 @@ test('advanced analysis keeps the selected model and displays reading guidance w
 
 test('one page shows predictions followed by advanced analysis without an entry button',()=>{
  const report=demoQuotaAnalytics(),html=quotaAnalyticsView({report,analysisMode:'advanced',e:escape,t:s=>s});
- assert.equal((html.match(/data-qa-period=/g)||[]).length,2);assert.equal((html.match(/data-qa-chart=/g)||[]).length,7);
+ assert.equal((html.match(/data-qa-period=/g)||[]).length,3);assert.equal((html.match(/data-qa-chart=/g)||[]).length,8);
  assert.ok(html.includes('预计提前'));assert.ok(html.includes('预计重置时还有'));assert.ok(html.includes('stroke-dasharray="6 4"'));
  assert.ok(html.includes('id="qa-days"'));assert.ok(html.includes('id="qa-model"'));assert.ok(html.includes('每 1% 每周额度对应 Token'));
  assert.ok(html.indexOf('data-qa-chart="outlook-five"')<html.indexOf('class="qa-analysis-heading'));
@@ -71,5 +72,14 @@ test('one page shows predictions followed by advanced analysis without an entry 
  assert.ok(!html.includes('返回预测'));assert.ok(!html.includes('data-section="summary"'));
  assert.ok(quotaAnalyticsView({report,analysisMode:'advanced',period:'weekly',e:escape,t:s=>s}).includes('data-qa-chart="outlook-weekly"'));
  report.dashboard.periods=report.dashboard.periods.filter(p=>p.id==='weekly');
- const weekly=quotaAnalyticsView({report,analysisMode:'advanced',e:escape,t:s=>s});assert.equal((weekly.match(/data-qa-period=/g)||[]).length,1);assert.ok(!weekly.split('class="qa-analysis-heading')[0].includes('5 小时'));
+ const weekly=quotaAnalyticsView({report,analysisMode:'advanced',e:escape,t:s=>s});assert.equal((weekly.match(/data-qa-period=/g)||[]).length,2);assert.ok(!weekly.split('class="qa-analysis-heading')[0].includes('5 小时'));
+});
+
+test('default graph shows cost per percent, centered cycle choices, six-cycle overlay and compact dates',()=>{
+ const report=demoQuotaAnalytics(),html=renderQuotaAnalytics({report,e:escape,t:s=>s});
+ assert.ok(html.indexOf('data-qa-chart="outlook-five"')<html.indexOf('data-qa-chart="outlook-cost-overlay-five"'));assert.match(html,/class="qa-chart-footer"/);assert.match(html,/data-qa-chart="outlook-cost-overlay-five"/);assert.match(html,/id="outlook-metric"/);assert.match(html,/id="outlook-overlay" checked/);assert.match(html,/value="6" selected/);
+ assert.match(html,/>5hr<\/button>/);assert.match(html,/>Weekly<\/button>/);assert.match(html,/id="outlook-start"/);
+ const chart=report.dashboard.periods[0].costOverlayChart;assert.equal(chart.cycleCount,6);assert.equal(new Set(chart.points.map(p=>p.series)).size,6);
+ const text=quotaPointText({y:.000123,costUSD:.000246,quotaPP:2,intervalStart:1},chart,s=>s);assert.match(text,/0.000123/);assert.match(text,/0.000246/);
+ const credit=renderQuotaAnalytics({report,period:'credits',e:escape,t:s=>s});assert.match(credit,/outlook-credits/);assert.doesNotMatch(credit,/id="outlook-overlay"/);
 });

@@ -41,11 +41,12 @@ if(!desktop||!isStdioServer(args)||!supported){
         if(op==='clearPolicy')return bridge.clearPolicy(p.id,p.revision);
         if(op==='compact')return bridge.compact(p.id);
         if(op==='queue-start')return bridge.startAutomatic(p.id,p.task);
+        if(op==='queue-prepare')return bridge.prepareAutomatic(p.id);
         if(op==='queue-interrupt')return bridge.interruptAutomatic(p.id,p.executionId);
         throw new Error('不支持的运行时操作');
       });
       if(closed){peer.close();return;}
-      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
+      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,taskQueueVersion:4,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
       if(closed){peer.close();return;}
       for(const record of bridge.records.values())bridge.notify(record);
       peer.socket.once('close',()=>{peer=null;if(!closed)setTimeout(attach,1000).unref();});

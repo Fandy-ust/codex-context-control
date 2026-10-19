@@ -1,4 +1,5 @@
-import {queueStrip,queueManager,queueDetail} from './task-queues.mjs';
+import {normalizeTaskSettings} from '../../src/core/task-settings.mjs';
+import {queueStrip,queueManager,queueDetail,queueTaskEditor} from './task-queues.mjs';
 import {quotaAnalyticsView,bindQuotaAnalytics} from './quota-analytics.mjs';
 import {observeCreditBalance} from '../../src/credit-baseline.mjs';
 import {draftLimits as legacyDraftLimits,resizeDraft as legacyResizeDraft,policyForDraft as legacyPolicyForDraft} from '../../src/core/default-budget-editor.mjs';
@@ -21,8 +22,8 @@ import {budgetView,chatView,detailsView,statisticsView,chartDetailView,chartTool
 const api=window.contextManager,root=document.querySelector('#app'),mode=new URLSearchParams(location.search).get('mode')||'main';
 let state=null,preferences={language:'zh',selection:'auto',english:{}},selected=null,view='chat',draft=null,dirty=false,dragging=false,busy=false,stats=null,statsJSON='',timeline=null,period=0,hover=null,pinned=null,page=0,auto=true,lastStats=0,toastTimer,refreshing=false,interactionId=null;
 let shortcutDraft=DEFAULT_SHORTCUT,shortcutEnabled=true,shortcutRecording=false,shortcutDirty=false;
-let queueID=null,queueReturnSettings=false;
-const queueFormDrafts=new Map();
+let queueID=null,queueReturnSettings=false,queueTaskDraft=null,queueTaskTab='prompt',queueExpanded=false,queueModelOpen=false;
+const queueFormDrafts=new Map(),queuePreviews=new Map();
 let settingsOpen=false,settingsTab='general',settingsSnapshot=null,settingsUnderlay='';
 let integrationError='',integrationPending=false;
 let detailsOpen=false,detailsRestoreScroll=null,statsLoading=false,statsError='',rawSelectedID=null,lastDetailBucket=null,smoothingTimer,deferredStats=null;
@@ -45,7 +46,8 @@ const resizeDraft=(...args)=>(useLegacyBudget()?legacyResizeDraft:appleResizeDra
 const policyForDraft=(...args)=>(useLegacyBudget()?legacyPolicyForDraft:applePolicyForDraft)(...args);
 const editorRoot=()=>settingsOpen?root.querySelector('.settings-body'):root.querySelector('.main');
 const chatName=chat=>chat?.name||chat?.title||chat?.cwd?.split(/[\\/]/).filter(Boolean).at(-1)||chat?.id?.slice(0,12)||t('未命名聊天','Untitled chat');
-let qaReport=null,qaLoading=false,qaError='',qaSection='overview',qaPeriod='',qaCostPeriod='year',qaCostMode='heatmap',qaAnalysisMode='simple',qaCostDate='',qaCostStart='',qaCostEnd='',qaCostRange=null,qaDays=28,qaScope='',qaPool='',qaModel='',qaEpoch=0,qaLastLoad=0;
+let qaOutlookStart='',qaOutlookEnd='',qaOutlookRange=null;
+let qaReport=null,qaLoading=false,qaError='',qaSection='overview',qaPeriod='',qaOutlookMetric='cost',qaOutlookOverlay=true,qaOutlookOverlayCount=6,qaOutlookSmoothing=0,qaForecastOverlay=false,qaCostPeriod='year',qaCostMode='heatmap',qaAnalysisMode='simple',qaCostDate='',qaCostStart='',qaCostEnd='',qaCostRange=null,qaDays=28,qaScope='',qaPool='',qaModel='',qaEpoch=0,qaLastLoad=0;
 let creditMigrationAttempted=false;
 let creditBaselines={};
 try{const saved=JSON.parse(localStorage.getItem('credit-baselines')||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))creditBaselines=saved;}catch{}
@@ -141,7 +143,7 @@ function settingsBudgetCard(value,model,{defaults=false}={}){
 function chatPage(){
   const chat=current();let previewError=budgetInputError;
   if(chat&&!previewError){try{if(!draft)throw Error('等待当前模型的原生窗口信息');applePolicyForDraft(draft,chat.modelMetadata);}catch(error){previewError=error.message;}}
-  return chatView({chat:chat?{...chat,name:chatName(chat)}:null,draft,observedTitle:observedWindowTitle(chat),modelName:modelDisplayName(chat?.model||''),canEdit:!!draft&&chat?.modelMetadata?.context_catalog_ready!==false,previewError,budgetCard,details:queueStrip({chat,queues:state?.taskQueues,e,t})+detailsPage(),notice:mainNotice,noticeError:mainNoticeError,e,t,tokens});
+  return chatView({chat:chat?{...chat,name:chatName(chat)}:null,draft,observedTitle:observedWindowTitle(chat),modelName:modelDisplayName(chat?.model||''),canEdit:!!draft&&chat?.modelMetadata?.context_catalog_ready!==false,previewError,budgetCard,details:queueStrip({quota:state?.quota,chat,queues:state?.taskQueues,e,t})+detailsPage(),notice:mainNotice,noticeError:mainNoticeError,e,t,tokens});
 }
 
 function defaultModel(){const l=state?.newChatDefaultsLimits;return l?{max_context_window:Math.ceil(l.maximumUsableWindow*100/l.effectivePercent),effective_context_window_percent:l.effectivePercent,...(l.extended?{context_ceiling:920000,context_compact_ceiling:904000}:{})}:null;}
@@ -184,8 +186,8 @@ function updateTrayAvailability(){
     if(value)updateTrayDraft(chat.id,value,chat.modelMetadata);
   }
 }
-function render(){
-  if(mainScroll.active&&!settingsOpen&&view==='chat'&&root.querySelector('.main')?.dataset.chatId===selected){scrollRenderPending=true;return;}
+function render(force=false){
+  if(!force&&mainScroll.active&&!settingsOpen&&['chat','queue','queue-task'].includes(view)&&root.querySelector('.main')?.dataset.chatId===selected&&root.querySelector('.main')?.dataset.view===view){scrollRenderPending=true;return;}
   cancelChartPointer();
   hideChartTooltip();
   if(mode==='tray'){renderTray();return;}
@@ -193,9 +195,9 @@ function render(){
   const oldMain=root.querySelector('.main'),same=oldMain?.dataset.view===view&&oldMain?.dataset.chatId===selected,open=same?[...oldMain.querySelectorAll('details')].map((d,i)=>d.open?i:-1).filter(i=>i>=0):[],scroll=same?oldMain.scrollTop:0;
   const settingsScroll=root.querySelector('.settings-body')?.scrollTop||0;
   const focusID=document.activeElement?.closest('.details-page')?document.activeElement.id:null;
-  const body=settingsOpen?settingsUnderlay:view==='queue'?queueDetail({id:queueID,queues:state?.taskQueues,chats:state?.threads??[],e,t}):view==='quota'?quotaAnalyticsView({report:qaReport,section:qaSection,period:qaPeriod,costPeriod:qaCostPeriod,costMode:qaCostMode,analysisMode:qaAnalysisMode,costDate:qaCostDate,costStartText:qaCostStart,costEndText:qaCostEnd,loading:qaLoading,error:qaError,days:qaDays,selectedScope:qaScope,selectedModel:qaModel,e,t}):`${preferences.demo?demoBanner():''}${editingDefaults()?defaultsPage():chatPage()}`;
+  const body=settingsOpen?settingsUnderlay:view==='queue-task'?queueTaskEditor({draft:queueTaskDraft,tab:queueTaskTab,expanded:queueExpanded,modelOpen:queueModelOpen,previews:queuePreviews,quota:state?.quota,models:state?.queueModels??[],chats:state?.threads??[],id:queueID,e,t}):view==='queue'?queueDetail({quota:state?.quota,id:queueID,queues:state?.taskQueues,chats:state?.threads??[],e,t}):view==='quota'?quotaAnalyticsView({forecastOverlay:qaForecastOverlay,outlookMetric:qaOutlookMetric,outlookOverlay:qaOutlookOverlay,outlookOverlayCount:qaOutlookOverlayCount,outlookSmoothing:qaOutlookSmoothing,outlookStartText:qaOutlookStart,outlookEndText:qaOutlookEnd,report:qaReport,section:qaSection,period:qaPeriod,costPeriod:qaCostPeriod,costMode:qaCostMode,analysisMode:qaAnalysisMode,costDate:qaCostDate,costStartText:qaCostStart,costEndText:qaCostEnd,loading:qaLoading,error:qaError,days:qaDays,selectedScope:qaScope,selectedModel:qaModel,e,t}):`${preferences.demo?demoBanner():''}${editingDefaults()?defaultsPage():chatPage()}`;
   root.innerHTML=`<div class="shell ${view==='quota'?'analytics-shell':''}" style="--sidebar-width:${visibleSidebarWidth()}px" ${settingsOpen?'inert':''}>${view==='quota'?'':sidebar()}<main class="main" id="main-content" data-view="${view}" data-chat-id="${e(selected)}">${body}</main></div>${settingsOpen?settingsDialog():''}`;
-  const newMain=root.querySelector('.main');for(const [i,d]of [...newMain.querySelectorAll('details')].entries())if(open.includes(i))d.open=true;const targetScroll=detailsOpen?(detailsRestoreScroll??(same?scroll:detailsScrollByChat.get(selected)||0)):scroll;
+  const newMain=root.querySelector('.main');for(const [i,d]of [...newMain.querySelectorAll('details')].entries())if(open.includes(i))d.open=true;const targetScroll=['queue','queue-task'].includes(view)?(same?scroll:0):detailsOpen?(detailsRestoreScroll??(same?scroll:detailsScrollByChat.get(selected)||0)):scroll;
   if(newMain.querySelector('#phase')){newMain.querySelector('#phase').textContent=phase(current());newMain.querySelector('#phase').title=t(current()?.message||'');}
   if(settingsOpen)root.querySelector('.settings-body').scrollTop=settingsScroll;
   for(const form of root.querySelectorAll('#queue-add,#queue-config')){const values=queueFormDrafts.get(queueID+':'+form.id);if(values)for(const input of form.querySelectorAll('[name]'))if(input.name in values){if(input.type==='checkbox')input.checked=values[input.name];else input.value=values[input.name];}}
@@ -205,7 +207,7 @@ function render(){
 }
 async function loadQuotaAnalytics(force=false){
   const epoch=++qaEpoch;qaLoading=true;qaError='';render();
-  try{const report=await api.invoke('quota-analytics',{days:qaDays,costDate:qaCostDate||undefined,...(qaCostRange||{}),scope:qaScope||undefined,model:qaModel||undefined,pool:qaPool||preferences.quotaPool||undefined,refresh:force});if(epoch!==qaEpoch)return;qaReport=report;qaLastLoad=Date.now();}
+  try{const report=await api.invoke('quota-analytics',{days:qaDays,outlookOverlayCount:qaOutlookOverlayCount,outlookSmoothing:qaOutlookSmoothing,...(qaOutlookRange||{}),costDate:qaCostDate||undefined,...(qaCostRange||{}),scope:qaScope||undefined,model:qaModel||undefined,pool:qaPool||preferences.quotaPool||undefined,refresh:force});if(epoch!==qaEpoch)return;qaReport=report;qaLastLoad=Date.now();}
   catch(error){if(epoch===qaEpoch)qaError=error.message;}
   finally{if(epoch===qaEpoch){qaLoading=false;if(view==='quota')render();}}
 }
@@ -224,7 +226,7 @@ function quotaPanel(compact=false){
   const period=window=>quotaPeriod(window,t);
   const credit=observeCreditBalance(null,bucket?.creditBalance),baseline=creditBaselines[bucket?.id]?.baseline;
   const creditControls=compact?'':`<div class="stack"><button data-action="quota-analytics">▥ ${e(t('额度分析','Quota analytics'))}</button><div class="row wrap"><button data-action="credit-baseline-reset" ${!credit||bucket?.unlimitedCredits||stale||quota?.loading||!serviceAvailable?'disabled':''}>${e(t('重置 Credits 基准','Reset Credits baseline'))}</button>${Number.isFinite(baseline)?`<span class="tiny muted">${e(t('当前基准：{0}','Current baseline: {0}',baseline.toLocaleString(preferences.language==='zh'?'zh-CN':'en-US',{maximumFractionDigits:20})))}</span>`:''}</div><p class="tiny muted">${e(t('将当前余额设为新的 100%；余额增加时也会自动更新基准。','Use the current balance as the new 100%. Balance increases also reset the baseline automatically.'))}</p></div>`;
-  return `<section class="quota-panel ${compact?'compact':'card stack'}"><div class="row between"><h2>${e(t('账户额度','Account quota'))}</h2><button class="small" data-action="quota-refresh" ${busy||quota?.loading?'disabled':''} aria-label="${e(t('刷新额度','Refresh quota'))}">↻ ${e(t('刷新','Refresh'))}</button></div>${buckets.length>1?`<label class="stack tiny" for="quota-pool">${e(t('额度类型','Quota pool'))}<select id="quota-pool">${buckets.map(item=>`<option value="${e(item.id)}" ${item.id===bucket?.id?'selected':''}>${e(item.name)}</option>`).join('')}</select></label>`:''}${windows.map(window=>`<div class="quota-window ${quotaLevel(window.remainingPercent)}"><div class="row between"><span class="muted">${e(period(window))}</span><strong class="num">${e(t('剩余 {0}%','{0}% remaining',Math.round(window.remainingPercent)))}</strong></div><div class="quota-meter"><i style="width:${Math.max(0,Math.min(100,window.remainingPercent))}%"></i></div><div class="tiny muted quota-reset">${quotaReset(window,{t,escape:e,language:preferences.language})}</div></div>`).join('')||`<p class="tiny muted">${e(quota?.loading?t('正在读取额度…','Reading quota…'):t(quota?.error||'额度暂不可用','Quota unavailable'))}</p>`}${bucket?.creditBalance!=null||bucket?.hasCredits||bucket?.unlimitedCredits?`<p class="tiny muted">${e(bucket?.unlimitedCredits?t('额外额度不限量','Unlimited extra credits'):bucket?.creditBalance!=null?t('额外额度：{0}','Extra credits: {0}',bucket.creditBalance):t('额外额度可用','Extra credits available'))}</p>`:''}${creditControls}${stale&&windows.length?`<span class="tiny error">${e(t('上次记录，待刷新','Cached observation; refresh needed'))}</span>`:''}${compact?'':`<p class="tiny muted">${e(t('通过官方运行时读取，每五分钟缓存刷新；不创建聊天或生成模型回复。','Read through the official runtime and cached for five minutes, without creating chats or model output.'))}</p>`}</section>`;
+  return `<section class="quota-panel ${compact?'compact':'card stack'}"><div class="row between"><h2>${e(t('账户额度','Account quota'))}</h2><button class="small" data-action="quota-refresh" ${busy||quota?.loading?'disabled':''} aria-label="${e(t('刷新额度','Refresh quota'))}">↻ ${e(t('刷新','Refresh'))}</button></div>${buckets.length>1?`<label class="stack tiny" for="quota-pool">${e(t('额度类型','Quota pool'))}<select id="quota-pool">${buckets.map(item=>`<option value="${e(item.id)}" ${item.id===bucket?.id?'selected':''}>${e(item.name)}</option>`).join('')}</select></label>`:''}${windows.map(window=>`<div class="quota-window ${quotaLevel(window.remainingPercent)}"><div class="row between"><span class="muted">${e(period(window))}</span><strong class="num">${e(t('剩余 {0}%','{0}% remaining',Math.round(window.remainingPercent)))}</strong></div><div class="quota-meter"><i style="width:${Math.max(0,Math.min(100,window.remainingPercent))}%"></i></div><div class="tiny muted quota-reset">${quotaReset(window,{t,escape:e,language:preferences.language})}</div></div>`).join('')||`<p class="tiny muted">${e(quota?.loading?t('正在读取额度…','Reading quota…'):t(quota?.error||'额度暂不可用','Quota unavailable'))}</p>`}${bucket?.creditBalance!=null||bucket?.hasCredits||bucket?.unlimitedCredits?`<p class="tiny muted">${e(bucket?.unlimitedCredits?t('额外额度不限量','Unlimited extra credits'):bucket?.creditBalance!=null?t('额外额度：{0}','Extra credits: {0}',bucket.creditBalance):t('额外额度可用','Extra credits available'))}</p>`:''}${creditControls}${stale&&windows.length?`<span class="tiny error">${e(t('上次记录，待刷新','Cached observation; refresh needed'))}</span>`:''}${compact?'':`<p class="tiny muted">${e(t('通过官方运行时读取，每 10 秒检查变化；不创建聊天或生成模型回复。','Read through the official runtime and checked for changes every 10 seconds, without creating chats or model output.'))}</p>`}</section>`;
 }
 function generalSettings(){
   const ext=state?.contextExtension,u=state?.update||{};
@@ -245,7 +247,7 @@ function openSettings(tab='general'){
 function closeSettings(){
   if(shortcutRecording)finishShortcutRecording();settingsOpen=false;
   if(settingsSnapshot){draft=settingsSnapshot.draft;dirty=settingsSnapshot.dirty;}
-  settingsSnapshot=null;settingsUnderlay='';if(!dirty)loadDraft();render();root.querySelector('.settings-trigger')?.focus();
+  settingsSnapshot=null;settingsUnderlay='';if(!dirty)loadDraft();render(true);root.querySelector('.settings-trigger')?.focus();
 }
 function switchSettingsTab(tab){
   if(!['general','defaults','quota','queues','integration','shortcut'].includes(tab))return;
@@ -431,9 +433,20 @@ function selectChat(id){
   if(current()&&mode==='main')openDetails();else render();
 }
 function loadDraft(){if(editingDefaults()){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else{const next=threadDraft(current());if(draft?.expectedRevision!==next?.expectedRevision){budgetText={};budgetInputError='';}draft=next;}dirty=false;}
-async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(view==='quota'&&!settingsOpen){if(!qaLoading&&Date.now()-qaLastLoad>(qaReport?.quality?.progress?.pending?1500:15000))await loadQuotaAnalytics();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}}return;}if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen){if(!detailsOpen&&view==='chat'&&current()){openDetails();}refreshBudgetValidity();}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select,textarea')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
+async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator||DEFAULT_SHORTCUT;shortcutEnabled=preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(view==='quota'&&!settingsOpen){if(!document.activeElement?.closest('.compact-date-range')&&!qaLoading&&Date.now()-qaLastLoad>(qaReport?.quality?.progress?.pending?1500:5000))await loadQuotaAnalytics();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}}return;}if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen){if(!detailsOpen&&view==='chat'&&current()){openDetails();}refreshBudgetValidity();}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select,textarea')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
   try{
+    if(action.startsWith('queue-')&&view==='chat')queueID=selected;
+    if(action==='queue-model-popup'){captureQueueTask();queueModelOpen=!queueModelOpen;render(true);return;}
+    if(action==='queue-approval'){captureQueueTask();queueTaskDraft.settings.approval=button.dataset.approval;render(true);return;}
+    if(action==='queue-expand'){captureQueueTask();queueExpanded=!queueExpanded;render(true);document.getElementById('queue-prompt')?.focus();return;}
+    if(action==='queue-model-reset'){captureQueueTask();queueTaskDraft.settings.effort='';render(true);return;}
+    if(action==='queue-model'){captureQueueTask();queueTaskDraft.settings.model=button.dataset.model;queueTaskDraft.settings.effort='';render(true);root.querySelector('.queue-model-menu').open=false;return;}
+    if(action==='queue-add-open'){openQueueTask();return;}
+    if(action==='queue-task-back'){queueTaskDraft=null;view='queue';render();return;}
+    if(action==='queue-editor-tab'){captureQueueTask();queueTaskTab=button.dataset.tab;render(true);return;}
+    if(action==='queue-attach'){captureQueueTask();const result=await run('queue-pick-files',{kind:button.dataset.kind});if(result)mergeQueueAttachments(result.attachments);return;}
+    if(action==='queue-attachment-remove'){captureQueueTask();queueTaskDraft.settings.attachments.splice(Number(button.dataset.index),1);render();return;}
     if(action==='queue-open'){queueID=button.dataset.id;queueReturnSettings=settingsOpen;if(settingsOpen)closeSettings();view='queue';render();return;}
     if(action==='queue-back'){view='chat';render();if(queueReturnSettings)openSettings('queues');return;}
     if(action==='queue-toggle'){const id=button.dataset.id,q=state?.taskQueues?.queues.find(q=>q.id===id);await queueCommand({id,action:'enable',enabled:!q?.enabled});return;}
@@ -442,11 +455,7 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action.startsWith('queue-')){
       const q=state?.taskQueues?.queues.find(q=>q.id===queueID),taskId=button.dataset.taskId;
       if(action==='queue-pause-cycle'){await queueCommand({id:queueID,action:'pause-cycle'});return;}
-      if(action==='queue-edit'){
-        const task=q.tasks.find(t=>t.id===taskId),card=button.closest('.queue-task');const form=document.createElement('form');form.className='stack';form.dataset.queueEdit=taskId;
-        const input=document.createElement('textarea');input.name='prompt';input.value=task.prompt;input.rows=4;input.maxLength=16000;input.required=true;
-        const save=document.createElement('button');save.type='submit';save.textContent=t('保存');form.append(input,save);card.querySelector('.queue-prompt').replaceWith(form);input.focus();return;
-      }
+      if(action==='queue-edit'){openQueueTask(taskId);return;}
       if(['queue-delete','queue-retry','queue-stop'].includes(action)){await queueCommand({id:queueID,taskId,action:action.slice(6)});return;}
       if(['queue-up','queue-down'].includes(action)){const order=q.tasks.map(t=>t.id),from=order.indexOf(taskId),to=from+(action==='queue-up'?-1:1);[order[from],order[to]]=[order[to],order[from]];await queueCommand({id:queueID,action:'reorder',order});return;}
     }
@@ -467,17 +476,12 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action==='quota-analytics'){openQuotaAnalytics();return;}
     if(action==='qa-close'){++qaEpoch;qaLoading=false;view='chat';openDetails();return;}
     if(action==='qa-mode'){qaAnalysisMode=button.dataset.mode;render();return;}
-  if(action==='cost-apply'){
-    qaCostStart=root.querySelector('#cost-start').value;qaCostEnd=root.querySelector('#cost-end').value;
-    const start=new Date(qaCostStart).getTime(),end=new Date(qaCostEnd).getTime();
-    if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end-start>366*86400000||start>Date.now()){qaError=t('请选择有效的开始和结束时间，范围不能超过一年');render();return;}
-    qaCostRange={costStart:start,costEnd:end};qaCostDate=qaCostStart.slice(0,10);await loadQuotaAnalytics(true);return;
-  }
   if(action==='cost-reset'){qaCostRange=null;qaCostStart='';qaCostEnd='';await loadQuotaAnalytics(true);return;}
   if(action==='cost-mode'){qaCostMode=button.dataset.mode;render();return;}
   if(action==='cost-period'){qaCostPeriod=button.dataset.period;render();return;}
   if(action==='qa-section'){qaSection=button.dataset.section;render();return;}
-    if(action==='qa-period'){qaPeriod=button.dataset.period;render();return;}
+    if(action==='qa-period'){qaPeriod=button.dataset.period;if(!qaOutlookRange){qaOutlookStart='';qaOutlookEnd='';}render();return;}
+    if(action==='outlook-cycle'){qaOutlookRange=null;qaOutlookStart=qaOutlookEnd='';await loadQuotaAnalytics();return;}
     if(action==='qa-refresh'){await run('quota-refresh');await loadQuotaAnalytics(true);return;}
     if(action==='quota-refresh'){await run('quota-refresh');await refresh();if(settingsOpen)render();return;}
     if(action==='integration-toggle'){
@@ -551,8 +555,18 @@ root.addEventListener('pointerdown',event=>{if(event.target.id==='smoothing')smo
 window.addEventListener('pointerup',()=>{if(smoothingInteracting){smoothingInteracting=false;queueMicrotask(applyDeferredStats);}});
 window.addEventListener('pointercancel',()=>{smoothingInteracting=false;});
 root.addEventListener('change',async event=>{
+  if(event.target.id==='forecast-overlay'){qaForecastOverlay=event.target.checked;render();return;}
+  if(event.target.id==='outlook-overlay'){qaOutlookOverlay=event.target.checked;if(!qaOutlookRange){qaOutlookStart='';qaOutlookEnd='';}render();return;}
+  if(['outlook-overlay-count','forecast-overlay-count'].includes(event.target.id)){qaOutlookOverlayCount=Number(event.target.value);if(!qaOutlookRange){qaOutlookStart='';qaOutlookEnd='';}await loadQuotaAnalytics();return;}
+  if(event.target.id==='outlook-smoothing'){qaOutlookSmoothing=Number(event.target.value);await loadQuotaAnalytics();return;}
+  if(event.target.id==='outlook-metric'){qaOutlookMetric=event.target.value;render();return;}
   if(event.target.id==='cost-date'){qaCostDate=event.target.value;await loadQuotaAnalytics(true);return;}
-  if(['cost-start','cost-end'].includes(event.target.id)){if(event.target.id==='cost-start')qaCostStart=event.target.value;else qaCostEnd=event.target.value;return;}
+  if(['cost-start','cost-end','outlook-start','outlook-end'].includes(event.target.id)){
+    const cost=event.target.id.startsWith('cost-'),prefix=cost?'cost':'outlook',startText=root.querySelector('#'+prefix+'-start').value,endText=root.querySelector('#'+prefix+'-end').value,start=Date.parse(startText),end=Date.parse(endText);
+    if(cost){qaCostStart=startText;qaCostEnd=endText;}else{qaOutlookStart=startText;qaOutlookEnd=endText;}
+    if(Number.isFinite(start)&&Number.isFinite(end)&&end>start&&end-start<=366*86400000&&(!cost||start<=Date.now())){if(cost){qaCostRange={costStart:start,costEnd:end};qaCostDate=startText.slice(0,10);}else qaOutlookRange={outlookStart:start,outlookEnd:end};await loadQuotaAnalytics(true);}
+    return;
+  }
   if(['qa-days','qa-scope','qa-pool','qa-outlook-pool','qa-model'].includes(event.target.id)){if(event.target.id==='qa-model')qaModel=event.target.value;else if(event.target.id==='qa-days')qaDays=Number(event.target.value);else if(event.target.id==='qa-scope'){qaScope=event.target.value;qaPool='';}else qaPool=event.target.value;await loadQuotaAnalytics(true);return;}const target=event.target;try{
   if(target.id==='auto-check-updates'){const result=await api.invoke('update-preferences',{enabled:target.checked});preferences.autoCheckUpdates=result.enabled;}
   if(target.id==='language'){await api.invoke('language',{selection:target.value});preferences=await api.invoke('preferences');render();}
@@ -700,16 +714,36 @@ setInterval(()=>{if(!document.hidden&&!dragging&&hover==null)refresh();},2000);
 setInterval(()=>{if(!document.hidden)for(const node of root.querySelectorAll("[data-quota-reset]"))node.textContent=quotaCountdown(Number(node.dataset.quotaReset),t,Date.now(),node.dataset.quotaCompact==='true');},1000);
 
 window.__contextQuotaSmoke=async function({preview=false}={}){
-  qaSection='overview';qaAnalysisMode='simple';qaCostDate='';qaCostRange=null;qaCostStart='';qaCostEnd='';openQuotaAnalytics();while(qaLoading)await new Promise(r=>setTimeout(r,20));
+  qaOutlookMetric='remaining';qaOutlookOverlay=false;qaOutlookOverlayCount=6;qaOutlookStart='';qaOutlookEnd='';qaOutlookRange=null;qaSection='overview';qaAnalysisMode='simple';qaCostDate='';qaCostRange=null;qaCostStart='';qaCostEnd='';openQuotaAnalytics();while(qaLoading)await new Promise(r=>setTimeout(r,20));
   const back=root.querySelector('[data-action="qa-close"]'),main=root.querySelector('.main'),backStyle=getComputedStyle(back);
   const fullWidth=!root.querySelector('.sidebar')&&main.getBoundingClientRect().width===root.querySelector('.shell').getBoundingClientRect().width;
   const borderedBack=backStyle.borderTopStyle==='solid'&&parseFloat(backStyle.borderTopWidth)>0;
-  const result={ok:!qaError&&fullWidth&&borderedBack&&root.querySelectorAll('[data-qa-period]').length===2&&root.querySelectorAll('[data-qa-chart]').length===(qaReport.simpleChartIds.length+1)&&!!root.querySelector('#qa-days')&&!!root.querySelector('#qa-model')&&!root.querySelector('[data-section="summary"]'),fullWidth,borderedBack,periods:root.querySelectorAll('[data-qa-period]').length,error:qaError};
+  const result={ok:!qaError&&fullWidth&&borderedBack&&root.querySelectorAll('[data-qa-period]').length===3&&root.querySelectorAll('[data-qa-chart]').length===(qaReport.simpleChartIds.length+2)&&!!root.querySelector('#qa-days')&&!!root.querySelector('#qa-model')&&!root.querySelector('[data-section="summary"]'),fullWidth,borderedBack,periods:root.querySelectorAll('[data-qa-period]').length,error:qaError};
   result.simple=!!root.querySelector('[data-qa-chart="ranking"]')&&!root.querySelector('[data-qa-chart="weekly-scatter"]')&&!root.querySelector('[data-action="qa-section"]');
   root.querySelector('[data-action="qa-mode"][data-mode="advanced"]').click();
   result.ok=result.ok&&result.simple&&!!root.querySelector('[data-qa-chart="weekly-scatter"]');
+  root.querySelector('[data-action="qa-period"][data-period="credits"]').click();
+  result.credits=!!root.querySelector('[data-qa-chart="outlook-credits"]');
+  root.querySelector('#outlook-start').value='2026-10-18T10:00';root.querySelector('#outlook-end').value='2026-10-18T12:00';root.querySelector('#outlook-end').dispatchEvent(new Event('change',{bubbles:true}));while(qaLoading)await new Promise(r=>setTimeout(r,20));
+  result.outlookRange=qaReport.dashboard.customRange&&!!root.querySelector('[data-qa-chart="outlook-credits"]');
+  root.querySelector('[data-action="outlook-cycle"]').click();while(qaLoading)await new Promise(r=>setTimeout(r,20));
+  result.ok=result.ok&&result.credits&&result.outlookRange&&!qaReport.dashboard.customRange;
   root.querySelector('[data-action="qa-period"][data-period="weekly"]').click();result.ok=result.ok&&!!root.querySelector('[data-qa-chart="outlook-weekly"]');
-  root.querySelector('[data-action="qa-section"][data-section="overview"]').click();result.ok=result.ok&&root.querySelectorAll('[data-qa-chart]').length===7&&root.querySelectorAll('[data-action="qa-section"]').length===4;
+  const metricPicker=root.querySelector('#outlook-metric');metricPicker.value='cost';metricPicker.dispatchEvent(new Event('change',{bubbles:true}));
+  const overlay=root.querySelector('#outlook-overlay');overlay.checked=true;overlay.dispatchEvent(new Event('change',{bubbles:true}));
+  result.priceOverlay=!!root.querySelector('[data-qa-chart="outlook-cost-overlay-weekly"]')&&qaReport.dashboard.periods.find(p=>p.id==='weekly').costOverlayChart.cycleCount===6;
+  const smoothing=root.querySelector('#outlook-smoothing');smoothing.value='5';smoothing.dispatchEvent(new Event('change',{bubbles:true}));while(qaLoading)await new Promise(r=>setTimeout(r,20));
+  result.priceOverlay=result.priceOverlay&&qaReport.dashboard.periods.find(p=>p.id==='weekly').costOverlayChart.points.some(p=>p.rawY!=null)&&!!root.querySelector('[data-qa-chart="outlook-weekly"]');
+  const forecastToggle=root.querySelector('#forecast-overlay');result.forecastOverlay=!forecastToggle.checked;forecastToggle.checked=true;forecastToggle.dispatchEvent(new Event('change',{bubbles:true}));result.forecastOverlay=result.forecastOverlay&&root.querySelectorAll('[data-qa-chart="outlook-overlay-weekly"]').length===1;root.querySelector('#forecast-overlay').checked=false;root.querySelector('#forecast-overlay').dispatchEvent(new Event('change',{bubbles:true}));result.ok=result.ok&&result.forecastOverlay;
+  qaOutlookSmoothing=0;await loadQuotaAnalytics();
+  const countPicker=root.querySelector('#outlook-overlay-count');countPicker.value='3';countPicker.dispatchEvent(new Event('change',{bubbles:true}));while(qaLoading)await new Promise(r=>setTimeout(r,20));
+  result.priceOverlay=result.priceOverlay&&qaReport.dashboard.periods.find(p=>p.id==='weekly').costOverlayChart.cycleCount===3;
+  root.querySelector('#outlook-start').value='2026-09-19T00:00';root.querySelector('#outlook-end').value='2026-10-03T23:59';root.querySelector('#outlook-end').dispatchEvent(new Event('change',{bubbles:true}));while(qaLoading)await new Promise(r=>setTimeout(r,20));
+  result.priceOverlay=result.priceOverlay&&qaReport.dashboard.customRange&&qaReport.dashboard.periods.find(p=>p.id==='weekly').costOverlayChart.points.every(p=>p.at>=qaOutlookRange.outlookStart&&p.at<=qaOutlookRange.outlookEnd);
+  root.querySelector('[data-action="outlook-cycle"]').click();while(qaLoading)await new Promise(r=>setTimeout(r,20));
+  qaOutlookOverlayCount=6;qaOutlookMetric='remaining';qaOutlookOverlay=false;await loadQuotaAnalytics();
+  result.ok=result.ok&&result.priceOverlay;
+  root.querySelector('[data-action="qa-section"][data-section="overview"]').click();result.ok=result.ok&&root.querySelectorAll('[data-qa-chart]').length===8&&root.querySelectorAll('[data-action="qa-section"]').length===4;
   const modelPicker=root.querySelector('#qa-model');
   result.models=!!modelPicker&&modelPicker.options.length>1;
   if(result.models){
@@ -722,12 +756,12 @@ window.__contextQuotaSmoke=async function({preview=false}={}){
   result.ok=result.ok&&result.models&&result.guides;
   root.querySelector('[data-action="qa-section"][data-section="trends"]').click();result.ok=result.ok&&!!root.querySelector('[data-qa-chart="outlook-weekly"]')&&!!root.querySelector('[data-qa-chart="forecast"]');
   root.querySelector('[data-action="qa-section"][data-section="overview"]').click();
-  const datePicker=root.querySelector('#cost-date');datePicker.value='2026-10-17';datePicker.dispatchEvent(new Event('change',{bubbles:true}));while(qaLoading)await new Promise(r=>setTimeout(r,20));
-  result.dates=qaReport.costCalendar.selectedDate==='2026-10-17';
-  const start=root.querySelector('#cost-start'),end=root.querySelector('#cost-end');start.value='2026-10-16T12:00';end.value='2026-10-17T12:00';root.querySelector('[data-action="cost-apply"]').click();while(qaLoading)await new Promise(r=>setTimeout(r,20));
-  result.dates=result.dates&&qaReport.costCalendar.customRange&&qaReport.costCalendar.daily.length<=2;
+  const start=root.querySelector('#cost-start'),end=root.querySelector('#cost-end');start.value='2026-10-16T12:00';end.value='2026-10-17T12:00';end.dispatchEvent(new Event('change',{bubbles:true}));while(qaLoading)await new Promise(r=>setTimeout(r,20));
+  result.dates=qaReport.costCalendar.selectedDate==='2026-10-16'&&qaReport.costCalendar.customRange&&qaReport.costCalendar.daily.length<=2;
+  const rangeBox=root.querySelector('.cost-date-controls').getBoundingClientRect(),cardBox=root.querySelector('.cost-calendar').getBoundingClientRect();
+  result.dates=result.dates&&rangeBox.bottom<=cardBox.bottom&&root.querySelectorAll('.cost-date-controls input').length===2&&!root.querySelector('.cost-custom');
   root.querySelector('[data-action="cost-reset"]').click();while(qaLoading)await new Promise(r=>setTimeout(r,20));
-  const resetDate=root.querySelector('#cost-date');resetDate.value=qaReport.costCalendar.today;resetDate.dispatchEvent(new Event('change',{bubbles:true}));while(qaLoading)await new Promise(r=>setTimeout(r,20));
+  qaCostDate=qaReport.costCalendar.today;await loadQuotaAnalytics(true);
   result.costs=root.querySelectorAll('.cost-cells.year .cost-cell').length===365;
   root.querySelector('[data-action="cost-mode"][data-mode="line"]').click();
   result.costs=result.costs&&!!root.querySelector('.cost-calendar .qa-chart');
@@ -793,16 +827,27 @@ window.__contextScrollSmoke=async function(action){
 };
 
 async function queueCommand(params){const q=state?.taskQueues?.queues.find(q=>q.id===params.id);const result=await run('task-queue',{expectedRevision:q?.revision??0,...params});if(result){state.taskQueues=result;render();}return result;}
+function quotaFromForm(form){const values=new FormData(form),quota={pool:values.get('pool'),resume:values.get('resume')};for(const key of ['fiveHour','weekly'])quota[key]={reserve:Number(values.get(key+'-reserve')),stages:[0,1,2].filter(i=>values.has(`${key}-${i}-enabled`)).map(i=>({minutes:Number(values.get(`${key}-${i}-minutes`)),reserve:Number(values.get(`${key}-${i}-reserve`))}))};return quota;}
+function openQueueTask(taskId){const q=state?.taskQueues?.queues.find(q=>q.id===queueID),task=q?.tasks.find(t=>t.id===taskId);queueTaskDraft={id:task?.id??null,status:task?.status??'draft',prompt:task?.prompt??'',settings:normalizeTaskSettings(task?.settings,q?.config)};queueTaskTab='prompt';queueExpanded=false;queueModelOpen=false;queuePreviews.clear();view='queue-task';render(true);void loadQueuePreviews(queueTaskDraft.settings.attachments);}
+function captureQueueTask(){const form=document.getElementById('queue-task-editor');if(!form||!queueTaskDraft)return;const values=new FormData(form);queueTaskDraft.prompt=values.get('prompt')??queueTaskDraft.prompt;queueTaskDraft.settings={...queueTaskDraft.settings,quota:quotaFromForm(form),model:values.get('model')??queueTaskDraft.settings.model,effort:values.get('effort')??queueTaskDraft.settings.effort};for(const control of form.querySelectorAll('[data-queue-prompt-options]'))control.hidden=queueTaskDraft.prompt.trim().toLowerCase()==='/compact';}
+function mergeQueueAttachments(files){const found=new Set(queueTaskDraft.settings.attachments.map(f=>f.path));for(const file of files??[])if(file.path&&!found.has(file.path)&&queueTaskDraft.settings.attachments.length<20){found.add(file.path);queueTaskDraft.settings.attachments.push(file);}render(true);void loadQueuePreviews(files);}
 root.addEventListener('submit',async event=>{
- const form=event.target;if(!['queue-add','queue-config'].includes(form.id)&&!form.dataset.queueEdit)return;event.preventDefault();const values=new FormData(form);
- try{
- if(form.id==='queue-add'){const result=await queueCommand({id:queueID,action:'add',prompt:values.get('prompt')});if(result){queueFormDrafts.delete(queueID+':queue-add');document.querySelector('#queue-add')?.reset();}}
- else if(form.dataset.queueEdit)await queueCommand({id:queueID,action:'edit',taskId:form.dataset.queueEdit,prompt:values.get('prompt')});
- else{const config={pool:values.get('pool'),resume:values.get('resume')};for(const period of ['fiveHour','weekly']){config[period]={reserve:Number(values.get(period+'-reserve')),stages:[0,1].filter(i=>values.has(`${period}-${i}-enabled`)).map(i=>({minutes:Number(values.get(`${period}-${i}-minutes`)),reserve:Number(values.get(`${period}-${i}-reserve`))}))};}await queueCommand({id:queueID,action:'config',config});}
+ const form=event.target;if(!['queue-task-editor','queue-config'].includes(form.id))return;event.preventDefault();
+ try{if(form.id==='queue-config'){await queueCommand({id:queueID,action:'config',config:quotaFromForm(form)});return;}
+ captureQueueTask();if(!queueTaskDraft.prompt.trim()){queueTaskTab='prompt';render();document.querySelector('[name="prompt"]')?.focus();notify(t('请填写完整任务提示词'));return;}
+ const result=await queueCommand({id:queueID,action:queueTaskDraft.status==='running'?'task-config':queueTaskDraft.id?'edit':'add',config:queueTaskDraft.settings.quota,taskId:queueTaskDraft.id,prompt:queueTaskDraft.prompt,settings:queueTaskDraft.settings});if(result){queueTaskDraft=null;view='queue';render();}
  }catch(error){notify(error.message);}
 });
+root.addEventListener('input',event=>{if(event.target.closest('#queue-task-editor'))captureQueueTask();});
+root.addEventListener('change',async event=>{
+ if(event.target.matches('[data-queue-toggle]')){try{await queueCommand({id:event.target.dataset.queueToggle,action:'enable',enabled:event.target.checked});}catch(error){render();notify(error.message);}return;}
+ if(event.target.closest('#queue-task-editor')&&event.target.name==='model'){captureQueueTask();queueTaskDraft.settings.effort='';render();}
+});
+root.addEventListener('dragover',event=>{if(view==='queue-task'&&event.dataTransfer.types.includes('Files'))event.preventDefault();});
+root.addEventListener('drop',event=>{if(view!=='queue-task'||!event.dataTransfer.files.length||queueTaskDraft?.status==='running')return;event.preventDefault();captureQueueTask();const files=[...event.dataTransfer.files].map(file=>{const path=api.filePath(file);return {path,name:file.name,kind:/\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name)?'image':'file'};});mergeQueueAttachments(files);});
+
 let queueDrag=null;
-root.addEventListener('dragstart',event=>{const card=event.target.closest('[data-task-id].queue-task');if(card){queueDrag=card.dataset.taskId;event.dataTransfer.setData('text/plain',queueDrag);}});
+root.addEventListener('dragstart',event=>{const card=event.target.closest('[data-task-id].queue-task');if(card){if(view==='chat')queueID=selected;queueDrag=card.dataset.taskId;event.dataTransfer.setData('text/plain',queueDrag);}});
 root.addEventListener('dragover',event=>{if(queueDrag&&event.target.closest('.queue-task'))event.preventDefault();});
 root.addEventListener('drop',async event=>{const card=event.target.closest('.queue-task');if(!queueDrag||!card)return;event.preventDefault();const order=state.taskQueues.queues.find(q=>q.id===queueID).tasks.map(t=>t.id),from=order.indexOf(queueDrag),to=order.indexOf(card.dataset.taskId);queueDrag=null;if(from<0||to<0)return;order.splice(to,0,order.splice(from,1)[0]);try{await queueCommand({id:queueID,action:'reorder',order});}catch(error){notify(error.message);}});
 root.addEventListener('dragend',()=>{queueDrag=null;});
@@ -815,7 +860,7 @@ window.__contextQueueSmoke=async()=>{
  let q=state.taskQueues.queues.find(q=>q.id===queueID);
  await queueCommand({id:queueID,action:'reorder',order:q.tasks.map(t=>t.id).reverse()});
  const ordered=state.taskQueues.queues.find(q=>q.id===queueID).tasks[0].prompt.startsWith('第二项');
- const controls=!!document.querySelector('#queue-add textarea')&&!!document.querySelector('#queue-config')&&document.querySelectorAll('.queue-task').length===2;
+ openQueueTask();const editor=!!document.querySelector('#queue-task-editor textarea')&&document.querySelectorAll('.queue-stage-row').length===6&&!!document.querySelector('[name=effort]');queueTaskDraft=null;view='queue';render();const controls=editor&&!!document.querySelector('#queue-config')&&document.querySelectorAll('.queue-task').length===2;
  const scroller=document.querySelector('.main');scroller.scrollTop=500;await new Promise(r=>requestAnimationFrame(r));const back=document.querySelector('[data-action="queue-back"]').getBoundingClientRect(),parent=scroller.getBoundingClientRect();
  const sticky=back.top>=parent.top&&back.bottom<parent.bottom;
  await queueCommand({id:queueID,action:'disable-all'});
@@ -825,3 +870,68 @@ window.__contextQueueSmoke=async()=>{
 };
 
 root.addEventListener('input',event=>{const form=event.target.closest('#queue-add,#queue-config');if(form){const values={};for(const input of form.querySelectorAll('[name]'))values[input.name]=input.type==='checkbox'?input.checked:input.value;queueFormDrafts.set(queueID+':'+form.id,values);}});
+
+window.__contextQueuePreview=tab=>{
+ if(!preferences.demo)return;
+ closeSettings();queueID=selected;view='queue';render(true);
+ if(tab){openQueueTask(state.taskQueues.queues.find(q=>q.id===queueID)?.tasks[0]?.id);queueTaskTab=tab;render(true);}
+};
+
+async function loadQueuePreviews(files){
+ for(const file of files??[]){if(file.kind!=='image'||queuePreviews.has(file.path))continue;
+  try{const result=await api.invoke('queue-image-preview',{path:file.path});if(!result?.preview)continue;queuePreviews.set(file.path,result.preview);for(const tile of root.querySelectorAll('[data-attachment-path]'))if(tile.dataset.attachmentPath===file.path){const img=tile.querySelector('img');if(img)img.src=result.preview;}}catch{}
+ }
+}
+root.addEventListener('input',event=>{
+ if(event.target.id==='queue-prompt'){queueTaskDraft.prompt=event.target.value;const send=root.querySelector('.queue-submit');if(send)send.disabled=!event.target.value.trim();}
+ if(!event.target.matches('[data-queue-effort-slider]'))return;
+ const id=queueTaskDraft.settings.model||state.threads.find(c=>c.id===queueID)?.model,model=state.queueModels?.find(m=>m.id===id),effort=model?.efforts[Number(event.target.value)];if(!effort)return;
+ const form=document.getElementById('queue-task-editor');form.elements.effort.value=effort;captureQueueTask();const label={none:'None',minimal:'Minimal',low:'Low',medium:'Medium',high:'High',xhigh:'Extra high',max:'Max',ultra:'Ultra'}[effort]||effort;
+ root.querySelector('[data-queue-effort-label]').textContent=label;root.querySelector('[data-queue-trigger-effort]').textContent=label;event.target.setAttribute('aria-valuetext',label);event.target.parentElement.style.setProperty('--effort-fraction',event.target.value/(event.target.max||1));
+});
+root.addEventListener('paste',async event=>{
+ if(view!=='queue-task'||queueTaskTab!=='prompt'||queueTaskDraft?.status==='running')return;
+ const files=[...(event.clipboardData?.files??[])];if(!files.length&&event.target.id!=='queue-prompt')return;
+ event.preventDefault();captureQueueTask();const owner=queueTaskDraft,editor=document.getElementById('queue-prompt'),selection=[editor.selectionStart,editor.selectionEnd],text=event.clipboardData?.getData('text/plain')||'';const attachments=[];let needsNative=!files.length;
+ for(const file of files){const path=api.filePath(file);if(path)attachments.push({path,name:file.name,kind:file.type.startsWith('image/')?'image':'file'});else needsNative=true;}
+ try{
+  if(needsNative){const result=await api.invoke('queue-paste-image');attachments.push(...result.attachments);}
+  if(queueTaskDraft!==owner)return;
+  if(attachments.length)mergeQueueAttachments(attachments);
+  else if(text&&document.getElementById('queue-prompt')===editor){editor.focus();editor.setSelectionRange(...selection);document.execCommand('insertText',false,text);editor.dispatchEvent(new Event('input',{bubbles:true}));}
+ }catch(error){notify(error.message);}
+
+});
+
+window.__contextComposerSmoke=async()=>{
+ if(!preferences.demo)return {ok:false};queueID=selected;openQueueTask();const original='保留完整提示词\n检查附件、模型和放大后的草稿';document.getElementById('queue-prompt').value=original;captureQueueTask();
+ const expanded=!document.querySelector('[data-action="queue-expand"]')&&!!document.querySelector('.sidebar');
+ const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array([1])],'clipboard.png',{type:'image/png'}));root.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,clipboardData:transfer}));
+ const until=Date.now()+4000;while(!queueTaskDraft.settings.attachments.length&&Date.now()<until)await new Promise(r=>setTimeout(r,30));
+ await loadQueuePreviews(queueTaskDraft.settings.attachments);const image=queueTaskDraft.settings.attachments[0];if(!image)return {ok:false,error:'Clipboard attachment missing',toast:document.getElementById('toast')?.textContent};const pasted=image?.kind==='image'&&queuePreviews.has(image.path)&&!!document.querySelector('.queue-attachment-tile img[src]');
+ mergeQueueAttachments([{path:'C:\\fixtures\\acceptance.txt',name:'acceptance.txt',kind:'file'}]);const tiles=document.querySelectorAll('.queue-attachment-tile').length===2;
+ document.querySelector('[data-action=queue-model-popup]').click();const popover=!!root.querySelector('.queue-model-panel:not([hidden])');document.querySelector('.queue-model-menu').open=true;document.querySelector('[data-action=queue-model][data-model="gpt-6.1-sol"]').click();const modelPicked=queueTaskDraft.settings.model==='gpt-6.1-sol'&&!document.querySelector('.queue-model-menu').open;
+ const slider=document.querySelector('[data-queue-effort-slider]');slider.value=2;slider.dispatchEvent(new Event('input',{bubbles:true}));const effort=queueTaskDraft.settings.effort==='high'&&document.querySelector('[data-queue-effort-label]').textContent==='High';
+ const retained=!queueExpanded&&document.getElementById('queue-prompt').value===original&&queueTaskDraft.settings.attachments.length===2;
+ document.querySelector('[data-action="queue-attachment-remove"]').click();const removed=queueTaskDraft.settings.attachments.length===1;
+ document.querySelector('[data-action="queue-approval"][data-approval="full"]').click();const fullPermission=queueTaskDraft.settings.approval==='full'&&!!document.querySelector('.queue-permission-menu.full');
+ document.querySelector('[data-action="queue-approval"][data-approval="inherit"]').click();const permissions=fullPermission&&queueTaskDraft.settings.approval==='inherit';
+ const quota=state.quota;state.quota=structuredClone(quota);for(const bucket of state.quota.buckets){if(bucket.primary?.windowDurationMins===300)bucket.primary=null;if(bucket.secondary?.windowDurationMins===300)bucket.secondary=null;}
+ queueTaskTab='quota';render(true);const hiddenFive=!!root.querySelector('fieldset.queue-period[hidden]')&&!root.querySelector('input[name=pool]:not([type=hidden])')&&quotaFromForm(document.getElementById('queue-task-editor')).pool==='codex';
+ state.quota=quota;queueTaskTab='prompt';render(true);mergeQueueAttachments([image]);queueExpanded=false;render(true);await loadQueuePreviews(queueTaskDraft.settings.attachments);
+ const rect=document.getElementById('queue-prompt').getBoundingClientRect(),main=document.querySelector('.main').getBoundingClientRect(),bounds=rect.left>=main.left&&rect.right<=main.right&&rect.bottom<=main.bottom;
+ const centers=['.queue-attach-menu>summary','.queue-permission-menu>summary','.queue-model-trigger','.queue-submit'].map(selector=>{const r=root.querySelector(selector).getBoundingClientRect();return r.top+r.height/2;});
+ const aligned=Math.max(...centers)-Math.min(...centers)<1;
+ const attachmentsFirst=root.querySelector('.queue-attachment-grid').compareDocumentPosition(document.getElementById('queue-prompt'))&Node.DOCUMENT_POSITION_FOLLOWING;
+ const composer=!!root.querySelector('.queue-submit svg')&&!!root.querySelector('.queue-attach-menu')&&!!root.querySelector('.queue-model-bolt svg')&&popover&&aligned&&!!attachmentsFirst&&!root.querySelector('.queue-model-trigger').textContent.includes('⌄');
+ return {ok:permissions&&composer&&expanded&&pasted&&tiles&&modelPicked&&effort&&retained&&removed&&hiddenFive&&bounds,permissions,composer,expanded,pasted,tiles,modelPicked,effort,retained,removed,hiddenFive,bounds};
+};
+
+root.addEventListener('input',event=>{if(event.target.id==='outlook-start')qaOutlookStart=event.target.value;if(event.target.id==='outlook-end')qaOutlookEnd=event.target.value;});
+
+window.__contextPricePreview=()=>{qaOutlookMetric='cost';qaOutlookOverlay=true;qaOutlookOverlayCount=6;qaPeriod='five';qaOutlookStart='';qaOutlookEnd='';qaOutlookRange=null;view='quota';render();root.querySelector('[data-qa-chart="outlook-cost-overlay-five"]')?.scrollIntoView({block:'center'});};
+
+root.addEventListener('pointerdown',event=>{if(queueModelOpen&&!event.target.closest('.queue-model-popover')){queueModelOpen=false;const panel=root.querySelector('.queue-model-panel');if(panel)panel.hidden=true;root.querySelector('[data-action="queue-model-popup"]')?.setAttribute('aria-expanded','false');}});
+root.addEventListener('keydown',event=>{if(event.key==='Escape'&&queueModelOpen){queueModelOpen=false;const panel=root.querySelector('.queue-model-panel');if(panel)panel.hidden=true;root.querySelector('[data-action="queue-model-popup"]')?.focus();}});
+
+window.__contextComposerPreview=async kind=>{queueID=selected;openQueueTask();queueTaskDraft.prompt='完成这项任务，保留必要的验证结果。';if(kind==='full')queueTaskDraft.settings.approval='full';queueModelOpen=kind==='model';render(true);if(kind==='attachments'){const pasted=await api.invoke('queue-paste-image');mergeQueueAttachments([...pasted.attachments,{path:'C:\\fixtures\\notes.txt',name:'任务说明.txt',kind:'file'}]);await loadQueuePreviews(queueTaskDraft.settings.attachments);}if(kind==='full'){const menu=root.querySelector('.queue-permission-menu');if(menu)menu.open=true;}root.querySelector('.queue-composer-card')?.scrollIntoView({block:'center'});};

@@ -49,3 +49,23 @@ test('cost history backfills a year and rescans upgraded files without double co
   assert.equal(f.ledger.scan({rows:[f.row]}).bytesRead,0);
  }finally{f.ledger.close();fs.rmSync(f.dir,{recursive:true,force:true});}
 });
+
+
+test('intra-minute one-percent changes and credit-only readings are retained',()=>{
+ const f=fixture();try{
+ const at=Math.floor(now/60000)*60000;
+ for(let i=0;i<3;i++)f.ledger.recordLive({scope:'account:'+ 'a'.repeat(32),at:at+i*1000,buckets:[{id:'codex',primary:{usedPercent:10+i,windowDurationMins:300,resetsAt:Math.floor(now/1000)+3600},creditBalance:String(150-i)}]});
+ const rows=f.ledger.read().snapshots;assert.deepEqual(rows.map(p=>p.fiveUsed),[10,11,12]);assert.deepEqual(rows.map(p=>p.credits),[150,149,148]);
+ assert.equal(projectQuota({credits:{balance:'123.5'}},{at:now}).credits,123.5);
+ assert.equal(projectQuota({credits:{balance:'123.5',unlimited:true}},{at:now}),null);
+ }finally{f.ledger.close();fs.rmSync(f.dir,{recursive:true,force:true});}
+});
+
+test('upgrading minute-level snapshot keys does not duplicate observations during backfill',()=>{
+ const f=fixture();try{
+  const value={at:now-1000,scope:'history',bucket:'codex',weeklyUsed:20,weeklyReset:Math.floor(now/1000)+3600,fiveUsed:null,fiveReset:null};
+  const legacy=JSON.stringify([value.scope,value.bucket,Math.floor(value.at/60000),value.weeklyReset,value.fiveReset]);
+  f.ledger.db.prepare('INSERT INTO snapshots VALUES (?,?,?,?,?)').run(legacy,'a','history',value.at,JSON.stringify(value));f.ledger.setMetadata('quotaSamplingVersion',0);f.ledger.close();
+  f.ledger=new QuotaLedger({file:path.join(f.dir,'history.sqlite'),home:f.home,now:()=>now});f.ledger.snapshot(value,'a');assert.equal(f.ledger.read().snapshots.length,1);
+ }finally{f.ledger.close();fs.rmSync(f.dir,{recursive:true,force:true});}
+});
