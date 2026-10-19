@@ -45,7 +45,7 @@ const payload=path.join(out,'payload');fs.mkdirSync(payload,{recursive:true});fs
 fs.renameSync(path.join(payload,'electron.exe'),path.join(payload,'ContextManager.exe'));
 await rcedit(path.join(payload,'ContextManager.exe'),{icon,'file-version':pkg.version,'product-version':pkg.version,'version-string':{ProductName:'Context Manager',FileDescription:'Context Manager',CompanyName:'Fandy-ust',OriginalFilename:'ContextManager.exe',InternalName:'ContextManager'}});
 const app=path.join(payload,'resources/app');fs.mkdirSync(app,{recursive:true});
-for(const name of ['src','scripts','desktop','runtime-patches','windows'])fs.cpSync(path.join(repo,name),path.join(app,name),{recursive:true});
+for(const name of ['src','scripts','desktop','runtime-patches','windows','skills'])fs.cpSync(path.join(repo,name),path.join(app,name),{recursive:true});
 for(const name of ['LICENSE','THIRD_PARTY_NOTICES.md'])fs.copyFileSync(path.join(repo,name),path.join(app,name));
 fs.mkdirSync(path.join(app,'macos/Assets'),{recursive:true});fs.copyFileSync(path.join(repo,'macos/Assets/ContextManager.png'),path.join(app,'macos/Assets/ContextManager.png'));
 fs.mkdirSync(path.join(app,'node_modules'),{recursive:true});

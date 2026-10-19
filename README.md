@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 ## Features
 
-- **Agent queue CLI:** manage tasks through the same queue service, with JSON output and retry protection. [Usage](docs/en/QUEUE_CLI.md).
+- **Agent CLI + skill:** manage queues and context budgets, inspect global quota and analyze observed speed. [Usage](docs/en/CLI.md).
 
 - **Early compaction compensation (experimental):** an optional switch reserves accounting headroom while keeping the target budget visible. [Details](docs/en/COMPACTION_COMPENSATION.md).
 

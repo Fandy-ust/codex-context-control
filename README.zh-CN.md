@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 ## 功能
 
-- **Agent 队列 CLI**：通过命令管理任务，沿用额度保护，支持 JSON 输出与重试去重。[用法](docs/QUEUE_CLI.md)。
+- **Agent CLI + skill**：管理队列与上下文预算，查看全局额度、分析实测速度。[用法](docs/CLI.md)。
 
 - **提前压缩补偿（实验性）**：独立开关，为重复计数预留空间，目标容量以本 App 为准。[说明](docs/COMPACTION_COMPENSATION.md)。
 

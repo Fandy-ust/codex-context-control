@@ -57,7 +57,7 @@ if(process.argv.includes('--uninstall')){
   atomicJSON(path.join(root,'runtime-fix.json'),{...readJSON(path.join(root,'runtime-fix.json'),{}),enabled:false,updatedAt:Date.now()});
   const code=path.join(root,'code');
   replaceDirectory(code,stage=>{
-    for(const dir of ['src','scripts','runtime-patches'])fs.cpSync(path.join(repo,dir),path.join(stage,dir),{recursive:true});
+    for(const dir of ['src','scripts','runtime-patches','skills'])fs.cpSync(path.join(repo,dir),path.join(stage,dir),{recursive:true});
     for(const file of ['package.json','package-lock.json'])fs.copyFileSync(path.join(repo,file),path.join(stage,file));
     fs.cpSync(path.join(repo,'node_modules'),path.join(stage,'node_modules'),{recursive:true});
   });

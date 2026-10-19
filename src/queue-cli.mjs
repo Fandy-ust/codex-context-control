@@ -25,7 +25,7 @@ export const queueHelp={
   rawActions:['add','edit','delete','reorder','config','task-config','enable','pause-cycle','retry','stop','disable-all']
 };
 const fail=(code,message)=>{throw Object.assign(Error(message),{code});};
-export function createQueueClient({home,ensure,fetcher=fetch}={}){
+export function createControlClient({home,ensure,fetcher=fetch}={}){
   let ready;
   return async(operation,params)=>{
     try{await (ready??=ensure());}catch{fail('SERVICE_UNAVAILABLE','Cannot start or connect to the controller. Run doctor for diagnostics.');}
@@ -34,9 +34,9 @@ export function createQueueClient({home,ensure,fetcher=fetch}={}){
     if(!Number.isInteger(connection.port)||connection.port<1||connection.port>65535||typeof connection.token!=='string'||!/^[a-f0-9]{64}$/.test(connection.token))fail('SERVICE_UNAVAILABLE','Invalid local controller connection.');
     const route=CONTROL_ROUTES[operation];if(!route)fail('INVALID_COMMAND','Unknown controller operation.');
     let response;
-    try{response=await fetcher(`http://127.0.0.1:${connection.port}${route.path}`,{method:route.method,headers:{authorization:`Bearer ${connection.token}`,'content-type':'application/json'},...(params===undefined?{}:{body:JSON.stringify(params)}),signal:AbortSignal.timeout(15000)});}catch{fail('TRANSPORT_UNCERTAIN','Controller request failed or timed out. A mutation may have been accepted; inspect the queue before retrying.');}
+    try{response=await fetcher(`http://127.0.0.1:${connection.port}${route.path}`,{method:route.method,headers:{authorization:`Bearer ${connection.token}`,'content-type':'application/json'},...(params===undefined?{}:{body:JSON.stringify(params)}),signal:AbortSignal.timeout(['statistics','quota-analytics'].includes(operation)?30000:15000)});}catch{fail('TRANSPORT_UNCERTAIN','Controller request failed or timed out. A mutation may have been accepted; inspect the queue before retrying.');}
     let result;try{result=await response.json();}catch{fail('INVALID_RESPONSE','Controller returned an invalid response.');}
-    if(!response.ok)fail(response.status===403?'AUTH_FAILED':'QUEUE_REJECTED',typeof result.error==='string'?result.error:'Controller rejected the request.');
+    if(!response.ok)fail(response.status===403?'AUTH_FAILED':operation==='task-queue'?'QUEUE_REJECTED':'REQUEST_REJECTED',typeof result.error==='string'?result.error:'Controller rejected the request.');
     return result;
   };
 }
@@ -101,3 +101,5 @@ export async function runQueueCLI(args,{client,stdin=process.stdin,readFile=file
   const result=await client('task-queue',command);
   return {...result,...(command.requestId?{requestId:command.requestId}:{})};
 }
+
+export const createQueueClient=createControlClient;
