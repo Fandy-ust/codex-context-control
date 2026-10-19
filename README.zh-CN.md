@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 ## 功能
 
-- **Agent CLI + skill**：管理队列与上下文预算，查看全局额度、分析实测速度。[用法](docs/CLI.md)。
+- **Agent CLI + skill**：管理队列与上下文预算，查看全局额度、分析实测速度。[用法](docs/CLI.md)。 [安装 skill](docs/CLI.md#配套-skill) · [Skill 源码](skills/context-manager/SKILL.md)。
 
 - **提前压缩补偿（实验性）**：独立开关，为重复计数预留空间，目标容量以本 App 为准。[说明](docs/COMPACTION_COMPENSATION.md)。
 
@@ -42,7 +42,7 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 两端共用业务核心，不设 app／版本白名单，保留 Codex 官方运行时。
 
-提前压缩修复因修改核心、缺少官方签名而影响 Computer Use，现已停用。**920K 无需修改核心，继续保留。**
+旧版核心压缩补丁因缺少官方签名而影响 Computer Use，已停用。新的实验性补偿在外层预留空间，不修改核心。**920K 继续保留。**
 
 [额度分析说明](docs/QUOTA_ANALYTICS.md) · [使用指南](docs/FEATURES.md) · [跨平台开发](docs/MULTIPLATFORM_DEVELOPMENT.md) · [构建与发布](docs/CROSS_PLATFORM_BUILD.md) · [参与协作](CONTRIBUTING.md) · [隐私](docs/PRIVACY.md)
 

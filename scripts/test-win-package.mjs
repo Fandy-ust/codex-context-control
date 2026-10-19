@@ -41,6 +41,8 @@ try{
   const hook=spawnSync(s.shim,['--hook'],{env,input:'{"hook_event_name":"Stop","session_id":"unknown"}',encoding:'utf8',windowsHide:true,timeout:10000});assert.equal(hook.status,0,hook.stderr);assert.deepEqual(JSON.parse(hook.stdout),{});
   const cli=path.join(home,'bin/context-manager.cmd');assert.ok(fs.existsSync(cli));
   const cliVersion=spawnSync(process.env.ComSpec||'cmd.exe',['/d','/s','/c',`""${cli}" --version"`],{env,encoding:'utf8',windowsHide:true,windowsVerbatimArguments:true,timeout:15000});assert.equal(cliVersion.status,0,cliVersion.stderr);assert.equal(cliVersion.stdout.trim(),pkg.version);
+  const skillRoot=path.join(temp,'agent skills');
+  const skillInstall=spawnSync(process.env.ComSpec||'cmd.exe',['/d','/s','/c',`""${cli}" skill install --path "${skillRoot}""`],{env,encoding:'utf8',windowsHide:true,windowsVerbatimArguments:true,timeout:15000});assert.equal(skillInstall.status,0,skillInstall.stderr);assert.equal(JSON.parse(skillInstall.stdout).data.changed,true);assert.match(fs.readFileSync(path.join(skillRoot,'context-manager/SKILL.md'),'utf8'),/name: context-manager/);
   const firstPath=s.installedApp;s=install();assert.equal(s.installedApp,firstPath);assert.equal(fs.readdirSync(path.join(apps,'versions')).length,1);
   if(standalone){
     fs.unlinkSync(setup);

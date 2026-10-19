@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 ## Features
 
-- **Agent CLI + skill:** manage queues and context budgets, inspect global quota and analyze observed speed. [Usage](docs/en/CLI.md).
+- **Agent CLI + skill:** manage queues and context budgets, inspect global quota and analyze observed speed. [Usage](docs/en/CLI.md). [Install the skill](docs/en/CLI.md#install-the-skill) · [Skill source](skills/context-manager/SKILL.md).
 
 - **Early compaction compensation (experimental):** an optional switch reserves accounting headroom while keeping the target budget visible. [Details](docs/en/COMPACTION_COMPENSATION.md).
 
@@ -42,7 +42,7 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 Both platforms share the same core. No app-name or version allowlist; the official Codex runtime is preserved.
 
-The early-compaction patch is disabled because its modified core lacks the official signing identity required for Computer Use. **920K stays available without modifying the core.**
+The old core patch was retired because its modified runtime lacked the official signing identity required for Computer Use. The new experimental compensation reserves headroom externally. **920K stays available without modifying the core.**
 
 [Quota analytics](docs/QUOTA_ANALYTICS.md) · [Usage](docs/en/USAGE.md) · [Cross-platform development](docs/MULTIPLATFORM_DEVELOPMENT.md) · [Build and release](docs/CROSS_PLATFORM_BUILD.md) · [Contributing](CONTRIBUTING.md) · [Privacy](docs/en/PRIVACY.md)
 

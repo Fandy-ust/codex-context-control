@@ -29,6 +29,24 @@ CM="$HOME/Library/Application Support/CodexContextControl/bin/context-manager"
 
 ## 配套 skill
 
-[context-manager skill](../skills/context-manager/SKILL.md) 简要介绍 App、两端 CLI 路径和操作边界。安装包会带上该目录，`context-manager skill path` 返回它的位置；将该文件夹放入所用 agent 的 skills 目录即可使用。Codex 的个人目录通常为 `~/.codex/skills/context-manager`。
+[context-manager skill](../skills/context-manager/SKILL.md) 与源码一起维护在 GitHub，并随两端安装包分发。它教 agent 通过 CLI 查询额度、调整上下文和管理队列；速度只用于分析。
 
-它支持自动发现，也可显式调用 `$context-manager`。技能引导 agent 先识别聊天、读取状态，再按用户授权调整预算或队列；不会把速度分析变成速度模式切换，也不会绕过额度保护。
+安装 App 后，执行一次：
+
+**macOS**
+
+```sh
+"$HOME/Library/Application Support/CodexContextControl/bin/context-manager" skill install
+```
+
+**Windows PowerShell**
+
+```powershell
+& "$env:LOCALAPPDATA\CodexContextControl\bin\context-manager.cmd" skill install
+```
+
+默认安装到 `~/.codex/skills/context-manager`；设置了 `CODEX_HOME` 时使用其下的 `skills/context-manager`。重新打开 Codex 后可直接说“用 Context Manager 调整这个聊天的上下文”，或显式调用 `$context-manager`。
+
+App 更新后重新运行同一命令即可更新 skill。安装器仅替换自己管理且未经修改的 `SKILL.md`，保留其他文件；本地内容被修改时会停止，确认要覆盖后可加 `--force`。App 安装过程不会自动改动 agent 的 skills。
+
+其他支持 `SKILL.md` 的 agent 可指定 skills 父目录：`context-manager skill install --path "/path/to/agent/skills"`。`skill path` 返回 App 内置副本的位置。从 GitHub 手动安装时，把 `skills/context-manager` 文件夹放入 agent 的 skills 目录即可；仍需安装带 CLI 的 Context Manager。

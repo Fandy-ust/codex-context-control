@@ -51,6 +51,8 @@ test('downloaded installer validates payload, installs with empty PATH, and surv
   fs.rmSync(unpacked,{recursive:true,force:true});
   r=run(settings.node,['-e','const {DatabaseSync}=require("node:sqlite"); const db=new DatabaseSync(":memory:"); db.close(); console.log(process.version)'],env);assert.equal(r.status,0,r.stderr);assert.equal(r.stdout.trim(),manifest.nodeVersion);
   r=run(path.join(control,'bin/codex-context'),['--version'],env);assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/0.160.0/);
+  const skillRoot=path.join(temp,'agent skills');
+  r=run(path.join(control,'bin/context-manager'),['skill','install','--path',skillRoot],env);assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(r.stdout).data.changed,true);assert.match(fs.readFileSync(path.join(skillRoot,'context-manager/SKILL.md'),'utf8'),/name: context-manager/);
   r=run(settings.node,[path.join(control,'code/scripts/install.mjs'),'--uninstall'],env);assert.equal(r.status,0,r.stderr);assert.equal(fs.existsSync(path.join(env.CONTEXT_CONTROL_APPLICATIONS,'Codex Context Control.app')),false);
  }finally{fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
 });

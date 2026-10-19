@@ -1,10 +1,10 @@
-import {fileURLToPath} from 'node:url';
+import {bundledSkillPath,installSkill} from './skill-install.mjs';
 import {tokenNumber} from './core/policy.mjs';
 import {calculateBudget,savedBudget} from './core/budget.mjs';
 import {budgetCommand} from './core/budget-command.mjs';
 
 export const managerHelp={
- commands:['global status','global quota [--refresh]','global usage [--days 28|56|84] [--refresh]','global defaults','global defaults-set --window 400K --compact 360K [--revision N]','chat list','chat show <thread-id>','chat set|preflight <thread-id> --window 400K [--compact 360K | --compact-percent 90] [--reserve 16K] [--floor 0] [--revision N] [--save-only]','chat compact <thread-id>','chat stop-auto <thread-id>','chat speed <thread-id> [--limit 20] [--refresh]','chat stats <thread-id> [--refresh]','skill path','queue --help'],
+ commands:['global status','global quota [--refresh]','global usage [--days 28|56|84] [--refresh]','global defaults','global defaults-set --window 400K --compact 360K [--revision N]','chat list','chat show <thread-id>','chat set|preflight <thread-id> --window 400K [--compact 360K | --compact-percent 90] [--reserve 16K] [--floor 0] [--revision N] [--save-only]','chat compact <thread-id>','chat stop-auto <thread-id>','chat speed <thread-id> [--limit 20] [--refresh]','chat stats <thread-id> [--refresh]','skill path','skill install [--path <skills-directory>] [--force]','queue --help'],
  semantics:{window:'User-visible target tokens, not raw runtime tokens. The app owns conversion, validation, application and compensation.',defaults:'Affects newly created user chats; existing chats retain their budgets and forks inherit their parent.',speed:'Read-only observed generation throughput; no model/tier/speed switching or fixed tokens/s control.',application:'Saved/queued is not confirmed. Inspect phase, observedWindow, expectedWindow and compensation after runtime readback.'}
 };
 const fail=(code,message)=>{throw Object.assign(Error(message),{code});};
@@ -18,11 +18,12 @@ export function speedReport(id,statistics,limit=20){
 export async function runManagerCLI(args,{client}={}){
  if(!args.length||args.includes('--help'))return managerHelp;
  const positional=[],flags={};
- for(let i=0;i<args.length;i++){const arg=args[i];if(arg==='--json')continue;if(arg.startsWith('--')){if(Object.hasOwn(flags,arg))fail('INVALID_ARGUMENT','Duplicate option: '+arg);if(['--refresh','--save-only'].includes(arg)){flags[arg]=true;continue;}if(!['--window','--compact','--compact-percent','--reserve','--floor','--revision','--limit','--days'].includes(arg)||args[i+1]===undefined||args[i+1].startsWith('--'))fail('INVALID_ARGUMENT','Unknown option or missing value: '+arg);flags[arg]=args[++i];}else positional.push(arg);}
+ for(let i=0;i<args.length;i++){const arg=args[i];if(arg==='--json')continue;if(arg.startsWith('--')){if(Object.hasOwn(flags,arg))fail('INVALID_ARGUMENT','Duplicate option: '+arg);if(['--refresh','--save-only','--force'].includes(arg)){flags[arg]=true;continue;}if(!['--window','--compact','--compact-percent','--reserve','--floor','--revision','--limit','--days','--path'].includes(arg)||args[i+1]===undefined||args[i+1].startsWith('--'))fail('INVALID_ARGUMENT','Unknown option or missing value: '+arg);flags[arg]=args[++i];}else positional.push(arg);}
  const [scope,action,id]=positional;
  const check=(count,allowed=[])=>{if(positional.length!==count)fail('INVALID_ARGUMENT','Unexpected or missing arguments.');for(const key of Object.keys(flags))if(!allowed.includes(key))fail('INVALID_ARGUMENT','Unsupported option: '+key);};
  const revision=fallback=>{if(flags['--revision']===undefined)return fallback;const raw=flags['--revision'];if(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw)))fail('INVALID_ARGUMENT','Revision must be a non-negative integer.');return Number(raw);};
- if(scope==='skill'&&action==='path'){check(2);return {path:fileURLToPath(new URL('../skills/context-manager',import.meta.url)),name:'context-manager'};}
+ if(scope==='skill'&&action==='path'){check(2);return {path:bundledSkillPath,name:'context-manager'};}
+ if(scope==='skill'&&action==='install'){check(2,['--path','--force']);return installSkill({skillsRoot:flags['--path'],force:!!flags['--force']});}
  if(scope==='global'){
   if(action==='status'){check(2);const s=await client('state');return {version:s.version,bridgeCount:s.bridgeCount,chatCount:s.threads.length,capabilities:s.capabilities,contextExtension:s.contextExtension,compactionCompensation:s.compactionCompensation,newChatDefaults:s.newChatDefaults,newChatDefaultsLimits:s.newChatDefaultsLimits,queues:{count:s.taskQueues?.queues.length??0,enabled:s.taskQueues?.queues.filter(q=>q.enabled).length??0}};}
   if(action==='quota'){check(2,['--refresh']);return flags['--refresh']?client('quota-refresh',{}):(await client('state')).quota;}

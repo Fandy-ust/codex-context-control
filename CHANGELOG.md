@@ -1,5 +1,11 @@
 # Changes
 
+## 0.23.1 — One-command skill installation
+
+- Install or update the bundled GitHub skill with `context-manager skill install` on both platforms, with a custom skills-directory option.
+- Preserve local edits and unrelated files; require explicit `--force` to replace modified skill content.
+- Document the skill’s purpose, CLI scope and installation in English and Chinese.
+
 ## 0.23.0 — Optional compaction compensation and agent queue CLI
 
 - Add a bundled context-manager skill and global/chat CLI commands for defaults, visible context budgets and read-only speed analysis; no speed-mode switching.

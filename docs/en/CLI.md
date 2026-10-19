@@ -19,4 +19,26 @@ Use the full launcher path if it is not on PATH. Defaults affect future new chat
 
 Speed results group recorded generation throughput by model, effort, service tier and response kind. Aggregate throughput is total output tokens divided by observed generation duration. Missing timing remains null. Output can include reasoning, and the metric is not network TTFT or visible-text speed.
 
-The bundled [context-manager skill](../../skills/context-manager/SKILL.md) describes the app and its CLI. `skill path` locates it in the installation. Copy that folder into the agent's skills directory (normally `~/.codex/skills` for Codex) and invoke `$context-manager` or allow automatic discovery. The skill respects the requested scope and queue guards.
+## Install the skill
+
+The [context-manager skill](../../skills/context-manager/SKILL.md) lives in this GitHub repository and ships with both installers. It teaches an agent to inspect quota, adjust context budgets and manage queues through the app's CLI. Speed remains read-only analysis.
+
+After installing the app, run once:
+
+**macOS**
+
+```sh
+"$HOME/Library/Application Support/CodexContextControl/bin/context-manager" skill install
+```
+
+**Windows PowerShell**
+
+```powershell
+& "$env:LOCALAPPDATA\CodexContextControl\bin\context-manager.cmd" skill install
+```
+
+The default is `~/.codex/skills/context-manager`, or `$CODEX_HOME/skills/context-manager` when configured. Reopen Codex and invoke `$context-manager`, or ask it to use Context Manager in natural language.
+
+Run the same command after app updates to update the skill. It replaces unmodified managed `SKILL.md` content, preserves unrelated files and stops if you edited the skill; `--force` explicitly replaces local edits. Installing the app alone does not modify any agent's skills.
+
+For another agent supporting `SKILL.md`, choose its skills parent directory with `skill install --path "/path/to/agent/skills"`. `skill path` locates the bundled copy. Alternatively copy the repository's `skills/context-manager` folder into the agent's skills directory; the app and its CLI are still required.

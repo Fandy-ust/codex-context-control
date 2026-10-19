@@ -13,7 +13,7 @@ Context Manager 是 Mac 菜单栏／Windows 托盘中的本地控制器，管理
 - Windows PowerShell：`& "$env:LOCALAPPDATA\CodexContextControl\bin\context-manager.cmd" ...`。
 - 开发环境：只在用户指定的源码仓库中使用 `node src/cli.mjs ...`。
 
-先用 `--help` 检查实际支持的命令；队列细节看 `queue --help` 和 `queue schema`。入口缺失时说明需要安装带 CLI 的版本，不直接改数据文件来代替 API。`skill path` 可定位随 App 分发的本技能。
+先用 `--help` 检查实际支持的命令；队列细节看 `queue --help` 和 `queue schema`。入口缺失时说明需要安装带 CLI 的版本，不直接改数据文件来代替 API。`skill path` 可定位随 App 分发的本技能；用户要求安装或更新本技能时使用 `skill install`，其他 agent 可用 `--path` 指定 skills 父目录。
 
 ## 按任务选择操作
 
