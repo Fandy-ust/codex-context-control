@@ -27,6 +27,13 @@ test('compensation leaves the logical policy intact, reserves physical space and
  const unknown=compensationBudget(policy,model,{enabled:true,known:false});assert.equal(unknown.details.status,'unavailable');assert.equal(unknown.compact,policy.compact);
  const off=compensationBudget(policy,model,{enabled:false});assert.equal(off.details.status,'off');assert.equal(off.window,policy.window);
 });
+test('interrupted turns retain reasoning and satisfy the next-turn history barrier',()=>{
+ const events=[event('response_item',reasoning('prior',16000)),event('event_msg',{type:'task_complete',turn_id:'old'}),
+  event('response_item',reasoning('interrupted',24000)),event('event_msg',{type:'turn_aborted',turn_id:'paused'})];
+ assert.deepEqual(activeReasoningEstimate(events,{threadId:'chat',completedTurnId:'paused'}),{known:true,extraTokens:7176});
+ assert.deepEqual(activeReasoningEstimate(events.slice(0,-1),{threadId:'chat',completedTurnId:'paused'}),{known:false,reason:'pending'});
+ assert.equal(activeReasoningEstimate([...events,event('event_msg',{type:'turn_aborted',turn_id:'other'},'parent')],{threadId:'chat',completedTurnId:'paused'}).known,true);
+});
 test('readback confirmation recognizes reserved runtime space without changing target capacity',()=>{
  const budget=compensationBudget(policy,model,{enabled:true,known:true,extraTokens:100000});
  const chat={policy,modelMetadata:model,connected:true,freshUsage:true,phase:'confirmed',revision:1,observedWindow:500000,expectedWindow:500000,compensation:budget.details};

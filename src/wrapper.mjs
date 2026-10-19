@@ -47,7 +47,7 @@ if(!desktop||!isStdioServer(args)||!supported){
         throw new Error('不支持的运行时操作');
       });
       if(closed){peer.close();return;}
-      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,taskQueueVersion:4,compensationVersion:1,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
+      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,taskQueueVersion:4,compensationVersion:2,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
       if(closed){peer.close();return;}
       for(const record of bridge.records.values())bridge.notify(record);
       peer.socket.once('close',()=>{peer=null;if(!closed)setTimeout(attach,1000).unref();});

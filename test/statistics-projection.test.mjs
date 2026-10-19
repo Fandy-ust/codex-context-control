@@ -38,7 +38,7 @@ test('statistics projection preserves every statistic and strips unused private 
 });
 
 test('projected cache retains useful events within its budget and reads only appended bytes',()=>{
- const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-projection-')),file=path.join(home,'rollout.jsonl'),db=new DatabaseSync(path.join(home,'state_5.sqlite'));
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-projection-')),file=path.join(home,`rollout-${id}.jsonl`),db=new DatabaseSync(path.join(home,'state_5.sqlite'));
  db.exec('CREATE TABLE threads(id TEXT PRIMARY KEY,rollout_path TEXT)');db.prepare('INSERT INTO threads VALUES(?,?)').run(id,file);db.close();
  const source=events();source[7].payload.encrypted_content='opaque'.repeat(400000);
  source.push(e('event_msg',{type:'item_completed',item:{type:'CommandExecution',aggregated_output:'duplicated'.repeat(200000)}}));

@@ -6,6 +6,8 @@ Enable **Early compaction compensation** in **Settings → General**. It default
 
 The controller reads the active local history, respects compaction replacements and fork boundaries, and reproduces the runtime's encrypted-reasoning length estimate. Only the required item types, identifiers and lengths are cached in memory. It does not persist reasoning payloads or conversation text.
 
+Interrupted turns also count as finished for this check. Continuing after a pause recalculates compensation before sending input. After message edits, inherited history is resolved by immutable rollout ID rather than the chat's current file. Restart Codex when prompted after upgrading so its running bridge loads the fixes.
+
 While the chat is idle, it adjusts the native window and threshold to reserve compensation space, preserving the saved logical budget. Incoming user input is checked against that target; native compaction can be requested first. Disabling restores the original window before the next turn of a chat with auto-apply enabled.
 
 The feature preserves the official executable, usage receipts and chat history. It requires no extra model call. The estimate is not the real model reasoning-token count.

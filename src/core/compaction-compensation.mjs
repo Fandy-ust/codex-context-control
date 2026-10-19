@@ -34,7 +34,9 @@ export function activeReasoningEstimate(events, {threadId, completedTurnId} = {}
     } else if (event.type === 'response_item') append(p);
     else if (event.type === 'event_msg') {
       if (['thread_rolled_back','thread_rollback'].includes(p.type)) known = false;
-      if (['task_complete','turn_complete'].includes(p.type) && (!threadId || event.originThreadId === threadId)) completed = p.turn_id;
+      // Interrupted turns persist turn_aborted, not task_complete. Their retained
+      // reasoning still needs compensation before the user's next input.
+      if (['task_complete','turn_complete','turn_aborted'].includes(p.type) && (!threadId || event.originThreadId === threadId)) completed = p.turn_id;
     }
   }
   if (!known) return {known:false, reason:'history'};

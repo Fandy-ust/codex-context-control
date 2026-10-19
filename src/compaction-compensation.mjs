@@ -6,7 +6,7 @@ export function createCompensationManager({home=root}={}) {
   const file=path.join(home,'compaction-compensation.json');
   const enabled=()=>{try{return readJSON(file,{})?.enabled===true;}catch{return false;}};
   const status=(bridges=[])=>{
-    const on=enabled(),supportedCount=bridges.filter(b=>b.compensationVersion===1).length;
+    const on=enabled(),supportedCount=bridges.filter(b=>b.compensationVersion===2).length;
     const pending=on&&supportedCount<bridges.length;
     return {enabled:on,pending,supportedCount,connectedCount:bridges.length,
       message:on?(pending?'已开启，请重开 Codex 加载补偿功能':'已开启；已设置预算的聊天在下轮提交时尝试补偿'):'已关闭；自动应用中的聊天下轮恢复原窗口'};

@@ -1,5 +1,12 @@
 # Changes
 
+## 0.23.5 — Compaction compensation after interruption and message edits
+
+- Recognize interrupted turns as persisted terminal events, so continuing after a pause can reserve historical reasoning overhead before applying a smaller context budget.
+- Resolve inherited history by immutable rollout ID after message edits, including repeated edits of the same chat. Preserve byte and ordinal boundaries, reject ambiguous files and cycles, and reuse bounded history caches.
+- Mark older running Codex bridges as needing a restart to load these compensation fixes.
+- Validate the pause/shrink/continue path against the unmodified runtime with local mock responses, alongside history and cache regressions. Shared fixes apply to macOS and Windows.
+
 ## 0.23.4 — English extension skill and tighter sidebar spacing
 
 - Place the sidebar scrollbar close to the divider instead of leaving a wide unused strip.
