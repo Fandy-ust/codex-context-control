@@ -4,6 +4,8 @@ import AppKit
 struct Budget: Decodable,Equatable { let window:Int;let compact:Int;let reserve:Int;let retainedFloor:Int;let revision:Int;let enabled:Bool? }
 struct Usage: Decodable,Equatable { let totalTokens:Int }
 struct Metadata: Decodable,Equatable { let max_context_window:Int?;let effective_context_window_percent:Int?;let context_ceiling:Int?;let context_compact_ceiling:Int?;let context_catalog_ready:Bool? }
+struct CompensationDetails:Decodable,Equatable {let enabled:Bool;let status:String;let extraTokens:Int;let targetWindow:Int?;let runtimeWindow:Int?;let message:String?}
+struct CompensationState:Decodable,Equatable {let enabled:Bool;let pending:Bool;let message:String}
 struct Chat: Identifiable, Decodable,Equatable {
     let id:String;let name:String?;let model:String?;let cwd:String?;let status:String?
     let connected:Bool;let ambiguous:Bool;let phase:String?;let message:String?
@@ -11,16 +13,16 @@ struct Chat: Identifiable, Decodable,Equatable {
     var queueRestartRequired:Bool{taskQueueRestartRequired == true || (connected && taskQueueSupported == false)}
     let ephemeral:Bool?;let canAcceptDirectInput:Bool?;let threadSource:String?;let lastActivityAt:Int?;let lastStartedAt:Int?;let lastCompletedAt:Int?
     let observedWindow:Int?;let expectedWindow:Int?;let lastUsage:Usage?;let freshUsage:Bool?;let revision:Int?
-    let policy:Budget?;let modelMetadata:Metadata?
+    let policy:Budget?;let modelMetadata:Metadata?;let compensation:CompensationDetails?
     var title:String { if let name,!name.isEmpty{return name};if let cwd{return URL(fileURLWithPath:cwd).lastPathComponent};return String(id.prefix(12)) }
     var canCompact:Bool {connected && !ambiguous && status=="idle" && ephemeral != true && canAcceptDirectInput != false && !["compacting","reloading","extension_pending"].contains(phase ?? "")}
     var targetWindow:Int? {
         guard let policy,policy.enabled != false,let percent=modelMetadata?.effective_context_window_percent,(1...100).contains(percent) else{return nil}
         return policy.window*percent/100
     }
-    var windowConfirmed:Bool {connected && freshUsage==true && phase=="confirmed" && revision==policy?.revision && observedWindow != nil && observedWindow==expectedWindow && observedWindow==targetWindow}
+    var windowConfirmed:Bool {connected && freshUsage==true && phase=="confirmed" && revision==policy?.revision && observedWindow != nil && observedWindow==expectedWindow && (observedWindow==targetWindow || (compensation?.status=="active" && compensation?.targetWindow==targetWindow && compensation?.runtimeWindow==observedWindow))}
     var observedWindowTitle:String {
-        if windowConfirmed{return L("已确认可用窗口")}
+        if windowConfirmed{return L((compensation?.extraTokens ?? 0)>0 ? "已确认运行时窗口（含补偿）":"已确认可用窗口")}
         if !connected || freshUsage != true{return L("上次读回窗口（待更新）")}
         return phase=="mismatch" ? L("运行时读回窗口（与目标不符）"):L("最近读回窗口")
     }
@@ -37,7 +39,7 @@ struct QuotaState:Decodable,Equatable {let creditBaselines:[String:CreditBaselin
 struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics:Bool?;let creditBaseline:Bool?}
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
 struct ChatSidebar:Decodable,Equatable {let projects:[SidebarProject];let standaloneThreadIds:[String]}
-struct RuntimeState: Decodable {let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct RuntimeState: Decodable {let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let compactionCompensation:CompensationState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -75,6 +77,8 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var supportsVisibleBudget=false
     @Published var bridgeCount=0
     @Published var contextCeilingPending=false
+    @Published var compactionCompensation:CompensationState?
+    @Published var changingCompensation=false
     @Published var contextExtension:ContextExtensionState?
     @Published var changingContextExtension=false
     @Published var newChatDefaultsLimits:NewChatDefaultsLimits?
@@ -130,6 +134,7 @@ struct ServiceSettings: Decodable {let node:String}
             if bridgeCount != state.bridgeCount{bridgeCount=state.bridgeCount}
             if runtimeFix != state.runtimeFix{runtimeFix=state.runtimeFix}
             if contextCeilingPending != (state.contextCeilingPending ?? false){contextCeilingPending=state.contextCeilingPending ?? false}
+            if compactionCompensation != state.compactionCompensation{compactionCompensation=state.compactionCompensation}
             if contextExtension != state.contextExtension{contextExtension=state.contextExtension}
             if newChatDefaultsLimits != state.newChatDefaultsLimits{newChatDefaultsLimits=state.newChatDefaultsLimits}
             if newChatDefaults != state.newChatDefaults{newChatDefaults=state.newChatDefaults}
@@ -160,6 +165,10 @@ struct ServiceSettings: Decodable {let node:String}
     func scanChats() async {
         working=true;defer{working=false}
         do{_ = try await api(ControlAPI.scan,body:[:]);await refresh();notice=L("本地聊天已更新")}catch{notice=error.localizedDescription}
+    }
+    func setCompensation(_ enabled:Bool) async {
+        changingCompensation=true;defer{changingCompensation=false}
+        do{compactionCompensation=try JSONDecoder().decode(CompensationState.self,from:await api(ControlAPI.compensation,body:["enabled":enabled]));await refresh();notice=compactionCompensation?.message ?? ""}catch{notice=error.localizedDescription}
     }
     func setContextExtension(_ enabled:Bool) async {
         changingContextExtension=true;defer{changingContextExtension=false}
@@ -580,6 +589,7 @@ struct ContentView: View {
                             VStack(alignment:.leading,spacing:4){
                                 Text(chat.observedWindowTitle+" · "+formatted(chat.observedWindow)).font(.callout).foregroundStyle(.secondary)
                                 Text(phaseName(chat.phase)).font(.caption).foregroundStyle(.secondary).help(L(chat.message ?? ""))
+                                if let compensation=chat.compensation,compensation.enabled,let message=compensation.message{Text(L(message)).font(.caption).foregroundStyle(["limited","unavailable"].contains(compensation.status) ? Color.orange:Color.secondary).fixedSize(horizontal:false,vertical:true)}
                             }
                             Spacer()
                             Button(L("手动压缩")){Task{await model.act("compact")}}.buttonStyle(.bordered).disabled(!chat.canCompact || model.working).help(L("仅在聊天空闲时请求原生压缩"))

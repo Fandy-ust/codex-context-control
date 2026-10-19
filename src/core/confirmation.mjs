@@ -7,6 +7,7 @@ export function reconcileWindowConfirmation(thread,policy,model){
     !policy?.enabled||thread.revision!==policy.revision||thread.configuredWindow!==policy.window||
     !Number.isSafeInteger(thread.observedWindow)||!Number.isSafeInteger(model?.max_context_window)||policy.window>model.max_context_window)return {};
   const budget=savedBudget(policy,model);if(!budget)return {};
-  const matches=thread.observedWindow===budget.usableWindow;
-  return {expectedWindow:budget.usableWindow,phase:matches?'confirmed':'mismatch',message:matches?'模型切换后的实际窗口已读回确认。':'模型切换后，实际窗口与当前预算不一致。'};
+  const expected=thread.compensation?.status==='active'&&thread.compensation.targetWindow===budget.usableWindow?thread.compensation.runtimeWindow:budget.usableWindow;
+  const matches=thread.observedWindow===expected;
+  return {expectedWindow:expected,phase:matches?'confirmed':'mismatch',message:matches?'模型切换后的实际窗口已读回确认。':'模型切换后，实际窗口与当前预算不一致。'};
 }

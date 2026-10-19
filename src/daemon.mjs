@@ -2,6 +2,7 @@ import net from 'node:net';
 import {createTaskQueues} from './task-queues.mjs';
 import {supportsTaskQueues,QUEUE_RUNTIME_RESTART} from './core/queue-runtime.mjs';
 import {createQueueSleepInhibitor} from './queue-sleep.mjs';
+import {createCompensationManager} from './compaction-compensation.mjs';
 import {normalizeBudgetCommand} from './core/budget-command.mjs';
 import {CONTROL_API_VERSION,controlOperation} from './contracts/control-api.mjs';
 import {createQuotaManager} from './account-quota.mjs';
@@ -70,6 +71,7 @@ export async function startDaemon() {
   const statisticsJSON=new WeakMap();
   const runtimeFix=createRuntimeFixManager();
   const extension=createContextExtensionManager();
+  const compensation=createCompensationManager();
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
   function nativeDefaultModel(){store.model(null);return [...(store.catalog?.values()||[])].filter(m=>Number.isSafeInteger(m.max_context_window)&&Number.isInteger(m.effective_context_window_percent)).sort((a,b)=>b.max_context_window*b.effective_context_window_percent-a.max_context_window*a.effective_context_window_percent)[0]||null;}
   function defaultModel(){const m=nativeDefaultModel();return extension.enabled()?ceilingModel(m):m;}
@@ -82,7 +84,7 @@ export async function startDaemon() {
   function state(){
     store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);
     const threads=Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity);
-    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true},taskQueues:taskQueues.list(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
+    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,compactionCompensation:true},taskQueues:taskQueues.list(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()]),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
   }
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version,buildId};
@@ -106,14 +108,14 @@ export async function startDaemon() {
       }catch(error){store.data.policies=oldPolicies;store.data.newChatDefaults=oldDefaults;store.data.extensionRestore=oldRestore;extension.setEnabled(previous);throw error;}
       return extensionState();
     }
-    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,taskQueueVersion:p.taskQueueVersion==null?null:p.taskQueueVersion===4?4:0,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
+    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,compensationVersion:p.compensationVersion===1?1:null,taskQueueVersion:p.taskQueueVersion==null?null:p.taskQueueVersion===4?4:0,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180||['__proto__','constructor','prototype'].includes(p.id))throw new Error('聊天 ID 无效');
       const previousPolicy=JSON.stringify(store.data.policies[p.id]??null);
       const hadOwner=b.ids.has(p.id);
       b.ids.add(p.id);rebuildOwners();
-      const allowed=['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource','automaticTask'];
+      const allowed=['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource','automaticTask','compensation'];
       const clean=Object.fromEntries(allowed.filter(k=>Object.hasOwn(p,k)).map(k=>[k,p[k]]));
       if(!Object.hasOwn(clean,'usageFresh'))clean.usageFresh=clean.freshUsage===true;
       if(clean.threadSource!=null&&typeof clean.threadSource!=='string')delete clean.threadSource;
@@ -217,6 +219,7 @@ export async function startDaemon() {
         if(!Object.hasOwn(store.data.threads,params.id))throw new Error('未找到所选聊天');
         answer=await contextStatistics(params.id,params.refresh===true);
       }
+      else if(operation==='compensation'){compensation.setEnabled(params.enabled);answer=compensation.status([...bridges.values()]);}
       else if(operation==='extension')answer=await handle(null,'setContextExtension',params);
       else if(operation==='defaults')answer=await handle(null,'setNewChatDefaults',params);
       else if(operation==='runtime-fix')answer=runtimeFix.setEnabled(params.enabled,undefined,[...bridges.values()]);

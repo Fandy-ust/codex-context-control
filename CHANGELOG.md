@@ -1,5 +1,13 @@
 # Changes
 
+## 0.23.0 — Optional early compaction compensation
+
+- Add an independent, default-off experimental switch on Mac and Windows. Preserve the official runtime and label the larger runtime window separately from the app's target budget.
+- Reconstruct active reasoning lengths from bounded local-history caches, respecting compaction replacement and fork boundaries. Restore the original window when disabled; show unavailable or insufficient-headroom states without guessing.
+- Keep logical budgets and incoming-input preflight unchanged while reserving native accounting headroom between turns. Preserve the preference across upgrades.
+- Validate the original-runtime control reproduction, compensation, readback and restoration with isolated loopback fixtures; this does not establish live-provider or Computer Use acceptance.
+
+
 ## 0.22.5 — Task composer and quota graph improvements
 
 - Fix Electron 44 image/file clipboard handling; align composer actions, remove the expand action and redundant model chevron, and place square attachments above the prompt.

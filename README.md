@@ -26,6 +26,8 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 ## Features
 
+- **Early compaction compensation (experimental):** an optional switch reserves accounting headroom while keeping the target budget visible. [Details](docs/en/COMPACTION_COMPENSATION.md).
+
 - **Per-chat budgets:** adjust one compact slider group, then click Apply; set new-chat defaults and inherit budgets when forking.
 - **Account quota:** view remaining quota and reset times, with a gradually emptying lightning indicator on Mac and a tray-adapted icon on Windows.
 - **Credits:** compact sidebar balance and a local progress baseline, with exact-value tooltips and manual baseline reset in quota settings.

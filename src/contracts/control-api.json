@@ -68,6 +68,10 @@
     "task-queue": {
       "method": "POST",
       "path": "/task-queue"
+    },
+    "compensation": {
+      "method": "POST",
+      "path": "/compaction-compensation"
     }
   }
 }

@@ -32,6 +32,11 @@ struct MainControlPanelView:View {
             Picker(L("语言"),selection:Binding(get:{model.languageSelection},set:{model.setLanguage($0)})){Text(L("自动（按时区）")).tag(LanguageChoice.auto);Text("中文").tag(LanguageChoice.zh);Text("English").tag(LanguageChoice.en)}.pickerStyle(.menu).accessibilityIdentifier("language-picker")
             HStack{Button(L("同步本地聊天"),systemImage:"arrow.clockwise"){Task{await model.scanChats();feedback=model.notice}}.disabled(model.working);Button(L("打开 Codex"),systemImage:"arrow.up.forward.app"){model.launchCodex()}}
             ContextExtensionControl(model:model)
+            VStack(alignment:.leading,spacing:7){
+                Toggle(L("提前压缩补偿（实验性）"),isOn:Binding(get:{model.compactionCompensation?.enabled ?? false},set:{value in Task{await model.setCompensation(value)}})).toggleStyle(.switch).controlSize(.small).disabled(!model.serviceAvailable || model.changingCompensation || model.compactionCompensation==nil)
+                Text(L("Codex 显示的上下文窗口可能更大，用于为重复计数预留空间；目标容量以本 App 为准。接近上限时可能无法完全补偿。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                Text(L(model.compactionCompensation?.message ?? "等待 Codex 连接")).font(.caption2).foregroundStyle(.secondary)
+            }.padding(12).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
             Divider()
             if model.updateState?.phase=="downloading" || model.updateState?.phase=="installing" {HStack{ProgressView().controlSize(.small);Text(L("正在更新…"))}}
             else{HStack{Button(model.updateState?.available==true ? L("安装更新 {0}",model.updateState?.version ?? ""):L("检查更新"),systemImage:"arrow.down.circle"){Task{await model.updateApp(install:model.updateState?.available==true);feedback=model.notice}}.disabled(model.checkingUpdates);Text("v"+model.appVersion).font(.caption).foregroundStyle(.secondary)}}

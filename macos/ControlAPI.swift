@@ -19,6 +19,7 @@ enum ControlAPI {
     static let quotaAnalytics = "/quota/analytics"
     static let quotaCreditBaseline = "/quota/credits/reset"
     static let taskQueue = "/task-queue"
+    static let compensation = "/compaction-compensation"
     static let routes: [String:String] = [
         "state": "/state",
         "statistics": "/context-stats",
@@ -36,6 +37,7 @@ enum ControlAPI {
         "shutdown": "/shutdown",
         "quota-analytics": "/quota/analytics",
         "quota-credit-baseline": "/quota/credits/reset",
-        "task-queue": "/task-queue"
+        "task-queue": "/task-queue",
+        "compensation": "/compaction-compensation"
     ]
 }

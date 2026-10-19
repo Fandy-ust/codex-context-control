@@ -1,6 +1,7 @@
 import {spawn,spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {Bridge} from './bridge.mjs';
+import {createCompensationResolver} from './compaction-compensation.mjs';
 import {connect,request} from './ipc.mjs';
 import {callerRuntime} from './runtime-selection.mjs';
 import {ensureDaemon} from './service.mjs';
@@ -32,7 +33,7 @@ if(!desktop||!isStdioServer(args)||!supported){
   let peer,closed=false,bridge;
   bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{
     await ensureDaemon();return request('forkBudget',{id,model,contextCeiling:!!ceiling});
-  },{contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling});}});
+  },{resolveCompensation:createCompensationResolver(),contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling});}});
   async function attach(){
     if(closed)return;
     try{
@@ -46,7 +47,7 @@ if(!desktop||!isStdioServer(args)||!supported){
         throw new Error('不支持的运行时操作');
       });
       if(closed){peer.close();return;}
-      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,taskQueueVersion:4,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
+      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,taskQueueVersion:4,compensationVersion:1,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
       if(closed){peer.close();return;}
       for(const record of bridge.records.values())bridge.notify(record);
       peer.socket.once('close',()=>{peer=null;if(!closed)setTimeout(attach,1000).unref();});

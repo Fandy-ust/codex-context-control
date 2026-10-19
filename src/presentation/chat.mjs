@@ -1,10 +1,10 @@
 import {savedBudget} from '../core/budget.mjs';
 export function windowConfirmed(thread){
   const budget=thread?.policy?.enabled===false?null:savedBudget(thread?.policy,thread?.modelMetadata);
-  return !!budget&&thread.connected===true&&thread.freshUsage===true&&thread.phase==='confirmed'&&thread.revision===thread.policy.revision&&thread.observedWindow!=null&&thread.observedWindow===thread.expectedWindow&&thread.observedWindow===budget.usableWindow;
+  return !!budget&&thread.connected===true&&thread.freshUsage===true&&thread.phase==='confirmed'&&thread.revision===thread.policy.revision&&thread.observedWindow!=null&&thread.observedWindow===thread.expectedWindow&&(thread.observedWindow===budget.usableWindow||(thread.compensation?.status==='active'&&thread.compensation.targetWindow===budget.usableWindow&&thread.compensation.runtimeWindow===thread.observedWindow));
 }
 export function observedWindowTitle(thread){
-  if(windowConfirmed(thread))return '已确认可用窗口';
+  if(windowConfirmed(thread))return thread.compensation?.extraTokens>0?'已确认运行时窗口（含补偿）':'已确认可用窗口';
   if(!thread?.connected||thread.freshUsage!==true)return '上次读回窗口（待更新）';
   return thread.phase==='mismatch'?'运行时读回窗口（与目标不符）':'最近读回窗口';
 }

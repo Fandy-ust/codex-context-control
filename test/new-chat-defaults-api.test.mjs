@@ -20,6 +20,12 @@ test('default settings require authentication, persist, reject stale writes and 
   assert.equal((await fetch(policyURL,{method:'POST',headers,body:JSON.stringify({id,policy:{window:400000,compact:300000},apply:false})})).status,400);
   assert.equal((await fetch(clearURL,{method:'POST',headers,body:JSON.stringify({id})})).status,400);
  }
+ const compensationURL=`http://127.0.0.1:${c.port}/compaction-compensation`;
+ assert.equal((await fetch(compensationURL,{method:'POST',body:JSON.stringify({enabled:true})})).status,403);
+ assert.equal((await fetch(compensationURL,{method:'POST',headers,body:JSON.stringify({enabled:'true'})})).status,400);
+ const compensation=await fetch(compensationURL,{method:'POST',headers,body:JSON.stringify({enabled:true})});assert.equal(compensation.status,200);assert.equal((await compensation.json()).enabled,true);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(control,'compaction-compensation.json'))).enabled,true);
+ const allState=await (await fetch(`http://127.0.0.1:${c.port}/state`,{headers})).json();assert.equal(allState.compactionCompensation.enabled,true);assert.equal(allState.contextExtension.enabled,false);
  const persisted=JSON.parse(fs.readFileSync(path.join(control,'state.json')));assert.equal(persisted.newChatDefaults.usableWindow,400000);assert.deepEqual(persisted.policies.existing,old);
  const {Store}=await import('../src/store.mjs');assert.equal(new Store().data.newChatDefaults.revision,1);
  }finally{d.web.closeAllConnections();await new Promise(r=>d.web.close(r));await new Promise(r=>d.ipcServer.close(r));fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
