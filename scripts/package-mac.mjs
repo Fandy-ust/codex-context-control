@@ -1,4 +1,5 @@
 import fs from 'node:fs';import path from 'node:path';import crypto from 'node:crypto';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
+import {pruneTokenizer} from './prune-tokenizer.mjs';
 const repo=fileURLToPath(new URL('../',import.meta.url)),version=JSON.parse(fs.readFileSync(path.join(repo,'package.json'))).version;
 if(process.platform!=='darwin'||process.arch!=='arm64')throw Error('This release currently targets Apple Silicon macOS.');
 const sourceRevision=spawnSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).stdout.trim();
@@ -32,12 +33,7 @@ fs.cpSync(path.join(repo,'skills'),path.join(payload,'skills'),{recursive:true})
 fs.mkdirSync(path.join(payload,'runtime-patches'));const patchPin=JSON.parse(fs.readFileSync(path.join(repo,'runtime-patches/manifest.json')));for(const name of ['manifest.json','LICENSE','CODEX-NOTICE',patchPin.baseVersion+'.patch'])fs.copyFileSync(path.join(repo,'runtime-patches',name),path.join(payload,'runtime-patches',name));
 const production=spawnSync('npm',['ls','--omit=dev','--all','--parseable'],{cwd:repo,encoding:'utf8'});if(production.status!==0)throw Error('Production dependencies are incomplete; run npm ci first');
 fs.mkdirSync(path.join(payload,'node_modules'));for(const directory of production.stdout.trim().split('\n').filter(p=>p!==repo.replace(/\/$/,''))){const relative=path.relative(repo,directory);if(!relative.startsWith('node_modules'+path.sep)||fs.lstatSync(directory).isSymbolicLink())throw Error('Unsupported production dependency path');fs.cpSync(directory,path.join(payload,relative),{recursive:true});} 
-const tokenizer=path.join(payload,'node_modules/js-tiktoken');
-for(const name of fs.readdirSync(path.join(tokenizer,'dist'))){
- const keep=name==='lite.js'||/^chunk-.*\.js$/.test(name)||name==='ranks';
- if(!keep)fs.rmSync(path.join(tokenizer,'dist',name),{recursive:true,force:true});
-}
-for(const name of fs.readdirSync(path.join(tokenizer,'dist/ranks')))if(name!=='o200k_base.js')fs.rmSync(path.join(tokenizer,'dist/ranks',name));
+pruneTokenizer(path.join(payload,'node_modules'));
 for(const file of ['package.json','package-lock.json','LICENSE','THIRD_PARTY_NOTICES.md'])fs.copyFileSync(path.join(repo,file),path.join(payload,file));
 fs.mkdirSync(path.join(payload,'scripts'));for(const name of ['install.mjs'])fs.copyFileSync(path.join(repo,'scripts',name),path.join(payload,'scripts',name));
 fs.mkdirSync(path.join(payload,'build'));fs.cpSync(built,path.join(payload,'build/Codex Context Control.app'),{recursive:true});

@@ -6,6 +6,7 @@ import {spawnSync} from 'node:child_process';
 import {rcedit} from 'rcedit';
 import {powershell} from '../src/platform/index.mjs';
 import {compileWindowsInstaller} from './windows-installer.mjs';
+import {pruneTokenizer} from './prune-tokenizer.mjs';
 
 if(process.platform!=='win32')throw Error('Build Windows packages on Windows');
 const repo=fileURLToPath(new URL('../',import.meta.url)),pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
@@ -50,6 +51,7 @@ for(const name of ['LICENSE','THIRD_PARTY_NOTICES.md'])fs.copyFileSync(path.join
 fs.mkdirSync(path.join(app,'macos/Assets'),{recursive:true});fs.copyFileSync(path.join(repo,'macos/Assets/ContextManager.png'),path.join(app,'macos/Assets/ContextManager.png'));
 fs.mkdirSync(path.join(app,'node_modules'),{recursive:true});
 for(const name of ['js-tiktoken','base64-js'])fs.cpSync(path.join(repo,'node_modules',name),path.join(app,'node_modules',name),{recursive:true});
+pruneTokenizer(path.join(app,'node_modules'));
 fs.mkdirSync(path.join(app,'vendor'),{recursive:true});fs.copyFileSync(process.execPath,path.join(app,'vendor/node.exe'));
 const licenseCache=path.join(repo,'build/licenses',`Node-${process.version}-LICENSE.txt`);fs.mkdirSync(path.dirname(licenseCache),{recursive:true});
 if(!fs.existsSync(licenseCache)){

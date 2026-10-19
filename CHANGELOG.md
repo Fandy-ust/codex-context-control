@@ -1,5 +1,9 @@
 # Changes
 
+## Unreleased
+
+- Trim unused tokenizer encodings and duplicate bundles from Windows packages using the same packaging rule as macOS. Keep input-budget checks and statistics unchanged.
+
 ## 0.23.1 — One-command skill installation
 
 - Install or update the bundled GitHub skill with `context-manager skill install` on both platforms, with a custom skills-directory option.
