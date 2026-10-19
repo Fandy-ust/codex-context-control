@@ -686,6 +686,7 @@ window.__contextSmoke=async({preview=false}={})=>{
     render();projects=projects&&!root.querySelector('.recent-section .chat-button');
     root.querySelector('[data-action="recent-toggle"]').click();projects=projects&&root.querySelectorAll('.recent-section .chat-button').length===3;
     const navigation=root.querySelector('.project-navigation'),projectSection=root.querySelector('.projects-section'),recentSection=root.querySelector('.recent-section');
+    const gutterGap=root.querySelector('.sidebar').getBoundingClientRect().right-navigation.getBoundingClientRect().right;projects=projects&&gutterGap>=0&&gutterGap<=4;
     const sidebarContentWidth=navigation.clientWidth;navigation.style.maxHeight='120px';navigation.scrollTop=0;
     const projectTop=projectSection.getBoundingClientRect().top,recentTop=recentSection.getBoundingClientRect().top;
     navigation.scrollTop=32;

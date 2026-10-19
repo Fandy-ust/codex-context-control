@@ -172,7 +172,7 @@ input[type=text]{background:#ffffff08;color:inherit;border:1px solid var(--line)
 .tray-speed-value.speed-green{color:#66ca83}.tray-speed-value.speed-yellow{color:#edc45a}.tray-speed-value.speed-red{color:#f27d7d}
 
 /* Always reserve the same narrow sidebar gutter, even when groups are folded. */
-.project-navigation{overflow-y:scroll;scrollbar-gutter:stable}
+.project-navigation{overflow-y:scroll;scrollbar-gutter:stable;margin-right:-14px}
 .project-navigation::-webkit-scrollbar{width:6px}
 .project-navigation::-webkit-scrollbar-track{background:#2b2b2b;border:1.5px solid var(--bg);border-radius:3px}
 .project-navigation::-webkit-scrollbar-thumb,.project-navigation::-webkit-scrollbar-thumb:hover,.project-navigation::-webkit-scrollbar-thumb:active{background:#646464;border:1.5px solid var(--bg);border-radius:3px}

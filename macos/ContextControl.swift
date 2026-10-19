@@ -630,7 +630,7 @@ struct ContentView: View {
                 .accessibilityElement(children:.contain)
                 .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 .help((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
-                ProjectChatSidebar(model:model).frame(maxHeight:.infinity)
+                ProjectChatSidebar(model:model).frame(maxHeight:.infinity).padding(.trailing,-14)
                 QuotaSidebarView(model:model,open:{controlTab="quota";showControlPanel=true})
             }.padding().frame(minWidth:310,idealWidth:340,maxWidth:380).background(PanelStyle.background)
             Group {
