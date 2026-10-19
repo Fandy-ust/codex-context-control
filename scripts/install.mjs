@@ -1,3 +1,4 @@
+import {installQueueCLI,removeQueueCLI} from '../src/cli-launcher.mjs';
 import {editOwnedHook} from '../src/hooks.mjs';
 import fs from 'node:fs';
 import {prepareUpgrade,inheritedSettings,completeUpgrade} from '../src/upgrade-state.mjs';
@@ -26,6 +27,7 @@ function editHook(command,remove=false){return editOwnedHook({file:hooksFile,hom
 function shellFile(file,body){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'#!/bin/sh\nset -eu\n'+body+'\n',{mode:0o700});fs.chmodSync(file,0o700);}
 ensureRoot();
 if(process.argv.includes('--uninstall')){
+  removeQueueCLI(root);
   disableAutomaticStartup();
   await stopMenuBarEntry(installedApp);
   const settings=readJSON(path.join(root,'settings.json'),{});if(settings.hookCommand)editHook(settings.hookCommand,true);
@@ -70,9 +72,10 @@ if(process.argv.includes('--uninstall')){
   const previousSettings=readJSON(path.join(root,'settings.json'),{});
   if(previousSettings.hookCommand&&previousSettings.hookCommand!==hookCommand)editHook(previousSettings.hookCommand,true);
   atomicJSON(path.join(root,'settings.json'),inheritedSettings(previousSettings,{version:1,realBinary:binary,node:nodeBinary,hookCommand,desktopExecutable,desktopBundleId:bundle,shim,installedApp,launcherApp}));
+  installQueueCLI({home:root,node:nodeBinary,codeRoot:code});
   // Keep native runtime helpers discoverable beside the shim without changing signed apps.
   const binDir=path.dirname(binary);for(const name of fs.readdirSync(binDir)){
-    if(name==='codex')continue;const link=path.join(root,'bin',name);try{fs.unlinkSync(link);}catch{}
+    if(name==='codex'||name==='context-manager')continue;const link=path.join(root,'bin',name);try{fs.unlinkSync(link);}catch{}
     try{fs.symlinkSync(path.join(binDir,name),link);}catch{}
   }
   await stopMenuBarEntry(installedApp);

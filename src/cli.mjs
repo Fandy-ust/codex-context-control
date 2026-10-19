@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {queueCLIPath} from './cli-launcher.mjs';
 import {version as productVersion} from './version.mjs';
 import fs from 'node:fs';
 import {L} from './localization.mjs';
@@ -14,7 +15,11 @@ import {menuBarStatus} from './menu-bar.mjs';
 
 const [command='doctor',...args]=process.argv.slice(2);
 try{
-  if(command==='hook'){
+  if(command==='queue'){
+    const {runQueueCLI,createQueueClient}=await import('./queue-cli.mjs');const data=await runQueueCLI(args,{client:createQueueClient({home:root,ensure:ensureDaemon})});process.stdout.write(JSON.stringify({schemaVersion:1,ok:true,data})+'\n');
+  }else if(command==='--version'||command==='version'){process.stdout.write(productVersion+'\n');
+  }else if(command==='--help'||command==='help'){process.stdout.write('Context Manager: doctor | start | list | set-usable | queue\nUse queue --help for the agent queue interface.\n');
+  }else if(command==='hook'){
     let text='';for await(const chunk of process.stdin){text+=chunk;if(text.length>65536)throw new Error('input limit');}
     const event=JSON.parse(text);if(event.hook_event_name!=='Stop'){process.stdout.write('{}\n');}
     else {let answer={};try{answer=await request('hook',{sessionId:event.session_id,turnId:event.turn_id},500);}catch{}process.stdout.write(JSON.stringify(answer)+'\n');}
@@ -37,7 +42,7 @@ try{
     const state=service?await request('state'):{bridgeCount:0,threads:[]};
     const settings=readJSON(path.join(root,'settings.json'),{});
     console.log(JSON.stringify({version:productVersion,node:process.version,runtime:version,runtimeSupported:runtimeSupported(version),service,connectedBridges:state.bridgeCount,serviceVersion:state.version??null,loadedBridgeVersions:(state.bridges||[]).map(b=>b.version),automaticStartup:['darwin','win32'].includes(process.platform)?automaticStartupStatus():null,
-      runtimeFix:state.runtimeFix??null,contextExtension:state.contextExtension??null,newChatDefaults:state.newChatDefaults??null,newChatDefaultsPending:state.newChatDefaultsPending??null,observedChats:state.threads.length,installRoot:root,hookInstalled:!!settings.hookCommand,menuBar:menuBarStatus(),
+      runtimeFix:state.runtimeFix??null,contextExtension:state.contextExtension??null,newChatDefaults:state.newChatDefaults??null,newChatDefaultsPending:state.newChatDefaultsPending??null,observedChats:state.threads.length,installRoot:root,queueCLI:queueCLIPath(root),hookInstalled:!!settings.hookCommand,menuBar:menuBarStatus(),
       activation:state.bridgeCount?'connected':L('照常打开 Codex；首次安装或更新后请正常重开一次客户端。')},null,2));
-  }else throw new Error('支持 doctor、start、list、set-usable、set（底层配置）、hook');
-}catch(error){if(command==='hook'){process.stdout.write('{}\n');}else{process.stderr.write(L(error.message)+'\n');process.exitCode=1;}}
+  }else throw new Error('支持 doctor、start、list、set-usable、set（底层配置）、queue、hook');
+}catch(error){if(command==='queue'){process.stderr.write(JSON.stringify({schemaVersion:1,ok:false,error:{code:error.code||'CLI_ERROR',message:error.message}})+'\n');process.exitCode=1;}else if(command==='hook'){process.stdout.write('{}\n');}else{process.stderr.write(L(error.message)+'\n');process.exitCode=1;}}

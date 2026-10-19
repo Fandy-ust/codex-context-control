@@ -42,6 +42,9 @@ async function scenario(enabled){
    assert.equal(childRecord.compensation.status,'active',JSON.stringify(bridge.publicRecord(childRecord)));assert.equal(childRecord.compensation.targetWindow,60000);assert.ok(childRecord.compensation.extraTokens>=record.compensation.extraTokens);
    assert.equal(events.filter(e=>e.method==='item/started'&&String(e.params.item?.type).toLowerCase()==='contextcompaction').length,0);
    await call('thread/resume',{threadId:id,excludeTurns:true});await turn('After external resume');assert.equal(record.observedWindow,record.expectedWindow);assert.equal(record.compensation.status,'active');
+   const automatic=await bridge.startAutomatic(id,{taskId:'fixture-task',executionId:'fixture-execution',prompt:'Automatic task uses compensation',settings:{}});
+   for(let n=0;n<400&&!events.some(e=>e.method==='turn/completed'&&e.params.turn.id===automatic.turnId);n++)await delay(20);
+   assert.ok(events.some(e=>e.method==='turn/completed'&&e.params.turn.id===automatic.turnId));await delay(80);assert.equal(record.compensation.status,'active');assert.equal(record.observedWindow,record.expectedWindow);
    manager.setEnabled(false);await turn('After disabling');assert.equal(record.compensation.enabled,false);assert.equal(record.observedWindow,60000);
   }else assert.ok(compactions>0,'control must reproduce premature compaction');
   return {compactions};

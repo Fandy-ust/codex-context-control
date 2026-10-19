@@ -1,7 +1,8 @@
 # Changes
 
-## 0.23.0 — Optional early compaction compensation
+## 0.23.0 — Optional compaction compensation and agent queue CLI
 
+- Add a JSON queue CLI backed by the existing controller, with revision checks, idempotent add requests, literal file/stdin input and bundled-runtime launchers for both platforms.
 - Add an independent, default-off experimental switch on Mac and Windows. Preserve the official runtime and label the larger runtime window separately from the app's target budget.
 - Reconstruct active reasoning lengths from bounded local-history caches, respecting compaction replacement and fork boundaries. Restore the original window when disabled; show unavailable or insufficient-headroom states without guessing.
 - Keep logical budgets and incoming-input preflight unchanged while reserving native accounting headroom between turns. Preserve the preference across upgrades.

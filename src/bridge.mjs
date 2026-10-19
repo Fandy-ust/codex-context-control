@@ -122,21 +122,26 @@ export class Bridge {
     return compensationBudget(policy,record.modelInfo,observation);
   }
   budgetKey(policy,budget){return JSON.stringify([policy.revision,budget.window,budget.compact,budget.details]);}
+  async syncCompensation(record,requestedModel=null){
+    if(!record.policy)return;
+    const policy={...record.policy};
+    const switching=requestedModel&&requestedModel!==record.model;
+    const budget=await this.runtimeBudget(record,policy);
+    if(switching){budget.window=policy.window;budget.compact=policy.compact;budget.details={...budget.details,status:'waiting',extraTokens:0,runtimeWindow:budget.details.targetWindow,message:'切换模型，等待新用量后补偿'};}
+    const observed=!record.lastUsage&&record.inheritedUsage?{...record,lastUsage:record.inheritedUsage,usageFresh:true}:record;
+    const plan=preflight(observed,policy,record.modelInfo);
+    if(!budget.details.enabled&&!record.compensation?.enabled){record.compensation=budget.details;record.compensationKey=this.budgetKey(policy,budget);}
+    else if(this.budgetKey(policy,budget)!==record.compensationKey&&plan.allowed){
+      if(!await this.reload(record,policy,plan,budget))throw Error(record.message);
+    }else if(!plan.allowed){
+      if(switching&&record.compensation?.status==='active'&&record.compensation.extraTokens>0)throw Error('请先取得新用量或手动压缩，再切换模型');
+      record.compensation={...budget.details,status:'waiting',message:'等待新用量或压缩后再应用补偿'};
+    }
+  }
   async prepareCompensatedTurn(record,message,line,guarded){
     record.locked=true;let ready=false;
-    try{
-      const policy={...record.policy},budget=await this.runtimeBudget(record,policy);
-      const observed=!record.lastUsage&&record.inheritedUsage?{...record,lastUsage:record.inheritedUsage,usageFresh:true}:record;
-      const plan=preflight(observed,policy,record.modelInfo);
-      if(!budget.details.enabled&&!record.compensation?.enabled){record.compensation=budget.details;record.compensationKey=this.budgetKey(policy,budget);}
-      else if(this.budgetKey(policy,budget)!==record.compensationKey&&plan.allowed){
-        if(!await this.reload(record,policy,plan,budget))throw Error(record.message);
-      }else if(!plan.allowed){
-        // Do not present a desired configuration as applied while usage is stale.
-        record.compensation={...budget.details,status:'waiting',message:'等待新用量或压缩后再应用补偿'};
-      }
-      ready=true;
-    }catch(error){this.rejectTurn(message,error.message);record.phase='error';record.message=error.message;}
+    try{await this.syncCompensation(record,message.params?.collaborationMode?.settings?.model||message.params?.model);ready=true;}
+    catch(error){this.rejectTurn(message,error.message);record.phase='error';record.message=error.message;}
     finally{record.locked=false;this.notify(record);}
     if(ready)this.fromClient(line,null,guarded,true);
     const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
@@ -269,10 +274,13 @@ export class Bridge {
     if(settings.model)params.model=selectedModel;
     if(selectedEffort)params.effort=selectedEffort;
     if(params.collaborationMode&&(settings.model||selectedEffort))params.collaborationMode={...params.collaborationMode,settings:{...params.collaborationMode.settings,...(settings.model?{model:selectedModel}:{}),...(selectedEffort?{reasoning_effort:selectedEffort}:{})}};
-    if(this.contextCeiling){const incoming=incomingTokens(input),cap=Math.min(r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,MAX_CONTEXT_INPUT),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if((r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve))throw Error('上下文接近上限，请先手动压缩后重试任务');}
     r.automaticTask={executionId:task.executionId,taskId:task.taskId,status:'starting'};await this.notify(r);
-    try{const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
+    try{
+      if(this.resolveCompensation&&r.policy){r.locked=true;try{await this.syncCompensation(r,selectedModel);}finally{r.locked=false;}}
+      if(this.contextCeiling||r.compensation?.enabled){const logical=r.policy&&Number.isInteger(r.modelInfo?.effective_context_window_percent)?Math.floor(r.policy.window*r.modelInfo.effective_context_window_percent/100):null;const incoming=incomingTokens(input),cap=Math.min(logical??r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,this.contextCeiling?MAX_CONTEXT_INPUT:Number.MAX_SAFE_INTEGER),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if((r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve))throw Error('上下文接近上限，请先手动压缩后重试任务');}
+      const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
     catch(error){r.automaticTask.status='error';r.automaticTask.error=error.message;await this.notify(r);throw error;}
+    finally{const queued=r.queue.splice(0);r.queueBytes=0;for(const line of queued)this.fromClient(line);}
   }
   async interruptAutomatic(id,executionId){const r=this.records.get(id),task=r?.automaticTask;if(task?.executionId!==executionId||task.status!=='running'||r.status!=='active'||r.turnId!==task.turnId)throw Error('队列轮次已变化，未中断其他任务');await this.rpc('turn/interrupt',{threadId:id,turnId:task.turnId});return {ok:true};}
   notify(record){

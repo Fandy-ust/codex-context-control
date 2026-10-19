@@ -1,3 +1,4 @@
+import {installQueueCLI,removeQueueCLI} from '../src/cli-launcher.mjs';
 import fs from 'node:fs';
 import {cleanupWindowsInstallations} from '../src/platform/windows-cleanup.mjs';
 import path from 'node:path';
@@ -21,6 +22,7 @@ const base=path.resolve(process.env.CONTEXT_CONTROL_APPLICATIONS||path.join(proc
 const previous=readJSON(path.join(root,'settings.json'),{}),hooksFile=path.join(codexHome,'hooks.json');
 ensureRoot();
 if(args.includes('--uninstall')){
+  removeQueueCLI(root);
   await stopMenuBarEntry();
   const ownedRegistration=readJSON(path.join(root,'automatic-startup.json'));
   if(!args.includes('--no-auto-start'))disableAutomaticStartup();
@@ -103,6 +105,7 @@ try{
   if(newlyInstalled)try{removeInstallationTree(base,target);}catch{}
   throw error;
 }
+installQueueCLI({home:root,node,codeRoot:code});
 if(!args.includes('--no-shortcut')){
   powershell('$s=New-Object -ComObject WScript.Shell;$folder=Join-Path ([Environment]::GetFolderPath("Programs")) "Context Manager";[void][IO.Directory]::CreateDirectory($folder);$l=$s.CreateShortcut((Join-Path $folder "Context Manager.lnk"));$l.TargetPath=$env:CONTEXT_CONTROL_UI_EXE;$l.WorkingDirectory=[IO.Path]::GetDirectoryName($env:CONTEXT_CONTROL_UI_EXE);$l.Save();$key="HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\CodexContextControl";[void](New-Item -Path $key -Force);$values=@{DisplayName="Context Manager";DisplayVersion=$env:CONTEXT_CONTROL_INSTALL_VERSION;Publisher="Fandy-ust";InstallLocation=$env:CONTEXT_CONTROL_INSTALL_BASE;UninstallString=$env:CONTEXT_CONTROL_UNINSTALL;NoModify=1;NoRepair=1};foreach($name in $values.Keys){Set-ItemProperty -LiteralPath $key -Name $name -Value $values[$name]}',{CONTEXT_CONTROL_UI_EXE:installedApp,CONTEXT_CONTROL_INSTALL_BASE:base,CONTEXT_CONTROL_INSTALL_VERSION:pkg.version,CONTEXT_CONTROL_UNINSTALL:`"${node}" "${path.join(code,'scripts/install-win.mjs')}" --uninstall`});
 }

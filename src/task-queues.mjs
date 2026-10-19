@@ -1,8 +1,10 @@
 import {queueTaskHistory} from './core/queue-history.mjs';
 import {taskCommand} from './core/task-command.mjs';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {QUEUE_RUNTIME_RESTART} from './core/queue-runtime.mjs';
 
+const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+const additionHash=p=>createHash('sha256').update(JSON.stringify(canonical({prompt:typeof p.prompt==='string'?p.prompt.trim():p.prompt,settings:p.settings??null}))).digest('hex');
 const pending=t=>['waiting','running','interrupted'].includes(t.status);
 export {defaultQueueConfig,validateQueueConfig} from './core/queue-config.mjs';
 import {defaultQueueConfig,validateQueueConfig} from './core/queue-config.mjs';
@@ -38,12 +40,18 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
   function command(p){
     if(p.action==='disable-all'){for(const q of queues.values()){q.enabled=false;q.message='监视已关闭；当前轮次结束后停止队列';q.revision++;}persist();return list();}
     if(typeof p.id!=='string'||!p.id.length||p.id.length>180||['__proto__','constructor','prototype'].includes(p.id)||!thread(p.id))throw Error('未找到聊天');
-    let original=queues.get(p.id);if(p.expectedRevision!=null&&p.expectedRevision!==(original?.revision??0))throw Error('队列已更新，请刷新后重试');
+    let original=queues.get(p.id);
+    if(p.action==='add'&&p.requestId!=null){
+      if(typeof p.requestId!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(p.requestId))throw Error('请求标识无效');
+      const existing=original?.tasks.find(t=>t.requestId===p.requestId);
+      if(existing){if(existing.requestHash!==additionHash(p))throw Error('同一请求标识不能用于不同任务');return list();}
+    }
+    if(p.expectedRevision!=null&&p.expectedRevision!==(original?.revision??0))throw Error('队列已更新，请刷新后重试');
     const q=structuredClone(original??{id:p.id,enabled:false,config:defaultQueueConfig(),tasks:[],revision:0,state:'off',message:'未开启监视'});
     if(p.action==='enable'&&p.enabled&&(thread(q.id)?.taskQueueRestartRequired||thread(q.id)?.connected&&thread(q.id)?.taskQueueSupported===false))throw Error(QUEUE_RUNTIME_RESTART);
     const task=()=>{const t=q.tasks.find(t=>t.id===p.taskId);if(!t)throw Error('未找到任务');return t;};
     const text=()=>{if(typeof p.prompt!=='string'||!p.prompt.trim()||p.prompt.length>16000)throw Error('任务内容应为 1–16000 个字符');const value=p.prompt.trim();if(taskCommand(value)&&p.settings?.attachments?.length)throw Error('压缩指令不需要附件，请将附件放到下一项任务');return value;};
-    if(p.action==='add'){if(q.tasks.length>=200)throw Error('每个聊天最多保留 200 个任务');q.tasks.push({id:id(),prompt:text(),status:'waiting',createdAt:now(),settings:normalizeTaskSettings(p.settings,q.config)});}
+    if(p.action==='add'){if(q.tasks.length>=200)throw Error('每个聊天最多保留 200 个任务');q.tasks.push({id:id(),...(p.requestId?{requestId:p.requestId,requestHash:additionHash(p)}:{}),prompt:text(),status:'waiting',createdAt:now(),settings:normalizeTaskSettings(p.settings,q.config)});}
     else if(p.action==='edit'){const t=task();if(t.status==='running')throw Error('不能编辑执行中的任务');t.prompt=text();if(p.settings!=null)t.settings=normalizeTaskSettings(p.settings,q.config);}
     else if(p.action==='delete'){if(task().status==='running')throw Error('请先停止执行中的任务');q.tasks=q.tasks.filter(t=>t.id!==p.taskId);}
     else if(p.action==='reorder'){if(!Array.isArray(p.order)||p.order.length!==q.tasks.length||new Set(p.order).size!==q.tasks.length||p.order.some(key=>!q.tasks.some(t=>t.id===key)))throw Error('排序无效');q.tasks=p.order.map(key=>q.tasks.find(t=>t.id===key));}

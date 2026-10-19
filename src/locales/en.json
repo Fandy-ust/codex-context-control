@@ -1019,5 +1019,7 @@
   "已开启，当前无需额外补偿": "Enabled. No extra compensation is currently needed.",
   "等待新用量或压缩后再应用补偿": "Waiting for fresh usage or compaction before applying compensation.",
   "运行时窗口已确认；目标容量以本 App 为准。": "Runtime window confirmed. Use the target capacity in this app.",
-  "已确认运行时窗口（含补偿）": "Confirmed runtime window (with compensation)"
+  "已确认运行时窗口（含补偿）": "Confirmed runtime window (with compensation)",
+  "切换模型，等待新用量后补偿": "Model changed. Waiting for fresh usage before compensation.",
+  "请先取得新用量或手动压缩，再切换模型": "Wait for fresh usage or compact manually before changing models."
 }
