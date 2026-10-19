@@ -6,6 +6,15 @@ import SwiftUI
 final class SidebarScroller:NSScroller {
     override class func scrollerWidth(for controlSize:NSControl.ControlSize,scrollerStyle:NSScroller.Style)->CGFloat {6}
     override class var isCompatibleWithOverlayScrollers:Bool {false}
+    override func rect(for partCode:NSScroller.Part)->NSRect {
+        let rect=super.rect(for:partCode)
+        guard !rect.isEmpty else{return rect}
+        switch partCode {
+        case .knob,.knobSlot,.decrementPage,.incrementPage:
+            return NSRect(x:bounds.minX,y:rect.minY,width:bounds.width,height:rect.height)
+        default:return rect
+        }
+    }
     override func drawKnobSlot(in slotRect:NSRect,highlight:Bool){
         NSColor(calibratedWhite:0.17,alpha:1).setFill()
         NSBezierPath(roundedRect:NSRect(x:bounds.midX-1.5,y:bounds.minY+2,width:3,height:max(0,bounds.height-4)),xRadius:1.5,yRadius:1.5).fill()
