@@ -6,8 +6,8 @@
 
 | 平台 | 安装包 | 系统要求 |
 | --- | --- | --- |
-| macOS | [下载 0.23.1 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.1-preview.1/Context-Manager-0.23.1-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [下载 0.23.1 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.1-preview.1/Context-Manager-0.23.1-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [下载 0.23.2 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.2-preview.1/Context-Manager-0.23.2-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [下载 0.23.2 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.2-preview.1/Context-Manager-0.23.2-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac 安装说明](docs/INSTALL_MAC.md) · [Windows 安装说明](docs/INSTALL_WINDOWS.md) · [版本说明](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [English](README.md)
 

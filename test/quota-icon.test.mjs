@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
-test('striped lightning gradually empties and keeps its close transparent percentage',{skip:process.platform!=='darwin',timeout:90000},()=>{
+test('striped lightning gradually empties and keeps its close transparent percentage',{skip:process.platform!=='darwin',timeout:180000},()=>{
  const repo=fileURLToPath(new URL('../',import.meta.url)),dir=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-bolt-'));
  try{
  fs.writeFileSync(path.join(dir,'Control.swift'),fs.readFileSync(path.join(repo,'macos/ContextControl.swift'),'utf8').replace('@main @MainActor final class ContextControlApp','@MainActor final class ContextControlApp'));
@@ -42,6 +42,6 @@ import AppKit
 }
 `);
  const sources=fs.readdirSync(path.join(repo,'macos')).filter(n=>n.endsWith('.swift')&&n!=='ContextControl.swift').map(n=>path.join(repo,'macos',n));
- const binary=path.join(dir,'check');let r=spawnSync('xcrun',['swiftc','-parse-as-library',...sources,path.join(dir,'Control.swift'),path.join(dir,'Main.swift'),'-o',binary],{encoding:'utf8',timeout:60000});assert.equal(r.status,0,r.stderr);r=spawnSync(binary,process.env.CONTEXT_CONTROL_ICON_PREVIEW?[process.env.CONTEXT_CONTROL_ICON_PREVIEW]:[],{encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stdout+r.stderr);
+ const binary=path.join(dir,'check');let r=spawnSync('xcrun',['swiftc','-parse-as-library',...sources,path.join(dir,'Control.swift'),path.join(dir,'Main.swift'),'-o',binary],{encoding:'utf8',timeout:120000});assert.equal(r.status,0,r.error?.message||r.stderr);r=spawnSync(binary,process.env.CONTEXT_CONTROL_ICON_PREVIEW?[process.env.CONTEXT_CONTROL_ICON_PREVIEW]:[],{encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stdout+r.stderr);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });

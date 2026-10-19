@@ -6,7 +6,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
-test('native menu switches all five hover editors, resets drafts and locks only during drag',{skip:process.platform!=='darwin',timeout:90000},()=>{
+test('native menu switches all five hover editors, resets drafts and locks only during drag',{skip:process.platform!=='darwin',timeout:180000},()=>{
  const rounds=Math.min(30,Math.max(1,Number(process.env.CONTEXT_CONTROL_STRESS_UI_ROUNDS)||6));
  const root=fileURLToPath(new URL('../',import.meta.url));
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-menu-hover-'));
@@ -104,8 +104,8 @@ import AppKit
 `);
   const sources=fs.readdirSync(path.join(root,'macos')).filter(name=>name.endsWith('.swift')&&!['ContextControl.swift','ContextMenu.swift'].includes(name)).map(name=>path.join(root,'macos',name));
   const binary=path.join(temp,'probe');
-  const build=spawnSync('xcrun',['swiftc','-parse-as-library','-target',`${process.arch==='arm64'?'arm64':'x86_64'}-apple-macos14.0`,...sources,path.join(temp,'Control.swift'),path.join(temp,'Menu.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:65000});
-  assert.equal(build.status,0,build.stderr);
+  const build=spawnSync('xcrun',['swiftc','-parse-as-library','-target',`${process.arch==='arm64'?'arm64':'x86_64'}-apple-macos14.0`,...sources,path.join(temp,'Control.swift'),path.join(temp,'Menu.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:120000});
+  assert.equal(build.status,0,build.error?.message||build.stderr);
   const run=spawnSync(binary,[],{encoding:'utf8',timeout:Math.max(15000,rounds*1000+5000)});
   assert.equal(run.status,0,run.stderr);
  }finally{fs.rmSync(temp,{recursive:true,force:true});}
