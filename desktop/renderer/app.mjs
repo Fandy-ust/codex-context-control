@@ -670,7 +670,7 @@ window.__contextSmoke=async({preview=false}={})=>{
     }
     state={...state,quota:savedQuota};render();
     const groups=root.querySelector('.projects-section'),single=root.querySelector('.recent-section');
-    projects=!!groups.querySelector('[data-id="demo-a"]')&&!!single.querySelector('[data-id="demo-c"]')&&!!single.querySelector('[data-id="demo-a"]')&&root.querySelectorAll('[data-sidebar-scroll]').length===1&&getComputedStyle(root.querySelector('.project-navigation')).overflowY==='auto';
+    projects=!!groups.querySelector('[data-id="demo-a"]')&&!!single.querySelector('[data-id="demo-c"]')&&!!single.querySelector('[data-id="demo-a"]')&&root.querySelectorAll('[data-sidebar-scroll]').length===1&&getComputedStyle(root.querySelector('.project-navigation')).overflowY==='scroll';
     groups.querySelector('[data-action="project-toggle"]').click();
     projects=projects&&!root.querySelector('.projects-section [data-id="demo-a"]')&&JSON.parse(localStorage.getItem('project-expansion')).some(([id,open])=>id==='demo-project'&&!open);
     render();projects=projects&&!root.querySelector('.projects-section [data-id="demo-a"]');
@@ -686,10 +686,10 @@ window.__contextSmoke=async({preview=false}={})=>{
     render();projects=projects&&!root.querySelector('.recent-section .chat-button');
     root.querySelector('[data-action="recent-toggle"]').click();projects=projects&&root.querySelectorAll('.recent-section .chat-button').length===3;
     const navigation=root.querySelector('.project-navigation'),projectSection=root.querySelector('.projects-section'),recentSection=root.querySelector('.recent-section');
-    navigation.style.maxHeight='120px';navigation.scrollTop=0;
+    const sidebarContentWidth=navigation.clientWidth;navigation.style.maxHeight='120px';navigation.scrollTop=0;
     const projectTop=projectSection.getBoundingClientRect().top,recentTop=recentSection.getBoundingClientRect().top;
     navigation.scrollTop=32;
-    projects=projects&&navigation.scrollTop===32&&Math.abs(projectTop-projectSection.getBoundingClientRect().top-32)<1&&Math.abs(recentTop-recentSection.getBoundingClientRect().top-32)<1;
+    projects=projects&&navigation.clientWidth===sidebarContentWidth&&navigation.scrollTop===32&&Math.abs(projectTop-projectSection.getBoundingClientRect().top-32)<1&&Math.abs(recentTop-recentSection.getBoundingClientRect().top-32)<1;
     navigation.style.maxHeight='';navigation.scrollTop=0;
 
 

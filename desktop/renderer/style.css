@@ -17,7 +17,7 @@
 .sidebar-empty{font-size:11px;color:var(--muted);padding:8px 12px}
 .projects-section .sidebar-section-title{padding-bottom:3px}
 .project-toggle{font-size:12px;font-weight:500;min-height:30px;display:flex;align-items:center;gap:7px;width:100%;border:0;background:transparent;text-align:left;padding:6px 9px;margin:1px 0}.project-toggle.contains-selection{color:#a4c1ff}.project-toggle .truncate{min-width:0}
-.project-folder{width:17px;height:17px;flex:none;color:var(--muted)}
+.project-folder{width:17px;height:17px;flex:none;color:#d9d9d9}
 .project-toggle:hover:not(:disabled){background:#ffffff11;box-shadow:inset 0 0 0 1px #ffffff1a}
 .project-chats{margin-left:17px;padding-left:6px;border-left:1px solid var(--line)}.project-chats .chat-button{padding:9px 10px}
 html:root{--radius-control:10px;--radius-card:26px;--radius:var(--radius-card)}
@@ -170,3 +170,10 @@ input[type=text]{background:#ffffff08;color:inherit;border:1px solid var(--line)
 .speed-direction{width:8px;font-size:11px;font-weight:600}.speed-direction.up{color:#66ca83}.speed-direction.down{color:#f27d7d}.speed-trend{width:52px;height:14px;flex:none;overflow:visible}.speed-trend path{fill:none;stroke:#8cadd8;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round}.row-editor-top .speed-trend{width:38px}
 
 .tray-speed-value.speed-green{color:#66ca83}.tray-speed-value.speed-yellow{color:#edc45a}.tray-speed-value.speed-red{color:#f27d7d}
+
+/* Always reserve the same narrow sidebar gutter, even when groups are folded. */
+.project-navigation{overflow-y:scroll;scrollbar-gutter:stable}
+.project-navigation::-webkit-scrollbar{width:6px}
+.project-navigation::-webkit-scrollbar-track{background:#2b2b2b;border:1.5px solid var(--bg);border-radius:3px}
+.project-navigation::-webkit-scrollbar-thumb,.project-navigation::-webkit-scrollbar-thumb:hover,.project-navigation::-webkit-scrollbar-thumb:active{background:#646464;border:1.5px solid var(--bg);border-radius:3px}
+.project-navigation::-webkit-scrollbar-button{display:none;width:0;height:0}

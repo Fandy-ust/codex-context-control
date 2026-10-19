@@ -488,6 +488,14 @@ private struct ProjectFolderIcon:Shape {
     }
 }
 
+private struct SidebarClockIcon:Shape {
+    func path(in rect:CGRect)->Path {
+        var p=Path(ellipseIn:CGRect(x:3,y:3,width:18,height:18))
+        p.move(to:CGPoint(x:12,y:7));p.addLine(to:CGPoint(x:12,y:12));p.addLine(to:CGPoint(x:15,y:14))
+        return p.applying(CGAffineTransform(scaleX:rect.width/24,y:rect.height/24).concatenating(CGAffineTransform(translationX:rect.minX,y:rect.minY)))
+    }
+}
+
 struct ProjectChatSidebar:View {
     @ObservedObject var model:Controller
     @AppStorage("project-sidebar-expanded") private var expandedJSON="[]"
@@ -512,7 +520,7 @@ struct ProjectChatSidebar:View {
                 VStack(alignment:.leading,spacing:4){
                     Button{recentExpanded.toggle()}label:{
                         HStack(spacing:7){
-                            Image(systemName:"clock").font(.system(size:14)).foregroundStyle(.secondary).frame(width:17,height:17)
+                            SidebarClockIcon().stroke(style:StrokeStyle(lineWidth:1,lineCap:.round,lineJoin:.round)).foregroundStyle(.white.opacity(0.85)).frame(width:17,height:17)
                             Text(L("最近")).font(.system(size:12,weight:.medium))
                             Spacer(minLength:2)
                             Text("\(recent.count)").font(.caption).foregroundStyle(.secondary)
@@ -529,6 +537,7 @@ struct ProjectChatSidebar:View {
                     }
                 }
             }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,4)
+                .background(SidebarScrollStyle().frame(width:0,height:0))
         }
         .onAppear{revealSelection()}
         .onChange(of:model.selectedID){_,_ in revealSelection()}
@@ -544,7 +553,7 @@ struct ProjectChatSidebar:View {
                     VStack(alignment:.leading,spacing:2){
                         Button{setExpanded(project.id,!open)}label:{
                             HStack(spacing:7){
-                                ProjectFolderIcon(expanded:open).stroke(style:StrokeStyle(lineWidth:1.7,lineCap:.round,lineJoin:.round)).foregroundStyle(.secondary).frame(width:17,height:17)
+                                ProjectFolderIcon(expanded:open).stroke(style:StrokeStyle(lineWidth:1,lineCap:.round,lineJoin:.round)).foregroundStyle(.white.opacity(0.85)).frame(width:17,height:17)
                                 Text(project.name).font(.system(size:12,weight:.medium)).lineLimit(1).truncationMode(.middle)
                                 Spacer(minLength:2)
                                 Text("\(project.threadIds.count)").font(.caption).foregroundStyle(.secondary)

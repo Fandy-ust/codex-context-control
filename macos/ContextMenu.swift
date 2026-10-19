@@ -164,7 +164,12 @@ private struct ResponseSpeedTrend:Shape {
     @State private var feedback:String?
     @State private var failed=false
     private var stale:Bool {!serviceAvailable || !chat.connected || chat.freshUsage != true}
-    private var speedText:String {(chat.responseSpeed?.tokensPerSecond).flatMap{$0.isFinite && $0>=0 ? (($0*10).rounded(.down)/10).formatted(.number.precision(.fractionLength(0...1))):nil}.map{$0+" tok/s"} ?? "— tok/s"}
+    private var speedText:String {
+        guard let rate=chat.responseSpeed?.tokensPerSecond,rate.isFinite,rate>=0 else{return "— tok/s"}
+        let rounded=(rate*10).rounded(.down)/10
+        let value=rounded.formatted(.number.precision(.fractionLength(0...1)))
+        return value+" tok/s"
+    }
     var body:some View {
         ZStack {
             if let draft {

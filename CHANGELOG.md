@@ -1,5 +1,11 @@
 # Changes
 
+## 0.23.3 — Stable slim sidebar scrolling
+
+- Keep a fixed narrow scrollbar gutter on both platforms, with a thin grey track and thumb that do not widen or flash white during interaction. Expanding Recent no longer changes the content width.
+- Use thinner white outlines for project and Recent icons. Preserve native scrolling and drag controls.
+- Simplify native speed formatting to avoid Swift type-checker timeouts without changing displayed values.
+
 ## 0.23.2 — Smaller Windows packages and fresh update checks
 
 - Add a one-shot outline-then-fill quota icon intro, respecting reduced motion; enlarge the tray Apply button and remove its redundant cancel control. Show continuously refreshed observed response speed, a recent trend and direction arrows for running chats.
