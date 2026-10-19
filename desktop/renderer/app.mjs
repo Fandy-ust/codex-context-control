@@ -1,3 +1,4 @@
+import {responseSpeedContent} from './response-speed.mjs';
 import {normalizeTaskSettings} from '../../src/core/task-settings.mjs';
 import {queueStrip,queueManager,queueDetail,queueTaskEditor} from './task-queues.mjs';
 import {quotaAnalyticsView,bindQuotaAnalytics} from './quota-analytics.mjs';
@@ -67,6 +68,7 @@ function observeCredits(quota){
 }
 const trayDrafts=new Map();
 const projectExpansion=new Map(),sidebarScroll=new Map(),detailsScrollByChat=new Map();
+let recentExpanded=localStorage.getItem('recent-expanded')!=='false';
 try{const saved=JSON.parse(localStorage.getItem('project-expansion')||'[]');if(Array.isArray(saved))for(const pair of saved)if(Array.isArray(pair)&&typeof pair[0]==='string'&&typeof pair[1]==='boolean')projectExpansion.set(...pair);}catch{}
 root.addEventListener('scroll',event=>{const key=event.target.dataset?.sidebarScroll;if(key)sidebarScroll.set(key,event.target.scrollTop);},true);
 let sidebarWidth=Number(localStorage.getItem('sidebar-width'))||340;
@@ -89,7 +91,7 @@ function sidebar(){
   const connected=state?.bridgeCount>0;
   const update=state?.update,updating=['downloading','installing'].includes(update?.phase);
   const updateButton=update?.available||updating?`<button class="quick-update" data-action="update" ${updating||busy?'disabled':''} title="${e(update.error||t('安装更新 {0}','Install update {0}',update.version||''))}">${updating?'↻':'↓'} ${e(updating?t('更新中','Updating'):t('有更新','Update'))}</button>`:'';
-  const navigation=projectSidebar({threads:state?.threads,sidebar:state?.sidebar,selected,expanded:projectExpansion,t,escape:e,chatName,statusText});
+  const navigation=projectSidebar({threads:state?.threads,sidebar:state?.sidebar,selected,expanded:projectExpansion,recentExpanded,t,escape:e,chatName,statusText});
   return `<aside class="sidebar"><div class="brand row"><span class="dot ${connected?'on':''}"></span><span>Codex</span>${preferences.demo?`<span class="preview-pill">${e(t('预览','Preview'))}</span>`:''}<span class="grow"></span><span class="tiny">v${e(preferences.version||'')}</span>${updateButton}<button class="settings-trigger" data-action="settings" title="${e(t('设置','Settings'))}" aria-label="${e(t('设置','Settings'))}" aria-haspopup="dialog" aria-expanded="${settingsOpen}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m9.5 3-.7 2.2-2 .9-2.1-.5-2.5 4.3 1.5 1.7v2.3l-1.5 1.7 2.5 4.3 2.1-.5 2 .9.7 2.2h5l.7-2.2 2-.9 2.1.5 2.5-4.3-1.5-1.7v-2.3l1.5-1.7-2.5-4.3-2.1.5-2-.9-.7-2.2Z"/><circle cx="12" cy="12.8" r="3"/></svg></button></div>${navigation}<div class="sidebar-footer-row">${sidebarCredits({quota:state?.quota,pool:preferences.quotaPool,available:serviceAvailable,observation:creditBaselines[selectedQuota(state?.quota,preferences.quotaPool)?.id],t,escape:e})}${sidebarQuota({quota:state?.quota,pool:preferences.quotaPool,available:serviceAvailable,t,escape:e,language:preferences.language})}</div></aside>`;
 }
 function slider(value,model,{single=false,id='main'}={}){
@@ -325,7 +327,7 @@ function updateTrayDraft(id,value,model){
   const maximum=draftLimits(model,value.window,value.reserve).maximum,percentage=value.window/maximum*100;
   row.querySelector('.fill').style.width=percentage+'%';row.querySelector('.fill').classList.toggle('max-flow',model.context_ceiling===920000&&value.window===920000);row.querySelector('.thumb').style.left=percentage+'%';
   const label=row.querySelector('.tray-value');label.textContent=trayTarget(chat,value);label.classList.toggle('error',trayFeedback.get(id)?.error===true);
-  row.querySelector('[data-action="tray-apply"]').disabled=!serviceAvailable||chat.modelMetadata?.context_catalog_ready===false||!trayChanged(value)||traySaving.has(id)||value.modelKey!==modelSignature(chat);row.querySelector('[data-action="tray-cancel"]').disabled=traySaving.has(id);
+  row.querySelector('[data-action="tray-apply"]').disabled=!serviceAvailable||chat.modelMetadata?.context_catalog_ready===false||!trayChanged(value)||traySaving.has(id)||value.modelKey!==modelSignature(chat);
   for(const input of row.querySelectorAll('input'))input.disabled=!serviceAvailable||chat.modelMetadata?.context_catalog_ready===false||traySaving.has(id);
   updateParticles(row.querySelector('.slider'),value,maximum);
 }
@@ -336,7 +338,13 @@ function trayRow(chat){
   return trayChatView({chat,title:chatName(chat),status:statusText(chat),draft:value,editable,changed:serviceAvailable&&trayChanged(value),saving:traySaving.has(chat.id),target:value?trayTarget(chat,value):'',fraction:observed(chat),slider,ring,e,t});
 }
 
-function renderTray(force=false){if(!force&&(dragging||document.querySelector('.tray-row:hover,.tray-row:focus-within')))return;trayDrafts.clear();const {running,recent}=trayState(state?.threads);root.innerHTML=`<div class="tray-shell"><button class="tray-top" data-action="open-main">${e(t('打开主窗口','Open main window'))}<span style="float:right" class="muted tiny">${e(preferences.shortcut?.enabled?shortcutLabel(preferences.shortcut.accelerator):'↗')}</span></button>${quotaPanel(true)}<div class="tray-list"><div class="tray-section row between"><span>${e(t('正在运行','Running'))}</span><span>${running.length}</span></div>${running.map(trayRow).join('')||`<p class="tiny muted" style="padding:0 10px">${e(t('暂无运行中的聊天','No running chats'))}</p>`}${recent.length?`<div class="tray-section row between"><span>${e(t('近期聊天','Recent chats'))}</span><span>${recent.length}</span></div>${recent.map(trayRow).join('')}`:''}</div><div class="tray-footer"><span class="row"><span class="dot ${state?.bridgeCount?'on':''}"></span>Context Manager</span><button class="flat" data-action="quit">${e(t('退出','Quit'))}</button></div></div>`;bindSliders();for(const row of document.querySelectorAll('.tray-row')){row.addEventListener('mouseleave',()=>{if(dragging||traySaving.has(row.dataset.id))return;trayFeedback.delete(row.dataset.id);row.classList.remove('canceled');const chat=state.threads.find(t=>t.id===row.dataset.id),d=threadDraft(chat);if(d){trayDrafts.set(chat.id,d);updateTrayDraft(chat.id,d,chat.modelMetadata);}});row.addEventListener('click',event=>{if(!event.target.closest('button,.slider'))api.invoke('open-main',{id:row.dataset.id});});row.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target===row)api.invoke('open-main',{id:row.dataset.id});});}}
+function updateTraySpeeds(){
+  for(const row of root.querySelectorAll('.tray-row')){
+    const chat=state?.threads.find(t=>t.id===row.dataset.id),running=chat?.connected&&['active','inProgress'].includes(chat.status);
+    for(const node of row.querySelectorAll('.tray-speed')){node.hidden=!running;node.innerHTML=responseSpeedContent(chat?.responseSpeed);}
+  }
+}
+function renderTray(force=false){updateTraySpeeds();if(!force&&(dragging||document.querySelector('.tray-row:hover,.tray-row:focus-within')))return;trayDrafts.clear();const {running,recent}=trayState(state?.threads);root.innerHTML=`<div class="tray-shell"><button class="tray-top" data-action="open-main">${e(t('打开主窗口','Open main window'))}<span style="float:right" class="muted tiny">${e(preferences.shortcut?.enabled?shortcutLabel(preferences.shortcut.accelerator):'↗')}</span></button>${quotaPanel(true)}<div class="tray-list"><div class="tray-section row between"><span>${e(t('正在运行','Running'))}</span><span>${running.length}</span></div>${running.map(trayRow).join('')||`<p class="tiny muted" style="padding:0 10px">${e(t('暂无运行中的聊天','No running chats'))}</p>`}${recent.length?`<div class="tray-section row between"><span>${e(t('近期聊天','Recent chats'))}</span><span>${recent.length}</span></div>${recent.map(trayRow).join('')}`:''}</div><div class="tray-footer"><span class="row"><span class="dot ${state?.bridgeCount?'on':''}"></span>Context Manager</span><button class="flat" data-action="quit">${e(t('退出','Quit'))}</button></div></div>`;bindSliders();for(const row of document.querySelectorAll('.tray-row')){row.addEventListener('mouseleave',()=>{if(dragging||traySaving.has(row.dataset.id))return;trayFeedback.delete(row.dataset.id);const chat=state.threads.find(t=>t.id===row.dataset.id),d=threadDraft(chat);if(d){trayDrafts.set(chat.id,d);updateTrayDraft(chat.id,d,chat.modelMetadata);}});row.addEventListener('click',event=>{if(!event.target.closest('button,.slider'))api.invoke('open-main',{id:row.dataset.id});});row.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target===row)api.invoke('open-main',{id:row.dataset.id});});}}
 function detailsPage(){return detailsView({title:chatName(current()),stats,content:stats?statsBody():statsLoading?statsBody():'<div class="empty">'+e(t('暂无上下文统计','No context statistics'))+'</div>',loading:statsLoading,error:statsError,auto,e,t});}
 
 function statsBody(){return statisticsView({stats,period,e,t,k,amount,money,modelName:modelDisplayName});}
@@ -505,6 +513,10 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       const saved=await run('shortcut-save',{accelerator:normalizeShortcut(shortcutDraft),enabled:shortcutEnabled});
       preferences.shortcut=saved;shortcutDraft=saved.accelerator;shortcutDirty=false;render();notify(saved.inactive?t('预览设置已保存；真实模式中需单独保存。','Preview preference saved. Save it separately in local mode.'):t('快捷键设置已保存','Shortcut settings saved'));return;
     }
+    if(action==='recent-toggle'){
+      recentExpanded=button.getAttribute('aria-expanded')!=='true';localStorage.setItem('recent-expanded',String(recentExpanded));
+      root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();root.querySelector('[data-action="recent-toggle"]')?.focus({preventScroll:true});return;
+    }
     if(action==='project-toggle'){
       projectExpansion.set(button.dataset.id,button.getAttribute('aria-expanded')!=='true');localStorage.setItem('project-expansion',JSON.stringify([...projectExpansion]));
       root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();
@@ -537,7 +549,7 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       const chat=state.threads.find(t=>t.id===button.dataset.id),d=trayDrafts.get(chat?.id);if(!d||!serviceAvailable||traySaving.has(chat.id)||!trayChanged(d))return;
       traySaving.add(chat.id);updateTrayDraft(chat.id,d,chat.modelMetadata);
       try{
-        if(d.modelKey!==modelSignature(chat))throw Error(t('模型信息已变化，请取消后重新调整','Model metadata changed. Cancel and adjust again.'));
+        if(d.modelKey!==modelSignature(chat))throw Error(t('模型信息已变化，请重新调整','Model metadata changed. Adjust again.'));
         const result=await api.invoke('policy',{id:chat.id,...budgetCommand(d,policyForDraft(d,chat.modelMetadata),state.capabilities),expectedRevision:d.expectedRevision,apply:true});
         if(result.thread){state.threads=state.threads.map(item=>item.id===chat.id?{...item,...result.thread}:item);}
         const code=result.plan?.code,updated=state.threads.find(item=>item.id===chat.id),messages={waiting_for_idle:t('已保存 · 本轮结束后应用','Saved · apply after this turn'),needs_compaction:t('已保存 · 需先压缩再应用','Saved · compaction required'),needs_observation:t('已保存 · 等待用量读回','Saved · waiting for usage')};
@@ -547,7 +559,7 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       finally{traySaving.delete(chat.id);const updated=state.threads.find(item=>item.id===chat.id);updateTrayDraft(chat.id,trayDrafts.get(chat.id),updated.modelMetadata);}
       return;
     }
-    if(action==='tray-cancel'){const chat=state.threads.find(t=>t.id===button.dataset.id),d=threadDraft(chat);trayFeedback.delete(chat.id);trayDrafts.set(chat.id,d);updateTrayDraft(chat.id,d,chat.modelMetadata);button.closest('.tray-row').classList.add('canceled');return;}
+
     if(action==='diagnostics'){const data=await api.invoke('diagnostics');notify(JSON.stringify(data));return;}
     if(action==='retry'){await refresh();return;}
     if(['open-main','open-codex','quit','open-live','open-logs'].includes(action))await api.invoke(action);
@@ -624,7 +636,7 @@ function chartGeometryCheck(){
   container.style.width=before;hover=pinned=null;updateChartSelection();return {ok:samples>0&&maxError<.75,maxError,samples};
 }
 window.__contextSmoke=async({preview=false}={})=>{
-  const initial=!!state&&!!root.querySelector(mode==='tray'?'.tray-shell':'.shell')&&!!root.querySelector('[data-slider]');let defaults=true,charts=true,settings=true,geometry={ok:true},radius=true,projects=true,quota=true,settingsChanges=true,inlineDetails=true,quickUpdate=true;
+  const initial=!!state&&!!root.querySelector(mode==='tray'?'.tray-shell':'.shell')&&!!root.querySelector('[data-slider]');let defaults=true,charts=true,settings=true,geometry={ok:true},radius=true,projects=true,quota=true,settingsChanges=true,inlineDetails=true,quickUpdate=true,traySpeed=true;
   if(mode==='main'&&preferences.demo){
     const quotaButton=root.querySelector('.sidebar-quota'),gear=root.querySelector('.settings-trigger'),credits=root.querySelector('.sidebar-credits');
     quota=!!quotaButton&&quotaButton.querySelectorAll('[data-quota-reset]').length===2&&!!credits&&credits.textContent.includes('30.2K')&&credits.title.includes('30,240')&&gear.closest('.brand')&&quotaButton.getBoundingClientRect().left>=credits.getBoundingClientRect().right&&quotaButton.getBoundingClientRect().bottom<=window.innerHeight;
@@ -657,8 +669,8 @@ window.__contextSmoke=async({preview=false}={})=>{
       const meter=root.querySelector('.sidebar-quota-window');quota=quota&&!!meter&&(!level||meter.classList.contains(level))&&getComputedStyle(meter.querySelector('.quota-outline-value')).stroke===color&&getComputedStyle(meter.querySelector('strong')).color==='rgb(238, 238, 238)'&&!root.querySelector('.sidebar-quota').textContent.includes('5小时');
     }
     state={...state,quota:savedQuota};render();
-    const groups=root.querySelector('.projects-section'),single=root.querySelector('.recent-section'),projectHeight=groups.getBoundingClientRect().height;
-    projects=!!groups.querySelector('[data-id="demo-a"]')&&!!single.querySelector('[data-id="demo-c"]')&&!!single.querySelector('[data-id="demo-a"]')&&Math.abs(projectHeight/(projectHeight+single.getBoundingClientRect().height)-.5)<.02;
+    const groups=root.querySelector('.projects-section'),single=root.querySelector('.recent-section');
+    projects=!!groups.querySelector('[data-id="demo-a"]')&&!!single.querySelector('[data-id="demo-c"]')&&!!single.querySelector('[data-id="demo-a"]')&&root.querySelectorAll('[data-sidebar-scroll]').length===1&&getComputedStyle(root.querySelector('.project-navigation')).overflowY==='auto';
     groups.querySelector('[data-action="project-toggle"]').click();
     projects=projects&&!root.querySelector('.projects-section [data-id="demo-a"]')&&JSON.parse(localStorage.getItem('project-expansion')).some(([id,open])=>id==='demo-project'&&!open);
     render();projects=projects&&!root.querySelector('.projects-section [data-id="demo-a"]');
@@ -668,6 +680,19 @@ window.__contextSmoke=async({preview=false}={})=>{
     const previousActivity=state;state={...state,threads:state.threads.map(chat=>chat.id==='demo-c'?{...chat,lastActivityAt:Date.now()}:chat)};render();
     projects=projects&&root.querySelector('.recent-section .chat-button')?.dataset.id==='demo-c'&&root.querySelectorAll('.recent-section .chat-button').length===3;
     state=previousActivity;render();
+    const recentHeight=root.querySelector('.recent-section').getBoundingClientRect().height;
+    root.querySelector('[data-action="recent-toggle"]').click();
+    projects=projects&&!root.querySelector('.recent-section .chat-button')&&root.querySelector('.recent-section').getBoundingClientRect().height<recentHeight&&localStorage.getItem('recent-expanded')==='false';
+    render();projects=projects&&!root.querySelector('.recent-section .chat-button');
+    root.querySelector('[data-action="recent-toggle"]').click();projects=projects&&root.querySelectorAll('.recent-section .chat-button').length===3;
+    const navigation=root.querySelector('.project-navigation'),projectSection=root.querySelector('.projects-section'),recentSection=root.querySelector('.recent-section');
+    navigation.style.maxHeight='120px';navigation.scrollTop=0;
+    const projectTop=projectSection.getBoundingClientRect().top,recentTop=recentSection.getBoundingClientRect().top;
+    navigation.scrollTop=32;
+    projects=projects&&navigation.scrollTop===32&&Math.abs(projectTop-projectSection.getBoundingClientRect().top-32)<1&&Math.abs(recentTop-recentSection.getBoundingClientRect().top-32)<1;
+    navigation.style.maxHeight='';navigation.scrollTop=0;
+
+
     radius=['[data-action="apply"]','#language','.sidebar-footer>button'].every(selector=>[...root.querySelectorAll(selector)].every(node=>getComputedStyle(node).borderTopLeftRadius==='10px'));
     openSettings('defaults');defaults=root.querySelector('.settings-dialog').querySelectorAll('[data-range]').length===2;closeSettings();
     selectChat(state.threads[0].id);
@@ -715,11 +740,22 @@ window.__contextSmoke=async({preview=false}={})=>{
     state={...state,update:{available:false,phase:'idle'}};render();quickUpdate=quickUpdate&&!root.querySelector('.quick-update');
     state={...state,update:previousUpdate};render();
   }
+  if(mode==='tray'&&preferences.demo){
+    const previous=state,active=state.threads.find(chat=>chat.connected&&['active','inProgress'].includes(chat.status));
+    if(active){
+      state={...state,threads:state.threads.map(chat=>chat.id===active.id?{...chat,responseSpeed:{tokensPerSecond:147.5,direction:'up',samples:[80,120,147.5]}}:chat)};renderTray(true);
+      const row=root.querySelector(`.tray-row[data-id="${active.id}"]`);
+      traySpeed=row.querySelector('.tray-speed-value').textContent==='147.5 tok/s'&&!row.querySelector('[data-action="tray-cancel"]')&&!!row.querySelector('.speed-direction.up')&&!!row.querySelector('.speed-trend path');
+      state={...state,threads:state.threads.map(chat=>chat.id===active.id?{...chat,responseSpeed:{tokensPerSecond:93,direction:'down',samples:[80,120,147.5,93]}}:chat)};updateTraySpeeds();traySpeed=traySpeed&&row.querySelector('.tray-speed-value').textContent==='93 tok/s'&&!!row.querySelector('.speed-direction.down');
+      state={...state,threads:state.threads.map(chat=>chat.id===active.id?{...chat,status:'idle'}:chat)};updateTraySpeeds();traySpeed=traySpeed&&getComputedStyle(row.querySelector('.tray-speed')).display==='none';
+    }else traySpeed=false;
+    state=previous;renderTray(true);
+  }
   if(preview&&mode==='main'&&preferences.demo){
     openDetails();const until=Date.now()+5000;while((!stats||!document.querySelector('[data-plot]'))&&Date.now()<until)await new Promise(r=>setTimeout(r,30));
     root.querySelector('.main').scrollTop=0;hover=null;hideChartTooltip();
   }
-  return {ok:initial&&defaults&&charts&&settings&&geometry.ok&&radius&&projects&&quota&&settingsChanges&&inlineDetails&&quickUpdate,mode,chats:state?.threads.length,defaults,charts,settings,geometry,radius,projects,quota,settingsChanges,inlineDetails,quickUpdate,isolated:typeof window.require==='undefined'};
+  return {ok:initial&&defaults&&charts&&settings&&geometry.ok&&radius&&projects&&quota&&settingsChanges&&inlineDetails&&quickUpdate&&traySpeed,mode,chats:state?.threads.length,defaults,charts,settings,geometry,radius,projects,quota,settingsChanges,inlineDetails,quickUpdate,traySpeed,isolated:typeof window.require==='undefined'};
 };
 await refresh();
 setInterval(()=>{if(!document.hidden&&!dragging&&hover==null)refresh();},2000);

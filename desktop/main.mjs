@@ -1,5 +1,5 @@
 import {createTaskQueues} from '../src/task-queues.mjs';
-import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell,dialog,clipboard} from 'electron';
+import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,systemPreferences,screen,globalShortcut,shell,dialog,clipboard} from 'electron';
 import fs from 'node:fs';
 import {readClipboardAttachments} from './clipboard-attachments.mjs';
 import {assertControlOperation} from '../src/contracts/control-api.mjs';
@@ -12,6 +12,7 @@ import {defaultRoot} from '../src/platform/index.mjs';
 import {createShortcutManager} from '../src/ui-shortcut.mjs';
 import {selectedQuota,quotaRemaining,quotaWindows,quotaStale} from '../src/quota-display.mjs';
 import {quotaIconBitmap} from './quota-icon.mjs';
+import {QUOTA_INTRO_MS} from '../src/core/quota-intro.mjs';
 import {createUpdatePrompt} from './update-prompt.mjs';
 import {demoQuotaAnalytics} from './quota-demo.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url)),repo=path.dirname(here),args=process.argv;
@@ -33,6 +34,7 @@ const pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
 app.setName('Context Manager');app.setAppUserModelId('io.github.codex-context-control');
 app.setPath('userData',path.join(root,'ui-profile'));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
+let quotaIntroStarted=null,quotaIntroTimer=null;
 let main,trayWindow,tray,quitting=false,lastState=null,serviceOnline=false,ready=false,timer,lastIcon='',menuDragging=false,lastServiceAttempt=Date.now();
 const shortcutManager=createShortcutManager({read:()=>readJSON(path.join(root,'ui-settings.json'),{}),write:doc=>atomicJSON(path.join(root,'ui-settings.json'),doc),register:(key,callback)=>globalShortcut.register(key,callback),unregister:key=>globalShortcut.unregister(key),onTrigger:()=>toggleMain(),inactive:smoke});
 const zh=()=>resolveLanguage(languagePreference())==='zh';
@@ -102,12 +104,13 @@ function placeMenu(){
 }
 function toggleMenu(){if(trayWindow?.isVisible()){trayWindow.hide();return;}if(!trayWindow)trayWindow=createWindow(true);placeMenu();trayWindow.show();trayWindow.focus();publish();}
 function icon(remaining,stale=false){
-  const {bitmap,width,height}=quotaIconBitmap(remaining,{dark:nativeTheme.shouldUseDarkColors,stale});
+  const {bitmap,width,height}=quotaIconBitmap(remaining,{dark:nativeTheme.shouldUseDarkColors,stale,introElapsedMs:quotaIntroStarted==null?null:performance.now()-quotaIntroStarted});
   return nativeImage.createFromBitmap(bitmap,{width,height,scaleFactor:1});
 }
-function updateTray(){
+function updateTray(animationOnly=false){
   const {running:active}=trayState(lastState?.threads),bucket=selectedQuota(lastState?.quota,readJSON(path.join(root,'ui-settings.json'),{}).quotaPool),remaining=quotaRemaining(bucket),stale=quotaStale(lastState?.quota,serviceOnline);
-  const key=(remaining==null?'unknown':Math.round(remaining))+'-'+stale+'-'+nativeTheme.shouldUseDarkColors;if(lastIcon!==key){tray.setImage(icon(remaining,stale));lastIcon=key;}
+  const key=(remaining==null?'unknown':Math.round(remaining))+'-'+stale+'-'+nativeTheme.shouldUseDarkColors+'-'+(quotaIntroStarted==null?'static':Math.floor((performance.now()-quotaIntroStarted)/30));if(lastIcon!==key){tray.setImage(icon(remaining,stale));lastIcon=key;}
+  if(animationOnly)return;
   const reset=quotaWindows(bucket).filter(window=>window.resetsAt).map(window=>new Date(window.resetsAt*1000).toLocaleString(zh()?'zh-CN':'en-US')).join(' / ');
   tray.setToolTip((`Context Manager · ${label('剩余额度','Quota remaining')} ${remaining==null?'—':Math.round(remaining)+'%'}${stale?' · '+label('待刷新','stale'):''}\n${active.length} ${label('个运行中','running')}${reset?' · '+label('重置','Reset')+' '+reset:''}`).slice(0,127));
 }
@@ -168,7 +171,15 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
   const result=await api(action,params);if(action==='state'){lastState=result;serviceOnline=true;updateTray();}if(action==='quota-refresh'){lastState={...lastState,quota:result};updateTray();}return result;
 });
 app.whenReady().then(async()=>{ensureRoot();ready=true;
+const animationSettings=systemPreferences.getAnimationSettings();
+if(!smoke&&animationSettings.shouldRenderRichAnimation&&!animationSettings.prefersReducedMotion)quotaIntroStarted=performance.now();
 tray=new Tray(icon(null));tray.on('click',toggleMenu);tray.on('double-click',()=>showMain());tray.on('right-click',()=>tray.popUpContextMenu(trayMenu()));nativeTheme.on('updated',()=>updateTray());
+if(quotaIntroStarted!=null){
+  quotaIntroTimer=setInterval(()=>{
+    if(performance.now()-quotaIntroStarted>=QUOTA_INTRO_MS||systemPreferences.getAnimationSettings().prefersReducedMotion){clearInterval(quotaIntroTimer);quotaIntroTimer=null;quotaIntroStarted=null;}
+    updateTray(true);
+  },1000/30);quotaIntroTimer.unref();
+}
 if(args.includes('--quit')){app.quit();}else{
   if(!demo){try{await ensureUiService();}catch(e){console.error(e.message);}}
   main=createWindow();trayWindow=createWindow(true);
@@ -261,5 +272,5 @@ if(args.includes('--quit')){app.quit();}else{
   }
 }
 }).catch(error=>{console.error(error);app.exit(1);});
-app.on('will-quit',()=>{shortcutManager.dispose();try{const s=readJSON(path.join(root,'ui-status.json'));if(s?.pid===process.pid)fs.unlinkSync(path.join(root,'ui-status.json'));}catch{}});
+app.on('will-quit',()=>{clearInterval(quotaIntroTimer);shortcutManager.dispose();try{const s=readJSON(path.join(root,'ui-status.json'));if(s?.pid===process.pid)fs.unlinkSync(path.join(root,'ui-status.json'));}catch{}});
 }

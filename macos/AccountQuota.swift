@@ -24,7 +24,19 @@ func quotaCreditLabel(_ raw:String?)->String? {
     return "\(amount) credits"
 }
 
-@MainActor func quotaBarsStatusImage(bucket:QuotaBucket?,stale:Bool)->NSImage {
+struct QuotaIntroFrame {
+    let outline:CGFloat,fill:CGFloat
+    let finished:Bool
+    init(elapsed:Double=3.2,reducedMotion:Bool=false){
+        func smooth(_ value:Double)->CGFloat {let p=max(0,min(1,value));return CGFloat(p*p*(3-2*p))}
+        if reducedMotion || elapsed>=3.2 {outline=1;fill=1;finished=true}
+        else {outline=smooth(elapsed/1.8);fill=smooth((elapsed-1.8)/1.4);finished=false}
+    }
+}
+
+@MainActor func quotaBarsStatusImage(bucket:QuotaBucket?,stale:Bool,introElapsed:Double=3.2)->NSImage {
+    let intro=QuotaIntroFrame(elapsed:introElapsed)
+
     let remaining=[bucket?.primary,bucket?.secondary].compactMap{$0?.remainingPercent}.min().map{max(0,min(1,$0/100))}
     let image=NSImage(size:NSSize(width:44,height:24));image.lockFocus()
     let opacity:CGFloat=remaining == nil ? 0.35:stale ? 0.45:1
@@ -32,9 +44,12 @@ func quotaCreditLabel(_ raw:String?)->String? {
     for x:CGFloat in [1,4.2,7.4,10.6,13.8,17,20.2] {
         let strip=NSBezierPath(rect:NSRect(x:x,y:0,width:2.7,height:24))
         NSGraphicsContext.saveGraphicsState();strip.addClip()
-        bolt.lineWidth=0.7;NSColor.black.withAlphaComponent(opacity*0.35).setStroke();bolt.stroke()
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect:NSRect(x:0,y:0,width:44,height:24*intro.outline)).addClip()
+        bolt.lineWidth=0.7;NSColor.black.withAlphaComponent(opacity*(0.35+0.65*(1-intro.fill))).setStroke();bolt.stroke()
         bolt.addClip();strip.lineWidth=0.6;strip.stroke()
-        if let remaining,remaining>0{NSColor.black.withAlphaComponent(opacity).setFill();NSBezierPath(rect:NSRect(x:x,y:0,width:2.7,height:24*remaining)).fill()}
+        NSGraphicsContext.restoreGraphicsState();bolt.addClip()
+        if let remaining,remaining>0{NSColor.black.withAlphaComponent(opacity).setFill();NSBezierPath(rect:NSRect(x:x,y:0,width:2.7,height:24*remaining*Double(intro.fill))).fill()}
         NSGraphicsContext.restoreGraphicsState()
     }
     let label=remaining.map{String(format:"%.0f%%",$0*100)} ?? "—"

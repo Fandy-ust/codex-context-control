@@ -1,4 +1,6 @@
 import net from 'node:net';
+import {createRunningSpeedCache} from './running-speed.mjs';
+import {runningThread} from './tray-state.mjs';
 import {createTaskQueues} from './task-queues.mjs';
 import {supportsTaskQueues,QUEUE_RUNTIME_RESTART} from './core/queue-runtime.mjs';
 import {createQueueSleepInhibitor} from './queue-sleep.mjs';
@@ -68,6 +70,7 @@ export async function startDaemon() {
   const updater=createUpdateManager({current:JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url))).version});
   if(root===defaultRoot()){const timer=setTimeout(()=>updater.check().catch(()=>{}),5000);timer.unref();const interval=setInterval(()=>updater.check().catch(()=>{}),6*60*60*1000);interval.unref();}
   const contextStatistics=createContextStatisticsService();
+  const responseSpeeds=createRunningSpeedCache(id=>contextStatistics.speed(id));
   const statisticsJSON=new WeakMap();
   const runtimeFix=createRuntimeFixManager();
   const extension=createContextExtensionManager();
@@ -79,11 +82,13 @@ export async function startDaemon() {
   function bridgeReady(b){return !!b&&(extension.enabled()?b.contextCeiling===CONTEXT_CEILING_VERSION&&b.contextCatalogRevision===2:b.contextCeiling!==CONTEXT_CEILING_VERSION);}
   function runtimeModel(id,slug,extended){const m=store.model(slug??store.data.threads[id]?.model)||nativeDefaultModel();if(typeof extended!=='boolean'){const peers=owners.get(id)||[];extended=peers.length===1?bridges.get(peers[0])?.contextCeiling===CONTEXT_CEILING_VERSION:extension.enabled();}return extended?ceilingModel(m):m;}
   function extensionState(fix=runtimeFix.status()){return extension.status([...bridges.values()],{compatible:!!fix.originalVersion,available:!!nativeDefaultModel()});}
-  function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===0?!!m:peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!peers.length&&queueSupported(id),policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:'extension_pending',message:(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
+  function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===0?!!m:peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,responseSpeed:runningThread(t)?responseSpeeds.get(id):null,taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!peers.length&&queueSupported(id),policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:'extension_pending',message:(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
   function newChatDefaults(){return clampNewChatDefaults(store.data.newChatDefaults||(extension.enabled()?initialNewChatDefaults:nativeNewChatDefaults),defaultModel());}
   function state(){
     store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);
     const threads=Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity);
+    // Keep background monitoring light: speed sampling is needed only while the tray menu is visible.
+    try{if(JSON.parse(fs.readFileSync(path.join(root,'ui-status.json'),'utf8')).menuWindowVisible===true)responseSpeeds.observe(threads);}catch{}
     return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,compactionCompensation:true},taskQueues:taskQueues.list(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()]),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
   }
   async function handle(peer,op,p) {
@@ -242,7 +247,7 @@ export async function startDaemon() {
   const cleanupTimer=setInterval(cleanup,5*60*1000);cleanupTimer.unref();
   const scanTimer=setInterval(()=>store.refreshMetadata(),15000);scanTimer.unref();
   web.once('close',()=>{clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
-  const shutdown=()=>{try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
+  const shutdown=()=>{responseSpeeds.close();contextStatistics.close();try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};
 }

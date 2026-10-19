@@ -95,3 +95,20 @@ test('repeated chat switching beyond cache capacity stays bounded without cross-
   assert.ok(get.diagnostics().workerStarts>=3);get.close();assert.equal(get.diagnostics().cachedResults,0);
  }finally{get.close();f.close();}
 });
+
+
+test('speed-only reads share incremental workers without tokenizing text or returning message content',async()=>{
+ const f=fixture(),get=createContextStatisticsService(f.home,{cacheMs:0});
+ try{
+  assert.equal(await get.speed(ids[0]),null);assert.equal(get.diagnostics().last.tokens.misses,0);
+  const start=Date.parse('2026-10-16T00:00:01Z'),end='2026-10-16T00:00:03Z';
+  fs.appendFileSync(f.files[0],encode([
+   {...event('response_item',{...message('assistant','PRIVATE_BODY'),id:'timed'}),timestamp:end},
+   {...event('event_msg',{type:'item_completed',item:{type:'AgentMessage',id:'timed'},started_at_ms:start,completed_at_ms:Date.parse(end)}),timestamp:end},
+   {...event('token_usage_record',{response_id:'measured',turn_id:'new-turn',usage:{input_tokens:100,output_tokens:300}}),timestamp:end}
+  ]));
+  const speed=await get.speed(ids[0]);assert.equal(speed.tokensPerSecond,150);assert.equal(speed.responseId,'measured');assert.ok(!JSON.stringify(speed).includes('PRIVATE_BODY'));assert.equal(get.diagnostics().last.tokens.misses,0);
+  const before=get.diagnostics().last.history.bytesRead;assert.strictEqual(await get.speed(ids[0]),speed);assert.equal(get.diagnostics().last.history.bytesRead,before);
+  const stats=await get(ids[0]);assert.ok(Array.isArray(stats.categories));assert.equal((await get.speed(ids[0])).tokensPerSecond,150);
+ }finally{get.close();f.close();}
+});

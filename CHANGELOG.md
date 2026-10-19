@@ -2,6 +2,8 @@
 
 ## 0.23.2 — Smaller Windows packages and fresh update checks
 
+- Add a one-shot outline-then-fill quota icon intro, respecting reduced motion; enlarge the tray Apply button and remove its redundant cancel control. Show continuously refreshed observed response speed, a recent trend and direction arrows for running chats.
+- Make Recent collapsible and persist its state; projects and recent chats share one scroll area with content-driven heights.
 - Use open/closed folder icons without chevrons, highlight hovered project rows, and remove sidebar blur bands on both platforms.
 - Show a compact update action beside the version in both sidebar headers, including the running update state.
 - Keep Check for updates available after finding a release on both desktops; manual checks bypass the successful-result cache, and installation refreshes the release before launching. Failed refreshes preserve the offer without silently installing stale builds.

@@ -1025,5 +1025,6 @@
   "有更新": "Update",
   "更新中": "Updating",
   "已展开": "Expanded",
-  "已折叠": "Collapsed"
+  "已折叠": "Collapsed",
+  "模型信息已变化，请重新调整": "Model metadata changed. Adjust again."
 }

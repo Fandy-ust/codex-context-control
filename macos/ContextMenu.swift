@@ -136,6 +136,23 @@ private struct MenuRowFrames:PreferenceKey {
     }
 }
 
+private struct ResponseSpeedTrend:Shape {
+    let samples:[Double?]
+    func path(in rect:CGRect)->Path {
+        let values=Array(samples.suffix(16)),valid=values.compactMap{$0}.filter{$0.isFinite && $0>=0}
+        guard valid.count>=2,let low=valid.min(),let high=valid.max() else{return Path()}
+        var path=Path(),drawing=false
+        for (index,sample) in values.enumerated(){
+            guard let value=sample,value.isFinite,value>=0 else{drawing=false;continue}
+            let x=rect.minX+1+CGFloat(index)/CGFloat(max(1,values.count-1))*(rect.width-2)
+            let y=high>low ? rect.maxY-1-CGFloat((value-low)/(high-low))*(rect.height-2):rect.midY
+            let point=CGPoint(x:x,y:y)
+            if drawing{path.addLine(to:point)}else{path.move(to:point)};drawing=true
+        }
+        return path
+    }
+}
+
 @MainActor private struct MenuChatRow:View {
     let model:Controller
     let serviceAvailable:Bool
@@ -147,6 +164,7 @@ private struct MenuRowFrames:PreferenceKey {
     @State private var feedback:String?
     @State private var failed=false
     private var stale:Bool {!serviceAvailable || !chat.connected || chat.freshUsage != true}
+    private var speedText:String {(chat.responseSpeed?.tokensPerSecond).flatMap{$0.isFinite && $0>=0 ? (($0*10).rounded(.down)/10).formatted(.number.precision(.fractionLength(0...1))):nil}.map{$0+" tok/s"} ?? "— tok/s"}
     var body:some View {
         ZStack {
             if let draft {
@@ -164,10 +182,27 @@ private struct MenuRowFrames:PreferenceKey {
             .accessibilityAction(named:L("调节预算")){begin()}
             .onDisappear{if dragging{dragChanged(false)}}
     }
+    private var speedColor:Color {
+        guard let rate=chat.responseSpeed?.tokensPerSecond,rate.isFinite,rate>=0 else{return .secondary}
+        return rate>=40 ? .green:rate>=30 ? .yellow:.red
+    }
+    private func speedView(compact:Bool=false)->some View {
+        HStack(spacing:4){
+            Text(speedText).font(.system(size:compact ? 9:10)).monospacedDigit().foregroundStyle(speedColor)
+            let direction=chat.responseSpeed?.direction
+            Image(systemName:direction=="down" ? "arrow.down":"arrow.up").font(.system(size:9,weight:.semibold)).foregroundStyle(direction=="down" ? Color.red:Color.green).opacity(direction=="up" || direction=="down" ? 1:0).frame(width:8).accessibilityHidden(true)
+            if let samples=chat.responseSpeed?.samples,samples.compactMap({$0}).count>=2 {
+                ResponseSpeedTrend(samples:samples).stroke(Color(red:0.55,green:0.68,blue:0.85),style:StrokeStyle(lineWidth:1.25,lineCap:.round,lineJoin:.round)).frame(width:compact ? 38:52,height:14).accessibilityHidden(true)
+            }
+        }
+    }
     private var information:some View {
         Button{openChat(chat.id)} label:{
             HStack(spacing:10){
-                Text(chat.title).font(.system(size:14,weight:.medium)).lineLimit(1).truncationMode(.middle).frame(maxWidth:.infinity,alignment:.leading)
+                VStack(alignment:.leading,spacing:3){
+                    Text(chat.title).font(.system(size:14,weight:.medium)).lineLimit(1).truncationMode(.middle)
+                    if chat.isRunning {speedView()}
+                }.frame(maxWidth:.infinity,alignment:.leading)
                 VStack(alignment:.trailing,spacing:3){
                     ContextUsageRing(fraction:chat.contextFraction,stale:stale)
                     Text(chat.contextFraction != nil ? "\(shortTokens(chat.lastUsage?.totalTokens)) / \(shortTokens(chat.observedWindow))\(stale ? L(" · 上次"):"")":L("尚无用量"))
@@ -185,9 +220,9 @@ private struct MenuRowFrames:PreferenceKey {
                     if let actual=chat.observedWindow,actual/1000 != Int(value.windowK){Text(L("目标 {0}K · {1} {2}K", Int(value.windowK), stale ? L("上次"):L("实际"), actual/1000)).allowsHitTesting(false)}else{Text(Int(value.windowK)==value.maximumWindowK ? "MAX" : L("上下文 {0}K", Int(value.windowK))).allowsHitTesting(false)}
                 }
                 Spacer(minLength:2)
+                if chat.isRunning {speedView(compact:true)}
                 if saving{ProgressView().controlSize(.mini).frame(width:28)}
-                else{Button{Task{await apply()}}label:{Text(L("应用")).font(.system(size:11,weight:.semibold)).foregroundStyle(.white).frame(width:42,height:22).background(Color.accentColor.opacity(value.changed && serviceAvailable ? 1:0.35),in:RoundedRectangle(cornerRadius:5)).contentShape(Rectangle())}.foregroundStyle(.blue).disabled(!value.changed || !serviceAvailable)}
-                Button{cancel()}label:{Image(systemName:"xmark").frame(width:20,height:20).contentShape(Rectangle())}.disabled(saving).help(L("取消未提交的修改"))
+                else{Button{Task{await apply()}}label:{Text(L("应用")).font(.system(size:11,weight:.semibold)).foregroundStyle(.white).frame(width:78,height:22).background(Color.accentColor.opacity(value.changed && serviceAvailable ? 1:0.35),in:RoundedRectangle(cornerRadius:5)).contentShape(Rectangle())}.foregroundStyle(.blue).disabled(!value.changed || !serviceAvailable)}
             }.buttonStyle(.plain).font(.system(size:11,weight:.medium)).monospacedDigit().frame(height:20)
             BudgetRangeSlider(window:Binding(get:{draft?.windowK ?? value.windowK},set:{if draft?.windowK != $0{draft?.setWindow($0);feedback=nil}}),compact:.constant(value.compactK),selection:$selection,maximumWindow:value.maximumWindowK,maximumCompact:value.maximumCompactK,compactStyle:true,windowOnly:true,onEditingChanged:{active in dragging=active;dragChanged(active)})
                 .disabled(saving || !serviceAvailable)
@@ -204,7 +239,7 @@ private struct MenuRowFrames:PreferenceKey {
         do {
             guard let current=model.chats.first(where:{$0.id==value.chatID}),current.model==value.model,
                   current.modelMetadata?.effective_context_window_percent==value.effectivePercent,
-                  current.modelMetadata?.max_context_window==value.maximumRawWindow else{throw BudgetInputError(message:L("模型信息已变化，请取消后重新调整"))}
+                  current.modelMetadata?.max_context_window==value.maximumRawWindow else{throw BudgetInputError(message:L("模型信息已变化，请重新调整"))}
             var command:[String:Any]=["id":value.chatID,"apply":true,"expectedRevision":value.revision]
             command.merge(model.policyCommand(try value.policy(),usableWindow:Int(value.windowK)*1000),uniquingKeysWith:{$1})
             let data=try await model.api(ControlAPI.policy,body:command)

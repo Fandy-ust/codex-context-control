@@ -6,6 +6,7 @@ struct Usage: Decodable,Equatable { let totalTokens:Int }
 struct Metadata: Decodable,Equatable { let max_context_window:Int?;let effective_context_window_percent:Int?;let context_ceiling:Int?;let context_compact_ceiling:Int?;let context_catalog_ready:Bool? }
 struct CompensationDetails:Decodable,Equatable {let enabled:Bool;let status:String;let extraTokens:Int;let targetWindow:Int?;let runtimeWindow:Int?;let message:String?}
 struct CompensationState:Decodable,Equatable {let enabled:Bool;let pending:Bool;let message:String}
+struct ResponseSpeed:Decodable,Equatable {let tokensPerSecond:Double;let direction:String?;let samples:[Double?]?}
 struct Chat: Identifiable, Decodable,Equatable {
     let id:String;let name:String?;let model:String?;let cwd:String?;let status:String?
     let connected:Bool;let ambiguous:Bool;let phase:String?;let message:String?
@@ -13,7 +14,7 @@ struct Chat: Identifiable, Decodable,Equatable {
     var queueRestartRequired:Bool{taskQueueRestartRequired == true || (connected && taskQueueSupported == false)}
     let ephemeral:Bool?;let canAcceptDirectInput:Bool?;let threadSource:String?;let lastActivityAt:Int?;let lastStartedAt:Int?;let lastCompletedAt:Int?
     let observedWindow:Int?;let expectedWindow:Int?;let lastUsage:Usage?;let freshUsage:Bool?;let revision:Int?
-    let policy:Budget?;let modelMetadata:Metadata?;let compensation:CompensationDetails?
+    let policy:Budget?;let modelMetadata:Metadata?;let compensation:CompensationDetails?;let responseSpeed:ResponseSpeed?
     var title:String { if let name,!name.isEmpty{return name};if let cwd{return URL(fileURLWithPath:cwd).lastPathComponent};return String(id.prefix(12)) }
     var canCompact:Bool {connected && !ambiguous && status=="idle" && ephemeral != true && canAcceptDirectInput != false && !["compacting","reloading","extension_pending"].contains(phase ?? "")}
     var targetWindow:Int? {
@@ -491,6 +492,8 @@ struct ProjectChatSidebar:View {
     @ObservedObject var model:Controller
     @AppStorage("project-sidebar-expanded") private var expandedJSON="[]"
     @State private var hoveredProject:String?
+    @AppStorage("recent-sidebar-expanded") private var recentExpanded=true
+    @State private var recentHovered=false
     private var expanded:Set<String> {Set((try? JSONDecoder().decode([String].self,from:Data(expandedJSON.utf8))) ?? [])}
     private var projects:[SidebarProject] {model.sidebar?.projects ?? []}
     private var recent:[Chat] {model.chats.sorted{($0.lastActivityAt ?? 0)>($1.lastActivityAt ?? 0)}}
@@ -503,27 +506,38 @@ struct ProjectChatSidebar:View {
         if !expanded.contains(project.id){setExpanded(project.id,true)}
     }
     var body:some View {
-        GeometryReader{geometry in
-            VStack(alignment:.leading,spacing:0){
-                projectList.frame(height:max(0,geometry.size.height-15)*0.5)
-                Color.clear.frame(height:15)
-                VStack(alignment:.leading,spacing:6){
-                    heading("最近",count:recent.count)
-                    ScrollView{LazyVStack(spacing:4){
-                        if recent.isEmpty{empty("暂无最近聊天")}
-                        ForEach(recent){chat in chatRow(chat)}
-                    }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,4)}
-                }.frame(maxHeight:.infinity)
-            }
+        ScrollView {
+            LazyVStack(alignment:.leading,spacing:8){
+                projectList
+                VStack(alignment:.leading,spacing:4){
+                    Button{recentExpanded.toggle()}label:{
+                        HStack(spacing:7){
+                            Image(systemName:"clock").font(.system(size:14)).foregroundStyle(.secondary).frame(width:17,height:17)
+                            Text(L("最近")).font(.system(size:12,weight:.medium))
+                            Spacer(minLength:2)
+                            Text("\(recent.count)").font(.caption).foregroundStyle(.secondary)
+                        }.padding(.horizontal,10).padding(.vertical,6).frame(maxWidth:.infinity,alignment:.leading)
+                            .background(Color.white.opacity(recentHovered ? 0.065:0),in:RoundedRectangle(cornerRadius:8))
+                            .overlay(RoundedRectangle(cornerRadius:8).stroke(Color.white.opacity(recentHovered ? 0.1:0),lineWidth:1))
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityValue(L(recentExpanded ? "已展开":"已折叠")).onHover{recentHovered=$0}
+                    if recentExpanded {
+                        LazyVStack(spacing:4){
+                            if recent.isEmpty{empty("暂无最近聊天")}
+                            ForEach(recent){chat in chatRow(chat)}
+                        }
+                    }
+                }
+            }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,4)
         }
         .onAppear{revealSelection()}
         .onChange(of:model.selectedID){_,_ in revealSelection()}
     }
     private var projectList:some View {
         let byID=Dictionary(model.chats.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
-        return VStack(alignment:.leading,spacing:3){
+        return LazyVStack(alignment:.leading,spacing:3){
             heading("项目",count:projects.count)
-            ScrollView{LazyVStack(alignment:.leading,spacing:2){
+            Group{
                 if projects.isEmpty{empty("暂无本地项目")}
                 ForEach(projects){project in
                     let open=expanded.contains(project.id)
@@ -549,7 +563,7 @@ struct ProjectChatSidebar:View {
                         }
                     }
                 }
-            }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,4)}
+            }
         }
     }
     private func heading(_ title:String,count:Int)->some View {
@@ -682,6 +696,8 @@ struct ContentView: View {
     private var localMenuMonitor:Any?
     private var globalMenuMonitor:Any?
     private var iconInitialized=false
+    private var quotaIntroStarted:TimeInterval?
+    private var quotaIntroTimer:Timer?
     private let background=CommandLine.arguments.contains("--background")
     private var lastStatus:Data?
     private var languageObservers:[NSObjectProtocol]=[]
@@ -708,6 +724,7 @@ struct ContentView: View {
         item.button?.target=self;item.button?.action=#selector(toggleContextPopover)
         statusItem=item
         if let button=item.button{statusHighlight=StatusItemHighlight(button:button,isOpen:{[weak self] in self?.menuPanel?.isVisible==true})}
+        startQuotaIntro()
         updateStatusIcon()
         if !background{showSettings()}
         publishStatus()
@@ -734,13 +751,28 @@ struct ContentView: View {
         }
     }
     func applicationDidBecomeActive(_ notification:Notification){refreshNow()}
+    private func startQuotaIntro(){
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else{return}
+        quotaIntroStarted=ProcessInfo.processInfo.systemUptime
+        let timer=Timer(timeInterval:1.0/30,repeats:true){[weak self] _ in Task{@MainActor [weak self] in self?.drawQuotaIntro()}}
+        quotaIntroTimer=timer;RunLoop.main.add(timer,forMode:.common)
+    }
+    private func drawQuotaIntro(){
+        guard let started=quotaIntroStarted else{return}
+        let elapsed=ProcessInfo.processInfo.systemUptime-started
+        if QuotaIntroFrame(elapsed:elapsed,reducedMotion:NSWorkspace.shared.accessibilityDisplayShouldReduceMotion).finished {
+            quotaIntroTimer?.invalidate();quotaIntroTimer=nil;quotaIntroStarted=nil;iconInitialized=false;updateStatusIcon();return
+        }
+        statusItem?.button?.image=quotaBarsStatusImage(bucket:model.selectedQuota,stale:!model.serviceAvailable || model.quota?.stale != false,introElapsed:elapsed)
+    }
     private func updateStatusIcon(){
         let quotaSummary=model.selectedQuota.map{bucket in [bucket.primary,bucket.secondary].compactMap{$0}.map{L("{0}剩余 {1}%",quotaPeriod($0),Int($0.remainingPercent.rounded()))}.joined(separator:" · ")} ?? L("额度暂不可用")
         let quotaStale = !model.serviceAvailable || model.quota?.stale != false
         let quotaTooltip=quotaStale ? L("上次记录，待刷新")+" · "+quotaSummary:quotaSummary
         statusHighlight?.refresh()
         let busiest=model.busiestContext
-        if !iconInitialized || lastQuotaIcon != model.quota || lastQuotaID != model.selectedQuota?.id || lastQuotaStale != quotaStale {
+        if quotaIntroStarted != nil {drawQuotaIntro()}
+        else if !iconInitialized || lastQuotaIcon != model.quota || lastQuotaID != model.selectedQuota?.id || lastQuotaStale != quotaStale {
             statusItem?.button?.image=quotaBarsStatusImage(bucket:model.selectedQuota,stale:quotaStale)
             lastQuotaIcon=model.quota;lastQuotaID=model.selectedQuota?.id;lastQuotaStale=quotaStale
             iconInitialized=true
@@ -856,5 +888,5 @@ struct ContentView: View {
             try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:url.path);lastStatus=data
         }catch{}
     }
-    func applicationWillTerminate(_ notification:Notification){closeContextMenu();refreshTimer?.invalidate();refreshTask?.cancel();try? FileManager.default.removeItem(at:model.home.appendingPathComponent("ui-status.json"))}
+    func applicationWillTerminate(_ notification:Notification){quotaIntroTimer?.invalidate();closeContextMenu();refreshTimer?.invalidate();refreshTask?.cancel();try? FileManager.default.removeItem(at:model.home.appendingPathComponent("ui-status.json"))}
 }

@@ -36,7 +36,7 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 - **Control panel:** open settings from the sidebar header, with matching sections and control order on both platforms.
 - **Quota outlook:** independently estimate whether 5-hour and weekly allowances will be used before reset, how soon they may run out, and how much may remain. Historical charts stay in Advanced analysis.
 - **Local cache:** see chats and recent usage at startup, with incremental background sync.
-- **Project sidebar:** expandable local projects above a live Recent list of all chats, with project names, connection status, independent scrolling and saved expansion preferences.
+- **Project sidebar:** expandable local projects above a live Recent list of all chats, with project names, connection status, a shared scroll area and saved expansion preferences.
 - **Updates:** automatic checks and click-to-install, preserving budgets and preferences. Windows also offers startup prompts, Skip this time and an automatic-check switch.
 - **Usage statistics:** view context, cache, estimated cost and response speed directly below the budget controls.
 

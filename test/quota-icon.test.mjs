@@ -8,10 +8,10 @@ import AppKit
 @main @MainActor struct Check {
  static func main() throws {
   _ = NSApplication.shared
-  func image(_ remaining:Double) throws -> NSBitmapImageRep {
+  func image(_ remaining:Double,_ elapsed:Double=3.2) throws -> NSBitmapImageRep {
    let data:[String:Any]=["id":"codex","name":"Codex","primary":["usedPercent":100-remaining,"remainingPercent":remaining,"windowDurationMins":300]]
    let bucket=try JSONDecoder().decode(QuotaBucket.self,from:JSONSerialization.data(withJSONObject:data))
-   let icon=quotaBarsStatusImage(bucket:bucket,stale:false);precondition(icon.size==NSSize(width:44,height:24));return NSBitmapImageRep(data:icon.tiffRepresentation!)!
+   let icon=quotaBarsStatusImage(bucket:bucket,stale:false,introElapsed:elapsed);precondition(icon.size==NSSize(width:44,height:24));return NSBitmapImageRep(data:icon.tiffRepresentation!)!
   }
   func coverage(_ bitmap:NSBitmapImageRep,_ left:Bool)->Double {
    let split=Int(Double(bitmap.pixelsWide)*20/44);var sum=0.0
@@ -19,6 +19,11 @@ import AppKit
   }
   precondition(quotaCreditLabel(nil)==nil && quotaCreditLabel("bad")==nil)
   precondition(quotaCreditLabel("123.45")!.contains("credits") && quotaCreditLabel("0.001")=="<0.01 credits")
+  precondition(QuotaIntroFrame(elapsed:0).outline==0 && QuotaIntroFrame(elapsed:1.8).fill==0)
+  precondition(abs(QuotaIntroFrame(elapsed:2.5).fill-0.5)<0.000001 && QuotaIntroFrame(elapsed:0,reducedMotion:true).finished)
+  let first=try image(74,0),outlined=try image(74,1.8),settled=try image(74,3.2),normal=try image(74)
+  precondition(coverage(first,true)==0 && coverage(outlined,true)>0)
+  precondition(coverage(settled,true)==coverage(normal,true))
   let full=try image(100),half=try image(50),empty=try image(0)
   precondition(coverage(full,true)>coverage(half,true) && coverage(half,true)>coverage(empty,true))
   precondition(coverage(full,false)>0 && coverage(empty,false)>0)
