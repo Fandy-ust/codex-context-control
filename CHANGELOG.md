@@ -1,5 +1,11 @@
 # Changes
 
+## 0.24.1 — Copy saved cloud credentials and start sync directly
+
+- Keep saved Token and key visibly masked and marked Saved on both platforms; dedicated copy buttons work after saving and reopening settings. Credentials remain in DPAPI / Keychain and are retrieved only on explicit copy.
+- Remove the 16-character minimum for nonempty sync keys.
+- Make Enable and sync / Save and sync available before the enabled setting has been saved, fixing the grey Mac sync button. Refresh account quota before syncing and verify credential writes by reading them back.
+
 ## 0.24.0 — Encrypted multi-device sync and persistent quota monitoring
 
 - Add private repository / Secret Gist cloud sync to both desktop settings, with OS-protected credentials, encrypted numeric records, account isolation, response deduplication and configurable intervals. See [setup](docs/en/CLOUD_SYNC.md).

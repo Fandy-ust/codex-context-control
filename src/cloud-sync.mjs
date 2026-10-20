@@ -17,7 +17,7 @@ export function unseal(raw,key,aad){
   try{const p=JSON.parse(raw);if(p.v!==1||p.zip!=='gzip')throw Error();const d=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(p.iv,'base64'));d.setAAD(Buffer.from(aad));d.setAuthTag(Buffer.from(p.tag,'base64'));return JSON.parse(gunzipSync(Buffer.concat([d.update(Buffer.from(p.data,'base64')),d.final()]),{maxOutputLength:4*1024*1024}).toString());}
   catch{throw Error('同步密钥错误或云端数据损坏');}
 }
-export function createCloudSync({home,analytics,secrets=syncSecrets(home),transport=githubSync,now=Date.now}={}){
+export function createCloudSync({home,analytics,secrets=syncSecrets(home),transport=githubSync,prepare=async()=>{},now=Date.now}={}){
   const file=path.join(home,'cloud-sync.json'),cacheFile=path.join(home,'cloud-sync-cache.json');
   let config={version:1,enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:crypto.randomBytes(16).toString('hex'),...readJSON(file,{})};
   let cache=readJSON(cacheFile,{target:null,shards:{},uploaded:{}}),pending,timer,closed=false,controller,failures=0;
@@ -36,6 +36,7 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
       try{
         if(closed)throw Error('Cloud sync closed');
         const credentials=secrets.get(),key=syncKey(credentials.key||'');
+        await prepare();
         const account=analytics.syncAccount(key);if(!account)throw Error('请先刷新 Codex 账号额度后再同步');
         if(config.boundAccount&&config.boundAccount!==account)throw Error('Codex 账号已变化，请关闭同步并为当前账号重新配置');
         if(!credentials.token||!credentials.key)throw Error('请配置 GitHub Token 和同步密钥');
@@ -89,6 +90,15 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
   }
   async function command(params={}){
     if(params.action==='status'||!params.action)return state();
+    if(params.action==='credential'){
+      if(!['token','key'].includes(params.field))throw Error('Invalid sync credential field');
+      const value=secrets.get()[params.field];if(typeof value!=='string'||!value)throw Error('尚未保存此凭据');
+      return {value};
+    }
+    if(params.action==='save-and-sync'){
+      await command({...params,action:'configure',enabled:true});
+      void sync().catch(()=>{});return state();
+    }
     if(params.action==='sync'){void sync().catch(()=>{});return state();}
     if(pending)throw Error('同步正在进行，请完成后修改配置');
     if(params.action==='create-gist'){
@@ -104,7 +114,7 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
     let credentials=secrets.get();
     for(const field of ['token','key'])if(params[field]){if(typeof params[field]!=='string'||params[field].length>512||/[\r\n\x00]/.test(params[field]))throw Error('Invalid sync credential');credentials={...credentials,[field]:params[field]};}
     if(next.enabled){
-      if(!credentials.token||!credentials.key||credentials.key.length<16)throw Error('请填写 Token 和至少 16 个字符的同步密钥');
+      if(!credentials.token||!credentials.key)throw Error('请填写 GitHub Token 和同步密钥');
       if(next.provider==='repository'&&!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(next.repository)||next.provider==='repository'&&next.repository.split('/').some(p=>p==='.'||p==='..'))throw Error('私有仓库请填写 owner/repository');
       if(next.provider==='gist'&&!/^[a-f0-9]{20,64}$/.test(next.gistId))throw Error('请填写有效的 Gist ID');
     }

@@ -29,6 +29,7 @@ const {ensureDaemon}=await import('../src/service.mjs');
 const {resolveLanguage,languagePreference,localize}=await import('../src/localization.mjs');
 if(process.platform==='win32')app.commandLine.appendSwitch('lang',resolveLanguage(languagePreference())==='zh'?'zh-CN':'en-US');
 const {demoState,demoStatistics}=await import('./demo.mjs');
+const demoCloudCredentials={};
 let demoCloud={enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:'00000000000000000000000000000000',error:null,running:false};
 const demoQueues=demo?createTaskQueues({quota:{state:()=>({...demoState.quota,updatedAt:Date.now()}),refresh:async()=>{}},thread:id=>demoState.threads.find(t=>t.id===id),start:async(id,task)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='active';chat.automaticTask={executionId:task.executionId,status:'running'};},interrupt:async(id)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='idle';if(chat.automaticTask)chat.automaticTask.status='interrupted';}}):null;
 const pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
@@ -60,7 +61,7 @@ app.on('window-all-closed',()=>{});
 app.on('activate',()=>showMain());
 async function api(action,params={}){
   if(demo){
-    if(action==='cloud-sync'){if(params.action==='configure'){const {token,key,action,claimLegacy,...value}=params;demoCloud={...demoCloud,...value,hasToken:!!token||demoCloud.hasToken,hasKey:!!key||demoCloud.hasKey};}if(params.action==='create-gist')demoCloud.gistId='a'.repeat(32);if(params.action==='sync'){demoCloud.lastSuccess=Date.now();demoCloud.devices=5;}return structuredClone(demoCloud);}
+    if(action==='cloud-sync'){if(params.action==='credential')return {value:demoCloudCredentials[params.field]||''};if(['configure','save-and-sync'].includes(params.action)){const {token,key,action,claimLegacy,...value}=params;if(token)demoCloudCredentials.token=token;if(key)demoCloudCredentials.key=key;demoCloud={...demoCloud,...value,hasToken:!!token||demoCloud.hasToken,hasKey:!!key||demoCloud.hasKey};}if(params.action==='create-gist')demoCloud.gistId='a'.repeat(32);if(['sync','save-and-sync'].includes(params.action)){demoCloud.enabled=true;demoCloud.lastSuccess=Date.now();demoCloud.devices=5;}return structuredClone(demoCloud);}
     if(action==='state')return structuredClone({...demoState,taskQueues:demoQueues.list()});
     if(action==='task-queue')return demoQueues.command(params);
     if(action==='statistics')return structuredClone({...demoStatistics,threadId:params.id});
@@ -120,6 +121,13 @@ function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口
 ipcMain.handle('context-manager',async(event,action,params)=>{
   if(![main?.webContents.id,trayWindow?.webContents.id].includes(event.sender.id)||event.senderFrame!==event.sender.mainFrame)throw Error('Unknown UI sender');
   if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>65536)throw Error('Invalid UI request');
+  if(action==='cloud-sync'&&params.action==='credential')throw Error('Use the credential copy action');
+  if(action==='cloud-copy-credential'){
+    if(!['token','key'].includes(params.field))throw Error('Invalid sync credential field');
+    const value=typeof params.value==='string'&&params.value ? params.value:(await api('cloud-sync',{action:'credential',field:params.field})).value;
+    if(typeof value!=='string'||!value||value.length>512)throw Error(label('尚未保存此凭据','No saved credential'));
+    if(!smoke)clipboard.writeText(value);return {ok:true,field:params.field};
+  }
   if(action==='queue-image-preview'){
     const file=params.path;if(typeof file!=='string'||!path.isAbsolute(file)||!/\.(png|jpe?g|webp|gif|bmp)$/i.test(file))return {preview:null};
     try{const stat=fs.statSync(file);if(!stat.isFile()||stat.size>32*1024*1024)return {preview:null};const image=nativeImage.createFromPath(file);if(image.isEmpty())return {preview:null};const size=image.getSize(),scale=Math.min(160/size.width,120/size.height,1);return {preview:image.resize({width:Math.max(1,Math.round(size.width*scale)),height:Math.max(1,Math.round(size.height*scale))}).toDataURL()};}catch{return {preview:null};}

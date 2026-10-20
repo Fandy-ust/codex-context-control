@@ -1160,5 +1160,19 @@
   "请先创建或填写 Secret Gist ID": "Create or enter a Secret Gist ID first",
   "请使用 Secret Gist": "Use a Secret Gist",
   "Gist 文件列表不完整，请改用私有仓库或新的 Gist": "Incomplete Gist file list; use a private repository or a new Gist",
-  "同步仓库必须是私有仓库": "The sync repository must be private"
+  "同步仓库必须是私有仓库": "The sync repository must be private",
+  "复制 Token": "Copy Token",
+  "同步密钥": "Sync key",
+  "无最小长度限制": "No minimum length",
+  "填写同步密钥，无最小长度限制": "Enter a sync key; no minimum length",
+  "保存后仍可复制 Token 和密钥；输入框留空会复制已保存的值。": "Token and key remain copyable after saving; an empty field copies the saved value.",
+  "可直接点击“启用并同步”，自动保存当前配置后开始同步。": "Click Enable and sync to save the current configuration and start syncing.",
+  "保存并同步": "Save and sync",
+  "启用并同步": "Enable and sync",
+  "已保存并开始同步": "Saved and sync started",
+  "Token 已复制": "Token copied",
+  "同步密钥已复制": "Sync key copied",
+  "尚未保存此凭据": "No saved credential",
+  "请填写 GitHub Token 和同步密钥": "Enter a GitHub Token and sync key",
+  "凭据保存后未能读回，请解锁系统凭据存储后重试": "Could not read credentials after saving. Unlock system credential storage and retry."
 }

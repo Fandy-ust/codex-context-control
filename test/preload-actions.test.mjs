@@ -16,6 +16,8 @@ test('preload forwards compensation toggles and rejects unknown actions before I
   assert.deepEqual(await exposed.invoke('compensation',{enabled}),{enabled});
   assert.deepEqual(calls.at(-1),['context-manager','compensation',{enabled}]);
  }
+ await exposed.invoke('cloud-copy-credential',{field:'key'});
+ assert.deepEqual(calls.at(-1),['context-manager','cloud-copy-credential',{field:'key'}]);
  await assert.rejects(exposed.invoke('unknown-action'),/Unknown action/);
- assert.equal(calls.length,2);
+ assert.equal(calls.length,3);
 });

@@ -38,14 +38,21 @@ struct CloudSyncView:View {
                 Button(L("创建 Secret Gist")){Task{await createGist()}}.disabled(busy)
                 Text(L("其他设备填写同一个 Gist ID。Secret Gist 可被知道链接的人读取，因此统计始终加密。")).font(.caption).foregroundStyle(.secondary)
             }
-            SecureField(state?.hasToken==true ? L("GitHub Token（已保存，留空保留）"):"GitHub Token",text:$token)
-            if keyVisible{TextField(L("同步密钥（所有设备使用同一个）"),text:$key).privacySensitive()}
-            else{SecureField(state?.hasKey==true ? L("同步密钥（已保存，留空保留）"):L("同步密钥（至少 16 个字符）"),text:$key)}
+            VStack(alignment:.leading,spacing:6){
+                HStack{Text("GitHub Token");if state?.hasToken==true{Text(L("已保存")).font(.caption).foregroundStyle(.secondary)}}
+                SecureField("GitHub Token",text:$token,prompt:Text(state?.hasToken==true ? "••••••••••••••••":"GitHub Token"))
+                Button(L("复制 Token")){Task{await copyCredential("token")}}.disabled(busy)
+            }
+            VStack(alignment:.leading,spacing:6){
+                HStack{Text(L("同步密钥（所有设备使用同一个）"));if state?.hasKey==true{Text(L("已保存")).font(.caption).foregroundStyle(.secondary)}}
+                if keyVisible{TextField(L("同步密钥"),text:$key).privacySensitive()}
+                else{SecureField(L("同步密钥"),text:$key,prompt:Text(state?.hasKey==true ? "••••••••••••••••":L("无最小长度限制")))}
+            }
             HStack{
                 Button(L("生成随机密钥")){key=UUID().uuidString.replacingOccurrences(of:"-",with:"")+UUID().uuidString.replacingOccurrences(of:"-",with:"");keyVisible=true}
-                Button(L("复制密钥")){NSPasteboard.general.clearContents();NSPasteboard.general.setString(key,forType:.string)}.disabled(key.isEmpty)
-                Text(L("请保存密钥，用于其他设备。")).font(.caption).foregroundStyle(.secondary)
+                Button(L("复制密钥")){Task{await copyCredential("key")}}.disabled(busy)
             }
+            Text(L("保存后仍可复制 Token 和密钥；输入框留空会复制已保存的值。")).font(.caption).foregroundStyle(.secondary)
             Picker(L("同步间隔"),selection:$interval){
                 Text(L("仅手动")).tag(0);Text(L("每 5 分钟")).tag(5);Text(L("每 15 分钟")).tag(15);Text(L("每 30 分钟")).tag(30);Text(L("每小时")).tag(60);Text(L("自定义")).tag(-1)
             }.pickerStyle(.menu)
@@ -55,7 +62,7 @@ struct CloudSyncView:View {
             Text(L("不确定历史账号时请勿勾选。新请求自动归属当前账号；Token 和密钥使用 macOS 钥匙串保存。")).font(.caption).foregroundStyle(.secondary)
             HStack{
                 Button(L("保存同步设置")){Task{await save()}}.buttonStyle(.borderedProminent).disabled(busy || state?.running==true)
-                Button(L(state?.running==true ? "正在同步…":"立即同步")){Task{await run(["action":"sync"])}}.disabled(busy || state?.enabled != true || state?.running==true)
+                Button(L(state?.running==true ? "正在同步…":state?.enabled==true ? "保存并同步":"启用并同步")){Task{await save(sync:true)}}.disabled(busy || state==nil || state?.running==true)
                 Button(L("刷新状态")){Task{await refresh()}}.disabled(busy)
                 Link(L("配置文档"),destination:URL(string:"https://github.com/Fandy-ust/codex-context-control/blob/main/docs/CLOUD_SYNC.md")!)
             }
@@ -84,13 +91,26 @@ struct CloudSyncView:View {
         busy=true;defer{busy=false}
         do{state=try await request(body);feedback=nil}catch{feedback=error.localizedDescription}
     }
-    private func save() async {
+    private func save(sync:Bool=false) async {
         guard let minutes=interval == -1 ? Int(custom):interval else{feedback=L("请输入有效分钟数");return}
-        await run(["action":"configure","enabled":enabled,"provider":provider,"repository":repository.trimmingCharacters(in:.whitespacesAndNewlines),"gistId":gist.trimmingCharacters(in:.whitespacesAndNewlines),"token":token.trimmingCharacters(in:.whitespacesAndNewlines),"key":key,"intervalMinutes":minutes,"startup":startup,"claimLegacy":claim])
-        if feedback==nil{token="";key="";keyVisible=false;claim=false;feedback=L("同步设置已保存")}
+        await run(["action":sync ? "save-and-sync":"configure","enabled":sync ? true:enabled,"provider":provider,"repository":repository.trimmingCharacters(in:.whitespacesAndNewlines),"gistId":gist.trimmingCharacters(in:.whitespacesAndNewlines),"token":token.trimmingCharacters(in:.whitespacesAndNewlines),"key":key,"intervalMinutes":minutes,"startup":startup,"claimLegacy":claim])
+        if feedback==nil{enabled=state?.enabled ?? enabled;token="";key="";keyVisible=false;claim=false;feedback=L(sync ? "已保存并开始同步":"同步设置已保存")}
+    }
+    private func copyCredential(_ field:String) async {
+        busy=true;defer{busy=false}
+        do{
+            var value=field=="token" ? token:key
+            if value.isEmpty{
+                let data=try await model.api(ControlAPI.cloudSync,body:["action":"credential","field":field])
+                value=try JSONDecoder().decode(CloudSyncCredential.self,from:data).value
+            }
+            NSPasteboard.general.clearContents();NSPasteboard.general.setString(value,forType:.string)
+            feedback=L(field=="token" ? "Token 已复制":"同步密钥已复制")
+        }catch{feedback=error.localizedDescription}
     }
     private func createGist() async {
         busy=true;defer{busy=false}
         do{let s=try await request(["action":"create-gist","token":token.trimmingCharacters(in:.whitespacesAndNewlines)]);gist=s.gistId;feedback=L("Gist 已创建，请保存同步设置")}catch{feedback=error.localizedDescription}
     }
 }
+private struct CloudSyncCredential:Decodable{let value:String}

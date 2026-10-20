@@ -475,7 +475,8 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       if(['queue-up','queue-down'].includes(action)){const order=q.tasks.map(t=>t.id),from=order.indexOf(taskId),to=from+(action==='queue-up'?-1:1);[order[from],order[to]]=[order[to],order[from]];await queueCommand({id:queueID,action:'reorder',order});return;}
     }
     if(action==='cloud-save'){cloudState=await api.invoke('cloud-sync',cloudSyncForm(root));render();notify(t('同步设置已保存','Sync settings saved'));return;}
-    if(action==='cloud-run'){cloudState=await api.invoke('cloud-sync',{action:'sync'});render();return;}
+    if(action==='cloud-run'){cloudState=await api.invoke('cloud-sync',{...cloudSyncForm(root),action:'save-and-sync'});render();return;}
+    if(action==='cloud-copy'){const field=button.dataset.field;await api.invoke('cloud-copy-credential',{field,value:root.querySelector('#cloud-'+field).value});notify(t(field==='token'?'Token 已复制':'同步密钥已复制',field==='token'?'Token copied':'Sync key copied'));return;}
     if(action==='cloud-refresh'){await pollCloudSync();return;}
     if(action==='cloud-create-gist'){const result=await api.invoke('cloud-sync',{action:'create-gist',token:root.querySelector('#cloud-token').value.trim()});root.querySelector('#cloud-gist').value=result.gistId;return;}
     if(action==='cloud-generate'){const bytes=crypto.getRandomValues(new Uint8Array(32));const input=root.querySelector('#cloud-key');input.value=Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');input.type='text';input.focus();input.select();return;}
@@ -1037,8 +1038,12 @@ window.__contextCloudSmoke=async({preview=false}={})=>{
   const provider=root.querySelector('#cloud-provider');provider.value='gist';provider.dispatchEvent(new Event('change',{bubbles:true}));
   if(root.querySelector('[data-cloud-gist]').hidden||!root.querySelector('[data-cloud-repository]').hidden)throw Error('Gist provider visibility');
   root.querySelector('#cloud-interval').value='-1';root.querySelector('#cloud-interval').dispatchEvent(new Event('change',{bubbles:true}));if(root.querySelector('[data-cloud-custom]').hidden)throw Error('Custom interval visibility');
-  root.querySelector('#cloud-custom').value='17';root.querySelector('#cloud-token').value='smoke-token';root.querySelector('#cloud-key').value='smoke-key-at-least-sixteen-characters';root.querySelector('#cloud-gist').value='a'.repeat(32);root.querySelector('#cloud-enabled').checked=true;
-  root.querySelector('[data-action="cloud-save"]').click();await wait(()=>cloudState?.hasKey&&cloudState.intervalMinutes===17);
+  root.querySelector('#cloud-custom').value='17';root.querySelector('#cloud-token').value='smoke-token';root.querySelector('#cloud-key').value='a';root.querySelector('#cloud-gist').value='a'.repeat(32);root.querySelector('#cloud-enabled').checked=false;
+  if(root.querySelector('[data-action="cloud-run"]').disabled)throw Error('Sync must be available on a disabled device');
+  root.querySelector('[data-action="cloud-run"]').click();await wait(()=>cloudState?.hasKey&&cloudState.intervalMinutes===17&&cloudState.enabled);
   if(root.querySelector('#cloud-key').value||root.querySelector('#cloud-token').value)throw Error('Credentials retained in settings DOM');
-  root.querySelector('[data-action="cloud-run"]').click();await wait(()=>cloudState?.lastSuccess);const result={ok:true,provider:cloudState.provider,customInterval:cloudState.intervalMinutes,credentialsRedacted:!root.querySelector('#cloud-key').value};if(!preview)closeSettings();return result;
+  if(!root.querySelector('#cloud-token').placeholder.includes('•')||!root.querySelector('#cloud-key').placeholder.includes('•'))throw Error('Saved credentials must stay visibly masked');
+  for(const field of ['token','key']){document.querySelector('#toast').textContent='';root.querySelector(`[data-action="cloud-copy"][data-field="${field}"]`).click();await wait(()=>document.querySelector('#toast').textContent===t(field==='token'?'Token 已复制':'同步密钥已复制'));}
+  closeSettings();openSettings('cloud');await wait(()=>root.querySelector('#cloud-key'));if(!root.querySelector('#cloud-key').placeholder.includes('•'))throw Error('Credential mask lost on reopen');
+  await wait(()=>cloudState?.lastSuccess);const result={ok:true,provider:cloudState.provider,customInterval:cloudState.intervalMinutes,credentialsRedacted:!root.querySelector('#cloud-key').value,maskedAfterReopen:root.querySelector('#cloud-key').placeholder.includes('•'),savedCopy:true};if(!preview)closeSettings();return result;
 };

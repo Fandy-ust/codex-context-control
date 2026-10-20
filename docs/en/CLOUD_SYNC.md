@@ -17,12 +17,12 @@ Create the private repository first. The app rejects public repositories and pub
 
 1. Refresh Account quota to identify the correct signed-in Codex account.
 2. Open Settings → Cloud sync, enable sync, choose a provider, and enter the repository or Gist ID and GitHub Token. For Gist, you may use **Create Secret Gist** after entering a token.
-3. Generate a random sync key. Copy it to a password manager **before saving**; all devices need the same key. The minimum is 16 characters, and the generated 64-character random hexadecimal key is recommended. Saved keys are not displayed again.
+3. Generate a random sync key. All devices need the same nonempty key; there is no minimum length. Saved credentials stay visibly masked and marked Saved. Copy Token / Copy key remain available after saving and reopening settings.
 4. Choose **Manual only**, **5 / 15 / 30 / 60 minutes**, or **Custom** (5–1440 minutes). Default: 15 minutes. Startup sync is optional; manual mode never runs automatically. The service must be running and the computer awake.
 5. Leave the legacy-history checkbox off unless you can confirm **all unassigned local token history belongs to the current Codex account**. This one-time claim binds only unassigned token records; unknown historical quota readings remain separate. New attributable requests are included automatically.
-6. Save, then **Sync now**. Check Last sync, device count and any error. The button uses saved configuration. Starting a background operation is not confirmation that it completed.
+6. Click **Enable and sync / Save and sync** to save the current form and start sync. You may also save without starting it. Check Last sync, device count and any error. The button uses current form values; empty credential fields retain saved values. Starting a background operation is not confirmation that it completed.
 
-Credentials are stored using current-user Windows DPAPI or macOS login Keychain. The first Keychain operation may ask for OS permission. State responses and CLI output never return the token or key.
+Credentials are stored using current-user Windows DPAPI or macOS login Keychain. The first Keychain operation may ask for OS permission. Routine state responses and CLI output never return the token or key. Explicit copy decrypts the selected credential to the local clipboard.
 
 ## Add other devices
 
@@ -109,6 +109,7 @@ Use the final component of the returned URL as `gistId`, and change the configur
 
 | Symptom | Action |
 | --- | --- |
+| Mac sync button is grey even after filling the form | Install 0.24.1 and use Enable and sync / Save and sync; missing fields show an explicit error |
 | Clicking Cloud sync stays on General | Install 0.24.0 or later; the tab routing was fixed |
 | Account identity unavailable | Refresh valid Codex account quota and retry |
 | 401 / 404 | Check token expiration, account permissions and destination |

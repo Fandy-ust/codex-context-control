@@ -79,6 +79,42 @@ test('an unavailable account before the first await does not wedge later sync at
   f.setAccount('same-account');await f.service.sync();assert.ok(f.service.state().lastSuccess);
 });
 
+test('one-character keys save, remain retrievable and do not leak in normal status',async t=>{
+  const f=fixture(t,cloud());await f.configure({key:'短'});
+  assert.equal((await f.service.command({action:'credential',field:'key'})).value,'短');
+  assert.equal((await f.service.command({action:'credential',field:'token'})).value,'test-token-never-upload');
+  await f.configure({key:'',token:''});assert.equal((await f.service.command({action:'credential',field:'key'})).value,'短');
+  assert.equal(JSON.stringify(f.service.state()).includes('test-token-never-upload'),false);
+  assert.equal(Object.hasOwn(f.service.state(),'key'),false);
+  await assert.rejects(f.service.command({action:'credential',field:'other'}),/Invalid/);
+});
+
+test('save-and-sync enables an initially disabled device and saves its current form first',async t=>{
+  const f=fixture(t,cloud());assert.equal(f.service.state().enabled,false);
+  const started=await f.service.command({action:'save-and-sync',enabled:false,provider:'repository',repository:'owner/private',intervalMinutes:0,key:'a',token:'new-token'});
+  assert.equal(started.enabled,true);await f.service.sync();assert.ok(f.service.state().lastSuccess);
+  assert.equal((await f.service.command({action:'credential',field:'token'})).value,'new-token');
+  await assert.rejects(f.service.command({action:'save-and-sync',repository:'invalid'}),/owner/);
+});
+
+test('sync refreshes account availability before calculating its account namespace',async t=>{
+  const home=fs.mkdtempSync(path.join(os.tmpdir(),'sync-prepare-'));let ready=false;
+  const service=createCloudSync({home,secrets:{get:()=>({token:'test',key:'a'}),set:()=>{}},prepare:async()=>{ready=true;},analytics:{syncAccount:()=>ready?'a'.repeat(32):null,syncExport:async()=>({scope,requests:[],snapshots:[]}),syncImport:async()=>{}},transport:cloud().transport});
+  t.after(()=>{service.close();fs.rmSync(home,{recursive:true,force:true});});
+  await service.command({action:'save-and-sync',repository:'owner/private',intervalMinutes:0});await service.sync();assert.ok(service.state().lastSuccess);
+});
+
+test('macOS credential writes are read back and failed interactive commands cannot look saved',()=>{
+  const value={token:'test-token',key:'a'};let stored=null,dropWrite=false;
+  const vault=syncSecrets('/fixture/mac',{platform:'darwin',execute:(command,args,options)=>{
+    assert.equal(command,'/usr/bin/security');
+    if(args[0]==='-i'){assert.equal(args.some(a=>a.includes(value.token)),false);if(!dropWrite)stored=options.input.match(/ -w ([A-Za-z0-9+/=]+)/)[1];return {status:0,stdout:'',stderr:''};}
+    return stored?{status:0,stdout:stored+'\n'}:{status:44,stdout:''};
+  }});
+  vault.set(value);assert.deepEqual(vault.get(),value);dropWrite=true;
+  assert.throws(()=>vault.set({...value,key:'new-key'}),/读回/);
+});
+
 test('legacy history is excluded unless explicitly claimed; cloud merge can be disabled',async t=>{
   const f=fixture(t,cloud());f.ledger.consume({type:'token_usage_record',timestamp:new Date(now-20000).toISOString(),payload:{response_id:'old',usage:{input_tokens:10,output_tokens:1}}},{id:'old'});
   assert.equal(f.ledger.syncExport().requests.length,0);await f.configure({claimLegacy:true});assert.equal(f.ledger.syncExport().requests.length,1);
