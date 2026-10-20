@@ -67,7 +67,7 @@ private struct TokenCostCalendarView:View {
             }.overlay(alignment:.topTrailing){if let p=hovered{AnalyticsHoverCard(title:p.label,items:[L("估算费用")+": "+money(p.usd)+" USD","Token: "+quotaNumber(p.tokens),L("请求数")+": \(p.requests)",L("无法计价")+": \(p.unpriced)"]).allowsHitTesting(false).padding(8)}}
             HStack{Text(values.first?.label ?? "");Spacer();Text(L(calendar.customRange==true ? "按所选范围汇总":mode=="line" ? period=="year" ? "最近 12 个月，按月汇总":"每个点表示该时段的 API 估算费用":"颜色越深，估算费用越高"));Spacer();Text(values.last?.label ?? "")}.font(.caption2).foregroundStyle(.secondary)
             CompactQuotaDateRange(start:$start,end:$end,onApply:onApply,onReset:onReset)
-            Image(systemName:"info.circle").font(.caption).foregroundStyle(.secondary).help(L("按现有 API 价格估算，沿用聊天费用的 Standard 与缓存写入估算规则；不是订阅账单。仅含本机记录，空格表示无记录，无法计价的请求不按零元计算。"))
+            Image(systemName:"info.circle").font(.caption).foregroundStyle(.secondary).help(L("按现有 API 价格估算，沿用聊天费用的 Standard 与缓存写入估算规则；不是订阅账单。按云同步设置中的账号和设备范围汇总，空格表示无记录，无法计价的请求不按零元计算。"))
         }.padding(18).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).strokeBorder(.white.opacity(0.08)))
         .background{GeometryReader{g in Color.clear.onChange(of:g.frame(in:.global).minY){_,_ in hovered=nil}}}
         .onChange(of:period){_,_ in hovered=nil}.onChange(of:mode){_,_ in hovered=nil}.onChange(of:calendar.today){_,_ in hovered=nil}

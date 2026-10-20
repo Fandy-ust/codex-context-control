@@ -1,5 +1,13 @@
 # Changes
 
+## 0.24.2 — Accounts and devices in cloud sync
+
+- Identify Codex accounts automatically and keep each account's local and synced history separate, including after login or plan changes.
+- Discover accounts and named devices through an encrypted directory. Share one private repository and sync key across accounts and devices.
+- Choose current, all, or selected accounts, select devices for cost/token totals, and pause sync independently per account. Selections are local; unchecking preserves cached history.
+- Preserve account-specific import caches and attribute requests using observed login periods. Unassigned older records remain available through an explicit display option.
+- Windows and macOS share the same controls and accounting rules. Existing 0.24.1 numeric manifests remain readable; update all devices to 0.24.2 to discover accounts across devices.
+
 ## 0.24.1 — Copy saved cloud credentials and start sync directly
 
 - Keep saved Token and key visibly masked and marked Saved on both platforms; dedicated copy buttons work after saving and reopening settings. Credentials remain in DPAPI / Keychain and are retrieved only on explicit copy.

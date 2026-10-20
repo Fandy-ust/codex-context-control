@@ -122,3 +122,10 @@ Use the final component of the returned URL as `gistId`, and change the configur
 This feature synchronizes numeric analytics, not chats, queues, context budgets or skills. OAuth login is not part of this implementation.
 
 Official references: [Gist API](https://docs.github.com/en/rest/gists/gists), [repository Contents API](https://docs.github.com/en/rest/repos/contents), [token permissions](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens), [gh repo create](https://cli.github.com/manual/gh_repo_create), [gh gist create](https://cli.github.com/manual/gh_gist_create).
+
+
+## Accounts and devices (0.24.2)
+
+One repository/Gist and sync key can serve multiple Codex accounts. Account IDs take precedence over email; model and plan changes remain the same account. An encrypted discovery directory shares anonymous account identifiers and device names, without account email or login credentials.
+
+In Cloud sync, name this device, choose Current account (default), All accounts, or Selected accounts, and check the devices included in cost/token totals. Participate in sync pauses future uploads/downloads per account while keeping imported history available. Preferences apply to this device only and never delete cloud history. The displayed device timestamp is the last snapshot publication, not a heartbeat. Unassigned history stays hidden until explicitly enabled; only claim legacy history if its ownership is certain. Update every device to 0.24.2 for account discovery.

@@ -1031,16 +1031,29 @@ root.addEventListener('keydown',event=>{if(event.key==='Escape'&&queueModelOpen)
 window.__contextComposerPreview=async kind=>{queueID=selected;openQueueTask();queueTaskDraft.prompt='完成这项任务，保留必要的验证结果。';if(kind==='full')queueTaskDraft.settings.approval='full';queueModelOpen=kind==='model';render(true);if(kind==='attachments'){const pasted=await api.invoke('queue-paste-image');mergeQueueAttachments([...pasted.attachments,{path:'C:\\fixtures\\notes.txt',name:'任务说明.txt',kind:'file'}]);await loadQueuePreviews(queueTaskDraft.settings.attachments);}if(kind==='full'){const menu=root.querySelector('.queue-permission-menu');if(menu)menu.open=true;}root.querySelector('.queue-composer-card')?.scrollIntoView({block:'center'});};
 
 async function loadCloudSync(){try{cloudState=await api.invoke('cloud-sync',{action:'status'});if(settingsOpen&&settingsTab==='cloud')render();}catch(error){notify(error.message);}}
-async function pollCloudSync(){try{cloudState=await api.invoke('cloud-sync',{action:'status'});if(!settingsOpen||settingsTab!=='cloud')return;const holder=document.createElement('div');holder.innerHTML=cloudSyncView(cloudState,{e,t});const current=root.querySelector('.settings-body .state-card'),next=holder.querySelector('.state-card');if(current&&next)current.replaceWith(next);for(const action of ['cloud-save','cloud-run']){const a=root.querySelector(`[data-action="${action}"]`),b=holder.querySelector(`[data-action="${action}"]`);if(a&&b){a.disabled=b.disabled;a.textContent=b.textContent;}}}catch(error){notify(error.message);}}
+async function pollCloudSync(){try{cloudState=await api.invoke('cloud-sync',{action:'status'});if(!settingsOpen||settingsTab!=='cloud')return;const holder=document.createElement('div');holder.innerHTML=cloudSyncView(cloudState,{e,t});const current=root.querySelector('[data-cloud-status]'),next=holder.querySelector('[data-cloud-status]');if(current&&next)current.replaceWith(next);
+for(const region of ['data-cloud-accounts','data-cloud-devices']){
+ const a=root.querySelector('['+region+']'),b=holder.querySelector('['+region+']');if(!a||!b)continue;
+ for(const attr of ['data-cloud-stat-account','data-cloud-sync-account','data-cloud-stat-device'])for(const input of a.querySelectorAll('['+attr+']')){
+  const match=[...b.querySelectorAll('['+attr+']')].find(n=>n.getAttribute(attr)===input.getAttribute(attr));if(match)match.checked=input.checked;
+ }
+ a.replaceWith(b);
+}
+for(const action of ['cloud-save','cloud-run']){const a=root.querySelector(`[data-action="${action}"]`),b=holder.querySelector(`[data-action="${action}"]`);if(a&&b){a.disabled=b.disabled;a.textContent=b.textContent;}}}catch(error){notify(error.message);}}
 
 window.__contextCloudSmoke=async({preview=false}={})=>{
   openSettings('general');root.querySelector('[data-action="settings-tab"][data-tab="cloud"]').click();const wait=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,20));}throw Error('Cloud settings smoke timeout');};await wait(()=>root.querySelector('#cloud-provider'));
+  root.querySelector('#cloud-device-name').value='Smoke workstation';root.querySelector('#cloud-statistics-mode').value='selected';
+  const account=root.querySelector('[data-cloud-stat-account]'),syncAccount=root.querySelector('[data-cloud-sync-account]'),device=root.querySelector('[data-cloud-stat-device]');
+  if(!account||!syncAccount||!device)throw Error('Account and device selectors missing');account.checked=false;syncAccount.checked=false;device.checked=false;
+  await pollCloudSync();if(root.querySelector('[data-cloud-stat-account]').checked||root.querySelector('[data-cloud-stat-device]').checked)throw Error('Polling replaced unsaved selections');
   const provider=root.querySelector('#cloud-provider');provider.value='gist';provider.dispatchEvent(new Event('change',{bubbles:true}));
   if(root.querySelector('[data-cloud-gist]').hidden||!root.querySelector('[data-cloud-repository]').hidden)throw Error('Gist provider visibility');
   root.querySelector('#cloud-interval').value='-1';root.querySelector('#cloud-interval').dispatchEvent(new Event('change',{bubbles:true}));if(root.querySelector('[data-cloud-custom]').hidden)throw Error('Custom interval visibility');
   root.querySelector('#cloud-custom').value='17';root.querySelector('#cloud-token').value='smoke-token';root.querySelector('#cloud-key').value='a';root.querySelector('#cloud-gist').value='a'.repeat(32);root.querySelector('#cloud-enabled').checked=false;
   if(root.querySelector('[data-action="cloud-run"]').disabled)throw Error('Sync must be available on a disabled device');
   root.querySelector('[data-action="cloud-run"]').click();await wait(()=>cloudState?.hasKey&&cloudState.intervalMinutes===17&&cloudState.enabled);
+  if(cloudState.deviceName!=='Smoke workstation'||cloudState.statisticsMode!=='selected'||cloudState.excludedAccounts.length!==1||cloudState.excludedSyncAccounts.length!==1||cloudState.excludedDevices.length!==1)throw Error('Account/device selections did not save');
   if(root.querySelector('#cloud-key').value||root.querySelector('#cloud-token').value)throw Error('Credentials retained in settings DOM');
   if(!root.querySelector('#cloud-token').placeholder.includes('•')||!root.querySelector('#cloud-key').placeholder.includes('•'))throw Error('Saved credentials must stay visibly masked');
   for(const field of ['token','key']){document.querySelector('#toast').textContent='';root.querySelector(`[data-action="cloud-copy"][data-field="${field}"]`).click();await wait(()=>document.querySelector('#toast').textContent===t(field==='token'?'Token 已复制':'同步密钥已复制'));}

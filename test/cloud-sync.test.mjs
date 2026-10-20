@@ -27,12 +27,12 @@ function cloud(){
 function fixture(t,remote){
   const home=fs.mkdtempSync(path.join(os.tmpdir(),'cloud-sync-')),ledger=new QuotaLedger({file:path.join(home,'ledger.sqlite'),home,now:()=>now});
   let identity='same-account',credentials={token:'test-token-never-upload',key};
-  ledger.recordLive({scope,at:now-10000,buckets:[]});
-  const analytics={syncAccount:k=>identity?crypto.createHmac('sha256',k).update(identity).digest('hex').slice(0,32):null,syncExport:async p=>ledger.syncExport(p),syncImport:async p=>ledger.syncImport(p)};
+  ledger.recordLive({scope,at:now-10000,buckets:[],accountGroup:'a'.repeat(32),identity,label:'Local account'});
+  const analytics={syncAccount:k=>identity?crypto.createHmac('sha256',k).update(identity).digest('hex').slice(0,32):null,syncExport:async p=>ledger.syncExport(p),syncImport:async p=>ledger.syncImport(p),syncSettings:async p=>ledger.syncSettings(p),syncProfiles:async k=>ledger.syncProfiles().map(({identity,...p})=>({...p,id:crypto.createHmac('sha256',k).update(identity).digest('hex').slice(0,32)}))};
   const service=createCloudSync({home,analytics,secrets:{get:()=>credentials,set:v=>{credentials=v;}},transport:remote.transport,now:()=>now});
   t.after(()=>{service.close();ledger.close();fs.rmSync(home,{recursive:true,force:true});});
   const add=(id,extra={})=>ledger.consume({type:'token_usage_record',timestamp:new Date(now-1000).toISOString(),payload:{response_id:id,usage:{input_tokens:100,output_tokens:20,cached_input_tokens:80,...extra}}},{id:'thread',model:'model',name:'PRIVATE TITLE',project:'PRIVATE PATH'});
-  return {service,ledger,home,add,setAccount:value=>{identity=value;},configure:params=>service.command({action:'configure',enabled:true,repository:'owner/private',intervalMinutes:0,...params})};
+  return {service,ledger,home,add,setAccount:value=>{identity=value;if(value){const group=value==='same-account'?'a'.repeat(32):crypto.createHash('sha256').update(value).digest('hex').slice(0,32);ledger.recordLive({scope:'account:'+group,at:now-5000,buckets:[],accountGroup:group,identity,label:'Local account'});}},configure:params=>service.command({action:'configure',enabled:true,repository:'owner/private',intervalMinutes:0,...params})};
 }
 
 test('AES-GCM authenticates content, key and file/device context',()=>{
@@ -59,7 +59,7 @@ test('five devices converge, never re-export imports, avoid unchanged writes and
   const writes=remote.writes.length;await devices[0].service.sync();assert.equal(remote.writes.length,writes);
   const all=[...remote.files.values()].join('');for(const secret of ['PRIVATE TITLE','PRIVATE PATH','test-token-never-upload','same-account','own-0'])assert.equal(all.includes(secret),false);
   assert.equal(JSON.stringify(devices[0].service.state()).includes(key),false);
-  devices[0].setAccount('other-account');await assert.rejects(devices[0].service.sync(),/账号已变化/);
+  devices[0].setAccount('other-account');await devices[0].service.sync();assert.equal(devices[0].ledger.read().requests.length,0);devices[0].setAccount('same-account');await devices[0].service.sync();assert.equal(devices[0].ledger.read().requests.length,6);
   await devices[1].configure({enabled:false});assert.equal(devices[1].ledger.read().requests.length,2);
   const other=fixture(t,remote);other.setAccount('unrelated');other.add('separate');await other.configure();await other.service.sync();assert.equal(other.ledger.read().requests.length,1);
 });
@@ -158,4 +158,42 @@ test('sync CLI accepts config through stdin and never echoes credentials',async(
 test('Windows credentials round-trip through DPAPI without plaintext on disk',{skip:process.platform!=='win32'},t=>{
   const home=fs.mkdtempSync(path.join(os.tmpdir(),'sync-secrets-'));t.after(()=>fs.rmSync(home,{recursive:true,force:true}));
   const vault=syncSecrets(home),value={token:'a-test-token',key:'a-very-long-random-key'};vault.set(value);assert.deepEqual(vault.get(),value);assert.equal(fs.readFileSync(path.join(home,'cloud-sync-secrets.json'),'utf8').includes(value.key),false);
+});
+
+
+test('multi-account discovery, device filters and offline selections preserve account ownership',async t=>{
+  const remote=cloud(),win=fixture(t,remote),mac=fixture(t,remote),secondMac=fixture(t,remote);
+  win.add('win-a');await win.configure({deviceName:'Windows'});await win.service.sync();
+  mac.setAccount('account-b');mac.add('mac-b');await mac.configure({deviceName:'MacBook'});await mac.service.sync();
+  secondMac.add('mac-a');await secondMac.configure({deviceName:'Mac mini'});await secondMac.service.sync();
+  await win.service.sync();await mac.service.sync();await secondMac.service.sync();
+  assert.equal(win.service.state().accounts.length,2,'remote accounts discovered without logging in locally');
+  assert.equal(win.ledger.read().requests.length,2,'current account excludes account B');
+  await win.configure({statisticsMode:'all'});assert.equal(win.ledger.read().requests.length,3);
+  const accountB=win.service.state().accounts.find(a=>!a.current).id;
+  await win.configure({statisticsMode:'selected',excludedAccounts:[accountB]});assert.equal(win.ledger.read().requests.length,2);
+  await win.configure({excludedAccounts:[],excludedDevices:[secondMac.service.state().deviceId]});assert.equal(win.ledger.read().requests.length,2);
+  await win.configure({excludedDevices:[secondMac.service.state().deviceId,win.service.state().deviceId]});assert.equal(win.ledger.read().requests.length,1);
+  remote.setOffline(true);await assert.rejects(win.service.sync(),/offline/);
+  await win.configure({statisticsMode:'all',excludedDevices:[]});assert.equal(win.ledger.read().requests.length,3,'offline changing selections restores cached data');
+  assert.equal(win.ledger.syncExport().requests.length,1,'remote account records never re-exported');
+  await win.configure({statisticsMode:'selected',excludedAccounts:win.service.state().accounts.map(a=>a.id)});assert.equal(win.ledger.read().requests.length,0);
+});
+
+test('per-account sync pause retains cached totals and resumes without duplicate records',async t=>{
+  const remote=cloud(),win=fixture(t,remote),mac=fixture(t,remote);
+  win.add('win');await win.configure();await win.service.sync();
+  mac.add('mac');await mac.configure();await mac.service.sync();await win.service.sync();
+  const id=win.service.state().accounts.find(a=>a.current).id;
+  await win.configure({excludedSyncAccounts:[id]});mac.add('later');await mac.service.sync();await win.service.sync();
+  assert.equal(win.ledger.read().requests.length,2);
+  await win.configure({excludedSyncAccounts:[]});await win.service.sync();assert.equal(win.ledger.read().requests.length,3);
+});
+
+test('switching accounts retains local histories and time-based attribution through rescans',async t=>{
+  const f=fixture(t,cloud());f.add('a');f.setAccount('b');f.add('b');await f.configure();await f.service.sync();
+  assert.equal(f.ledger.read().requests.length,1);assert.equal(f.ledger.syncExport().requests[0].id,'b');
+  await f.configure({statisticsMode:'all'});assert.equal(f.ledger.read().requests.length,2);
+  assert.equal(f.ledger.scopeAt(now-7000),scope);assert.notEqual(f.ledger.scopeAt(now-1000),scope);
+  const saved=JSON.stringify(f.service.state());assert.equal(saved.includes('same-account'),false);
 });

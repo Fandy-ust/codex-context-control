@@ -1,16 +1,27 @@
 import SwiftUI
 import AppKit
 
+struct CloudSyncAccount:Decodable,Identifiable {var id:String;var label:String?;var current:Bool?}
+struct CloudSyncDevice:Decodable,Identifiable {var id:String;var name:String?;var lastSync:Double?}
 struct CloudSyncState:Decodable {
     var enabled:Bool;var provider:String;var repository:String;var gistId:String
     var intervalMinutes:Int;var startup:Bool;var deviceId:String
     var hasToken:Bool?;var hasKey:Bool?;var running:Bool
+    var deviceName:String?;var statisticsMode:String?;var includeUnassigned:Bool?
+    var accounts:[CloudSyncAccount]?;var deviceList:[CloudSyncDevice]?
+    var excludedAccounts:[String]?;var excludedSyncAccounts:[String]?;var excludedDevices:[String]?
     var error:String?;var lastSuccess:Double?;var devices:Int?
 }
 
 struct CloudSyncView:View {
     @ObservedObject var model:Controller
     @State private var state:CloudSyncState?
+    @State private var deviceName=""
+    @State private var statisticsMode="current"
+    @State private var includeUnassigned=false
+    @State private var excludedAccounts:Set<String>=[]
+    @State private var excludedSyncAccounts:Set<String>=[]
+    @State private var excludedDevices:Set<String>=[]
     @State private var enabled=false
     @State private var provider="repository"
     @State private var repository=""
@@ -31,6 +42,7 @@ struct CloudSyncView:View {
             Text(L("多设备云同步")).font(.headline)
             Text(L("将数值统计加密后同步到你自己的 GitHub，支持 Windows 与 macOS 多设备合并。聊天正文、标题及密钥不会上传。")).font(.caption).foregroundStyle(.secondary)
             Toggle(L("启用云同步"),isOn:$enabled).toggleStyle(.switch)
+            accountDeviceSettings
             Picker(L("同步方式"),selection:$provider){Text(L("GitHub 私有仓库（推荐）")).tag("repository");Text("GitHub Secret Gist").tag("gist")}.pickerStyle(.menu)
             if provider=="repository"{TextField(L("私有仓库 owner/repository"),text:$repository)}
             else{
@@ -78,12 +90,42 @@ struct CloudSyncView:View {
         }.textFieldStyle(.roundedBorder).padding(20).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
         .task{await refresh();while !Task.isCancelled{do{try await Task.sleep(nanoseconds:2_000_000_000)}catch{return};if !busy{await refresh()}}}
     }
+    private func included(_ id:String,in values:Binding<Set<String>>) -> Binding<Bool> {
+        Binding(get:{!values.wrappedValue.contains(id)},set:{checked in
+            if checked{values.wrappedValue.remove(id)}else{values.wrappedValue.insert(id)}
+        })
+    }
+    private var accountDeviceSettings:some View {
+        VStack(alignment:.leading,spacing:12){
+            Text(L("账号与设备")).font(.headline)
+            TextField(L("本机名称"),text:$deviceName)
+            Picker(L("统计范围"),selection:$statisticsMode){Text(L("当前账号")).tag("current");Text(L("全部账号")).tag("all");Text(L("所选账号")).tag("selected")}.pickerStyle(.menu)
+            Text(L("账号自动识别，套餐或模型变化不会新建账号。勾选仅在本机生效；取消统计不删除历史。")).font(.caption).foregroundStyle(.secondary)
+            ForEach(state?.accounts ?? []){account in
+                VStack(alignment:.leading,spacing:6){
+                    Text((account.label ?? String(account.id.prefix(8)))+(account.current==true ? " · "+L("当前登录"):"" )).font(.subheadline.bold())
+                    Text(account.id).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+                    Toggle(L("纳入统计（所选账号模式）"),isOn:included(account.id,in:$excludedAccounts))
+                    Toggle(L("参与同步"),isOn:included(account.id,in:$excludedSyncAccounts))
+                }.padding(10).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:8))
+            }
+            if state?.accounts?.isEmpty != false{Text(L("刷新额度以识别当前账号；同步后会发现其他设备上的账号。")).font(.caption).foregroundStyle(.secondary)}
+            Text(L("设备：勾选后纳入统计")).font(.caption)
+            ForEach(state?.deviceList?.isEmpty==false ? state!.deviceList! : [CloudSyncDevice(id:state?.deviceId ?? "",name:deviceName)]){device in
+                VStack(alignment:.leading,spacing:3){
+                    Toggle((device.name ?? String(device.id.prefix(8)))+(device.id==state?.deviceId ? " · "+L("本机"):""),isOn:included(device.id,in:$excludedDevices))
+                    if let at=device.lastSync{Text(Date(timeIntervalSince1970:at/1000).formatted(date:.numeric,time:.standard)).font(.caption2).foregroundStyle(.secondary)}
+                }
+            }
+            Toggle(L("显示未归属历史（不上传）"),isOn:$includeUnassigned)
+        }
+    }
     private func request(_ body:[String:Any]) async throws -> CloudSyncState {
         try JSONDecoder().decode(CloudSyncState.self,from:await model.api(ControlAPI.cloudSync,body:body))
     }
     private func refresh() async {
         do{let s=try await request(["action":"status"])
-            if state==nil{enabled=s.enabled;provider=s.provider;repository=s.repository;gist=s.gistId;interval=presets.contains(s.intervalMinutes) ? s.intervalMinutes:-1;custom=String(s.intervalMinutes);startup=s.startup}
+            if state==nil{enabled=s.enabled;provider=s.provider;repository=s.repository;gist=s.gistId;interval=presets.contains(s.intervalMinutes) ? s.intervalMinutes:-1;custom=String(s.intervalMinutes);startup=s.startup;deviceName=s.deviceName ?? "";statisticsMode=s.statisticsMode ?? "current";includeUnassigned=s.includeUnassigned ?? false;excludedAccounts=Set(s.excludedAccounts ?? []);excludedSyncAccounts=Set(s.excludedSyncAccounts ?? []);excludedDevices=Set(s.excludedDevices ?? [])}
             state=s
         }catch{feedback=error.localizedDescription}
     }
@@ -93,7 +135,7 @@ struct CloudSyncView:View {
     }
     private func save(sync:Bool=false) async {
         guard let minutes=interval == -1 ? Int(custom):interval else{feedback=L("请输入有效分钟数");return}
-        await run(["action":sync ? "save-and-sync":"configure","enabled":sync ? true:enabled,"provider":provider,"repository":repository.trimmingCharacters(in:.whitespacesAndNewlines),"gistId":gist.trimmingCharacters(in:.whitespacesAndNewlines),"token":token.trimmingCharacters(in:.whitespacesAndNewlines),"key":key,"intervalMinutes":minutes,"startup":startup,"claimLegacy":claim])
+        await run(["action":sync ? "save-and-sync":"configure","enabled":sync ? true:enabled,"provider":provider,"repository":repository.trimmingCharacters(in:.whitespacesAndNewlines),"gistId":gist.trimmingCharacters(in:.whitespacesAndNewlines),"token":token.trimmingCharacters(in:.whitespacesAndNewlines),"key":key,"intervalMinutes":minutes,"startup":startup,"claimLegacy":claim,"deviceName":deviceName,"statisticsMode":statisticsMode,"includeUnassigned":includeUnassigned,"excludedAccounts":Array(excludedAccounts),"excludedSyncAccounts":Array(excludedSyncAccounts),"excludedDevices":Array(excludedDevices)])
         if feedback==nil{enabled=state?.enabled ?? enabled;token="";key="";keyVisible=false;claim=false;feedback=L(sync ? "已保存并开始同步":"同步设置已保存")}
     }
     private func copyCredential(_ field:String) async {

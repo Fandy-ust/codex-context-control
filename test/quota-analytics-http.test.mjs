@@ -7,6 +7,7 @@ test('authenticated analytics scans local numeric records and rejects invalid fi
  fs.writeFileSync(file,lines.map(x=>JSON.stringify(x)).join('\n')+'\n');
  const db=new DatabaseSync(path.join(home,'state_5.sqlite'));db.exec('CREATE TABLE threads (id TEXT,rollout_path TEXT,cwd TEXT)');db.prepare('INSERT INTO threads VALUES (?,?,?)').run('a',file,temp);db.close();
  fs.writeFileSync(path.join(control,'state.json'),JSON.stringify({version:9,threads:{},policies:{preserved:{window:400000,compact:350000}}}));
+ fs.writeFileSync(path.join(control,'cloud-sync.json'),JSON.stringify({includeUnassigned:true}));
  const {startDaemon}=await import('../src/daemon.mjs');const d=await startDaemon();
  try {
   const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json'))),url=`http://127.0.0.1:${c.port}/quota/analytics`,headers={authorization:`Bearer ${c.token}`};

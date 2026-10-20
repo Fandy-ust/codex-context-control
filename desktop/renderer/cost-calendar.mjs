@@ -1,4 +1,4 @@
-export const COST_NOTE='按现有 API 价格估算，沿用聊天费用的 Standard 与缓存写入估算规则；不是订阅账单。仅含本机记录，空格表示无记录，无法计价的请求不按零元计算。';
+export const COST_NOTE='按现有 API 价格估算，沿用聊天费用的 Standard 与缓存写入估算规则；不是订阅账单。按云同步设置中的账号和设备范围汇总，空格表示无记录，无法计价的请求不按零元计算。';
 export function costCalendarView(calendar,period,{e,t,mode='heatmap',costDate='',costStartText='',costEndText='',renderChart}) {
   if(!calendar)return '';
   let values=period==='day'?calendar.hourly:period==='week'?calendar.daily.slice(-7):period==='month'?calendar.daily.filter(p=>p.date.slice(0,7)===(calendar.selectedDate||calendar.today).slice(0,7)):calendar.daily;

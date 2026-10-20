@@ -89,10 +89,18 @@ export class QuotaLedger {
     const id = snapshotId(value);
     this.putQuota.run(id, source, value.scope, value.at, JSON.stringify(value));
   }
-  recordLive({scope, buckets, at,accountGroup}) {
+  recordLive({scope, buckets, at,accountGroup,identity,label}) {
     if (!/^(account:[a-f0-9]{32}|unidentified)$/.test(scope)) return;
-    if(this.metadata('currentScope')!==scope)this.setMetadata('accountSince',at);
+    if(this.metadata('currentScope')!==scope){
+      this.setMetadata('accountSince',at);
+      this.setMetadata('accountPeriods',[...(this.metadata('accountPeriods')||[]),{at,scope}].slice(-10000));
+    }
     if(typeof accountGroup==='string'&&/^[a-f0-9]{32}$/.test(accountGroup))this.setMetadata('accountGroups',{...(this.metadata('accountGroups')||{}),[scope]:accountGroup});
+    if(accountGroup&&typeof identity==='string'&&identity.length<=4096){
+      const profiles=this.metadata('accountProfiles')||{};
+      profiles[accountGroup]={identity,label:text(label,160)||scope.slice(-8)};
+      this.setMetadata('accountProfiles',profiles);
+    }
     for (const bucket of buckets || []) this.snapshot(projectQuota(bucket, {scope, at, bucketId: bucket.id}));
     this.setMetadata('currentScope', scope);this.prune();
   }
@@ -111,7 +119,7 @@ export class QuotaLedger {
       if (!id) {source.unidentifiedRequests = (source.unidentifiedRequests || 0) + 1;return;}
       const rawCached = count(usage.cached_input_tokens), cached = rawCached != null && rawCached <= input ? rawCached : null;
       const record = {id, at, thread: source.id, model: source.model || null, project: source.project, name: source.name,
-        input, output, cached, written:count(usage.cache_write_input_tokens),scope:at>=this.metadata('accountSince')&&this.metadata('accountSince')?this.metadata('currentScope'):null};
+        input, output, cached, written:count(usage.cache_write_input_tokens),scope:this.scopeAt(at)};
       this.putRequest.run(id, source.id, at, JSON.stringify(record));
     }
     if (event.type === 'event_msg' && p.type === 'token_count') {
@@ -179,34 +187,77 @@ export class QuotaLedger {
     for (const table of ['requests', 'snapshots']) this.db.exec(`DELETE FROM ${table} WHERE id IN (SELECT id FROM ${table} ORDER BY at DESC LIMIT -1 OFFSET 250000)`);
     this.db.exec('PRAGMA wal_checkpoint(PASSIVE)');
   }
+  scopeAt(at){
+    const periods=this.metadata('accountPeriods')||[];
+    for(let i=periods.length-1;i>=0;i--)if(at>=periods[i].at)return periods[i].scope;
+    return at>=this.metadata('accountSince')&&this.metadata('accountSince')?this.metadata('currentScope'):null;
+  }
+  syncProfiles(){
+    const profiles=this.metadata('accountProfiles')||{},groups=this.metadata('accountGroups')||{},current=this.metadata('currentScope');
+    return Object.entries(profiles).map(([group,p])=>({...p,group,scopes:Object.keys(groups).filter(s=>groups[s]===group),current:groups[current]===group}));
+  }
+  syncSettings({enabled=false,deviceId,statisticsMode='current',includeUnassigned=false,excludedAccounts=[],excludedDevices=[],accounts=[]}){
+    // Account labels and encrypted identity envelopes are not report metadata.
+    this.setMetadata('syncSelection',{enabled,deviceId,statisticsMode,includeUnassigned,excludedAccounts,excludedDevices,accounts:accounts.map(({id,scopes=[]})=>({id,scopes}))});
+  }
   read(days = 84) {
     const cutoff = this.now() - Math.min(366, Math.max(1, days)) * DAY;
-    const local=this.localRead(cutoff),savedBinding=this.metadata('cloudBinding'),binding=savedBinding?.scope===this.metadata('currentScope')?savedBinding:null;
-    const remote=binding?this.db.prepare('SELECT data FROM cloud_shards WHERE account=? AND scope=? ORDER BY id').all(binding.account,binding.scope).map(p=>JSON.parse(p.data)):[];
-    const snapshots=new Map([...local.snapshots,...remote.flatMap(r=>r.snapshots.map(s=>({...s,scope:binding.scope}))).filter(r=>r.at>=cutoff)].map(s=>[snapshotId(s),s]));
-    return {requests:mergeRequests(local.requests,remote.flatMap(r=>r.requests).filter(r=>r.at>=cutoff)),
-      snapshots:[...snapshots.values()].sort((a,b)=>a.at-b.at),
-      currentScope: this.metadata('currentScope'), progress: this.metadata('progress') || this.progress};
+    const local=this.localRead(cutoff),selection=this.metadata('syncSelection'),current=this.metadata('currentScope'),groups=this.metadata('accountGroups')||{};
+    const bindings=this.metadata('cloudBindings')||{},legacy=this.metadata('cloudBinding');
+    if(legacy&&!bindings[legacy.account])bindings[legacy.account]=legacy;
+    if(!selection){
+      const binding=this.metadata('cloudSyncEnabled')===false?null:legacy?.scope===current?legacy:null;
+      const remote=binding?this.db.prepare('SELECT data FROM cloud_shards WHERE account=? AND scope=?').all(binding.account,binding.scope).map(r=>JSON.parse(r.data)):[];
+      const snapshots=new Map([...local.snapshots,...remote.flatMap(r=>r.snapshots.map(s=>({...s,scope:binding.scope}))).filter(r=>r.at>=cutoff)].map(s=>[snapshotId(s),s]));
+      return {requests:mergeRequests(local.requests,remote.flatMap(r=>r.requests).filter(r=>r.at>=cutoff)),snapshots:[...snapshots.values()].sort((a,b)=>a.at-b.at),currentScope:current,progress:this.metadata('progress')||this.progress};
+    }
+    const profiles=selection?.accounts||[];
+    const matches=(p,scope)=>p.scopes?.some(s=>s===scope||groups[s]&&groups[s]===groups[scope]);
+    const currentProfile=profiles.find(p=>matches(p,current));
+    const include=p=>selection?.statisticsMode==='all'||selection?.statisticsMode==='selected'&&!selection.excludedAccounts?.includes(p.id)||(!selection?.statisticsMode||selection.statisticsMode==='current')&&p.id===currentProfile?.id;
+    const selected=profiles.filter(include),selectedIds=new Set(selected.map(p=>p.id));
+    const localEnabled=!selection?.excludedDevices?.includes(selection?.deviceId);
+    const scopeAllowed=scope=>{
+      if(!scope||scope==='unidentified')return selection.includeUnassigned===true;
+      if(selection.statisticsMode==='all')return true;
+      if(selection.statisticsMode!=='selected')return scope===current||!!groups[current]&&groups[scope]===groups[current];
+      const p=profiles.find(p=>matches(p,scope));return !p||!selection.excludedAccounts?.includes(p.id);
+    };
+    const localRequests=localEnabled?local.requests.filter(r=>scopeAllowed(r.scope)):[];
+    const localSnapshots=localEnabled?local.snapshots.filter(r=>scopeAllowed(r.scope)):[];
+    const cloudEnabled=selection?selection.enabled:!!legacy;
+    const ids=[...selectedIds];
+    const rows=cloudEnabled&&ids.length?this.db.prepare('SELECT * FROM cloud_shards WHERE account IN ('+ids.map(()=>'?').join(',')+') ORDER BY account,id').all(...ids).filter(r=>!selection.excludedDevices?.includes(r.id.split('/').at(-2))):[];
+    const remote=rows.map(r=>{const data=JSON.parse(r.data);return {...data,account:r.account,scope:bindings[r.account]?.scope||r.scope};});
+    // Deduplicate within each account. The same response copied to another account
+    // must never erase one of that account's records in an all-account report.
+    const buckets=new Map();
+    for(const r of localRequests){const account=profiles.find(p=>matches(p,r.scope))?.id||groups[r.scope]||r.scope||'unassigned';if(!buckets.has(account))buckets.set(account,[]);buckets.get(account).push(r);}
+    for(const r of remote){if(!buckets.has(r.account))buckets.set(r.account,[]);buckets.get(r.account).push(...r.requests.filter(v=>v.at>=cutoff));}
+    const requests=[...buckets].flatMap(([account,rows])=>mergeRequests(rows,[]).map(r=>({...r,id:selection?account+':'+r.id:r.id})));
+    const snapshots=new Map([...localSnapshots,...remote.flatMap(r=>r.snapshots.map(s=>({...s,scope:r.scope}))).filter(r=>r.at>=cutoff)].map(s=>[snapshotId(s),s]));
+    return {requests,snapshots:[...snapshots.values()].sort((a,b)=>a.at-b.at),currentScope:current,progress:this.metadata('progress')||this.progress};
   }
   localRead(cutoff=this.now()-RETENTION){return {requests:this.db.prepare('SELECT data FROM requests WHERE at>=? ORDER BY at,id').all(cutoff).map(p=>JSON.parse(p.data)),snapshots:this.db.prepare('SELECT data FROM snapshots WHERE at>=? ORDER BY at,id').all(cutoff).map(p=>JSON.parse(p.data))};}
-  syncExport({claimLegacy=false}={}){
-    const scope=this.metadata('currentScope');if(!scope||scope==='unidentified')throw Error('请先读取有效的 Codex 账号额度');
+  syncExport({claimLegacy=false,scopes}={}){
+    const scope=scopes?.[0]||this.metadata('currentScope');if(!scope||scope==='unidentified')throw Error('请先读取有效的 Codex 账号额度');
     if(claimLegacy){
       this.db.exec('BEGIN');try{for(const r of this.db.prepare('SELECT id,data FROM requests').all()){
         const value=JSON.parse(r.data);if(!value.scope){value.scope=scope;this.db.prepare('UPDATE requests SET data=? WHERE id=?').run(JSON.stringify(value),r.id);}
       }this.db.exec('COMMIT');}catch(error){this.db.exec('ROLLBACK');throw error;}
     }
-    const groups=this.metadata('accountGroups')||{},sameAccount=s=>s===scope||!!groups[scope]&&groups[s]===groups[scope];
+    const groups=this.metadata('accountGroups')||{},sameAccount=s=>scopes?.includes(s)||s===scope||!!groups[scope]&&groups[s]===groups[scope];
     const local=this.localRead();return {scope,requests:local.requests.filter(r=>sameAccount(r.scope)),snapshots:local.snapshots.filter(s=>sameAccount(s.scope))};
   }
   syncImport({account,scope,shards,enabled=true}){
-    if(!enabled){this.setMetadata('cloudBinding',null);return;}
-    if(!/^[a-f0-9]{32}$/.test(account)||scope!==this.metadata('currentScope')||!Array.isArray(shards)||shards.length>5000)throw Error('Invalid sync import');
+    if(!enabled){this.setMetadata('cloudBinding',null);this.setMetadata('cloudSyncEnabled',false);return;}
+    if(!/^[a-f0-9]{32}$/.test(account)||!/^(account:[a-f0-9]{32}|cloud:[a-f0-9]{32})$/.test(scope)||!Array.isArray(shards)||shards.length>5000)throw Error('Invalid sync import');
     const checked=shards.map(s=>{if(typeof s.id!=='string'||s.id.length>240)throw Error('Invalid shard');return {...s,data:numericRecords(s.data,this.now())};});
-    if(checked.reduce((n,s)=>n+s.data.requests.length+s.data.snapshots.length,0)>500000)throw Error('Sync history exceeds local record limit');
+    const retained=this.db.prepare("SELECT COALESCE(SUM(json_array_length(data,'$.requests')+json_array_length(data,'$.snapshots')),0) AS n FROM cloud_shards WHERE account<>?").get(account).n;
+    if(retained+checked.reduce((n,s)=>n+s.data.requests.length+s.data.snapshots.length,0)>500000)throw Error('Sync history exceeds local record limit');
     this.db.exec('BEGIN');try{
-      this.db.exec('DELETE FROM cloud_shards');const put=this.db.prepare('INSERT INTO cloud_shards VALUES (?,?,?,?)');
-      for(const s of checked)put.run(s.id,account,scope,JSON.stringify(s.data));this.setMetadata('cloudBinding',{account,scope});this.db.exec('COMMIT');
+      this.db.prepare('DELETE FROM cloud_shards WHERE account=?').run(account);const put=this.db.prepare('INSERT INTO cloud_shards VALUES (?,?,?,?)');
+      for(const s of checked)put.run(account+'/'+s.id,account,scope,JSON.stringify(s.data));this.setMetadata('cloudSyncEnabled',true);this.setMetadata('cloudBinding',{account,scope});this.setMetadata('cloudBindings',{...(this.metadata('cloudBindings')||{}),[account]:{account,scope}});this.db.exec('COMMIT');
     }catch(error){this.db.exec('ROLLBACK');throw error;}
   }
   close() {this.db.close();}

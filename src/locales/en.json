@@ -1174,5 +1174,20 @@
   "同步密钥已复制": "Sync key copied",
   "尚未保存此凭据": "No saved credential",
   "请填写 GitHub Token 和同步密钥": "Enter a GitHub Token and sync key",
-  "凭据保存后未能读回，请解锁系统凭据存储后重试": "Could not read credentials after saving. Unlock system credential storage and retry."
+  "凭据保存后未能读回，请解锁系统凭据存储后重试": "Could not read credentials after saving. Unlock system credential storage and retry.",
+  "账号与设备": "Accounts and devices",
+  "本机名称": "This device",
+  "统计范围": "Statistics scope",
+  "当前账号": "Current account",
+  "全部账号": "All accounts",
+  "所选账号": "Selected accounts",
+  "当前登录": "Signed in",
+  "本机": "This device",
+  "纳入统计（所选账号模式）": "Include in statistics (Selected accounts mode)",
+  "参与同步": "Participate in sync",
+  "设备：勾选后纳入统计": "Devices: include checked devices in statistics",
+  "显示未归属历史（不上传）": "Show unassigned history (not uploaded)",
+  "刷新额度以识别当前账号；同步后会发现其他设备上的账号。": "Refresh quota to identify this account; sync discovers accounts on other devices.",
+  "账号自动识别，套餐或模型变化不会新建账号。勾选仅在本机生效；取消统计不删除历史。": "Accounts are identified automatically; plan or model changes keep the same account. Selections apply to this device; hiding statistics preserves history.",
+  "按现有 API 价格估算，沿用聊天费用的 Standard 与缓存写入估算规则；不是订阅账单。按云同步设置中的账号和设备范围汇总，空格表示无记录，无法计价的请求不按零元计算。": "Estimated using the existing API prices and the same Standard and cache-write assumptions as chat costs; not a subscription bill. Totals follow the accounts and devices selected in cloud sync settings. Empty cells mean no records; unpriced requests are not treated as zero cost."
 }

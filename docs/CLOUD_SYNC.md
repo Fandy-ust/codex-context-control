@@ -139,3 +139,12 @@ macOS 对应创建命令为 `printf '%s\n' 'Context Manager encrypted statistics
 ## 官方资料
 
 [GitHub Gist API](https://docs.github.com/en/rest/gists/gists) · [仓库 Contents API](https://docs.github.com/en/rest/repos/contents) · [Fine-grained PAT 权限](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens) · [gh repo create](https://cli.github.com/manual/gh_repo_create) · [gh gist create](https://cli.github.com/manual/gh_gist_create) · [gh auth refresh](https://cli.github.com/manual/gh_auth_refresh)
+
+
+## 0.24.2: accounts and devices / 账号与设备
+
+Accounts are identified from the Codex account ID, falling back to email only when no ID is available. Plans and models do not create a new account. Use the same sync key and destination on every device. An encrypted directory shares anonymous account identifiers; raw account IDs and emails stay local. Name each device in settings.
+
+Choose Current account (default), All accounts, or Selected accounts for numeric cost/token totals. Device checkboxes also filter totals. Per-account Participate in sync controls future uploads/downloads independently of visibility; cached history remains available. These choices apply locally. They do not delete cloud data or turn off Codex's own history collection. The per-chat cost panel continues to describe that local chat.
+
+账号自动识别；所有设备使用同一仓库与密钥。统计范围与参与同步分别设置，取消勾选不删除历史。未归属的旧记录默认隐藏，可选择仅显示，或明确确认归属后一次性纳入当前账号同步。其他设备首次发现的账号使用匿名编号；本机登录后显示本机账号信息。设备时间是最近发布快照时间，无新增数据时不会为刷新时间制造提交。建议全部设备升级到 0.24.2。

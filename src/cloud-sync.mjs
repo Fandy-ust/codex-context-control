@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import {gzipSync,gunzipSync} from 'node:zlib';
 import path from 'node:path';
+import os from 'node:os';
 import {readJSON,atomicJSON} from './paths.mjs';
 import {syncSecrets} from './sync-secrets.mjs';
 import {githubSync} from './github-sync.mjs';
@@ -19,11 +20,34 @@ export function unseal(raw,key,aad){
 }
 export function createCloudSync({home,analytics,secrets=syncSecrets(home),transport=githubSync,prepare=async()=>{},now=Date.now}={}){
   const file=path.join(home,'cloud-sync.json'),cacheFile=path.join(home,'cloud-sync-cache.json');
-  let config={version:1,enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:crypto.randomBytes(16).toString('hex'),...readJSON(file,{})};
-  let cache=readJSON(cacheFile,{target:null,shards:{},uploaded:{}}),pending,timer,closed=false,controller,failures=0;
+  let config={version:1,enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:crypto.randomBytes(16).toString('hex'),deviceName:os.hostname(),statisticsMode:'current',includeUnassigned:false,excludedAccounts:[],excludedSyncAccounts:[],excludedDevices:[],accounts:[],deviceList:[],...readJSON(file,{})};
+  let cache=readJSON(cacheFile,{target:null,shards:{},uploaded:{}}),pending,timer,closed=false,controller,failures=0,derivedKey;
   let status={running:false,lastSuccess:config.lastSuccess??null,error:null,devices:config.lastDevices??0,requests:0,nextRun:null};
   const save=()=>atomicJSON(file,config);
-  function state(){const {boundAccount,...publicConfig}=config;return {...publicConfig,...status};}
+  const selection=()=>({enabled:config.enabled,deviceId:config.deviceId,statisticsMode:config.statisticsMode,includeUnassigned:config.includeUnassigned,excludedAccounts:config.excludedAccounts,excludedDevices:config.excludedDevices,accounts:config.accounts});
+  async function refreshProfiles(key){
+    const profiles=await analytics.syncProfiles?.(key);
+    if(profiles){const old=new Map(config.accounts.map(p=>[p.id,p]));for(const p of profiles)old.set(p.id,{...old.get(p.id),...p});config.accounts=[...old.values()].map(p=>({...p,current:p.id===analytics.syncAccount(key)}));}
+    await analytics.syncSettings?.(selection());
+  }
+  async function directory(key,token){
+    const group=crypto.createHmac('sha256',key).update('context-manager-account-directory-v1').digest('hex').slice(0,32);
+    const remote=transport({...config,group},token,{signal:controller.signal});await remote.init();
+    const manifests=await remote.manifests();if(manifests.length>20)throw Error('同步设备超过 20 台');
+    const known=new Map(config.accounts.map(p=>[p.id,p]));
+    for(const m of manifests){
+      const doc=unseal(await remote.read(m.name),key,`${group}/${m.device}/manifest`);
+      if(doc.version!==2||!Array.isArray(doc.accounts)||doc.accounts.length>100||!/^.{1,80}$/u.test(doc.name||''))throw Error('Invalid sync directory');
+      const devices=new Map(config.deviceList.map(d=>[d.id,d]));devices.set(m.device,{...devices.get(m.device),id:m.device,name:doc.name});config.deviceList=[...devices.values()];
+      for(const p of doc.accounts){if(!/^[a-f0-9]{32}$/.test(p.id))throw Error('Invalid sync account');if(!known.has(p.id))known.set(p.id,{id:p.id,label:'账号 '+p.id.slice(0,8),scopes:[],current:false});}
+    }
+    if(known.size>100)throw Error('同步账号超过 100 个');
+    config.accounts=[...known.values()];
+    const doc={version:2,name:config.deviceName,accounts:config.accounts.map(p=>({id:p.id}))};
+    const name=remote.manifestName(config.deviceId),hash=digest(doc);
+    if(cache.directory!==group+hash||!manifests.some(m=>m.device===config.deviceId)){await remote.write(name,seal(doc,key,`${group}/${config.deviceId}/manifest`));cache.directory=group+hash;}
+  }
+  function state(){const {boundAccount,...publicConfig}=config;return {...publicConfig,...status,accounts:config.accounts||[]};}
   function schedule(delay){clearTimeout(timer);status.nextRun=null;if(closed||!config.enabled||config.intervalMinutes===0)return;status.nextRun=now()+delay;timer=setTimeout(()=>{void sync().catch(()=>{});},delay);timer.unref();}
   const normalDelay=()=>config.intervalMinutes*60000;
   async function sync(){
@@ -35,32 +59,47 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
       controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),240000);timeout.unref();
       try{
         if(closed)throw Error('Cloud sync closed');
-        const credentials=secrets.get(),key=syncKey(credentials.key||'');
+        const credentials=secrets.get(),key=derivedKey=syncKey(credentials.key||'');
         await prepare();
         const account=analytics.syncAccount(key);if(!account)throw Error('请先刷新 Codex 账号额度后再同步');
-        if(config.boundAccount&&config.boundAccount!==account)throw Error('Codex 账号已变化，请关闭同步并为当前账号重新配置');
+        await refreshProfiles(key);
         if(!credentials.token||!credentials.key)throw Error('请配置 GitHub Token 和同步密钥');
+        if(analytics.syncProfiles)await directory(key,credentials.token);
+        await analytics.syncSettings?.(selection());
+        const profiles=analytics.syncProfiles?config.accounts:[{id:account,current:true}];
+        let totalRequests=0,importedRecords=0,importedBytes=0;
+        const devices=new Map(config.deviceList.map(d=>[d.id,d]));devices.set(config.deviceId,{id:config.deviceId,name:config.deviceName,lastSync:now()});
+        const allCaches=cache.targets||{};
+        if(cache.target)allCaches[cache.target]={shards:cache.shards||{},uploaded:cache.uploaded||{}};
+        for(const profile of profiles){
+        if(config.excludedSyncAccounts.includes(profile.id))continue;
+        const account=profile.id;
         const target=digest([config.provider,config.repository,config.gistId,account]);
-        if(cache.target!==target)cache={target,shards:{},uploaded:{}};
+        const entryCache=allCaches[target]||{shards:{},uploaded:{}};
+        cache={...cache,targets:allCaches,target,shards:entryCache.shards,uploaded:entryCache.uploaded};
+        allCaches[target]=entryCache;
         const remote=transport({...config,group:account},credentials.token,{signal:controller.signal});await remote.init();
         const manifests=await remote.manifests();if(manifests.length>20)throw Error('同步设备超过 20 台，请使用新的同步空间');
-        const local=await analytics.syncExport();
-        if(analytics.syncAccount(key)!==account)throw Error('Codex 账号已变化，请重试');
+        const local=profile.scopes?.length===0?{scope:'cloud:'+account,requests:[],snapshots:[]}:await analytics.syncExport({scopes:profile.scopes});
+        if(analytics.syncAccount(key)!==profiles.find(p=>p.current)?.id&&analytics.syncProfiles)throw Error('Codex 账号已变化，请重试');
         const exported=partitionRecords(local),localFiles=[];
         for(const data of exported.values()){
           const clean=numericRecords(data,now()),hash=digest(clean),name=remote.chunkName(config.deviceId,hash);localFiles.push({name,hash});
           if(cache.uploaded[name]!==hash){await remote.write(name,seal(clean,key,`${account}/${config.deviceId}/${name}`));cache.uploaded[name]=hash;atomicJSON(cacheFile,cache);}
         }
-        const manifest={version:1,account,device:config.deviceId,files:localFiles};
-        const manifestHash=digest(manifest),manifestName=remote.manifestName(config.deviceId);
+        const manifest={version:1,account,device:config.deviceId,name:config.deviceName,updatedAt:now(),files:localFiles};
+        // Timestamps change only when the snapshot or its name changes.
+        const manifestContent={...manifest,updatedAt:0};
+        const manifestHash=digest(manifestContent),manifestName=remote.manifestName(config.deviceId);
         // Publish the manifest last. A failed upload never exposes a partial device snapshot.
         if(cache.uploaded.manifest!==manifestHash||!manifests.some(m=>m.device===config.deviceId)){
           await remote.write(manifestName,seal(manifest,key,`${account}/${config.deviceId}/manifest`));cache.uploaded.manifest=manifestHash;
         }
-        const nextShards={},imports=[];let importedRecords=0,importedBytes=0;
+        const nextShards={},imports=[];
         for(const m of manifests){
           if(m.device===config.deviceId)continue;
           const doc=unseal(await remote.read(m.name),key,`${account}/${m.device}/manifest`);
+          devices.set(m.device,{id:m.device,name:typeof doc.name==='string'?doc.name.slice(0,80):m.device.slice(0,8),lastSync:Number.isFinite(doc.updatedAt)?doc.updatedAt:null});
           if(doc.version!==1||doc.account!==account||doc.device!==m.device||!Array.isArray(doc.files)||doc.files.length>1000)throw Error('Invalid sync manifest');
           for(const entry of doc.files){
             if(!/^[a-f0-9]{64}$/.test(entry.hash)||entry.name!==remote.chunkName(m.device,entry.hash))throw Error('Invalid sync file reference');
@@ -73,7 +112,7 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
             nextShards[id]=data;imports.push({id,data});
           }
         }
-        if(closed||controller.signal.aborted||analytics.syncAccount(key)!==account)throw Error('Sync cancelled or account changed');
+        if(closed||controller.signal.aborted||analytics.syncAccount(key)!==(profiles.find(p=>p.current)?.id||account))throw Error('Sync cancelled or account changed');
         await analytics.syncImport({account,scope:local.scope,shards:imports});
         const activeFiles=new Set(localFiles.map(f=>f.name));
         // Only this device's obsolete files are pruned. Readers of an old manifest
@@ -81,15 +120,19 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
         for(const name of Object.keys(cache.uploaded))if(name!=='manifest'&&!activeFiles.has(name)&&remote.remove){
           try{await remote.remove(name);delete cache.uploaded[name];}catch{break;}
         }
-        config.boundAccount=account;config.lastSuccess=now();config.lastDevices=new Set([config.deviceId,...manifests.map(m=>m.device)]).size;save();cache.shards=nextShards;atomicJSON(cacheFile,cache);failures=0;
-        status={...status,lastSuccess:now(),error:null,devices:new Set([config.deviceId,...manifests.map(m=>m.device)]).size,requests:local.requests.length};
+        totalRequests+=local.requests.length;entryCache.shards=nextShards;
+        cache.shards=nextShards;atomicJSON(cacheFile,cache);
+        }
+        config.lastSuccess=now();config.lastDevices=devices.size;config.deviceList=[...devices.values()];save();failures=0;
+        status={...status,lastSuccess:now(),error:null,devices:devices.size,requests:totalRequests};
+
       }catch(error){failures++;status.error=error.name==='AbortError'?'同步超时，将稍后重试':error.message;throw Error(status.error);}
       finally{clearTimeout(timeout);status.running=false;pending=null;schedule(Math.max(normalDelay(),failures?Math.min(3600000,60000*2**Math.min(failures,6)):0));}
       return state();
     });return pending;
   }
   async function command(params={}){
-    if(params.action==='status'||!params.action)return state();
+    if(params.action==='status'||!params.action){await refreshProfiles(derivedKey||=syncKey(config.hasKey?secrets.get().key||'':''));return state();}
     if(params.action==='credential'){
       if(!['token','key'].includes(params.field))throw Error('Invalid sync credential field');
       const value=secrets.get()[params.field];if(typeof value!=='string'||!value)throw Error('尚未保存此凭据');
@@ -107,6 +150,10 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
     }
     if(params.action!=='configure')throw Error('Unknown cloud sync action');
     const next={...config};
+    if(params.deviceName!==undefined){if(typeof params.deviceName!=='string'||!params.deviceName.trim()||params.deviceName.length>80||/[\x00-\x1f]/.test(params.deviceName))throw Error('Invalid device name');next.deviceName=params.deviceName.trim();}
+    if(params.statisticsMode!==undefined){if(!['current','all','selected'].includes(params.statisticsMode))throw Error('Invalid statistics mode');next.statisticsMode=params.statisticsMode;}
+    if(params.includeUnassigned!==undefined){if(typeof params.includeUnassigned!=='boolean')throw Error('Invalid statistics option');next.includeUnassigned=params.includeUnassigned;}
+    for(const field of ['excludedAccounts','excludedSyncAccounts','excludedDevices'])if(params[field]!==undefined){if(!Array.isArray(params[field])||params[field].length>200||params[field].some(id=>typeof id!=='string'||!/^[a-f0-9]{32}$/.test(id)))throw Error('Invalid sync selection');next[field]=[...new Set(params[field])];}
     for(const field of ['enabled','startup'])if(params[field]!==undefined){if(typeof params[field]!=='boolean')throw Error('Invalid sync option');next[field]=params[field];}
     if(params.provider!==undefined){if(!['repository','gist'].includes(params.provider))throw Error('Invalid sync provider');next.provider=params.provider;}
     for(const field of ['repository','gistId'])if(params[field]!==undefined){if(typeof params[field]!=='string')throw Error('Invalid sync destination');next[field]=params[field].trim();}
@@ -119,11 +166,11 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
       if(next.provider==='gist'&&!/^[a-f0-9]{20,64}$/.test(next.gistId))throw Error('请填写有效的 Gist ID');
     }
     const rebinding=credentials.key!==previousCredentials.key||next.provider!==config.provider||next.repository!==config.repository||next.gistId!==config.gistId||!config.enabled;
-    if(rebinding)delete next.boundAccount;
+    if(rebinding){delete next.boundAccount;next.accounts=[];next.deviceList=[];}
     if(params.token||params.key)secrets.set(credentials);
     next.hasToken=!!credentials.token;next.hasKey=!!credentials.key;
     if(params.claimLegacy===true)await analytics.syncExport({claimLegacy:true});
-    if(!next.enabled||rebinding)await analytics.syncImport({enabled:false});config=next;save();status.error=null;
+    if(!next.enabled||rebinding)await analytics.syncImport({enabled:false});config=next;derivedKey=syncKey(credentials.key||'');await refreshProfiles(derivedKey);save();status.error=null;
     schedule(next.startup?1000:normalDelay());return state();
   }
   if(config.enabled)schedule(config.startup?3000:normalDelay());

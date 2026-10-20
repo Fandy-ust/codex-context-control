@@ -55,8 +55,29 @@ export function createQuotaAnalyticsService({home = root, historyHome = codexHom
     return 'account:' + crypto.createHmac('sha256', salt).update(JSON.stringify([account.type, identity.trim().toLowerCase(), account.planType || null])).digest('hex').slice(0, 32);
   }
   return {
-    record: async ({buckets, account, at}) => {accountIdentity=typeof account?.id==='string'&&account.id.trim()?JSON.stringify([account.type,account.id.trim()]):typeof account?.email==='string'&&account.email.trim()?JSON.stringify([account.type,account.email.trim().toLowerCase()]):null;const scope=accountScope(account);const accountGroup=accountIdentity&&salt?crypto.createHmac('sha256',salt).update(accountIdentity).digest('hex').slice(0,32):null;await call('record',{buckets,scope,at,accountGroup});return scope;},
+    record: async ({buckets,account,at})=>{
+      accountIdentity=typeof account?.id==='string'&&account.id.trim()?JSON.stringify([account.type,account.id.trim()]):typeof account?.email==='string'&&account.email.trim()?JSON.stringify([account.type,account.email.trim().toLowerCase()]):null;
+      const scope=accountScope(account),accountGroup=accountIdentity&&salt?crypto.createHmac('sha256',salt).update(accountIdentity).digest('hex').slice(0,32):null;
+      let identity;
+      if(accountIdentity){
+        const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',salt,iv);
+        cipher.setAAD(Buffer.from('local-account-profile-v1'));
+        const data=Buffer.concat([cipher.update(JSON.stringify([accountIdentity,account?.email||account?.id||scope.slice(-8)])),cipher.final()]);
+        identity=JSON.stringify([iv.toString('base64'),cipher.getAuthTag().toString('base64'),data.toString('base64')]);
+      }
+      await call('record',{buckets,scope,at,accountGroup,identity});return scope;
+    },
     syncAccount:key=>accountIdentity?crypto.createHmac('sha256',key).update(accountIdentity).digest('hex').slice(0,32):null,
+    syncProfiles:async key=>{
+      if(!salt)accountScope({type:'profile-key',id:'local'});
+      return (await call('sync-profiles')).map(({identity,...profile})=>{
+        const [iv,tag,data]=JSON.parse(identity),decipher=crypto.createDecipheriv('aes-256-gcm',salt,Buffer.from(iv,'base64'));
+        decipher.setAAD(Buffer.from('local-account-profile-v1'));decipher.setAuthTag(Buffer.from(tag,'base64'));
+        const [raw,label]=JSON.parse(Buffer.concat([decipher.update(Buffer.from(data,'base64')),decipher.final()]).toString());
+        return {...profile,label:typeof label==='string'?label.slice(0,160):profile.label,id:crypto.createHmac('sha256',key).update(raw).digest('hex').slice(0,32)};
+      });
+    },
+    syncSettings:params=>call('sync-settings',params),
     syncExport:params=>call('sync-export',params),
     syncImport:params=>call('sync-import',params),
     scan: () => scanPending ||= call('scan').finally(() => {scanPending = null;}),

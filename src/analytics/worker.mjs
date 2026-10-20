@@ -1,8 +1,15 @@
 import {parentPort, workerData} from 'node:worker_threads';
+import path from 'node:path';
+import {readJSON} from '../paths.mjs';
 import {QuotaLedger} from './ledger.mjs';
 import {buildQuotaAnalytics} from '../core/quota-analytics.mjs';
 import {estimateResponseWithWrites} from '../cost-estimate.mjs';
 const ledger = new QuotaLedger(workerData);
+const savedSync=readJSON(path.join(path.dirname(workerData.file),'cloud-sync.json'));
+if(savedSync){
+  const binding=ledger.metadata('cloudBinding'),accounts=savedSync.accounts?.length?savedSync.accounts:binding?[{id:binding.account,scopes:[binding.scope]}]:[];
+  ledger.syncSettings({statisticsMode:'current',includeUnassigned:false,excludedAccounts:[],excludedDevices:[],...savedSync,accounts});
+}
 let lastScan = 0;
 parentPort.on('message', ({id, action, params = {}}) => {
   try {
@@ -12,6 +19,8 @@ parentPort.on('message', ({id, action, params = {}}) => {
     else if (action === 'scan') {result = ledger.scan();lastScan = Date.now();}
     else if (action === 'sync-export') result=ledger.syncExport(params);
     else if (action === 'sync-import') result=ledger.syncImport(params);
+    else if (action === 'sync-profiles') result=ledger.syncProfiles();
+    else if (action === 'sync-settings') result=ledger.syncSettings(params);
     else if (action === 'report') {
       if (params.refresh || Date.now() - lastScan > 15000) {ledger.scan();lastScan = Date.now();}
       const source=ledger.read(366);

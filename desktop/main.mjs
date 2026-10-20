@@ -30,7 +30,7 @@ const {resolveLanguage,languagePreference,localize}=await import('../src/localiz
 if(process.platform==='win32')app.commandLine.appendSwitch('lang',resolveLanguage(languagePreference())==='zh'?'zh-CN':'en-US');
 const {demoState,demoStatistics}=await import('./demo.mjs');
 const demoCloudCredentials={};
-let demoCloud={enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:'00000000000000000000000000000000',error:null,running:false};
+let demoCloud={deviceName:'Demo workstation',statisticsMode:'current',excludedAccounts:[],excludedSyncAccounts:[],excludedDevices:[],accounts:[{id:'a'.repeat(32),label:'Demo account',current:true}],deviceList:[],enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:'00000000000000000000000000000000',error:null,running:false};
 const demoQueues=demo?createTaskQueues({quota:{state:()=>({...demoState.quota,updatedAt:Date.now()}),refresh:async()=>{}},thread:id=>demoState.threads.find(t=>t.id===id),start:async(id,task)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='active';chat.automaticTask={executionId:task.executionId,status:'running'};},interrupt:async(id)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='idle';if(chat.automaticTask)chat.automaticTask.status='interrupted';}}):null;
 const pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
 app.setName('Context Manager');app.setAppUserModelId('io.github.codex-context-control');

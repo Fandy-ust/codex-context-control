@@ -32,3 +32,19 @@ test('a worker startup failure does not poison later attempts or overwrite a fut
  try{await assert.rejects(service.report({days:28}));db=new DatabaseSync(file);assert.equal(db.prepare("SELECT value FROM meta WHERE key='schema'").get().value,'2');db.exec("UPDATE meta SET value='1' WHERE key='schema'");db.close();assert.equal((await service.report({days:28})).schemaVersion,1);}
  finally{await service.close();fs.rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
 });
+
+
+test('encrypted account profiles survive restart and keep stable cross-device identities across plan changes',async()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'qa-profiles-'));let service=createQuotaAnalyticsService({home,historyHome:home});
+ try{
+  const at=Date.now(),key=Buffer.alloc(32,8),account={type:'chatgpt',id:'account-stable-id',email:'profile@example.test',planType:'plus'};
+  await service.record({account,buckets:[],at});const first=(await service.syncProfiles(key))[0];
+  await service.record({account:{...account,planType:'pro'},buckets:[],at:at+1});
+  assert.equal((await service.syncProfiles(key)).length,1);assert.equal((await service.syncProfiles(key))[0].scopes.length,2);
+  await service.close();service=createQuotaAnalyticsService({home,historyHome:home});
+  const restored=(await service.syncProfiles(key))[0];assert.equal(restored.id,first.id);assert.equal(restored.label,account.email);
+  assert.notEqual((await service.syncProfiles(Buffer.alloc(32,9)))[0].id,first.id,'new sync key creates isolated namespaces');
+  await service.close();
+  for(const name of fs.readdirSync(home).filter(n=>n.startsWith('quota-history'))){const bytes=fs.readFileSync(path.join(home,name));assert.equal(bytes.includes(Buffer.from(account.email)),false);assert.equal(bytes.includes(Buffer.from(account.id)),false);}
+ }finally{await service.close();fs.rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
+});
