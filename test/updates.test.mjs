@@ -17,6 +17,20 @@ for(const platform of ['darwin','win32'])test(`${platform}: an offered release r
  }finally{fs.rmSync(home,{recursive:true,force:true});}
 });
 
+for(const platform of ['win32','darwin'])test(`${platform}: UI update checks suppress a same-version offer cached by an older controller`,async()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-ui-version-authority-')),arch=platform==='win32'?'x64':'arm64';
+ try{
+  // This is the cache written by a controller still running 0.24.1.
+  fs.writeFileSync(path.join(home,'updates.json'),JSON.stringify({checkedVersion:'0.24.1',update:{version:'0.24.2',filename:`Context-Manager-0.24.2-${platform==='win32'?'windows-x64.zip':'macos-arm64.dmg'}`}}));
+  let latest='0.24.2';const filename=()=>`Context-Manager-${latest}-${platform==='win32'?'windows-x64.zip':'macos-arm64.dmg'}`;
+  const ui=createUpdateManager({home,cacheFile:path.join(home,'updates-ui.json'),current:'0.24.2',platform,arch,fetcher:async()=>new Response(JSON.stringify({schemaVersion:2,version:latest,tag:`v${latest}-preview.1`,assets:{[platform+'-'+arch]:{filename:filename(),size:100,sha256:'a'.repeat(64)}}}))});
+  assert.equal(ui.status().available,false,'the controller cache is ignored by the UI');
+  assert.equal((await ui.check(true)).available,false,'an exact version match is not offered');
+  latest='0.24.3';assert.equal((await ui.check(true)).available,true,'the next release is still offered');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(home,'updates.json'))).checkedVersion,'0.24.1','the UI keeps its cache separate from the controller');
+ }finally{fs.rmSync(home,{recursive:true,force:true});}
+});
+
 test('a failed pre-install refresh keeps the offer but never launches the stale installer',async()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-update-offline-'));let online=true,launched=false;
  try{

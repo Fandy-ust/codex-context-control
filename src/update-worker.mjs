@@ -31,7 +31,7 @@ export async function detachUpdateMount(mount,{run=execute,pause=ms=>new Promise
  return false;
 }
 async function main(){
- const stateFile=path.join(root,'updates.json');let mount,folder;
+ const stateFile=process.env.CONTEXT_CONTROL_UPDATE_STATE||path.join(root,'updates.json');let mount,folder;
  const set=change=>atomicJSON(stateFile,{...readJSON(stateFile,{}),...change});
  try{
   const update=readJSON(stateFile)?.update;if(!update)throw Error('没有可安装的更新');

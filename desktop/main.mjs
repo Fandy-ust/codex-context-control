@@ -23,6 +23,7 @@ const liveHome=process.env.CONTEXT_CONTROL_LIVE_HOME||defaultRoot();
 if(smoke)setTimeout(()=>{console.error('UI_SMOKE_FAILED startup timeout');app.exit(1);},60000).unref();
 if(demo&&!process.env.CONTEXT_CONTROL_HOME)process.env.CONTEXT_CONTROL_HOME=path.join(os.tmpdir(),'context-manager-demo');
 const {root,readJSON,atomicJSON,ensureRoot,settings}=await import('../src/paths.mjs');
+const {createUpdateManager}=await import('../src/updates.mjs');
 const {windowsIntegrationStatus,setWindowsIntegration,codexLaunchEnvironment}=await import('../src/windows-integration.mjs');
 const {integrationLogDirectory}=await import('../src/diagnostic-log.mjs');
 const {ensureDaemon}=await import('../src/service.mjs');
@@ -33,6 +34,9 @@ const demoCloudCredentials={};
 let demoCloud={deviceName:'Demo workstation',statisticsMode:'current',excludedAccounts:[],excludedSyncAccounts:[],excludedDevices:[],accounts:[{id:'a'.repeat(32),label:'Demo account',current:true}],deviceList:[],enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:'00000000000000000000000000000000',error:null,running:false};
 const demoQueues=demo?createTaskQueues({quota:{state:()=>({...demoState.quota,updatedAt:Date.now()}),refresh:async()=>{}},thread:id=>demoState.threads.find(t=>t.id===id),start:async(id,task)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='active';chat.automaticTask={executionId:task.executionId,status:'running'};},interrupt:async(id)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='idle';if(chat.automaticTask)chat.automaticTask.status='interrupted';}}):null;
 const pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
+// The Electron package is the installed product. A separately running controller
+// can be from an older checkout, so its version/cache must not drive UI prompts.
+const uiUpdater=createUpdateManager({home:root,current:pkg.version,cacheFile:path.join(root,'updates-ui.json'),node:process.env.CONTEXT_CONTROL_NODE||settings().node||process.execPath});
 app.setName('Context Manager');app.setAppUserModelId('io.github.codex-context-control');
 app.setPath('userData',path.join(root,'ui-profile'));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
@@ -46,7 +50,7 @@ const autoCheckUpdates=()=>readJSON(updateSettingsFile,{}).autoCheckUpdates!==fa
 function setAutoCheckUpdates(enabled){atomicJSON(updateSettingsFile,{...readJSON(updateSettingsFile,{}),autoCheckUpdates:enabled});}
 const refreshUpdateUI=()=>{main?.webContents.send('refresh');trayWindow?.webContents.send('refresh');};
 const updatePrompt=createUpdatePrompt({enabled:autoCheckUpdates,setEnabled:setAutoCheckUpdates,
-  check:()=>api('check-update'),install:()=>api('install-update'),changed:refreshUpdateUI,
+  check:()=>uiUpdater.check(true),install:()=>uiUpdater.install(),changed:refreshUpdateUI,
   prompt:async update=>{
     if(demo||smoke)return 'skip';
     showMain();
@@ -77,7 +81,9 @@ async function api(action,params={}){
   const connection=readJSON(path.join(root,'connection.json'));
   if(!Number.isSafeInteger(connection?.port)||connection.port<1||connection.port>65535||!/^[a-f0-9]{64}$/.test(connection.token||''))throw Error('Local service connection is unavailable');
   const response=await fetch(`http://127.0.0.1:${connection.port}${route.path}`,{method:route.method,headers:{Authorization:`Bearer ${connection.token}`},...(route.method==='POST'?{body:JSON.stringify(params)}:{}),signal:AbortSignal.timeout(['statistics','quota-analytics'].includes(action)?60000:30000)});
-  const body=await response.json();if(!response.ok)throw Error(localize(body.error||'Local service error'));return body;
+  const body=await response.json();if(!response.ok)throw Error(localize(body.error||'Local service error'));
+  if(action==='state')body.update=uiUpdater.status();
+  return body;
 }
 const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,shortcut:shortcutManager.status(),menuReady:!!tray,menuWindowVisible:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),menuOnScreen:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),windowVisible:!!(main&&!main.isDestroyed()&&main.isVisible()),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow&&!trayWindow.isDestroyed()?trayWindow.getBounds():undefined});};
 async function ensureUiService(){return ensureDaemon();}

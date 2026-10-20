@@ -1,5 +1,11 @@
 # Changes
 
+## 0.24.3 — Use the installed app version for update checks
+
+- Run update discovery and verified installation from the desktop app, using its own product version as the authority. A stale or newer background controller can no longer offer the UI's current version as an update.
+- Store desktop and controller update caches separately to prevent version races. Recheck against the desktop version immediately before installing on Windows and macOS.
+- Keep the controller's own background update checks for service maintenance; its cached status no longer controls the desktop prompt or update button.
+
 ## 0.24.2 — Accounts and devices in cloud sync
 
 - Identify Codex accounts automatically and keep each account's local and synced history separate, including after login or plan changes.

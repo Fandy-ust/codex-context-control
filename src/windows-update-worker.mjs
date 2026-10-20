@@ -18,7 +18,7 @@ export async function applyWindowsUpdate(update,{directory,runInstaller,fetcher}
   }finally{removeInstallationTree(root,folder);}
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1])){
-  const file=path.join(root,'updates.json');
+  const file=process.env.CONTEXT_CONTROL_UPDATE_STATE||path.join(root,'updates.json');
   try{const state=readJSON(file);if(!state?.update)throw Error('没有可安装的更新');atomicJSON(file,{...state,phase:'installing'});await applyWindowsUpdate(state.update);atomicJSON(file,{...readJSON(file),phase:'installed',pid:null,error:null});}
   catch(error){atomicJSON(file,{...readJSON(file),phase:'error',pid:null,error:error.message});process.exitCode=1;}
 }

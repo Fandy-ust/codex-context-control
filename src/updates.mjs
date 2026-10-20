@@ -7,8 +7,8 @@ import {repository,releaseManifestURL,releaseMatrixURL,releaseAPI,manifestCandid
 export {releaseAPI,releaseManifestURL,releaseMatrixURL};
 import {newerVersion,releaseUpdate,artifactForTarget} from './core/update-artifact.mjs';
 export {newerVersion,releaseUpdate} from './core/update-artifact.mjs';
-export function createUpdateManager({home=root,current,fetcher=fetch,launch,now=Date.now,platform=process.platform,arch=process.arch}={}){
- const file=path.join(home,'updates.json');let checking;const target={platform,arch};
+export function createUpdateManager({home=root,cacheFile=path.join(home,'updates.json'),current,fetcher=fetch,launch,node=process.env.CONTEXT_CONTROL_NODE||process.execPath,now=Date.now,platform=process.platform,arch=process.arch}={}){
+ const file=cacheFile;let checking;const target={platform,arch};
  const read=()=>{try{return readJSON(file,{})??{};}catch{return {};}};
  function status(){const s=read();return {currentVersion:current,available:artifactForTarget(s.update,target)&&newerVersion(s.update.version,current),version:s.update?.version??null,phase:s.phase??'idle',checkedAt:s.checkedAt??null,error:s.error??null,retryAt:s.retryAt??null,source:s.source??null};}
  async function check(force=false){
@@ -57,7 +57,7 @@ export function createUpdateManager({home=root,current,fetcher=fetch,launch,now=
   atomicJSON(file,{...s,phase:'downloading',error:null,pid:process.pid});
   let child;
   try{
-    child=(launch??(()=>spawn(process.execPath,[fileURLToPath(new URL(platform==='win32'?'./windows-update-worker.mjs':'./update-worker.mjs',import.meta.url))],{detached:true,windowsHide:true,stdio:'ignore',env:{...process.env,CONTEXT_CONTROL_HOME:home}})))();
+    child=(launch??(()=>spawn(node,[fileURLToPath(new URL(platform==='win32'?'./windows-update-worker.mjs':'./update-worker.mjs',import.meta.url))],{detached:true,windowsHide:true,stdio:'ignore',env:{...process.env,CONTEXT_CONTROL_HOME:home,CONTEXT_CONTROL_UPDATE_STATE:file}})))();
     child.once?.('error',error=>atomicJSON(file,{...read(),phase:'error',error:error.message,pid:null}));
     if(!Number.isSafeInteger(child.pid))throw Error('无法启动更新程序');
   }catch(error){atomicJSON(file,{...read(),phase:'error',error:error.message,pid:null});throw error;}
