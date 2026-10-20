@@ -111,18 +111,19 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
     if(params.provider!==undefined){if(!['repository','gist'].includes(params.provider))throw Error('Invalid sync provider');next.provider=params.provider;}
     for(const field of ['repository','gistId'])if(params[field]!==undefined){if(typeof params[field]!=='string')throw Error('Invalid sync destination');next[field]=params[field].trim();}
     if(params.intervalMinutes!==undefined){if(!Number.isInteger(params.intervalMinutes)||params.intervalMinutes!==0&&(params.intervalMinutes<5||params.intervalMinutes>1440))throw Error('同步间隔应为 5–1440 分钟，或选择仅手动');next.intervalMinutes=params.intervalMinutes;}
-    let credentials=secrets.get();
+    const previousCredentials=secrets.get();let credentials={...previousCredentials};
     for(const field of ['token','key'])if(params[field]){if(typeof params[field]!=='string'||params[field].length>512||/[\r\n\x00]/.test(params[field]))throw Error('Invalid sync credential');credentials={...credentials,[field]:params[field]};}
     if(next.enabled){
       if(!credentials.token||!credentials.key)throw Error('请填写 GitHub Token 和同步密钥');
       if(next.provider==='repository'&&!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(next.repository)||next.provider==='repository'&&next.repository.split('/').some(p=>p==='.'||p==='..'))throw Error('私有仓库请填写 owner/repository');
       if(next.provider==='gist'&&!/^[a-f0-9]{20,64}$/.test(next.gistId))throw Error('请填写有效的 Gist ID');
     }
-    if(params.key||next.provider!==config.provider||next.repository!==config.repository||next.gistId!==config.gistId||!config.enabled)delete next.boundAccount;
+    const rebinding=credentials.key!==previousCredentials.key||next.provider!==config.provider||next.repository!==config.repository||next.gistId!==config.gistId||!config.enabled;
+    if(rebinding)delete next.boundAccount;
     if(params.token||params.key)secrets.set(credentials);
     next.hasToken=!!credentials.token;next.hasKey=!!credentials.key;
     if(params.claimLegacy===true)await analytics.syncExport({claimLegacy:true});
-    await analytics.syncImport({enabled:false});config=next;save();status.error=null;
+    if(!next.enabled||rebinding)await analytics.syncImport({enabled:false});config=next;save();status.error=null;
     schedule(next.startup?1000:normalDelay());return state();
   }
   if(config.enabled)schedule(config.startup?3000:normalDelay());

@@ -15,14 +15,14 @@ const now=Date.now(),key='random-test-sync-key-'.repeat(3),scope='account:'+'a'.
 const request=(id='resp1',extra={})=>({id,at:now-1000,model:'model',input:100,output:20,cached:80,written:null,...extra});
 const records=(requests=[])=>({version:1,requests,snapshots:[]});
 function cloud(){
-  const files=new Map(),writes=[];
+  const files=new Map(),writes=[];let offline=false;
   const transport=config=>({
-    init:async()=>{},createGist:async()=>'b'.repeat(32),
+    init:async()=>{if(offline)throw Error('offline');},createGist:async()=>'b'.repeat(32),
     manifests:async()=>[...files.keys()].filter(n=>n.startsWith(config.group+'/')&&/manifest-[a-f0-9]{32}\.json$/.test(n)).map(n=>({name:n.split('/').at(-1),device:n.match(/manifest-([a-f0-9]{32})/)[1]})),
     manifestName:device=>`manifest-${device}.json`,chunkName:(device,hash)=>`chunks/${device}/${hash}.json`,
     read:async name=>{const value=files.get(config.group+'/'+name);assert.ok(value,'remote file exists');return value;},
     write:async(name,data)=>{writes.push(name);files.set(config.group+'/'+name,data);}
-  });return {transport,files,writes};
+  });return {transport,files,writes,setOffline:value=>{offline=value;}};
 }
 function fixture(t,remote){
   const home=fs.mkdtempSync(path.join(os.tmpdir(),'cloud-sync-')),ledger=new QuotaLedger({file:path.join(home,'ledger.sqlite'),home,now:()=>now});
@@ -95,6 +95,17 @@ test('save-and-sync enables an initially disabled device and saves its current f
   assert.equal(started.enabled,true);await f.service.sync();assert.ok(f.service.state().lastSuccess);
   assert.equal((await f.service.command({action:'credential',field:'token'})).value,'new-token');
   await assert.rejects(f.service.command({action:'save-and-sync',repository:'invalid'}),/owner/);
+});
+
+test('saving unchanged settings before an offline sync preserves the previous imported history',async t=>{
+  const remote=cloud(),first=fixture(t,remote),second=fixture(t,remote);
+  first.add('first');second.add('second');await first.configure();await first.service.sync();await second.configure();await second.service.sync();
+  assert.equal(second.ledger.read().requests.length,2);
+  await second.configure({token:'updated-token'});assert.equal(second.ledger.read().requests.length,2);
+  remote.setOffline(true);await assert.rejects(second.service.sync(),/offline/);
+  assert.equal(second.ledger.read().requests.length,2);
+  await second.configure({key});assert.equal(second.ledger.read().requests.length,2,'re-entering the same key keeps imported data');
+  await second.configure({enabled:false});assert.equal(second.ledger.read().requests.length,1);
 });
 
 test('sync refreshes account availability before calculating its account namespace',async t=>{
