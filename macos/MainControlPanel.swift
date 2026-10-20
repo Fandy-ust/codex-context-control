@@ -9,9 +9,11 @@ struct MainControlPanelView:View {
     var body:some View {
         VStack(alignment:.leading,spacing:18){
             HStack{if tab=="defaults"{Button(L("返回"),systemImage:"arrow.left"){tab="general"}.buttonStyle(.bordered)};Text(L("设置")).font(.system(size:21,weight:.semibold));Spacer();Button(action:close){Image(systemName:"xmark").foregroundStyle(.secondary)}.buttonStyle(.plain).help(L("关闭设置"))}
-            Picker(L("设置分类"),selection:$tab){Text(L("通用")).tag("general");Text(L("全局默认")).tag("defaults");Text(L("账户额度")).tag("quota");Text(L("任务队列")).tag("queues")}.pickerStyle(.segmented)
+            Picker(L("设置分类"),selection:$tab){Text(L("通用")).tag("general");Text(L("全局默认")).tag("defaults");Text(L("账户额度")).tag("quota");Text(L("任务队列")).tag("queues");Text(L("云同步")).tag("cloud")}.pickerStyle(.segmented)
             ScrollView {
+                Group {
                 if tab=="defaults" {NewChatDefaultsView(model:model,onClose:{tab="general"})}
+                else if tab=="cloud" {CloudSyncView(model:model)}
                 else if tab=="queues" {TaskQueueManagerView(model:model,open:{id in close();model.queueDetailID=id})}
                 else if tab=="quota" {
                     VStack(alignment:.leading,spacing:18){
@@ -22,6 +24,7 @@ struct MainControlPanelView:View {
                         Text(L("将当前余额设为新的 100%；余额增加时也会自动更新基准。")).font(.caption).foregroundStyle(.secondary)
                     }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
                 }else{general}
+                }.softScrollEdges()
             }
             if let feedback{Text(L(feedback)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)}
         }.padding(24).frame(width:760,height:560).background(PanelStyle.background).preferredColorScheme(.dark).environment(\.locale,Localization.locale)

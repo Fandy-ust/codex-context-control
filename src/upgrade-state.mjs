@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {readJSON,atomicJSON} from './paths.mjs';
 import {replaceDirectory} from './install-layout.mjs';
-const configurationFiles=['settings.json','state.json','language.json','ui-settings.json','quota-preferences.json','integration.json','context-extension.json','compaction-compensation.json','task-queues.json','new-chat-defaults.json','runtime-fix.json','automatic-startup.json'];
+const configurationFiles=['settings.json','state.json','language.json','ui-settings.json','quota-preferences.json','integration.json','context-extension.json','compaction-compensation.json','task-queues.json','new-chat-defaults.json','runtime-fix.json','automatic-startup.json','cloud-sync.json','cloud-sync-secrets.json'];
 // Keep one lightweight configuration snapshot, not another copy of the app,
 // Node runtime, histories, or caches. Reinstalling the same version is a no-op.
 export function prepareUpgrade({home,version,previousVersion}){

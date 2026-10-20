@@ -9,6 +9,7 @@ import {normalizeBudgetCommand} from './core/budget-command.mjs';
 import {CONTROL_API_VERSION,controlOperation} from './contracts/control-api.mjs';
 import {createQuotaManager} from './account-quota.mjs';
 import {createQuotaAnalyticsService} from './quota-analytics-service.mjs';
+import {createCloudSync} from './cloud-sync.mjs';
 import {version,buildId} from './version.mjs';
 import {cleanupOldRuntimes} from './runtime-cleanup.mjs';
 import os from 'node:os';
@@ -58,6 +59,7 @@ export async function startDaemon() {
   const bridges=new Map();const owners=new Map();
   const quotaAnalytics=createQuotaAnalyticsService();
   const quota=createQuotaManager({home:root,onObservation:observation=>quotaAnalytics.record(observation)});
+  const cloudSync=createCloudSync({home:root,analytics:quotaAnalytics});
   const queueFile=path.join(root,'task-queues.json');
   function queuePeers(id){const ownersForThread=owners.get(id)||[];return ownersForThread.length?ownersForThread:[...bridges.keys()].filter(peer=>supportsTaskQueues(bridges.get(peer)));}
   function queueSupported(id){const peers=queuePeers(id);return peers.length===1&&supportsTaskQueues(bridges.get(peers[0]));}
@@ -200,6 +202,7 @@ export async function startDaemon() {
       const params=body?JSON.parse(body):{};const route=req.url;
       let answer;const operation=controlOperation(req.method,route);
       if(operation==='state')answer=state();
+      else if(operation==='cloud-sync')answer=await cloudSync.command(params);
       else if(operation==='task-queue'){if(params.action==='enable'&&params.enabled&&typeof params.id==='string'&&Object.hasOwn(store.data.threads,params.id)&&!(owners.get(params.id)||[]).length&&queueSupported(params.id))await queueCall(params.id,'queue-prepare',{});answer=taskQueues.command(params);}
       else if(operation==='quota-refresh')answer=await quota.refresh(true);
       else if(operation==='quota-credit-baseline')answer=quota.resetCredits(params.id,params.legacy??null);
@@ -246,7 +249,7 @@ export async function startDaemon() {
   const cleanupStart=setTimeout(cleanup,30000);cleanupStart.unref();
   const cleanupTimer=setInterval(cleanup,5*60*1000);cleanupTimer.unref();
   const scanTimer=setInterval(()=>store.refreshMetadata(),15000);scanTimer.unref();
-  web.once('close',()=>{clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
+  web.once('close',()=>{cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
   const shutdown=()=>{responseSpeeds.close();contextStatistics.close();try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};

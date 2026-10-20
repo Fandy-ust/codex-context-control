@@ -72,7 +72,10 @@ test('Store refreshes native project moves and cwd changes without altering budg
 test('sidebar repeats project chats in Recent, respects collapse and escapes metadata',()=>{
   const escape=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
   const args={threads:[{id:'a',name:'<chat>',connected:true,lastActivityAt:200},{id:'single',name:'Single',lastActivityAt:300}],sidebar:{projects:[{id:'p',name:'<project>',roots:['/a"b'],threadIds:['a']},{id:'empty',name:'Empty',roots:[],threadIds:[]}],standaloneThreadIds:['single']},selected:'a',expanded:new Map(),t:(zh,en)=>en,escape,chatName:c=>c.name,statusText:()=> 'Cached'};
-  const open=projectSidebar(args);
+  const defaultClosed=projectSidebar(args);
+  assert.equal((defaultClosed.match(/data-id="a"/g)||[]).length,1,'selecting a recent chat must not expand its project');
+  assert.ok(!defaultClosed.includes('project-chats'));
+  const open=projectSidebar({...args,expanded:new Map([['p',true]])});
   assert.match(open,/&lt;project>/);assert.match(open,/&lt;chat>/);assert.ok(!open.includes('<chat>'));
   assert.match(open,/<span class="chat-project-name" title="&lt;project>">&lt;project><\/span><span class="chat-connection">Connected<\/span>/);
   assert.match(open,/<span class="chat-project-name" title="Standalone chat">Standalone chat<\/span><span class="chat-connection">Not connected<\/span>/);

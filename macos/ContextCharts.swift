@@ -126,7 +126,10 @@ private enum TimelinePlotKind:String {case speed,cache,events}
             speedChart
             HStack(spacing:12){Text(L("输入与缓存")).font(.caption.weight(.medium));Spacer();legend(L("输入"),color:.gray);legend(L("缓存"),color:.cyan)}
             cacheChart
-            HStack(spacing:12){Text(L("区间事件")).font(.caption.weight(.medium));Spacer();legend(L("最终"),color:.blue);legend(L("输入"),color:.green);legend(L("压缩"),color:.purple);legend(L("零值"),color:.orange)}
+            ViewThatFits(in:.horizontal){
+                HStack(spacing:12){Text(L("区间事件")).font(.caption.weight(.medium));Spacer();eventLegend}
+                VStack(alignment:.leading,spacing:6){Text(L("区间事件")).font(.caption.weight(.medium));eventLegend}
+            }
             eventTrack
             if !data.buckets.isEmpty{TimelineBucketDetails(data:data,labels:labels,selection:selection)}
             DisclosureGroup(L("统计说明")){
@@ -138,6 +141,7 @@ private enum TimelinePlotKind:String {case speed,cache,events}
         .onChange(of:data.revision){_,_ in selection.rebind(data)}
     }
     private func legend(_ title:String,color:Color)->some View {HStack(spacing:4){Circle().fill(color).frame(width:5,height:5);Text(title)}.font(.caption2).foregroundStyle(.secondary)}
+    private var eventLegend:some View {HStack(spacing:10){legend(L("最终"),color:.blue);legend(L("输入"),color:.green);legend(L("压缩"),color:.purple);legend(L("零值"),color:.orange);legend(L("切换模型"),color:.yellow);legend(L("切换思考额度"),color:.cyan)}}
     // Bridge only the drawing gap; missing buckets stay missing in accounting
     // and in the pointer/record detail views. Each bridge is a straight line.
     @ChartContentBuilder private func gapBridges(_ points:[TimelinePlotPoint],key:String,color:Color,unit:String="tokens",width:CGFloat=1)->some ChartContent {
@@ -183,16 +187,18 @@ private enum TimelinePlotKind:String {case speed,cache,events}
     private var eventTrack:some View {
         Chart {
             ForEach(data.buckets){b in
-                if b.responses>b.finals {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),0)).foregroundStyle(.white.opacity(0.5)).symbolSize(12)}
-                if b.finals>0 {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),0.35)).foregroundStyle(.blue).symbolSize(35)}
-                if b.users>0 {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),-0.35)).symbol(.diamond).foregroundStyle(.green).symbolSize(35)}
-                if b.compactions>0 {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),0.7)).symbol(.square).foregroundStyle(.purple).symbolSize(45)}
-                if b.zeroCaches>0 {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),-0.7)).symbol{Circle().strokeBorder(.orange,lineWidth:1.5).frame(width:6,height:6)}}
+                if b.responses>b.finals {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),0)).foregroundStyle(.white.opacity(0.5)).symbolSize(9)}
+                if b.finals>0 {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),1)).foregroundStyle(.blue).symbolSize(16)}
+                if b.users>0 {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),2)).symbol(.diamond).foregroundStyle(.green).symbolSize(16)}
+                if b.compactions>0 {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),3)).symbol(.square).foregroundStyle(.purple).symbolSize(16)}
+                if b.zeroCaches>0 {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),4)).symbol{Circle().strokeBorder(.orange,lineWidth:1).frame(width:4,height:4)}}
+                if b.settingsChanges.contains(where:{$0.field=="model"}) {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),5)).symbol(.square).foregroundStyle(.yellow).symbolSize(16)}
+                if b.settingsChanges.contains(where:{$0.field=="effort"}) {PointMark(x:.value(L("记录顺序"),b.position),y:.value(L("事件"),6)).symbol(.diamond).foregroundStyle(.cyan).symbolSize(16)}
             }
-        }.chartXScale(domain:0...data.upperBound).chartYScale(domain:-1...1)
+        }.chartXScale(domain:0...data.upperBound).chartYScale(domain:-0.5...6.5)
         .chartYAxis{AxisMarks(position:.trailing,values:[0]){_ in AxisValueLabel{Text(" ").frame(width:50,alignment:.leading).accessibilityHidden(true)}}}
         .chartXAxis{AxisMarks(values:.automatic(desiredCount:5)){_ in AxisGridLine(stroke:StrokeStyle(lineWidth:0.5,dash:[3,4])).foregroundStyle(.white.opacity(0.08));AxisValueLabel()}}
-        .chartOverlay{proxy in TimelineOverlay(proxy:proxy,kind:.events,data:data,selection:selection)}.frame(height:42)
+        .chartOverlay{proxy in TimelineOverlay(proxy:proxy,kind:.events,data:data,selection:selection)}.frame(height:108)
     }
 }
 @MainActor private struct TimelineSpeedLabel:View {
@@ -254,10 +260,24 @@ private enum TimelinePlotKind:String {case speed,cache,events}
     @State private var page=0
     @State private var recordsExpanded=false
     private var index:Int{selection.focus(data) ?? data.buckets.count-1}
+    private func responseTime(_ bucket:TimelineBucket)->String? {
+        let parser=ISO8601DateFormatter()
+        let dates=data.entries[bucket.entryRange].compactMap{entry->Date? in
+            guard let raw=entry.response?.timestamp else{return nil}
+            parser.formatOptions=[.withInternetDateTime,.withFractionalSeconds]
+            if let date=parser.date(from:raw){return date}
+            parser.formatOptions=[.withInternetDateTime];return parser.date(from:raw)
+        }
+        guard let first=dates.first,let last=dates.last else{return nil}
+        let format=DateFormatter();format.locale=Localization.locale;format.dateStyle = .short;format.timeStyle = .medium
+        let start=format.string(from:first),end=format.string(from:last)
+        return start==end ? start:start+" – "+end
+    }
     var body:some View {
         let b=data.buckets[index],label=labels[index],pageCount=max(1,Int(ceil(Double(b.entryRange.count)/20))),currentPage=min(page,pageCount-1)
         return VStack(alignment:.leading,spacing:9){
             HStack{Text(b.title).font(.callout.weight(.medium));Spacer();Text(label.counts).font(.caption).foregroundStyle(.secondary)}
+            if let time=responseTime(b){Text(time).font(.caption2).foregroundStyle(.secondary).monospacedDigit()}
             HStack(spacing:12){metric(L("区间均速"),label.speed);metric(L("输入均量"),label.input);metric(L("缓存均量"),label.cache);metric(L("输出合计"),label.output)}
             Text(label.events).font(.caption).foregroundStyle(.secondary)
             if !label.speedModes.isEmpty{Text(label.speedModes.joined(separator:" · ")).font(.caption).foregroundStyle(.yellow)}

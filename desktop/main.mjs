@@ -29,6 +29,7 @@ const {ensureDaemon}=await import('../src/service.mjs');
 const {resolveLanguage,languagePreference,localize}=await import('../src/localization.mjs');
 if(process.platform==='win32')app.commandLine.appendSwitch('lang',resolveLanguage(languagePreference())==='zh'?'zh-CN':'en-US');
 const {demoState,demoStatistics}=await import('./demo.mjs');
+let demoCloud={enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:'00000000000000000000000000000000',error:null,running:false};
 const demoQueues=demo?createTaskQueues({quota:{state:()=>({...demoState.quota,updatedAt:Date.now()}),refresh:async()=>{}},thread:id=>demoState.threads.find(t=>t.id===id),start:async(id,task)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='active';chat.automaticTask={executionId:task.executionId,status:'running'};},interrupt:async(id)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='idle';if(chat.automaticTask)chat.automaticTask.status='interrupted';}}):null;
 const pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
 app.setName('Context Manager');app.setAppUserModelId('io.github.codex-context-control');
@@ -59,6 +60,7 @@ app.on('window-all-closed',()=>{});
 app.on('activate',()=>showMain());
 async function api(action,params={}){
   if(demo){
+    if(action==='cloud-sync'){if(params.action==='configure'){const {token,key,action,claimLegacy,...value}=params;demoCloud={...demoCloud,...value,hasToken:!!token||demoCloud.hasToken,hasKey:!!key||demoCloud.hasKey};}if(params.action==='create-gist')demoCloud.gistId='a'.repeat(32);if(params.action==='sync'){demoCloud.lastSuccess=Date.now();demoCloud.devices=5;}return structuredClone(demoCloud);}
     if(action==='state')return structuredClone({...demoState,taskQueues:demoQueues.list()});
     if(action==='task-queue')return demoQueues.command(params);
     if(action==='statistics')return structuredClone({...demoStatistics,threadId:params.id});
@@ -146,7 +148,7 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
     const answer=await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender),{type:'question',title:label('请求 Codex 原生压缩？','Request native Codex compaction?'),message:label('请求 Codex 原生压缩？','Request native Codex compaction?'),detail:label('压缩可能使用现有模型额度。压缩结果长度无法保证，完成后需要重新测量。','Compaction may use your existing model allowance. Retained length is not guaranteed and must be measured again afterwards.'),buttons:[label('取消','Cancel'),label('请求压缩','Request compaction')],defaultId:0,cancelId:0,noLink:true});return {confirmed:answer.response===1};
   }
   if(action==='open-reference'){
-    const urls={pricing:'https://openai.com/api/pricing/',caching:'https://developers.openai.com/api/docs/guides/prompt-caching#monitor-cache-performance',compaction:'https://developers.openai.com/api/docs/guides/compaction'};
+    const urls={'cloud-sync':'https://github.com/Fandy-ust/codex-context-control/blob/main/docs/CLOUD_SYNC.md',pricing:'https://openai.com/api/pricing/',caching:'https://developers.openai.com/api/docs/guides/prompt-caching#monitor-cache-performance',compaction:'https://developers.openai.com/api/docs/guides/compaction'};
     if(smoke||!Object.hasOwn(urls,params.id))throw Error('Unknown reference');await shell.openExternal(urls[params.id]);return {ok:true};
   }
   if(action==='quota-select'){
@@ -223,7 +225,7 @@ if(args.includes('--quit')){app.quit();}else{
           await new Promise(resolve=>setTimeout(resolve,220));
           fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-statistics.png'),(await main.webContents.capturePage()).toPNG());
       }
-      await main.webContents.executeJavaScript('window.__contextQuotaSmoke()');console.log('QUOTA_ANALYTICS_SMOKE '+JSON.stringify(analyticsSmoke));const results=await Promise.all([main,trayWindow].map(w=>w.webContents.executeJavaScript('window.__contextSmoke()')));if(results.some(r=>!r.ok))throw Error(JSON.stringify(results));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await main.webContents.executeJavaScript('window.__contextSmoke({preview:true})');await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'timeline-settings.png'),(await main.webContents.capturePage()).toPNG());}
+      await main.webContents.executeJavaScript('window.__contextQuotaSmoke()');console.log('QUOTA_ANALYTICS_SMOKE '+JSON.stringify(analyticsSmoke));const cloudSmoke=await main.webContents.executeJavaScript('window.__contextCloudSmoke()');if(!cloudSmoke.ok)throw Error(JSON.stringify(cloudSmoke));console.log('CLOUD_SYNC_SMOKE '+JSON.stringify(cloudSmoke));const results=await Promise.all([main,trayWindow].map(w=>w.webContents.executeJavaScript('window.__contextSmoke()')));if(results.some(r=>!r.ok))throw Error(JSON.stringify(results));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await main.webContents.executeJavaScript('window.__contextSmoke({preview:true})');await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'timeline-settings.png'),(await main.webContents.capturePage()).toPNG());}
       // Use native wheel input so Chromium's scroll latching is exercised.
       const sliderPoint=await main.webContents.executeJavaScript("window.__contextSliderSmoke('prepare')");
       main.webContents.sendInputEvent({type:'mouseMove',...sliderPoint});
@@ -253,6 +255,8 @@ if(args.includes('--quit')){app.quit();}else{
         fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),name+'.png'),(await main.webContents.capturePage()).toPNG());
       }
       const composerSmoke=await main.webContents.executeJavaScript('window.__contextComposerSmoke()');if(!composerSmoke.ok)throw Error(JSON.stringify(composerSmoke));console.log('TASK_COMPOSER_SMOKE '+JSON.stringify(composerSmoke));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){for(const kind of ['base','model','full','attachments']){await main.webContents.executeJavaScript(`window.__contextComposerPreview('${kind}')`);await new Promise(r=>setTimeout(r,180));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'composer-'+kind+'-0.22.5.png'),(await main.webContents.capturePage()).toPNG());}}
+      const appearance=await main.webContents.executeJavaScript('window.__contextAppearanceSmoke()');if(!appearance.ok)throw Error(JSON.stringify(appearance));console.log('APPEARANCE_SMOKE '+JSON.stringify(appearance));
+      if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await new Promise(r=>setTimeout(r,120));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'scroll-edges-and-events.png'),(await main.webContents.capturePage()).toPNG());}
       // Exercise the real window state: visible in the background must focus in one press.
       const waitFor=async check=>{const end=Date.now()+3000;while(!check()&&Date.now()<end)await new Promise(r=>setTimeout(r,25));if(!check())throw Error('Shortcut window focus transition timed out');};
       const covering=new BrowserWindow({width:320,height:240,show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});

@@ -509,10 +509,6 @@ struct ProjectChatSidebar:View {
         var ids=expanded;if value{ids.insert(id)}else{ids.remove(id)}
         if let data=try? JSONEncoder().encode(ids.sorted()),let json=String(data:data,encoding:.utf8){expandedJSON=json}
     }
-    private func revealSelection(){
-        guard let id=model.selectedID,let project=projects.first(where:{$0.threadIds.contains(id)}) else{return}
-        if !expanded.contains(project.id){setExpanded(project.id,true)}
-    }
     var body:some View {
         ScrollView {
             LazyVStack(alignment:.leading,spacing:8){
@@ -538,9 +534,8 @@ struct ProjectChatSidebar:View {
                 }
             }.frame(maxWidth:.infinity,alignment:.leading).padding(.bottom,4)
                 .background(SidebarScrollStyle().frame(width:0,height:0))
+                .softScrollEdges(28)
         }
-        .onAppear{revealSelection()}
-        .onChange(of:model.selectedID){_,_ in revealSelection()}
     }
     private var projectList:some View {
         let byID=Dictionary(model.chats.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
@@ -657,7 +652,7 @@ struct ContentView: View {
                     }else{
                         ContentUnavailableView(L("等待聊天接入"),systemImage:"bubble.left.and.bubble.right",description:Text(L("照常打开 Codex 并进入聊天，控制连接会随运行时自动启动。首次安装后请正常重开一次客户端。")))
                     }
-                }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity)
+                }.padding(32).frame(maxWidth:850,alignment:.leading).frame(maxWidth:.infinity).softScrollEdges()
             }
             }.frame(minWidth:650).background(PanelStyle.background)
         }

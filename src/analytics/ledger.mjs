@@ -3,6 +3,7 @@ import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {canonicalLocalPath, pathInside} from '../local-path.mjs';
 import {DAY} from '../core/quota-statistics.mjs';
+import {numericRecords,mergeRequests} from './sync-records.mjs';
 
 const RETENTION = 366 * DAY;
 const MAX_RECORD = 1024 * 1024;
@@ -56,6 +57,7 @@ export class QuotaLedger {
       CREATE TABLE IF NOT EXISTS snapshots (id TEXT PRIMARY KEY, source TEXT NOT NULL, scope TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS snapshots_time ON snapshots(at);
       CREATE INDEX IF NOT EXISTS snapshots_source ON snapshots(source);`);
+    this.db.exec('CREATE TABLE IF NOT EXISTS cloud_shards (id TEXT PRIMARY KEY, account TEXT NOT NULL, scope TEXT NOT NULL, data TEXT NOT NULL)');
     const schema = this.db.prepare('SELECT value FROM meta WHERE key=?').get('schema');
     if (schema && schema.value !== '1') {this.db.close();throw Error('Unsupported quota ledger version');}
     this.db.prepare('INSERT OR IGNORE INTO meta VALUES (?,?)').run('schema', '1');
@@ -87,8 +89,10 @@ export class QuotaLedger {
     const id = snapshotId(value);
     this.putQuota.run(id, source, value.scope, value.at, JSON.stringify(value));
   }
-  recordLive({scope, buckets, at}) {
+  recordLive({scope, buckets, at,accountGroup}) {
     if (!/^(account:[a-f0-9]{32}|unidentified)$/.test(scope)) return;
+    if(this.metadata('currentScope')!==scope)this.setMetadata('accountSince',at);
+    if(typeof accountGroup==='string'&&/^[a-f0-9]{32}$/.test(accountGroup))this.setMetadata('accountGroups',{...(this.metadata('accountGroups')||{}),[scope]:accountGroup});
     for (const bucket of buckets || []) this.snapshot(projectQuota(bucket, {scope, at, bucketId: bucket.id}));
     this.setMetadata('currentScope', scope);this.prune();
   }
@@ -107,7 +111,7 @@ export class QuotaLedger {
       if (!id) {source.unidentifiedRequests = (source.unidentifiedRequests || 0) + 1;return;}
       const rawCached = count(usage.cached_input_tokens), cached = rawCached != null && rawCached <= input ? rawCached : null;
       const record = {id, at, thread: source.id, model: source.model || null, project: source.project, name: source.name,
-        input, output, cached, written:count(usage.cache_write_input_tokens)};
+        input, output, cached, written:count(usage.cache_write_input_tokens),scope:at>=this.metadata('accountSince')&&this.metadata('accountSince')?this.metadata('currentScope'):null};
       this.putRequest.run(id, source.id, at, JSON.stringify(record));
     }
     if (event.type === 'event_msg' && p.type === 'token_count') {
@@ -177,9 +181,33 @@ export class QuotaLedger {
   }
   read(days = 84) {
     const cutoff = this.now() - Math.min(366, Math.max(1, days)) * DAY;
-    return {requests: this.db.prepare('SELECT data FROM requests WHERE at>=? ORDER BY at').all(cutoff).map(p => JSON.parse(p.data)),
-      snapshots: this.db.prepare('SELECT data FROM snapshots WHERE at>=? ORDER BY at').all(cutoff).map(p => JSON.parse(p.data)),
+    const local=this.localRead(cutoff),savedBinding=this.metadata('cloudBinding'),binding=savedBinding?.scope===this.metadata('currentScope')?savedBinding:null;
+    const remote=binding?this.db.prepare('SELECT data FROM cloud_shards WHERE account=? AND scope=? ORDER BY id').all(binding.account,binding.scope).map(p=>JSON.parse(p.data)):[];
+    const snapshots=new Map([...local.snapshots,...remote.flatMap(r=>r.snapshots.map(s=>({...s,scope:binding.scope}))).filter(r=>r.at>=cutoff)].map(s=>[snapshotId(s),s]));
+    return {requests:mergeRequests(local.requests,remote.flatMap(r=>r.requests).filter(r=>r.at>=cutoff)),
+      snapshots:[...snapshots.values()].sort((a,b)=>a.at-b.at),
       currentScope: this.metadata('currentScope'), progress: this.metadata('progress') || this.progress};
+  }
+  localRead(cutoff=this.now()-RETENTION){return {requests:this.db.prepare('SELECT data FROM requests WHERE at>=? ORDER BY at,id').all(cutoff).map(p=>JSON.parse(p.data)),snapshots:this.db.prepare('SELECT data FROM snapshots WHERE at>=? ORDER BY at,id').all(cutoff).map(p=>JSON.parse(p.data))};}
+  syncExport({claimLegacy=false}={}){
+    const scope=this.metadata('currentScope');if(!scope||scope==='unidentified')throw Error('请先读取有效的 Codex 账号额度');
+    if(claimLegacy){
+      this.db.exec('BEGIN');try{for(const r of this.db.prepare('SELECT id,data FROM requests').all()){
+        const value=JSON.parse(r.data);if(!value.scope){value.scope=scope;this.db.prepare('UPDATE requests SET data=? WHERE id=?').run(JSON.stringify(value),r.id);}
+      }this.db.exec('COMMIT');}catch(error){this.db.exec('ROLLBACK');throw error;}
+    }
+    const groups=this.metadata('accountGroups')||{},sameAccount=s=>s===scope||!!groups[scope]&&groups[s]===groups[scope];
+    const local=this.localRead();return {scope,requests:local.requests.filter(r=>sameAccount(r.scope)),snapshots:local.snapshots.filter(s=>sameAccount(s.scope))};
+  }
+  syncImport({account,scope,shards,enabled=true}){
+    if(!enabled){this.setMetadata('cloudBinding',null);return;}
+    if(!/^[a-f0-9]{32}$/.test(account)||scope!==this.metadata('currentScope')||!Array.isArray(shards)||shards.length>5000)throw Error('Invalid sync import');
+    const checked=shards.map(s=>{if(typeof s.id!=='string'||s.id.length>240)throw Error('Invalid shard');return {...s,data:numericRecords(s.data,this.now())};});
+    if(checked.reduce((n,s)=>n+s.data.requests.length+s.data.snapshots.length,0)>500000)throw Error('Sync history exceeds local record limit');
+    this.db.exec('BEGIN');try{
+      this.db.exec('DELETE FROM cloud_shards');const put=this.db.prepare('INSERT INTO cloud_shards VALUES (?,?,?,?)');
+      for(const s of checked)put.run(s.id,account,scope,JSON.stringify(s.data));this.setMetadata('cloudBinding',{account,scope});this.db.exec('COMMIT');
+    }catch(error){this.db.exec('ROLLBACK');throw error;}
   }
   close() {this.db.close();}
 }

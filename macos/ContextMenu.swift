@@ -90,6 +90,7 @@ private struct MenuRowFrames:PreferenceKey {
                         ForEach(recent){chat in chatRow(chat)}
                     }
                 }
+                .softScrollEdges(28)
             }.scrollIndicators(.automatic)
             .coordinateSpace(name:"contextMenuRows")
             .onPreferenceChange(MenuRowFrames.self){frames in

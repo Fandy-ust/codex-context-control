@@ -11,6 +11,10 @@ test('authenticated analytics scans local numeric records and rejects invalid fi
  try {
   const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json'))),url=`http://127.0.0.1:${c.port}/quota/analytics`,headers={authorization:`Bearer ${c.token}`};
   assert.equal((await fetch(url,{method:'POST',body:'{}'})).status,403);
+  const syncURL=`http://127.0.0.1:${c.port}/cloud-sync`;
+  assert.equal((await fetch(syncURL,{method:'POST',body:'{}'})).status,403);
+  const syncStatus=await fetch(syncURL,{method:'POST',headers,body:'{"action":"status"}'});assert.equal(syncStatus.status,200);assert.equal((await syncStatus.json()).enabled,false);
+  assert.equal((await fetch(syncURL,{method:'POST',headers,body:'{"action":"configure","intervalMinutes":1}'})).status,400);
   assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify({days:999})})).status,400);
   assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify({model:42})})).status,400);
   for(const filter of [{costDate:'2026-02-30'},{costDate:'bad'},{costStart:now},{costStart:now,costEnd:now-1},{costStart:now-367*86400000,costEnd:now}])assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify(filter)})).status,400);

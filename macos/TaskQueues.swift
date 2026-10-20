@@ -20,7 +20,7 @@ struct QueueTask:Decodable,Equatable,Identifiable {
     var pending:Bool{["waiting","running","interrupted","error"].contains(status)}
 }
 struct ChatTaskQueue:Decodable,Equatable,Identifiable {let id:String;let enabled:Bool;let config:QueueConfig;let tasks:[QueueTask];let revision:Int;let state:String;let message:String?}
-struct TaskQueuesState:Decodable,Equatable {let sleepPrevented:Bool;let queues:[ChatTaskQueue]}
+struct TaskQueuesState:Decodable,Equatable {var monitoringEnabled:Bool?=nil;let sleepPrevented:Bool;let queues:[ChatTaskQueue]}
 
 extension Controller {
     func queueHasFiveHour(_ pool:String)->Bool{guard let b=quota?.buckets.first(where:{$0.id==pool}) else{return false};return [b.primary,b.secondary].contains{$0?.windowDurationMins==300}}
@@ -79,6 +79,8 @@ struct TaskQueueManagerView:View {
     @ObservedObject var model:Controller;var open:(String)->Void
     var body:some View{
         VStack(alignment:.leading,spacing:18){
+            Toggle(L("全局额度监视"),isOn:Binding(get:{model.taskQueues?.monitoringEnabled != false},set:{value in Task{await model.queueCommand(nil,"monitoring",values:["enabled":value])}})).toggleStyle(.switch).disabled(model.working)
+            Text(L("控制已开启监视的聊天；关闭后保留各聊天的开关和限额。监视持续生效，队列结束后不会自动关闭。")).font(.caption).foregroundStyle(.secondary)
             HStack{Text(L("所有任务队列")).font(.headline);Spacer();Button(L("关闭全部监视")){Task{await model.queueCommand(nil,"disable-all")}}.buttonStyle(.bordered).disabled(model.working)}
             Text(L(model.taskQueues?.sleepPrevented == true ? "有启用的队列，正在防止系统睡眠":"没有启用的队列，允许系统正常睡眠")).font(.caption).foregroundStyle(.secondary)
             ForEach(model.taskQueues?.queues.filter{$0.enabled || $0.tasks.contains{$0.status != "completed"}} ?? []){q in
@@ -136,11 +138,11 @@ struct TaskQueueDetailView:View {
                 HStack{Text(L("任务")).font(.headline);Spacer();Button(L("添加任务"),systemImage:"plus"){editor=QueueTask(id:UUID().uuidString,prompt:"",status:"draft",error:nil,settings:QueueTaskSettings(quota:queue?.config ?? QueueConfig()))}.buttonStyle(.borderedProminent)}
                 taskList
                 DisclosureGroup(L("当前聊天的默认限额")){
-                    VStack(alignment:.leading,spacing:16){Text(L("仅用于新任务；已添加任务保留各自的设置。")).font(.caption).foregroundStyle(.secondary);QueueQuotaEditor(config:$config,showFiveHour:model.queueHasFiveHour(config.pool));Button(L("保存默认限额")){Task{if let value=try? JSONSerialization.jsonObject(with:JSONEncoder().encode(config)){await model.queueCommand(chatID,"config",values:["config":value])}}}.buttonStyle(.borderedProminent)}.padding(.top,12)
+                    VStack(alignment:.leading,spacing:16){Text(L("用于此聊天的持续监视和新任务；已添加任务保留各自的设置。")).font(.caption).foregroundStyle(.secondary);QueueQuotaEditor(config:$config,showFiveHour:model.queueHasFiveHour(config.pool));Button(L("保存默认限额")){Task{if let value=try? JSONSerialization.jsonObject(with:JSONEncoder().encode(config)){await model.queueCommand(chatID,"config",values:["config":value])}}}.buttonStyle(.borderedProminent)}.padding(.top,12)
                 }.padding(18).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:14))
                 HStack{Button(L("仅暂停当前周期")){Task{await model.queueCommand(chatID,"pause-cycle")}}}.buttonStyle(.bordered)
                 Text(model.notice).font(.caption).foregroundStyle(.secondary)
-            }.padding(24).frame(maxWidth:900).frame(maxWidth:.infinity)}
+            }.padding(24).frame(maxWidth:900).frame(maxWidth:.infinity).softScrollEdges()}
         }.disabled(model.working).onAppear{config=queue?.config ?? QueueConfig();if let id=model.queueTaskEditID{editor=queue?.tasks.first{$0.id==id};model.queueTaskEditID=nil}}.onChange(of:chatID){_,_ in config=queue?.config ?? QueueConfig()}
         .sheet(item:$editor){task in QueueTaskEditor(model:model,chatID:chatID,task:task,resize:{draft in editor=nil;expandedEditor=draft},close:{editor=nil})}
     }
@@ -167,7 +169,7 @@ struct QueueTaskEditor:View {
         VStack(alignment:.leading,spacing:16){
             HStack{Button(L("返回"),systemImage:"arrow.left",action:close).buttonStyle(.bordered);Text(L(task.status=="draft" ? "添加任务":"任务设置")).font(.title2.bold());Spacer();if tab=="quota"{Button(L(task.status=="draft" ? "添加到队列":"保存任务")){Task{await save()}}.buttonStyle(.borderedProminent).disabled(prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.working)}}
             if !expanded{Picker(L("任务设置"),selection:$tab){Text(L("任务内容")).tag("prompt");Text(L("额度设置")).tag("quota")}.pickerStyle(.segmented)}
-            if expanded{promptEditor}else{ScrollView{if tab=="quota"{QueueQuotaEditor(config:$settings.quota,showFiveHour:model.queueHasFiveHour(settings.quota.pool)).padding(.vertical,8)}else{promptEditor}}}
+            if expanded{promptEditor}else{ScrollView{Group{if tab=="quota"{QueueQuotaEditor(config:$settings.quota,showFiveHour:model.queueHasFiveHour(settings.quota.pool)).padding(.vertical,8)}else{promptEditor}}.softScrollEdges()}}
         }.padding(24).frame(width:expanded ? nil:760,height:expanded ? nil:700).frame(maxWidth:expanded ? .infinity:nil,maxHeight:expanded ? .infinity:nil).background(PanelStyle.background).preferredColorScheme(.dark)
         .fileImporter(isPresented:$showImporter,allowedContentTypes:imagesOnly ? [.image]:[.item],allowsMultipleSelection:true){result in if case .success(let urls)=result{addURLs(urls)}}
         .onChange(of:settings.model){_,_ in settings.effort=""}

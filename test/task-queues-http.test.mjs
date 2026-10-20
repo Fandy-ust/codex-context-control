@@ -7,6 +7,8 @@ import path from 'node:path';
 test('queue API authenticates, persists complete prompts and config, validates revisions and exposes global management',async()=>{
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'queue-http-')),home=path.join(temp,'codex'),control=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(control);fs.copyFileSync(new URL('fixtures/models.json',import.meta.url),path.join(home,'models_cache.json'));
  process.env.CONTEXT_CONTROL_HOME=control;process.env.CONTEXT_CONTROL_CODEX_HOME=home;
+ // This HTTP test exercises routing and persistence, never a live account runtime.
+ process.env.CONTEXT_CONTROL_REAL_CODEX=process.execPath;
  fs.writeFileSync(path.join(control,'state.json'),JSON.stringify({version:2,threads:{chat:{id:'chat',name:'队列测试',status:'idle'}},policies:{}}));
  const {startDaemon}=await import('../src/daemon.mjs'),d=await startDaemon();let bridge;
  const {connect}=await import('../src/ipc.mjs');
@@ -28,8 +30,11 @@ test('queue API authenticates, persists complete prompts and config, validates r
   await bridge.call('registerBridge',{version:'0.22.4',taskQueueVersion:4});
   assert.equal((await post({id:'missing',action:'enable',enabled:true})).status,400);assert.equal(calls.length,0);
   response=await post({id:'unopened',action:'enable',enabled:true});assert.equal(response.status,200);assert.equal(calls[0].op,'queue-prepare');assert.equal(calls[0].params.id,'unopened');
-  // No prompt/current turn means immediate auto-off, with no quota poll or turn submission.
-  assert.equal((await response.json()).queues.find(q=>q.id==='unopened').enabled,false);
+  // Empty queues remain monitored for later manual turns.
+  assert.equal((await response.json()).queues.find(q=>q.id==='unopened').enabled,true);
+  response=await post({action:'monitoring',enabled:false});assert.equal(response.status,200);state=await response.json();assert.equal(state.monitoringEnabled,false);assert.equal(state.queues.find(q=>q.id==='unopened').enabled,true);assert.equal(state.sleepPrevented,false);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(control,'task-queues.json'))).monitoringEnabled,false);
+  await post({action:'disable-all'});
 
  }finally{bridge?.socket.destroy();d.web.closeAllConnections();await new Promise(r=>d.web.close(r));await new Promise(r=>d.ipcServer.close(r));await new Promise(r=>setTimeout(r,180));fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
 });

@@ -15,6 +15,7 @@ export function timelineData(responses=[],events=[],{period=0,limit=120}={}){
     if(entry.eventType==='compaction'&&entry.event){b.compactions++;speed.reset();input.reset();cache.reset();}
     if(entry.event&&['user_input','steering'].includes(entry.eventType))b.users++;
     const r=entry.response;if(!r)continue;responseIndex++;b.responses++;b.firstResponse??=r.index;b.lastResponse=r.index;
+    if(typeof r.timestamp==='string'&&Number.isFinite(Date.parse(r.timestamp))){b.firstTimestamp??=r.timestamp;b.lastTimestamp=r.timestamp;}
     if(r.eventType==='final')b.finals++;if(r.cacheStatus==='zero_in_log')b.zeros++;if(r.config?.model)b.models.add(r.config.model);
     b.settingsChanges.push(...timelineSettingChanges(previousSettings,r.config,r.index));previousSettings=r.config??{};
     const mode=timelineSpeedMode(r.config?.serviceTier);if(mode==='fast'||mode==='ultrafast')b.speedModes.add(mode);

@@ -10,6 +10,8 @@ parentPort.on('message', ({id, action, params = {}}) => {
     if (action === 'close') {ledger.close();parentPort.close();return;}
     if (action === 'record') ledger.recordLive(params);
     else if (action === 'scan') {result = ledger.scan();lastScan = Date.now();}
+    else if (action === 'sync-export') result=ledger.syncExport(params);
+    else if (action === 'sync-import') result=ledger.syncImport(params);
     else if (action === 'report') {
       if (params.refresh || Date.now() - lastScan > 15000) {ledger.scan();lastScan = Date.now();}
       const source=ledger.read(366);

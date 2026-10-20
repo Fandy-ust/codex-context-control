@@ -1,5 +1,11 @@
 # Changes
 
+## 0.24.0 — Encrypted multi-device sync and persistent quota monitoring
+
+- Add private repository / Secret Gist cloud sync to both desktop settings, with OS-protected credentials, encrypted numeric records, account isolation, response deduplication and configurable intervals. See [setup](docs/en/CLOUD_SYNC.md).
+- Keep per-chat quota monitoring active after queues finish, protect later manual turns and add a global monitoring switch.
+- Fix compensation action routing and Cloud sync tab navigation; preserve sidebar selection position and add scroll-edge blur, model/effort event lanes and response timestamps.
+
 ## 0.23.5 — Compaction compensation after interruption and message edits
 
 - Recognize interrupted turns as persisted terminal events, so continuing after a pause can reserve historical reasoning overhead before applying a smaller context budget.

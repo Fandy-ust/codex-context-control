@@ -6,8 +6,8 @@ A local extension for Codex: **context control and quota-aware task queues**, bu
 
 | Platform | Installer | Requirements |
 | --- | --- | --- |
-| macOS | [Download 0.23.5 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.5-preview.1/Context-Manager-0.23.5-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [Download 0.23.5 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.5-preview.1/Context-Manager-0.23.5-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [Download 0.24.0 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.0-preview.1/Context-Manager-0.24.0-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [Download 0.24.0 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.0-preview.1/Context-Manager-0.24.0-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac installation](docs/en/INSTALL_MAC.md) · [Windows installation](docs/en/INSTALL_WINDOWS.md) · [Release notes](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [简体中文](README.zh-CN.md)
 
@@ -25,6 +25,8 @@ Fully quit and reopen Codex, then click the quota icon in your menu bar or syste
 https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 ## Features
+
+- **Multi-device cloud sync:** encrypted analytics via GitHub private repositories or Secret Gist, with account isolation, response deduplication and configurable intervals. [UI and GitHub CLI setup](docs/en/CLOUD_SYNC.md).
 
 - **Agent CLI + skill:** manage queues and context budgets, inspect global quota and analyze observed speed. [Usage](docs/en/CLI.md). [Install the skill](docs/en/CLI.md#install-the-skill) · [Skill source](skills/context-manager/SKILL.md).
 

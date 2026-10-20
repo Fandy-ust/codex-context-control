@@ -2,6 +2,8 @@
 
 The CLI uses the same authenticated local queue service as the UI. Quota guards, task permissions, serial scheduling and context compensation remain in force. Adding a task does not start the queue; `start` enables monitoring and scheduling after the normal checks.
 
+Monitoring is persistent per chat, including empty or completed queues. Later manual turns use that chat's default quota limits and request interruption when the observed reserve is reached. Manual turns are never replayed as queued prompts. Settings → Task queues → Global quota monitoring pauses enabled chats while preserving their switches and limits. The raw command `{"action":"monitoring","enabled":false}` controls this master switch; `disable-all` explicitly clears all per-chat switches.
+
 The installer provides a launcher using bundled Node without changing PATH:
 
 - macOS: `~/Library/Application Support/CodexContextControl/bin/context-manager`

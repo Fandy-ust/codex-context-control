@@ -260,7 +260,7 @@ struct QuotaAnalyticsView:View {
                             VStack(alignment:.leading,spacing:8){ForEach(report.quality.notes,id:\.self){Text(L($0))};Text("\(L("可比较区间")): \(report.quality.comparableIntervals) · \(L("重置或断档")): \(report.quality.discontinuities) · \(report.timeZone)")}.font(.caption).foregroundStyle(.secondary).padding(.top,12)
                         }.font(.callout).padding(16).background(.white.opacity(0.025),in:RoundedRectangle(cornerRadius:10))
                     } else {Text(L(loading ? "正在读取额度历史…":"刷新以读取额度历史")).foregroundStyle(.secondary).frame(maxWidth:.infinity,minHeight:200)}
-                }.padding(28).frame(maxWidth:1120,alignment:.leading).frame(maxWidth:.infinity)
+                }.padding(28).frame(maxWidth:1120,alignment:.leading).frame(maxWidth:.infinity).softScrollEdges()
             }.safeAreaInset(edge:.top){HStack{Button(L("返回预算"),systemImage:"arrow.left",action:onBack);Spacer();if loading{ProgressView().controlSize(.small)};Button(L("刷新"),systemImage:"arrow.clockwise"){Task{await model.refreshQuota();await reload(force:true)}}.disabled(loading)}.buttonStyle(.bordered).padding(.horizontal,28).padding(.vertical,12).background(PanelStyle.background)}
         }.background(PanelStyle.background)
         .task(id:loadKey){guard !fixture else{return};await reload();while !Task.isCancelled{do{try await Task.sleep(for:.seconds((report?.quality.progress?.pending ?? 0)>0 ? 2:5))}catch{return};await reload()}}

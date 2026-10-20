@@ -5,7 +5,7 @@ import {Worker} from 'node:worker_threads';
 import {root, codexHome} from './paths.mjs';
 
 export function createQuotaAnalyticsService({home = root, historyHome = codexHome, timeout = 60000, idleMs = 30000} = {}) {
-  let worker, sequence = 0, salt, closed = false, scanPending, reportPending, idleTimer;
+  let worker, sequence = 0, salt, closed = false, scanPending, reportPending, idleTimer,accountIdentity;
   let retiring = Promise.resolve();
   const pending = new Map();
   function retire() {
@@ -55,7 +55,10 @@ export function createQuotaAnalyticsService({home = root, historyHome = codexHom
     return 'account:' + crypto.createHmac('sha256', salt).update(JSON.stringify([account.type, identity.trim().toLowerCase(), account.planType || null])).digest('hex').slice(0, 32);
   }
   return {
-    record: async ({buckets, account, at}) => {const scope=accountScope(account);await call('record',{buckets,scope,at});return scope;},
+    record: async ({buckets, account, at}) => {accountIdentity=typeof account?.id==='string'&&account.id.trim()?JSON.stringify([account.type,account.id.trim()]):typeof account?.email==='string'&&account.email.trim()?JSON.stringify([account.type,account.email.trim().toLowerCase()]):null;const scope=accountScope(account);const accountGroup=accountIdentity&&salt?crypto.createHmac('sha256',salt).update(accountIdentity).digest('hex').slice(0,32):null;await call('record',{buckets,scope,at,accountGroup});return scope;},
+    syncAccount:key=>accountIdentity?crypto.createHmac('sha256',key).update(accountIdentity).digest('hex').slice(0,32):null,
+    syncExport:params=>call('sync-export',params),
+    syncImport:params=>call('sync-import',params),
     scan: () => scanPending ||= call('scan').finally(() => {scanPending = null;}),
     report: params => {
       const key = JSON.stringify(params || {});

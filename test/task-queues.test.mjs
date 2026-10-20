@@ -27,10 +27,10 @@ test('guard supports two ordered release stages, returns to base after reset, an
  assert.throws(()=>validateQueueConfig({...c,weekly:{reserve:NaN,stages:[]}}));
  assert.equal(queueQuotaGate(c,{buckets:[]},100).valid,false);
 });
-test('queues default off, sequentially submit full prompts and turn off and release sleep after completion',async t=>{
+test('queues default off, sequentially submit full prompts and keep monitoring after completion',async t=>{
  const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'完整任务一\n包含验收条件'});f.command({action:'add',prompt:'完整任务二'});await f.settle();assert.equal(f.calls.length,0);assert.equal(f.engine.list().sleepPrevented,false);
  f.command({action:'enable',enabled:true});await f.settle();assert.equal(f.calls[0].prompt,'完整任务一\n包含验收条件');await f.engine.tick();assert.equal(f.calls.length,1);
- f.done();await f.engine.tick();assert.equal(f.calls[1].prompt,'完整任务二');f.done();await f.engine.tick();assert.equal(f.engine.get('chat').enabled,false);assert.equal(f.engine.list().sleepPrevented,false);assert.deepEqual(f.sleep,[true,false]);
+ f.done();await f.engine.tick();assert.equal(f.calls[1].prompt,'完整任务二');f.done();await f.engine.tick();assert.equal(f.engine.get('chat').enabled,true);assert.equal(f.engine.get('chat').state,'monitoring');assert.equal(f.engine.list().sleepPrevented,true);assert.deepEqual(f.sleep,[true]);
 });
 test('soft threshold finishes current turn; hard threshold interrupts exact queue execution; fresh reset resumes',async t=>{
  const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'任务'});f.command({action:'enable',enabled:true});await f.settle();f.bucket.primary.remainingPercent=20;await f.engine.tick();assert.equal(f.calls.length,1);
@@ -49,8 +49,8 @@ test('explicit enable adopts the current turn at the head, then runs subsequent 
 test('unmonitored manual turns are never interrupted; global off stops observation and sleep assertion',async t=>{
  const f=fixture();t.after(()=>f.engine.close());f.chat.status='active';f.chat.turnId='manual';f.bucket.primary.remainingPercent=0;f.command({action:'add',prompt:'任务'});await f.engine.tick();assert.equal(f.calls.length,0);f.command({action:'enable',enabled:true});await f.settle();f.command({action:'disable-all'});assert.equal(f.engine.list().sleepPrevented,false);assert.equal(f.engine.get('chat').enabled,false);
 });
-test('restart keeps prompts and order but disables uncertain running work to prevent duplicate submission',async t=>{
- const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'持久化任务'});f.command({action:'enable',enabled:true});await f.settle();const restored=fixture(f.document);t.after(()=>restored.engine.close());await restored.engine.tick();assert.equal(restored.calls.length,0);assert.equal(restored.engine.get('chat').enabled,false);assert.equal(restored.engine.get('chat').tasks[0].status,'interrupted');
+test('restart keeps monitoring and pauses uncertain running work to prevent duplicate submission',async t=>{
+ const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'持久化任务'});f.command({action:'enable',enabled:true});await f.settle();const restored=fixture(f.document);t.after(()=>restored.engine.close());await restored.engine.tick();assert.equal(restored.calls.length,0);assert.equal(restored.engine.get('chat').enabled,true);assert.equal(restored.engine.get('chat').pause.kind,'manual');assert.equal(restored.engine.get('chat').tasks[0].status,'interrupted');
 });
 test('queue CRUD and reorder are validated, including stale revisions and active-task edits',async t=>{
  const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'一'});f.command({action:'add',prompt:'二'});const ids=f.engine.get('chat').tasks.map(t=>t.id);f.command({action:'reorder',order:[...ids].reverse()});assert.equal(f.engine.get('chat').tasks[0].prompt,'二');assert.throws(()=>f.command({action:'reorder',order:[ids[0],ids[0]]}));assert.throws(()=>f.command({action:'edit',taskId:ids[0],prompt:'修改',expectedRevision:0}));f.command({action:'edit',taskId:ids[0],prompt:'修改'});f.command({action:'delete',taskId:ids[1]});f.command({action:'enable',enabled:true});await f.settle();assert.throws(()=>f.command({action:'edit',taskId:ids[0],prompt:'危险修改'}));
@@ -61,8 +61,8 @@ test('burn-down automatically unlocks a quota-paused queue before reset, then pr
 test('manual interruption never silently retries a task or skips to the next prompt',async t=>{
  const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'一'});f.command({action:'add',prompt:'二'});f.command({action:'enable',enabled:true});await f.settle();f.done('interrupted');await f.engine.tick();assert.equal(f.calls.length,1);assert.equal(f.engine.get('chat').state,'paused');f.command({action:'enable',enabled:true});await f.settle();assert.match(f.calls[1].prompt,/继续上次/);assert.match(f.calls[1].prompt,/一/);
 });
-test('lost runtime ownership disables uncertain work instead of hanging or interrupting another turn',async t=>{
- const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'任务'});f.command({action:'enable',enabled:true});await f.settle();delete f.chat.automaticTask;await f.engine.tick();assert.equal(f.engine.get('chat').enabled,false);assert.equal(f.engine.get('chat').tasks[0].status,'interrupted');assert.equal(f.engine.list().sleepPrevented,false);
+test('lost runtime ownership pauses uncertain work while preserving monitoring',async t=>{
+ const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'任务'});f.command({action:'enable',enabled:true});await f.settle();delete f.chat.automaticTask;await f.engine.tick();assert.equal(f.engine.get('chat').enabled,true);assert.equal(f.engine.get('chat').pause.kind,'manual');assert.equal(f.engine.get('chat').tasks[0].status,'interrupted');assert.equal(f.engine.list().sleepPrevented,true);
 });
 test('cycle pause expires once and does not turn the future resume policy into manual',async t=>{
  const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'任务'});f.command({action:'add',prompt:'下个任务'});f.command({action:'enable',enabled:true});await f.settle();f.command({action:'pause-cycle'});const until=f.engine.get('chat').pause.until;f.done();await f.engine.tick();assert.equal(f.calls.length,1);f.advance(until-1700000000000+1000);f.bucket.primary.resetsAt+=18000;await f.engine.tick();assert.equal(f.calls.length,2);assert.equal(f.engine.get('chat').config.resume,'auto');
@@ -102,7 +102,7 @@ test('old bridges are rejected before submission and failed tasks cannot be skip
  const f=fixture();t.after(()=>f.engine.close());f.chat.taskQueueSupported=false;f.command({action:'add',prompt:'任务'});
  assert.throws(()=>f.command({action:'enable',enabled:true}),/重新打开 Codex/);assert.equal(f.calls.length,0);assert.equal(f.engine.list().sleepPrevented,false);
  f.chat.taskQueueSupported=true;f.command({action:'add',prompt:'下一项'});f.command({action:'enable',enabled:true});await f.settle();f.done('error');await f.engine.tick();
- assert.equal(f.calls.length,1);assert.equal(f.engine.get('chat').enabled,false);assert.equal(f.engine.list().sleepPrevented,false);
+ assert.equal(f.calls.length,1);assert.equal(f.engine.get('chat').enabled,true);assert.equal(f.engine.list().sleepPrevented,true);
 });
 
 test('unopened chats load in the background and wait for idle without needing frontend navigation',async t=>{
@@ -195,4 +195,40 @@ test('automatic turns can produce the missing usage observation but cannot bypas
  await b.startAutomatic('chat',{taskId:'a',executionId:'observe',prompt:'运行任务并取得实际用量'});assert.deepEqual(calls,['turn/start']);assert.equal(r.appliedRevision,1);
  r.status='idle';r.modelInfo={max_context_window:828000,effective_context_window_percent:100};r.policy={...r.policy,window:900000,revision:3};
  await assert.rejects(b.startAutomatic('chat',{taskId:'b',executionId:'unsafe',prompt:'不能绕过上限'}),/目录上限/);assert.equal(calls.length,1);
+});
+
+
+test('empty queues monitor every later manual turn and stop at the exact reserve without replaying it',async t=>{
+ const f=fixture();t.after(()=>f.engine.close());f.command({action:'enable',enabled:true});await f.settle();
+ assert.equal(f.engine.get('chat').enabled,true);assert.equal(f.calls.length,0);
+ f.chat.status='active';f.chat.turnId='manual-one';await f.engine.tick();
+ assert.equal(f.calls[0].adoptTurnId,'manual-one');f.done();await f.engine.tick();
+ assert.equal(f.engine.get('chat').enabled,true);assert.equal(f.engine.list().queues[0].tasks.length,0);
+ const config=defaultQueueConfig();config.fiveHour.reserve=35;f.command({action:'config',config});await f.settle();
+ f.bucket.primary.remainingPercent=35;f.chat.status='active';f.chat.turnId='manual-two';await f.engine.tick();await f.engine.tick();
+ assert.equal(f.calls[1].adoptTurnId,'manual-two');assert.equal(f.calls[2],'interrupt');
+ await f.engine.tick();assert.equal(f.calls.length,3,'one interrupt request per turn');
+ f.done('interrupted');await f.engine.tick();assert.equal(f.engine.get('chat').enabled,true);
+ f.bucket.primary.remainingPercent=80;f.bucket.primary.resetsAt+=18000;await f.engine.tick();assert.equal(f.calls.length,3,'manual work is never replayed after quota reset');
+ f.chat.status='active';f.chat.turnId='manual-three';await f.engine.tick();assert.equal(f.calls[3].adoptTurnId,'manual-three');
+});
+
+test('global monitoring pause persists without clearing per-chat switches and suspends interruption',async t=>{
+ const f=fixture();t.after(()=>f.engine.close());f.command({action:'enable',enabled:true});await f.settle();
+ f.engine.command({action:'monitoring',enabled:false});assert.equal(f.engine.get('chat').enabled,true);assert.equal(f.engine.list().sleepPrevented,false);
+ const restored=fixture(f.document);t.after(()=>restored.engine.close());assert.equal(restored.engine.list().monitoringEnabled,false);assert.equal(restored.engine.get('chat').enabled,true);
+ f.chat.status='active';f.chat.turnId='manual';await f.engine.tick();assert.equal(f.calls.length,0);
+ f.engine.command({action:'monitoring',enabled:true});await f.settle();assert.equal(f.calls[0].adoptTurnId,'manual');
+ f.engine.command({action:'monitoring',enabled:false});f.bucket.primary.remainingPercent=0;await f.engine.tick();assert.equal(f.calls.length,1);
+ f.engine.command({action:'monitoring',enabled:true});await f.settle();assert.equal(f.calls[1],'interrupt');
+});
+
+
+test('monitor observations do not interfere with queue reorder and reattach safely after service restart',async t=>{
+ const f=fixture();t.after(()=>f.engine.close());f.chat.status='active';f.chat.turnId='still-active';f.command({action:'enable',enabled:true});await f.settle();
+ f.command({action:'add',prompt:'one'});f.command({action:'add',prompt:'two'});await f.settle();
+ const ids=f.engine.list().queues[0].tasks.map(task=>task.id);assert.equal(ids.length,2);
+ f.command({action:'reorder',order:ids.reverse()});assert.deepEqual(f.engine.list().queues[0].tasks.map(task=>task.prompt),['two','one']);
+ const restored=fixture(f.document);t.after(()=>restored.engine.close());restored.chat.status='active';restored.chat.turnId='still-active';await restored.engine.tick();
+ assert.equal(restored.calls[0].adoptTurnId,'still-active');assert.equal(restored.engine.get('chat').enabled,true);
 });

@@ -1,5 +1,18 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import os from 'node:os';
 import {createQuotaAnalyticsService} from '../src/quota-analytics-service.mjs';
+
+test('worker imports numeric cloud records into reports without re-exporting them and preserves plan aliases',async()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'qa-cloud-')),service=createQuotaAnalyticsService({home,historyHome:home});
+ try{
+  const at=Date.now(),buckets=[{id:'codex',primary:{usedPercent:10,windowDurationMins:10080,resetsAt:Math.floor(at/1000)+86400}}],account={type:'chatgpt',email:'cloud@example.test',planType:'plus'};
+  const scope=await service.record({account,buckets,at}),cloudAccount=service.syncAccount(Buffer.alloc(32,1));
+  await service.syncImport({account:'a'.repeat(32),scope,shards:[{id:'remote',data:{version:1,requests:[{id:'remote-response',at:at-1000,model:'Sol',input:300,output:30,cached:200,written:0}],snapshots:[]}}]});
+  assert.equal((await service.report({days:28})).quality.requests,1);assert.equal((await service.syncExport()).requests.length,0);
+  await service.syncImport({enabled:false});assert.equal((await service.report({days:28})).quality.requests,0);
+  await service.record({account:{...account,planType:'pro'},buckets,at:at+1000});assert.equal(service.syncAccount(Buffer.alloc(32,1)),cloudAccount);
+  assert.equal((await service.syncExport()).snapshots.length,2);
+ }finally{await service.close();fs.rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
+});
 test('analytics groups salted account observations without persisting account identifiers',async()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'qa-private-')),historyHome=path.join(home,'history');fs.mkdirSync(historyHome);
  const service=createQuotaAnalyticsService({home,historyHome,idleMs:25});

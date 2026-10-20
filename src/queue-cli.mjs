@@ -22,7 +22,7 @@ export const queueHelp={
   retries:'Reuse --request-id for an add retry. Dedupe lasts while that task is retained. No blind retries after timeouts.',
   pause:'pause prevents later tasks from starting; stop requests interruption of the specified running task.',
   input:'--input reads JSON; --prompt-file reads literal UTF-8 text. A dash reads stdin. --prompt accepts a literal argument.',
-  rawActions:['add','edit','delete','reorder','config','task-config','enable','pause-cycle','retry','stop','disable-all']
+  rawActions:['add','edit','delete','reorder','config','task-config','enable','pause-cycle','retry','stop','disable-all','monitoring']
 };
 const fail=(code,message)=>{throw Object.assign(Error(message),{code});};
 export function createControlClient({home,ensure,fetcher=fetch}={}){
