@@ -1,5 +1,5 @@
 import {createTaskQueues} from '../src/task-queues.mjs';
-import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,systemPreferences,screen,globalShortcut,shell,dialog,clipboard} from 'electron';
+import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell,dialog,clipboard} from 'electron';
 import fs from 'node:fs';
 import {readClipboardAttachments} from './clipboard-attachments.mjs';
 import {assertControlOperation} from '../src/contracts/control-api.mjs';
@@ -12,7 +12,7 @@ import {defaultRoot} from '../src/platform/index.mjs';
 import {createShortcutManager} from '../src/ui-shortcut.mjs';
 import {selectedQuota,quotaRemaining,quotaWindows,quotaStale} from '../src/quota-display.mjs';
 import {quotaIconBitmap} from './quota-icon.mjs';
-import {QUOTA_INTRO_MS} from '../src/core/quota-intro.mjs';
+import {createTrayController} from './tray-controller.mjs';
 import {createUpdatePrompt} from './update-prompt.mjs';
 import {demoQuotaAnalytics} from './quota-demo.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url)),repo=path.dirname(here),args=process.argv;
@@ -40,9 +40,9 @@ const uiUpdater=createUpdateManager({home:root,current:pkg.version,cacheFile:pat
 app.setName('Context Manager');app.setAppUserModelId('io.github.codex-context-control');
 app.setPath('userData',path.join(root,'ui-profile'));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
-let quotaIntroStarted=null,quotaIntroTimer=null;
-let main,trayWindow,tray,quitting=false,lastState=null,serviceOnline=false,ready=false,timer,lastIcon='',menuDragging=false,lastServiceAttempt=Date.now();
+let main,trayWindow,quitting=false,lastState=null,serviceOnline=false,ready=false,timer,menuDragging=false,lastServiceAttempt=Date.now();
 const shortcutManager=createShortcutManager({read:()=>readJSON(path.join(root,'ui-settings.json'),{}),write:doc=>atomicJSON(path.join(root,'ui-settings.json'),doc),register:(key,callback)=>globalShortcut.register(key,callback),unregister:key=>globalShortcut.unregister(key),onTrigger:()=>toggleMain(),inactive:smoke});
+const trayController=createTrayController({create:image=>new Tray(image),render:({remaining,stale,dark})=>icon(remaining,stale,dark),handlers:{click:()=>toggleMenu(),'double-click':()=>showMain(),'right-click':()=>trayController.entry?.popUpContextMenu(trayMenu())}});
 const zh=()=>resolveLanguage(languagePreference())==='zh';
 const label=(a,b)=>zh()?a:b;
 const updateSettingsFile=path.join(root,'ui-settings.json');
@@ -59,7 +59,7 @@ const updatePrompt=createUpdatePrompt({currentVersion:()=>pkg.version,enabled:au
   }
 });
 
-app.on('second-instance',(_event,argv)=>{if(argv.includes('--quit'))app.quit();else if(!argv.includes('--background'))showMain();});
+app.on('second-instance',(_event,argv)=>{if(argv.includes('--quit'))app.quit();else{trayController.repair();if(!argv.includes('--background'))showMain();}});
 app.on('before-quit',()=>{quitting=true;clearTimeout(timer);});
 app.on('window-all-closed',()=>{});
 app.on('activate',()=>showMain());
@@ -85,7 +85,7 @@ async function api(action,params={}){
   if(action==='state')body.update=uiUpdater.status();
   return body;
 }
-const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,shortcut:shortcutManager.status(),menuReady:!!tray,menuWindowVisible:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),menuOnScreen:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),windowVisible:!!(main&&!main.isDestroyed()&&main.isVisible()),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow&&!trayWindow.isDestroyed()?trayWindow.getBounds():undefined});};
+const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,shortcut:shortcutManager.status(),menuReady:trayController.ready,menuImageReady:trayController.ready,menuVisibilityEvidence:'unverified',menuWindowVisible:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),menuOnScreen:null,windowVisible:!!(main&&!main.isDestroyed()&&main.isVisible()),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow&&!trayWindow.isDestroyed()?trayWindow.getBounds():undefined});};
 async function ensureUiService(){return ensureDaemon();}
 function createWindow(menu=false){
   const win=new BrowserWindow({width:menu?400:1080,height:menu?450:760,minWidth:menu?320:960,minHeight:menu?180:670,show:false,frame:!menu,resizable:!menu,skipTaskbar:menu,alwaysOnTop:menu,backgroundColor:'#181818',title:'Context Manager',icon:path.join(repo,'macos/Assets/ContextManager.png'),webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
@@ -103,7 +103,7 @@ function showMain(id){if(!main)main=createWindow();if(main.isMinimized())main.re
 function toggleMain(){if(main?.isVisible()&&!main.isMinimized()&&main.isFocused()){main.hide();trayWindow?.hide();publish();}else showMain();}
 function showSettings(){showMain();if(main.webContents.isLoading())main.webContents.once('did-finish-load',()=>main.webContents.send('open-settings'));else main.webContents.send('open-settings');}
 function placeMenu(){
-  const bounds=tray.getBounds(),cursor=screen.getCursorScreenPoint(),display=screen.getDisplayNearestPoint(bounds.width?{x:bounds.x,y:bounds.y}:cursor),area=display.workArea;
+  const bounds=trayController.entry.getBounds(),cursor=screen.getCursorScreenPoint(),display=screen.getDisplayNearestPoint(bounds.width?{x:bounds.x,y:bounds.y}:cursor),area=display.workArea;
   const sections=trayState(lastState?.threads),count=sections.running.length+sections.recent.length;
   const height=Math.min(area.height-16,Math.max(360,320+Math.min(count,8)*52));
   const width=Math.min(400,area.width-16),x=Math.max(area.x+8,Math.min((bounds.width?bounds.x+Math.floor(bounds.width/2):cursor.x)-width/2,area.x+area.width-width-8));
@@ -112,16 +112,14 @@ function placeMenu(){
   trayWindow.setBounds({x:Math.round(x),y:Math.round(y),width,height:Math.round(height)});
 }
 function toggleMenu(){if(trayWindow?.isVisible()){trayWindow.hide();return;}if(!trayWindow)trayWindow=createWindow(true);placeMenu();trayWindow.show();trayWindow.focus();publish();}
-function icon(remaining,stale=false){
-  const {bitmap,width,height}=quotaIconBitmap(remaining,{dark:nativeTheme.shouldUseDarkColors,stale,introElapsedMs:quotaIntroStarted==null?null:performance.now()-quotaIntroStarted});
+function icon(remaining,stale=false,dark=nativeTheme.shouldUseDarkColors){
+  const {bitmap,width,height}=quotaIconBitmap(remaining,{dark,stale});
   return nativeImage.createFromBitmap(bitmap,{width,height,scaleFactor:1});
 }
-function updateTray(animationOnly=false){
+function updateTray(){
   const {running:active}=trayState(lastState?.threads),bucket=selectedQuota(lastState?.quota,readJSON(path.join(root,'ui-settings.json'),{}).quotaPool),remaining=quotaRemaining(bucket),stale=quotaStale(lastState?.quota,serviceOnline);
-  const key=(remaining==null?'unknown':Math.round(remaining))+'-'+stale+'-'+nativeTheme.shouldUseDarkColors+'-'+(quotaIntroStarted==null?'static':Math.floor((performance.now()-quotaIntroStarted)/30));if(lastIcon!==key){tray.setImage(icon(remaining,stale));lastIcon=key;}
-  if(animationOnly)return;
   const reset=quotaWindows(bucket).filter(window=>window.resetsAt).map(window=>new Date(window.resetsAt*1000).toLocaleString(zh()?'zh-CN':'en-US')).join(' / ');
-  tray.setToolTip((`Context Manager · ${label('剩余额度','Quota remaining')} ${remaining==null?'—':Math.round(remaining)+'%'}${stale?' · '+label('待刷新','stale'):''}\n${active.length} ${label('个运行中','running')}${reset?' · '+label('重置','Reset')+' '+reset:''}`).slice(0,127));
+  trayController.update({remaining,stale,dark:nativeTheme.shouldUseDarkColors,tooltip:(`Context Manager · ${label('剩余额度','Quota remaining')} ${remaining==null?'—':Math.round(remaining)+'%'}${stale?' · '+label('待刷新','stale'):''}\n${active.length} ${label('个运行中','running')}${reset?' · '+label('重置','Reset')+' '+reset:''}`).slice(0,127)});
 }
 function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口','Open main window'),click:()=>showMain()},{label:label('设置','Settings'),click:showSettings},{label:label('刷新额度','Refresh quota'),click:async()=>{try{const quota=await api('quota-refresh');lastState={...lastState,quota};updateTray();main?.webContents.send('refresh');trayWindow?.webContents.send('refresh');}catch(e){console.error(e.message);}}},{label:label('检查更新','Check for updates'),click:async()=>{try{showSettings();await updatePrompt.run();refreshUpdateUI();}catch(e){console.error(e.message);}}},{type:'separator'},{label:label('退出管理界面','Quit manager UI'),click:()=>app.quit()}]);}
 ipcMain.handle('context-manager',async(event,action,params)=>{
@@ -187,21 +185,13 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
   const result=await api(action,params);if(action==='state'){lastState=result;serviceOnline=true;updateTray();}if(action==='quota-refresh'){lastState={...lastState,quota:result};updateTray();}return result;
 });
 app.whenReady().then(async()=>{ensureRoot();ready=true;
-const animationSettings=systemPreferences.getAnimationSettings();
-if(!smoke&&animationSettings.shouldRenderRichAnimation&&!animationSettings.prefersReducedMotion)quotaIntroStarted=performance.now();
-tray=new Tray(icon(null));tray.on('click',toggleMenu);tray.on('double-click',()=>showMain());tray.on('right-click',()=>tray.popUpContextMenu(trayMenu()));nativeTheme.on('updated',()=>updateTray());
-if(quotaIntroStarted!=null){
-  quotaIntroTimer=setInterval(()=>{
-    if(performance.now()-quotaIntroStarted>=QUOTA_INTRO_MS||systemPreferences.getAnimationSettings().prefersReducedMotion){clearInterval(quotaIntroTimer);quotaIntroTimer=null;quotaIntroStarted=null;}
-    updateTray(true);
-  },1000/30);quotaIntroTimer.unref();
-}
+trayController.start();updateTray();nativeTheme.on('updated',updateTray);
 if(args.includes('--quit')){app.quit();}else{
   if(!demo){try{await ensureUiService();}catch(e){console.error(e.message);}}
   main=createWindow();trayWindow=createWindow(true);
   shortcutManager.start();
   if(!args.includes('--background')&&!smoke)main.once('ready-to-show',()=>showMain());
-  const refresh=async()=>{try{lastState=await api('state');serviceOnline=true;updateTray();}catch{serviceOnline=false;if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};updateTray();}if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting&&!main.isDestroyed()&&!trayWindow.isDestroyed())timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
+  const refresh=async()=>{try{lastState=await api('state');serviceOnline=true;updateTray();}catch{serviceOnline=false;if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};}updateTray();if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting&&!main.isDestroyed()&&!trayWindow.isDestroyed())timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
   if(!demo&&!smoke)main.webContents.once('did-finish-load',()=>{updatePrompt.run(true).then(refreshUpdateUI).catch(error=>console.error('Startup update check:',error.message));});
   if(smoke){
     if(process.platform==='win32'){
@@ -290,5 +280,5 @@ if(args.includes('--quit')){app.quit();}else{
   }
 }
 }).catch(error=>{console.error(error);app.exit(1);});
-app.on('will-quit',()=>{clearInterval(quotaIntroTimer);shortcutManager.dispose();try{const s=readJSON(path.join(root,'ui-status.json'));if(s?.pid===process.pid)fs.unlinkSync(path.join(root,'ui-status.json'));}catch{}});
+app.on('will-quit',()=>{trayController.stop();nativeTheme.removeListener('updated',updateTray);shortcutManager.dispose();try{const s=readJSON(path.join(root,'ui-status.json'));if(s?.pid===process.pid)fs.unlinkSync(path.join(root,'ui-status.json'));}catch{}});
 }

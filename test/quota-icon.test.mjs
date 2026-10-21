@@ -8,10 +8,10 @@ import AppKit
 @main @MainActor struct Check {
  static func main() throws {
   _ = NSApplication.shared
-  func image(_ remaining:Double,_ elapsed:Double=3.2) throws -> NSBitmapImageRep {
+  func image(_ remaining:Double) throws -> NSBitmapImageRep {
    let data:[String:Any]=["id":"codex","name":"Codex","primary":["usedPercent":100-remaining,"remainingPercent":remaining,"windowDurationMins":300]]
    let bucket=try JSONDecoder().decode(QuotaBucket.self,from:JSONSerialization.data(withJSONObject:data))
-   let icon=quotaBarsStatusImage(bucket:bucket,stale:false,introElapsed:elapsed);precondition(icon.size==NSSize(width:44,height:24));return NSBitmapImageRep(data:icon.tiffRepresentation!)!
+   let icon=quotaBarsStatusImage(bucket:bucket,stale:false);precondition(icon.size==NSSize(width:44,height:24));return NSBitmapImageRep(data:icon.tiffRepresentation!)!
   }
   func coverage(_ bitmap:NSBitmapImageRep,_ left:Bool)->Double {
    let split=Int(Double(bitmap.pixelsWide)*20/44);var sum=0.0
@@ -19,11 +19,8 @@ import AppKit
   }
   precondition(quotaCreditLabel(nil)==nil && quotaCreditLabel("bad")==nil)
   precondition(quotaCreditLabel("123.45")!.contains("credits") && quotaCreditLabel("0.001")=="<0.01 credits")
-  precondition(QuotaIntroFrame(elapsed:0).outline==0 && QuotaIntroFrame(elapsed:1.8).fill==0)
-  precondition(abs(QuotaIntroFrame(elapsed:2.5).fill-0.5)<0.000001 && QuotaIntroFrame(elapsed:0,reducedMotion:true).finished)
-  let first=try image(74,0),outlined=try image(74,1.8),settled=try image(74,3.2),normal=try image(74)
-  precondition(coverage(first,true)==0 && coverage(outlined,true)>0)
-  precondition(coverage(settled,true)==coverage(normal,true))
+  let unknown=NSBitmapImageRep(data:quotaBarsStatusImage(bucket:nil,stale:true).tiffRepresentation!)!
+  precondition(coverage(unknown,true)>0 && coverage(unknown,false)>0)
   let full=try image(100),half=try image(50),empty=try image(0)
   precondition(coverage(full,true)>coverage(half,true) && coverage(half,true)>coverage(empty,true))
   precondition(coverage(full,false)>0 && coverage(empty,false)>0)
@@ -41,7 +38,7 @@ import AppKit
  }
 }
 `);
- const sources=fs.readdirSync(path.join(repo,'macos')).filter(n=>n.endsWith('.swift')&&n!=='ContextControl.swift').map(n=>path.join(repo,'macos',n));
+ const sources=fs.readdirSync(path.join(repo,'macos')).filter(n=>n.endsWith('.swift')&&n!=='ContextControl.swift'&&n!=='ContextApplication.swift').map(n=>path.join(repo,'macos',n));
  const binary=path.join(dir,'check');let r=spawnSync('xcrun',['swiftc','-parse-as-library',...sources,path.join(dir,'Control.swift'),path.join(dir,'Main.swift'),'-o',binary],{encoding:'utf8',timeout:120000});assert.equal(r.status,0,r.error?.message||r.stderr);r=spawnSync(binary,process.env.CONTEXT_CONTROL_ICON_PREVIEW?[process.env.CONTEXT_CONTROL_ICON_PREVIEW]:[],{encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stdout+r.stderr);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });

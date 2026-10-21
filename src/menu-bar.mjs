@@ -22,7 +22,10 @@ export function menuBarProcess(app=settings().installedApp){
 export function menuBarStatus(){
   const pid=menuBarProcess();const status=readJSON(path.join(root,'ui-status.json'),{});
   const current=pid!=null&&status.pid===pid;
-  return {running:pid!=null,created:current&&status.menuReady===true,ready:current&&status.menuReady===true&&status.menuWindowVisible===true&&status.menuOnScreen===true,windowVisible:current&&status.windowVisible===true,bundleIdentifier:current?status.bundleIdentifier:null,menuFrame:current?status.menuFrame:null};
+  // AppKit reports an existing image/window even when Control Center hides its
+  // host. Do not present process health or client-window coordinates as proof
+  // that the user can see the icon.
+  return {running:pid!=null,created:current&&status.menuReady===true,imageReady:current&&status.menuImageReady===true,ready:current?null:false,visibilityEvidence:current?'unverified':'not_running',windowVisible:current&&status.windowVisible===true,bundleIdentifier:current?status.bundleIdentifier:null,menuFrame:current?status.menuFrame:null};
 }
 export function ensureMenuBarEntry(app=settings().installedApp,controlHome=root){
   if(windows){if(!app||!fs.existsSync(app))return {started:false};if(menuBarProcess(app))return {started:false,alreadyRunning:true};const p=spawn(app,['--background'],{cwd:path.dirname(app),windowsHide:true,detached:true,stdio:'ignore',env:{...process.env,CONTEXT_CONTROL_HOME:controlHome}});p.on('error',()=>{});p.unref();return {started:true};}

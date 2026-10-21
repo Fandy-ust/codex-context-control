@@ -102,7 +102,7 @@ import AppKit
  }
 }
 `);
-  const sources=fs.readdirSync(path.join(root,'macos')).filter(name=>name.endsWith('.swift')&&!['ContextControl.swift','ContextMenu.swift'].includes(name)).map(name=>path.join(root,'macos',name));
+  const sources=fs.readdirSync(path.join(root,'macos')).filter(name=>name.endsWith('.swift')&&!['ContextControl.swift','ContextApplication.swift','ContextMenu.swift'].includes(name)).map(name=>path.join(root,'macos',name));
   const binary=path.join(temp,'probe');
   const build=spawnSync('xcrun',['swiftc','-parse-as-library','-target',`${process.arch==='arm64'?'arm64':'x86_64'}-apple-macos14.0`,...sources,path.join(temp,'Control.swift'),path.join(temp,'Menu.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:120000});
   assert.equal(build.status,0,build.error?.message||build.stderr);

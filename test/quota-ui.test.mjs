@@ -39,7 +39,7 @@ import AppKit
   };app.run()
  }
 }`);
-  const sources=fs.readdirSync(path.join(repo,'macos')).filter(n=>n.endsWith('.swift')&&n!=='ContextControl.swift').map(n=>path.join(repo,'macos',n));
+  const sources=fs.readdirSync(path.join(repo,'macos')).filter(n=>n.endsWith('.swift')&&n!=='ContextControl.swift'&&n!=='ContextApplication.swift').map(n=>path.join(repo,'macos',n));
   const binary=path.join(temp,'preview'),build=spawnSync('xcrun',['swiftc','-parse-as-library',...sources,path.join(temp,'Control.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:90000});assert.equal(build.status,0,build.stderr);
   const screenshot=process.env.CONTEXT_CONTROL_QUOTA_SCREENSHOT||path.join(temp,'analytics.png');
   const run=spawnSync(binary,[path.join(temp,'report.json'),screenshot],{env:{...process.env,CONTEXT_CONTROL_HOME:temp},encoding:'utf8',timeout:15000});assert.equal(run.status,0,run.stdout+run.stderr);assert.ok(fs.statSync(screenshot).size>5000);assert.ok(fs.statSync(screenshot+'.queue.png').size>5000);

@@ -36,6 +36,11 @@ flowchart LR
 
 0.4.1 保留原生 Mach-O 作为 `CFBundleExecutable`，并对自己的完整应用包进行本地 ad-hoc 签名。旧安装中的 shell 应用入口已移除；原生程序直接启动本地服务。这样 macOS 可以以独立的 Codex Context Control 身份管理菜单栏项目。这里的本地签名不是 Apple 公证或 Developer ID 发布签名。升级先等待旧界面退出，再等待 Launch Services 接受新启动请求，避免短命安装进程退出时丢失启动请求。原有 Codex 应用包保持不动。
 
+菜单栏生命周期由 macOS 的 `StatusItemController`、Windows 的 `tray-controller.mjs` 独立持有；主窗口关闭、服务请求失败和快捷键录制不释放入口。启动直接绘制静态额度图标，未知、过期及耗尽状态保留轮廓。macOS 使用稳定的 `autosaveName`，在唤醒或重新打开时检查图像；Windows 在托盘实例被销毁后重新创建并绑定事件。刷新完成后退出的回调不能重新创建已停止的入口。
+
+诊断区分入口创建、图像就绪与用户实际可见。`menuReady` / `imageReady` 只证明应用侧的资源状态；`menuBarStatus.ready` 在运行中返回 `null`，`visibilityEvidence` 为 `unverified`。macOS 的系统菜单栏隐藏设置、Windows 的通知区折叠都不能由本地窗口坐标确认。排查时需结合系统日志或用户确认，不能把进程存活当作显示成功。
+
+
 这是一项当前用户会话级环境设置，其他读取该变量的 GUI 程序也能看见。包装器根据直接父进程的应用路径识别 Codex 桌面，并选择该桌面包内的运行时；其他调用不启用预算桥接，仅透传安装时配置的运行时。它不是对任意 IDE 或其他宿主的完整兼容承诺。已有其他自定义值时拒绝覆盖；卸载仅在值仍属于本项目时恢复原值，保留之后的外部修改。
 
 包装器保持前端 JSON-RPC 的请求、响应、通知和反向工具调用。内部控制请求使用独立随机 ID，不返回前端。`--version`、schema 工具和其他命令透传。辅助文件通过安装目录中的符号链接保持可发现。

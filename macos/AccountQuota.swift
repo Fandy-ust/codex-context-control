@@ -24,43 +24,6 @@ func quotaCreditLabel(_ raw:String?)->String? {
     return "\(amount) credits"
 }
 
-struct QuotaIntroFrame {
-    let outline:CGFloat,fill:CGFloat
-    let finished:Bool
-    init(elapsed:Double=3.2,reducedMotion:Bool=false){
-        func smooth(_ value:Double)->CGFloat {let p=max(0,min(1,value));return CGFloat(p*p*(3-2*p))}
-        if reducedMotion || elapsed>=3.2 {outline=1;fill=1;finished=true}
-        else {outline=smooth(elapsed/1.8);fill=smooth((elapsed-1.8)/1.4);finished=false}
-    }
-}
-
-@MainActor func quotaBarsStatusImage(bucket:QuotaBucket?,stale:Bool,introElapsed:Double=3.2)->NSImage {
-    let intro=QuotaIntroFrame(elapsed:introElapsed)
-
-    let remaining=[bucket?.primary,bucket?.secondary].compactMap{$0?.remainingPercent}.min().map{max(0,min(1,$0/100))}
-    let image=NSImage(size:NSSize(width:44,height:24));image.lockFocus()
-    let opacity:CGFloat=remaining == nil ? 0.35:stale ? 0.45:1
-    let bolt=NSBezierPath();bolt.move(to:NSPoint(x:18,y:23));bolt.line(to:NSPoint(x:2,y:10));bolt.line(to:NSPoint(x:10,y:10));bolt.line(to:NSPoint(x:5,y:0));bolt.line(to:NSPoint(x:23,y:14));bolt.line(to:NSPoint(x:14,y:14));bolt.close()
-    for x:CGFloat in [1,4.2,7.4,10.6,13.8,17,20.2] {
-        let strip=NSBezierPath(rect:NSRect(x:x,y:0,width:2.7,height:24))
-        NSGraphicsContext.saveGraphicsState();strip.addClip()
-        NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(rect:NSRect(x:0,y:0,width:44,height:24*intro.outline)).addClip()
-        bolt.lineWidth=0.7;NSColor.black.withAlphaComponent(opacity*(0.35+0.65*(1-intro.fill))).setStroke();bolt.stroke()
-        bolt.addClip();strip.lineWidth=0.6;strip.stroke()
-        NSGraphicsContext.restoreGraphicsState();bolt.addClip()
-        if let remaining,remaining>0{NSColor.black.withAlphaComponent(opacity).setFill();NSBezierPath(rect:NSRect(x:x,y:0,width:2.7,height:24*remaining*Double(intro.fill))).fill()}
-        NSGraphicsContext.restoreGraphicsState()
-    }
-    let label=remaining.map{String(format:"%.0f%%",$0*100)} ?? "—"
-    let font=NSFont.monospacedDigitSystemFont(ofSize:9,weight:.semibold)
-    let attributes:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:NSColor.black]
-    let text=label as NSString,measured=text.size(withAttributes:attributes)
-    let x:CGFloat=21.5+(22-measured.width)/2
-    text.draw(at:NSPoint(x:x,y:0.5),withAttributes:[.font:font,.foregroundColor:NSColor.black.withAlphaComponent(opacity)])
-    image.unlockFocus();image.isTemplate=true;return image
-}
-
 struct AccountQuotaSection:View {
     @ObservedObject var model:Controller
     private var stale:Bool {!model.serviceAvailable || model.quota?.stale == true}

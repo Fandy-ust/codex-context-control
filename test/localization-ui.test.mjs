@@ -51,7 +51,7 @@ import Vision
  }
 }
 `);
-  const sources=fs.readdirSync(path.join(repo,'macos')).filter(name=>name.endsWith('.swift')&&name!=='ContextControl.swift').map(name=>path.join(repo,'macos',name));
+  const sources=fs.readdirSync(path.join(repo,'macos')).filter(name=>name.endsWith('.swift')&&name!=='ContextControl.swift'&&name!=='ContextApplication.swift').map(name=>path.join(repo,'macos',name));
   const binary=path.join(temp,'check');let r=spawnSync('xcrun',['swiftc','-parse-as-library',...sources,path.join(temp,'Control.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit','-framework','Vision'],{encoding:'utf8',timeout:95000});assert.equal(r.status,0,r.stderr);
   const env={...process.env,CONTEXT_CONTROL_HOME:path.join(temp,'home'),CONTEXT_CONTROL_LOCALIZATION_FILE:path.join(repo,'src/locales/en.json')};
   r=spawnSync(binary,[path.join(repo,'build')],{env,encoding:'utf8',timeout:30000});assert.equal(r.status,0,r.stderr+r.stdout);assert.match(r.stdout,/unchanged budget passed/);
