@@ -6,8 +6,8 @@ A local extension for Codex: **context control and quota-aware task queues**, bu
 
 | Platform | Installer | Requirements |
 | --- | --- | --- |
-| macOS | [Download 0.25.0 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.0-preview.1/Context-Manager-0.25.0-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [Download 0.25.0 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.0-preview.1/Context-Manager-0.25.0-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [Download 0.25.1 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.1-preview.1/Context-Manager-0.25.1-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [Download 0.25.1 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.1-preview.1/Context-Manager-0.25.1-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac installation](docs/en/INSTALL_MAC.md) · [Windows installation](docs/en/INSTALL_WINDOWS.md) · [Release notes](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [简体中文](README.zh-CN.md)
 
@@ -25,6 +25,8 @@ Fully quit and reopen Codex, then click the quota icon in your menu bar or syste
 https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 ## Features
+
+- **Global shortcut:** Ctrl + Shift + M shows or hides the main window on either platform; customize or clear it in Settings.
 
 - **Multi-device cloud sync:** encrypted analytics via GitHub private repositories or Secret Gist, with account isolation, response deduplication and configurable intervals. [UI and GitHub CLI setup](docs/en/CLOUD_SYNC.md).
 

@@ -6,8 +6,8 @@ Codex 的本地扩展：**上下文控制与任务队列**，围绕 5 小时和�
 
 | 平台 | 安装包 | 系统要求 |
 | --- | --- | --- |
-| macOS | [下载 0.25.0 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.0-preview.1/Context-Manager-0.25.0-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [下载 0.25.0 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.0-preview.1/Context-Manager-0.25.0-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [下载 0.25.1 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.1-preview.1/Context-Manager-0.25.1-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [下载 0.25.1 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.1-preview.1/Context-Manager-0.25.1-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac 安装说明](docs/INSTALL_MAC.md) · [Windows 安装说明](docs/INSTALL_WINDOWS.md) · [版本说明](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [English](README.md)
 
@@ -25,6 +25,8 @@ Codex 的本地扩展：**上下文控制与任务队列**，围绕 5 小时和�
 https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 ## 功能
+
+- **全局快捷键**：两端都可用 Ctrl + Shift + M 显示或隐藏主窗口，在设置中自定义或清空。
 
 - **多设备云同步：** GitHub 私有仓库／Secret Gist，加密统计、账号隔离和响应去重；支持自定义同步间隔。[界面与 GitHub CLI 配置](docs/CLOUD_SYNC.md)。
 
