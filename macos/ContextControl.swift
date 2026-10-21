@@ -21,9 +21,13 @@ struct Chat: Identifiable, Decodable,Equatable {
         guard let policy,policy.enabled != false,let percent=modelMetadata?.effective_context_window_percent,(1...100).contains(percent) else{return nil}
         return policy.window*percent/100
     }
+    var displayedContextWindow:Int? {
+        guard let c=compensation,c.enabled,c.status=="active",c.runtimeWindow==observedWindow,let target=c.targetWindow,target>0 else{return observedWindow}
+        return target
+    }
     var windowConfirmed:Bool {connected && freshUsage==true && phase=="confirmed" && revision==policy?.revision && observedWindow != nil && observedWindow==expectedWindow && (observedWindow==targetWindow || (compensation?.status=="active" && compensation?.targetWindow==targetWindow && compensation?.runtimeWindow==observedWindow))}
     var observedWindowTitle:String {
-        if windowConfirmed{return L((compensation?.extraTokens ?? 0)>0 ? "已确认运行时窗口（含补偿）":"已确认可用窗口")}
+        if windowConfirmed{return L("已确认可用窗口")}
         if !connected || freshUsage != true{return L("上次读回窗口（待更新）")}
         return phase=="mismatch" ? L("运行时读回窗口（与目标不符）"):L("最近读回窗口")
     }
@@ -32,7 +36,9 @@ struct RuntimeFixState:Decodable,Equatable {let enabled:Bool;let available:Bool;
 struct NewChatDefaultsState:Decodable,Equatable {let usableWindow:Int;let compact:Int;let revision:Int}
 struct ContextExtensionState:Decodable,Equatable {let enabled:Bool;let effective:Bool;let pending:Bool;let activeCount:Int;let connectedCount:Int;let compatible:Bool;let available:Bool;let message:String}
 struct NewChatDefaultsLimits:Decodable,Equatable {let maximumUsableWindow:Int;let effectivePercent:Int;let extended:Bool}
-struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:Bool;let version:String?;let phase:String;let error:String?;let retryAt:Int?}
+struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:Bool;let version:String?;let phase:String;let error:String?;let retryAt:Int?
+    func forDesktop(_ version:String)->UpdateState {UpdateState(currentVersion:version,available:available && newerProductVersion(self.version,than:version),version:self.version,phase:phase,error:error,retryAt:retryAt)}
+}
 struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPercent:Double;let windowDurationMins:Int?;let resetsAt:Int?}
 struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?;let creditBalance:String?}
 struct CreditBaseline:Decodable,Equatable {let last:Double;let baseline:Double}
@@ -125,9 +131,10 @@ struct ServiceSettings: Decodable {let node:String}
         if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api(ControlAPI.state))
             guard !menuDragInProgress else{return}
-            supportsVisibleBudget=state.capabilities?.visibleBudget == true;supportsQuotaAnalytics=state.capabilities?.quotaAnalytics == true;appVersion=state.version
+            supportsVisibleBudget=state.capabilities?.visibleBudget == true;supportsQuotaAnalytics=state.capabilities?.quotaAnalytics == true
             if quota != state.quota{acceptQuota(state.quota)}
-            if updateState != state.update{updateState=state.update;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
+            let desktopUpdate=state.update?.forDesktop(appVersion)
+            if updateState != desktopUpdate{updateState=desktopUpdate;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
             if taskQueues != state.taskQueues{taskQueues=state.taskQueues}
             if queueModels != (state.queueModels ?? []){queueModels=state.queueModels ?? []}
             if chats != state.threads{chats=state.threads}
@@ -161,8 +168,9 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func updateApp(install:Bool=false) async {
         guard !checkingUpdates else{return}
+        if install && updateState?.available != true{notice=L("已是最新版本");return}
         checkingUpdates=true;defer{checkingUpdates=false}
-        do{updateState=try JSONDecoder().decode(UpdateState.self,from:await api(install ? ControlAPI.installUpdate:ControlAPI.checkUpdate,body:[:]));if let error=updateState?.error{notice=error}else{notice=install ? L("正在下载更新，安装后请重开 Codex"):L(updateState?.available == true ? "发现新版本":"已是最新版本")}}catch{notice=error.localizedDescription}
+        do{updateState=try JSONDecoder().decode(UpdateState.self,from:await api(install ? ControlAPI.installUpdate:ControlAPI.checkUpdate,body:[:])).forDesktop(appVersion);if let error=updateState?.error{notice=error}else{notice=install ? L("正在下载更新，安装后请重开 Codex"):L(updateState?.available == true ? "发现新版本":"已是最新版本")}}catch{notice=error.localizedDescription}
     }
     func scanChats() async {
         working=true;defer{working=false}
@@ -636,7 +644,7 @@ struct ContentView: View {
                         budgetEditor().disabled(!model.canEditBudget)
                         HStack(alignment:.center,spacing:16){
                             VStack(alignment:.leading,spacing:4){
-                                Text(chat.observedWindowTitle+" · "+formatted(chat.observedWindow)).font(.callout).foregroundStyle(.secondary)
+                                Text(chat.observedWindowTitle+" · "+formatted(chat.displayedContextWindow)).font(.callout).foregroundStyle(.secondary)
                                 Text(phaseName(chat.phase)).font(.caption).foregroundStyle(.secondary).help(L(chat.message ?? ""))
                                 if let compensation=chat.compensation,compensation.enabled,let message=compensation.message{Text(L(message)).font(.caption).foregroundStyle(["limited","unavailable"].contains(compensation.status) ? Color.orange:Color.secondary).fixedSize(horizontal:false,vertical:true)}
                             }

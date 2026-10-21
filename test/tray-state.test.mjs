@@ -7,3 +7,8 @@ test('tray uses both active status forms, fresh readback only, and cached recent
   const state=trayState(chats);assert.deepEqual(state.running.map(t=>t.id),['running','stale']);assert.equal(state.fraction,.25);assert.deepEqual(state.recent.map(t=>t.id),['cached','idle']);
   const offline=trayState(chats,false);assert.equal(offline.running.length,0);assert.equal(offline.fraction,null);assert.ok(offline.recent.some(t=>t.id==='running'));
 });
+
+test('compensation does not dilute the real context percentage in the tray',()=>{
+ const chat={id:'chat',status:'active',connected:true,freshUsage:true,lastUsage:{totalTokens:800000},observedWindow:1420000,compensation:{enabled:true,status:'active',runtimeWindow:1420000,targetWindow:920000}};
+ assert.equal(trayState([chat]).fraction,800000/920000);
+});

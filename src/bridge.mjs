@@ -24,7 +24,7 @@ export class Bridge {
   constructor(child,input,output,publish=async()=>({}),resolveFork=async()=>null,options={}) {
     this.child=child;this.input=input;this.output=output;this.publish=publish;this.records=new Map();this.internal=new Map();this.external=new Map();this.sequence=0;this.prefix=`context-control:${randomUUID()}:`;
     this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;this.resolveNewChatBudget=options.resolveNewChatBudget;this.nativeBudgetSupport=options.nativeBudgetSupport===true;
-    this.resolveCompensation=options.resolveCompensation;
+    this.resolveCompensation=options.resolveCompensation;this.accountingWindowLimit=options.accountingWindowLimit;
     this.frontLines=readline.createInterface({input,crlfDelay:Infinity});this.backLines=readline.createInterface({input:child.stdout,crlfDelay:Infinity});
     this.frontLines.on('line',line=>this.fromClient(line));this.backLines.on('line',line=>this.fromServer(line));
     child.once('exit',()=>{for(const item of this.internal.values()){clearTimeout(item.timer);item.reject(new Error('Codex 运行时已退出'));}this.internal.clear();});
@@ -119,7 +119,7 @@ export class Bridge {
   async runtimeBudget(record,policy){
     let observation={enabled:false};
     if(this.resolveCompensation)observation=await this.resolveCompensation(record);
-    return compensationBudget(policy,record.modelInfo,observation);
+    return compensationBudget(policy,record.modelInfo,{...observation,accountingWindowLimit:this.accountingWindowLimit});
   }
   budgetKey(policy,budget){return JSON.stringify([policy.revision,budget.window,budget.compact,budget.details]);}
   async syncCompensation(record,requestedModel=null){
@@ -192,7 +192,7 @@ export class Bridge {
         if(m.method==='thread/status/changed'){record.status=p.status.type;this.notify(record);if(record.status==='idle')this.schedule(record);}
         if(m.method==='turn/started'){record.lastStartedAt=timestampMs(p.turn?.startedAt)??Date.now();record.status='active';record.turnId=p.turn.id;if(record.automaticTask?.status==='starting'){record.automaticTask.turnId=p.turn.id;record.automaticTask.status='running';}record.usageFresh=false;this.notify(record);}
         if(m.method==='error'&&record.compactionWait)record.compactionWait.reject(new Error(p.error?.message||'原生压缩失败'));
-        if(m.method==='turn/completed'){record.compensationTurnPending=false;record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error||['failed','interrupted'].includes(p.turn?.status)?record.compactionWait.reject(new Error(p.turn?.error?.message||'原生压缩未完成')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.schedule(record);}
+        if(m.method==='turn/completed'){record.compensationTurnPending=false;record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error||['failed','interrupted'].includes(p.turn?.status)?record.compactionWait.reject(new Error(p.turn?.error?.message||'原生压缩未完成')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.scheduleCompensatedCompaction(record);this.schedule(record);}
         if(m.method==='thread/name/updated'){record.name=p.name;this.notify(record);}
       }
     }
@@ -315,10 +315,22 @@ export class Bridge {
   }
   clearPolicy(id,revision){const r=this.records.get(id);if(r){const next=revision??(r.policyVersion||0)+1;if(next<(r.policyVersion||0))return {ignored:true};r.policyVersion=next;r.policy=null;r.phase='saved';r.message='已停止自动应用；当前窗口保持现值。';this.notify(r);}return {ok:true};}
   schedule(record){if(record.locked||!record.policy||record.appliedRevision===record.policy.revision||record.status!=='idle')return;queueMicrotask(()=>this.apply(record).catch(()=>{}));}
-  async compact(id,onFinished){
+  scheduleCompensatedCompaction(record){
+    // Compensation changes a local counter only. Independently compact once a
+    // completed response reaches the saved real threshold, even when the
+    // upstream server already included reasoning in its count.
+    const needed=()=>record.compensation?.enabled && record.policy?.enabled!==false && record.policy && record.status==='idle' && !record.locked && record.usageFresh===true && Number.isSafeInteger(record.lastUsage?.totalTokens) && record.lastUsage.totalTokens>=record.policy.compact;
+    if(!needed() || record.protectedUsageGeneration===record.usageGeneration)return;
+    queueMicrotask(()=>{
+      if(!needed() || record.protectedUsageGeneration===record.usageGeneration)return;
+      record.protectedUsageGeneration=record.usageGeneration;
+      this.compact(record.id,undefined,true).catch(error=>{record.phase='error';record.message=error.message;this.notify(record);});
+    });
+  }
+  async compact(id,onFinished,automatic=false){
     const r=this.records.get(id);
     if(!r||r.status!=='idle'||r.locked||r.initializing||r.ephemeral||r.canAcceptDirectInput===false||[...this.external.values()].some(p=>p.threadId===id&&['turn/start','thread/compact/start'].includes(p.method)))throw new Error('请等待当前轮次结束后再压缩');
-    r.locked=true;r.freshUsage=false;r.usageFresh=false;r.phase='compacting';r.message='正在手动压缩上下文';this.notify(r);
+    r.locked=true;r.freshUsage=false;r.usageFresh=false;r.phase='compacting';r.message=automatic?'实际用量达到阈值，正在原生压缩':'正在手动压缩上下文';this.notify(r);
     let timer;
     const completed=new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(new Error('手动压缩等待超时，请刷新聊天状态后重试')),120000);timer.unref?.();r.compactionWait={resolve,reject};});
     completed.catch(()=>{});

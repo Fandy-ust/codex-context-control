@@ -28,12 +28,12 @@ if(!desktop||!isStdioServer(args)||!supported){
 }else{
   const ceiling=prepareContextCatalog();
   const child=spawn(binary,contextCeilingLaunchArgs(args,ceiling),{stdio:['pipe','pipe','inherit'],env:process.env});
-  child.once('spawn',()=>integrationLog('wrapper.native_started',{childPid:child.pid,contextCeiling:!!ceiling}));
+  child.once('spawn',()=>integrationLog('wrapper.native_started',{childPid:child.pid,contextCeiling:!!ceiling?.version}));
   child.once('exit',(code,signal)=>integrationLog('wrapper.native_exit',{code,signal}));
   let peer,closed=false,bridge;
   bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{
-    await ensureDaemon();return request('forkBudget',{id,model,contextCeiling:!!ceiling});
-  },{resolveCompensation:createCompensationResolver(),contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling});}});
+    await ensureDaemon();return request('forkBudget',{id,model,contextCeiling:!!ceiling?.version});
+  },{resolveCompensation:createCompensationResolver(),accountingWindowLimit:ceiling?.accountingWindowLimit,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling?.version});}});
   async function attach(){
     if(closed)return;
     try{
@@ -47,7 +47,7 @@ if(!desktop||!isStdioServer(args)||!supported){
         throw new Error('不支持的运行时操作');
       });
       if(closed){peer.close();return;}
-      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,taskQueueVersion:4,compensationVersion:2,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
+      await peer.call('registerBridge',{pid:process.pid,version:bridgeVersion,taskQueueVersion:4,compensationVersion:ceiling?.accountingWindowLimit?3:2,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
       if(closed){peer.close();return;}
       for(const record of bridge.records.values())bridge.notify(record);
       peer.socket.once('close',()=>{peer=null;if(!closed)setTimeout(attach,1000).unref();});

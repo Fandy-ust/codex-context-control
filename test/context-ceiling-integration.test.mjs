@@ -1,8 +1,9 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import readline from 'node:readline';import {spawn} from 'node:child_process';import {fileURLToPath} from 'node:url';import {fixtureServer} from './fixture.mjs';
 const repo=fileURLToPath(new URL('../',import.meta.url)),binary=process.env.CONTEXT_CONTROL_TEST_CODEX||'/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));async function until(fn){for(let i=0;i<400;i++){const result=await fn();if(result)return result;await sleep(25);}throw Error('Ceiling integration timed out');}
-test('real native runtime reports 920K, compacts after a high final answer and guards a large next input',{skip:!fs.existsSync(binary),timeout:60000},async()=>{
- const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-ceiling-live-')),home=path.join(temp,'home'),control=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(control);fs.writeFileSync(path.join(control,'context-extension.json'),JSON.stringify({enabled:true}));
+const compensation=true;
+test('real native runtime with accounting catalog reports 920K, compacts after a high final answer and guards a large next input',{skip:!fs.existsSync(binary),timeout:60000},async()=>{
+ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-ceiling-live-')),home=path.join(temp,'home'),control=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(control);fs.writeFileSync(path.join(control,'context-extension.json'),JSON.stringify({enabled:true}));if(compensation)fs.writeFileSync(path.join(control,'compaction-compensation.json'),JSON.stringify({enabled:true}));
  let highDone=false,nearDone=false;
  const fixture=await fixtureServer({usageForRequest(request){const last=JSON.stringify([...(request.input??[])].reverse().find(i=>i.role==='user'));
   if(last.includes('CEILING_HIGH')&&!highDone){highDone=true;return 905000;}

@@ -37,7 +37,7 @@ struct MainControlPanelView:View {
             ContextExtensionControl(model:model)
             VStack(alignment:.leading,spacing:7){
                 Toggle(L("提前压缩补偿（实验性）"),isOn:Binding(get:{model.compactionCompensation?.enabled ?? false},set:{value in Task{await model.setCompensation(value)}})).toggleStyle(.switch).controlSize(.small).disabled(!model.serviceAvailable || model.changingCompensation || model.compactionCompensation==nil)
-                Text(L("Codex 显示的上下文窗口可能更大，用于为重复计数预留空间；目标容量以本 App 为准。接近上限时可能无法完全补偿。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                Text(L("额外的计数空间只补偿历史推理估算；本 App 显示真实请求用量和原预算，达到实际阈值仍会原生压缩。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 Text(L(model.compactionCompensation?.message ?? "等待 Codex 连接")).font(.caption2).foregroundStyle(.secondary)
             }.padding(12).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
             Divider()

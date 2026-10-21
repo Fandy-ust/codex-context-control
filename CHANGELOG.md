@@ -1,5 +1,12 @@
 # Changes
 
+## 0.25.0 — Real-budget compensation and update identity
+
+- Recognize a running installation-owned Windows UI even when the install pointer has moved to a different version, so upgrades can close it before launching the replacement.
+- Reject same-version, older and malformed offers again at the Windows prompt; use the native Mac bundle version for displayed versions and update eligibility.
+- Separate the local accounting catalog from real context budgets so historical-reasoning compensation works near the configured capacity, with real-usage compaction at turn boundaries.
+- Keep usage, capacity and rings based on the original budget on both desktops. Preserve the official Codex executable, existing settings and cloud-sync data.
+
 ## 0.24.3 — Use the installed app version for update checks
 
 - Run update discovery and verified installation from the desktop app, using its own product version as the authority. A stale or newer background controller can no longer offer the UI's current version as an update.

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {activeReasoningEstimate,projectCompensationEvent,reasoningEstimate,compensationBudget} from '../src/core/compaction-compensation.mjs';
-import {windowConfirmed} from '../src/presentation/chat.mjs';
+import {windowConfirmed,displayedContextWindow} from '../src/presentation/chat.mjs';
 const model={effective_context_window_percent:95,max_context_window:872000};
 const policy={window:421053,compact:360000,reserve:16000,revision:1,enabled:true};
 const event=(type,payload,originThreadId='chat')=>projectCompensationEvent({type,payload,originThreadId});
@@ -18,11 +18,11 @@ test('active history uses lengths only, replaces checkpoints and ignores superse
  events.push(event('compacted',{replacement_history:[]}));assert.equal(activeReasoningEstimate(events).extraTokens,0);
  events.push(event('compacted',{}));assert.equal(activeReasoningEstimate(events).known,false);
 });
-test('compensation leaves the logical policy intact, reserves physical space and refuses insufficient headroom',()=>{
+test('compensation leaves the logical policy intact, separates accounting headroom from real capacity and rejects an oversized real policy',()=>{
  const original=structuredClone(policy),budget=compensationBudget(policy,model,{enabled:true,known:true,extraTokens:100000});
  assert.deepEqual(policy,original);assert.equal(budget.details.targetWindow,400000);assert.equal(budget.details.runtimeWindow,500000);assert.equal(budget.compact,460000);
  assert.ok(Math.floor(budget.window*.9)>=budget.compact);assert.equal(budget.details.status,'active');
- const limited=compensationBudget(policy,{...model,max_context_window:450000},{enabled:true,known:true,extraTokens:100000});
+ const limited=compensationBudget(policy,{...model,max_context_window:400000},{enabled:true,known:true,extraTokens:100000});
  assert.equal(limited.details.status,'limited');assert.equal(limited.window,policy.window);
  const unknown=compensationBudget(policy,model,{enabled:true,known:false});assert.equal(unknown.details.status,'unavailable');assert.equal(unknown.compact,policy.compact);
  const off=compensationBudget(policy,model,{enabled:false});assert.equal(off.details.status,'off');assert.equal(off.window,policy.window);
@@ -38,4 +38,14 @@ test('readback confirmation recognizes reserved runtime space without changing t
  const budget=compensationBudget(policy,model,{enabled:true,known:true,extraTokens:100000});
  const chat={policy,modelMetadata:model,connected:true,freshUsage:true,phase:'confirmed',revision:1,observedWindow:500000,expectedWindow:500000,compensation:budget.details};
  assert.equal(windowConfirmed(chat),true);assert.equal(windowConfirmed({...chat,observedWindow:501000}),false);assert.equal(windowConfirmed({...chat,compensation:{...budget.details,status:'waiting'}}),false);
+});
+
+
+test('800K real usage plus 500K accounting overhead does not consume the logical 920K capacity',()=>{
+ const model={max_context_window:1022223,effective_context_window_percent:90},policy={window:1022223,compact:900000,reserve:20000,revision:1,enabled:true};
+ const b=compensationBudget(policy,model,{enabled:true,known:true,extraTokens:500000,accountingWindowLimit:16000000});
+ assert.equal(b.details.status,'active');assert.equal(b.compact,1400000);assert.ok(b.window>model.max_context_window);assert.equal(b.details.targetWindow,920000);
+ assert.equal(displayedContextWindow({observedWindow:b.details.runtimeWindow,compensation:b.details}),920000);
+ assert.equal(displayedContextWindow({observedWindow:123456,compensation:b.details}),123456,'a mismatched readback must not be disguised');
+ assert.equal(compensationBudget(policy,model,{enabled:false}).window,policy.window);
 });

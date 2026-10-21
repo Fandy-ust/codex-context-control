@@ -84,7 +84,7 @@ MainActor.assumeIsolated {
 
 `);
   const binary=path.join(temp,'probe');
-  const compiled=spawnSync('xcrun',['swiftc',path.join(root,'macos/Localization.swift'),path.join(root,'macos/BudgetMath.swift'),path.join(temp,'Models.swift'),path.join(root,'macos/MenuBudget.swift'),path.join(root,'macos/ContextMenuPanel.swift'),path.join(temp,'main.swift'),'-o',binary],{encoding:'utf8',timeout:45000});assert.equal(compiled.status,0,compiled.stderr);
+  const compiled=spawnSync('xcrun',['swiftc',path.join(root,'macos/Localization.swift'),path.join(root,'macos/ProductVersion.swift'),path.join(root,'macos/BudgetMath.swift'),path.join(temp,'Models.swift'),path.join(root,'macos/MenuBudget.swift'),path.join(root,'macos/ContextMenuPanel.swift'),path.join(temp,'main.swift'),'-o',binary],{encoding:'utf8',timeout:45000});assert.equal(compiled.status,0,compiled.stderr);
   const run=spawnSync(binary,[],{encoding:'utf8',timeout:10000});assert.equal(run.status,0,run.stderr);
  }finally{fs.rmSync(temp,{recursive:true,force:true});}
 });

@@ -48,3 +48,17 @@ test('desktop config flags before and after app-server remain in one trailing gr
  assert.deepEqual(contextCeilingLaunchArgs(args,ceiling),['app-server','--listen','stdio://','-c','features.code_mode_host=true','--config','model_reasoning_effort="low"','--config=plugins.sample.enabled=true',...ceiling.args]);
  assert.equal(contextCeilingLaunchArgs(args,null),args);
 });
+
+test('accounting catalogs expand only internal bounds and preserve native defaults and source metadata',()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-accounting-catalog-')),control=path.join(home,'control');fs.mkdirSync(control);
+ const file=path.join(home,'models_cache.json'),source=JSON.stringify({models:[base,{slug:'unknown'}]});fs.writeFileSync(file,source);
+ try{
+  for(const enabled of [false,true]){
+   const prepared=prepareContextCatalog({home,control,enabled,compensation:true});const m=JSON.parse(fs.readFileSync(prepared.file)).models[0];
+   assert.equal(m.max_context_window,16000000);assert.equal(prepared.accountingWindowLimit,16000000);assert.equal(prepared.version,enabled?1:null);
+   assert.equal(m.context_window,enabled?ceilingModel(base).context_window:base.context_window);
+   if(!enabled)assert.ok(!prepared.args.some(a=>a.startsWith('model_context_window=')));
+  }
+  assert.equal(fs.readFileSync(file,'utf8'),source);assert.equal(prepareContextCatalog({home,control,enabled:false,compensation:false}),null);
+ }finally{fs.rmSync(home,{recursive:true,force:true});}
+});

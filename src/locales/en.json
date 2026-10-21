@@ -1189,5 +1189,8 @@
   "显示未归属历史（不上传）": "Show unassigned history (not uploaded)",
   "刷新额度以识别当前账号；同步后会发现其他设备上的账号。": "Refresh quota to identify this account; sync discovers accounts on other devices.",
   "账号自动识别，套餐或模型变化不会新建账号。勾选仅在本机生效；取消统计不删除历史。": "Accounts are identified automatically; plan or model changes keep the same account. Selections apply to this device; hiding statistics preserves history.",
-  "按现有 API 价格估算，沿用聊天费用的 Standard 与缓存写入估算规则；不是订阅账单。按云同步设置中的账号和设备范围汇总，空格表示无记录，无法计价的请求不按零元计算。": "Estimated using the existing API prices and the same Standard and cache-write assumptions as chat costs; not a subscription bill. Totals follow the accounts and devices selected in cloud sync settings. Empty cells mean no records; unpriced requests are not treated as zero cost."
+  "按现有 API 价格估算，沿用聊天费用的 Standard 与缓存写入估算规则；不是订阅账单。按云同步设置中的账号和设备范围汇总，空格表示无记录，无法计价的请求不按零元计算。": "Estimated using the existing API prices and the same Standard and cache-write assumptions as chat costs; not a subscription bill. Totals follow the accounts and devices selected in cloud sync settings. Empty cells mean no records; unpriced requests are not treated as zero cost.",
+  "额外的计数空间只补偿历史推理估算；本 App 显示真实请求用量和原预算，达到实际阈值仍会原生压缩。": "Extra accounting space compensates historical reasoning estimates. This app shows real request usage against the original budget; native compaction still protects the real threshold.",
+  "计数补偿空间不足，请重开 Codex 加载补偿目录": "Accounting headroom is unavailable. Restart Codex to load the compensation catalog.",
+  "实际用量达到阈值，正在原生压缩": "Real usage reached the threshold; compacting natively"
 }

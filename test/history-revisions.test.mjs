@@ -15,8 +15,8 @@ test('older running bridges require a restart before advertising the compensatio
  try{
   const manager=createCompensationManager({home});manager.setEnabled(true);
   assert.equal(manager.status([{compensationVersion:1}]).pending,true);
-  assert.equal(manager.status([{compensationVersion:2}]).pending,false);
-  assert.equal(manager.status([{compensationVersion:2},{compensationVersion:1}]).supportedCount,1);
+  assert.equal(manager.status([{compensationVersion:3}]).pending,false);
+  assert.equal(manager.status([{compensationVersion:3},{compensationVersion:1}]).supportedCount,1);
  }finally{fs.rmSync(home,{recursive:true,force:true});}
 });
 function fixture(){

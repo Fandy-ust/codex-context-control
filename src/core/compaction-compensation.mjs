@@ -1,3 +1,5 @@
+export const ACCOUNTING_WINDOW_LIMIT=16000000;
+
 // Reproduce the runtime's heuristic, not the model's actual reasoning-token count.
 export function reasoningEstimate(length) {
   if (!Number.isSafeInteger(length) || length < 0) throw Error('Invalid reasoning length');
@@ -60,8 +62,12 @@ export function compensationBudget(policy, model, observation = {enabled:false})
     return {...base, details:{...details,status:'unavailable',message:'等待完整历史，暂未补偿'}};
   const extra = observation.extraTokens;
   if (!Number.isSafeInteger(extra) || extra < 0) throw Error('Invalid compensation estimate');
+  // The catalog maximum constrains the real policy, not the extra accounting
+  // space. Enlarging this local counter never increases the displayed budget
+  // or the bridge's independently enforced real-usage threshold.
   const requiredWindow = Math.max(policy.window, Math.ceil((targetWindow + extra) * 100 / percent), Math.ceil((policy.compact + extra) * 100 / 90));
-  if (!Number.isSafeInteger(requiredWindow) || requiredWindow > model.max_context_window)
-    return {...base, details:{...details,status:'limited',extraTokens:extra,message:'补偿空间不足，使用原预算；仍可能提前压缩'}};
+  const accountingLimit=Math.max(model.max_context_window,observation.accountingWindowLimit??model.max_context_window);
+  if (!Number.isSafeInteger(accountingLimit) || requiredWindow>accountingLimit || !Number.isSafeInteger(requiredWindow) || !Number.isSafeInteger(policy.compact + extra) || policy.window > model.max_context_window)
+    return {...base, details:{...details,status:'limited',extraTokens:extra,message:'计数补偿空间不足，请重开 Codex 加载补偿目录'}};
   return {window:requiredWindow, compact:policy.compact + extra, details:{...details,status:'active',extraTokens:extra,runtimeWindow:Math.floor(requiredWindow * percent / 100),message:extra ? '已为历史推理估算预留空间' : '已开启，当前无需额外补偿'}};
 }

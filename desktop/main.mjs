@@ -49,7 +49,7 @@ const updateSettingsFile=path.join(root,'ui-settings.json');
 const autoCheckUpdates=()=>readJSON(updateSettingsFile,{}).autoCheckUpdates!==false;
 function setAutoCheckUpdates(enabled){atomicJSON(updateSettingsFile,{...readJSON(updateSettingsFile,{}),autoCheckUpdates:enabled});}
 const refreshUpdateUI=()=>{main?.webContents.send('refresh');trayWindow?.webContents.send('refresh');};
-const updatePrompt=createUpdatePrompt({enabled:autoCheckUpdates,setEnabled:setAutoCheckUpdates,
+const updatePrompt=createUpdatePrompt({currentVersion:()=>pkg.version,enabled:autoCheckUpdates,setEnabled:setAutoCheckUpdates,
   check:()=>uiUpdater.check(true),install:()=>uiUpdater.install(),changed:refreshUpdateUI,
   prompt:async update=>{
     if(demo||smoke)return 'skip';

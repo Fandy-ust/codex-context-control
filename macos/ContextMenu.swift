@@ -6,7 +6,7 @@ extension Chat {
     var isRunning:Bool {menuEligible && connected && ["active","inProgress"].contains(status ?? "")}
     // Use the runtime's observed capacity, never an unapplied slider draft.
     var contextFraction:Double? {
-        guard let used=lastUsage?.totalTokens,used>=0,let capacity=observedWindow,capacity>0 else{return nil}
+        guard let used=lastUsage?.totalTokens,used>=0,let capacity=displayedContextWindow,capacity>0 else{return nil}
         return Double(used)/Double(capacity)
     }
     var contextPercentage:String {contextFraction.map{String(format:"%.0f%%",$0*100)} ?? "—"}
@@ -211,7 +211,7 @@ private struct ResponseSpeedTrend:Shape {
                 }.frame(maxWidth:.infinity,alignment:.leading)
                 VStack(alignment:.trailing,spacing:3){
                     ContextUsageRing(fraction:chat.contextFraction,stale:stale)
-                    Text(chat.contextFraction != nil ? "\(shortTokens(chat.lastUsage?.totalTokens)) / \(shortTokens(chat.observedWindow))\(stale ? L(" · 上次"):"")":L("尚无用量"))
+                    Text(chat.contextFraction != nil ? "\(shortTokens(chat.lastUsage?.totalTokens)) / \(shortTokens(chat.displayedContextWindow))\(stale ? L(" · 上次"):"")":L("尚无用量"))
                         .font(.system(size:9)).foregroundStyle(.secondary)
                 }.monospacedDigit().frame(width:100,alignment:.trailing)
             }.padding(.horizontal,10).contentShape(Rectangle())
@@ -223,7 +223,7 @@ private struct ResponseSpeedTrend:Shape {
             HStack(spacing:8){
                 if let feedback {Text(L(feedback)).font(.system(size:10)).foregroundStyle(failed ? .orange:.secondary).lineLimit(1).help(L(feedback)).allowsHitTesting(false)}
                 else {
-                    if let actual=chat.observedWindow,actual/1000 != Int(value.windowK){Text(L("目标 {0}K · {1} {2}K", Int(value.windowK), stale ? L("上次"):L("实际"), actual/1000)).allowsHitTesting(false)}else{Text(Int(value.windowK)==value.maximumWindowK ? "MAX" : L("上下文 {0}K", Int(value.windowK))).allowsHitTesting(false)}
+                    if let actual=chat.displayedContextWindow,actual/1000 != Int(value.windowK){Text(L("目标 {0}K · {1} {2}K", Int(value.windowK), stale ? L("上次"):L("实际"), actual/1000)).allowsHitTesting(false)}else{Text(Int(value.windowK)==value.maximumWindowK ? "MAX" : L("上下文 {0}K", Int(value.windowK))).allowsHitTesting(false)}
                 }
                 Spacer(minLength:2)
                 if chat.isRunning {speedView(compact:true)}

@@ -12,6 +12,8 @@ import Foundation
    var raw:[String:Any]=["id":id,"name":id,"status":status,"connected":connected,"ambiguous":false,"lastActivityAt":time]
    raw.merge(extra,uniquingKeysWith:{$1});return try JSONDecoder().decode(Chat.self,from:JSONSerialization.data(withJSONObject:raw))
   }
+  let compensated=try chat("compensated","active",true,100,["observedWindow":1420000,"lastUsage":["totalTokens":800000],"compensation":["enabled":true,"status":"active","extraTokens":500000,"targetWindow":920000,"runtimeWindow":1420000]])
+  precondition(compensated.displayedContextWindow==920000 && compensated.contextFraction==Double(800000)/920000)
   let model=Controller()
   model.chats=[try chat("running","active",true,100),try chat("finished","notLoaded",false,99),try chat("older","idle",true,90),try chat("unknown","idle",true,0),try chat("temporary","idle",true,110,["ephemeral":true]),try chat("agent","active",true,110,["threadSource":"agent"])]
   precondition(model.runningChats.map(\.id)==["running"])
@@ -23,6 +25,6 @@ import Foundation
  }
 }
 `);
- const binary=path.join(temp,'check');let r=spawnSync('xcrun',['swiftc','-parse-as-library',path.join(repo,'macos/Localization.swift'),path.join(temp,'Models.swift'),path.join(temp,'Menu.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:30000});assert.equal(r.status,0,r.stderr);r=spawnSync(binary,[],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);
+ const binary=path.join(temp,'check');let r=spawnSync('xcrun',['swiftc','-parse-as-library',path.join(repo,'macos/Localization.swift'),path.join(repo,'macos/ProductVersion.swift'),path.join(temp,'Models.swift'),path.join(temp,'Menu.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:30000});assert.equal(r.status,0,r.stderr);r=spawnSync(binary,[],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);
  }finally{fs.rmSync(temp,{recursive:true,force:true});}
 });

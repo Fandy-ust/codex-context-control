@@ -1,12 +1,12 @@
+import {ownedWindowsMenuProcess} from './platform/windows-menu-process.mjs';
 import fs from 'node:fs';
-import {canonicalLocalPath} from './local-path.mjs';
 import path from 'node:path';
 import {spawnSync,spawn} from 'node:child_process';
 import {root,settings,readJSON} from './paths.mjs';
 import {windows,processInfo} from './platform/index.mjs';
 
 export function menuBarProcess(app=settings().installedApp){
-  if(windows){const s=readJSON(path.join(root,'ui-status.json'),{});if(!app||!Number.isSafeInteger(s.pid))return null;const info=processInfo(s.pid);return info?.executable&&canonicalLocalPath(info.executable).toLowerCase()===canonicalLocalPath(app).toLowerCase()?s.pid:null;}
+  if(windows){const status=readJSON(path.join(root,'ui-status.json'),{});if(!Number.isSafeInteger(status.pid)||status.pid<=1)return null;return ownedWindowsMenuProcess({app,installBase:settings().installBase,status,info:processInfo(status.pid)});}
   if(process.platform!=='darwin'||!app)return null;
   const installed=path.join(app,'Contents/MacOS/ContextControl-native');
   let executable=fs.existsSync(installed)?installed:path.join(app,'Contents/MacOS/ContextControl');
@@ -35,7 +35,7 @@ export function ensureMenuBarEntry(app=settings().installedApp,controlHome=root)
 }
 export async function stopMenuBarEntry(app=settings().installedApp){
   const pid=menuBarProcess(app);if(!pid)return;
-  if(windows){const p=spawn(app,['--quit'],{windowsHide:true,stdio:'ignore',env:process.env});p.on('error',()=>{});p.unref();for(let i=0;i<40;i++){try{process.kill(pid,0);}catch{return;}await new Promise(r=>setTimeout(r,100));}throw Error('管理界面尚未退出，请稍后重试。');}
+  if(windows){const executable=processInfo(pid)?.executable;if(!executable)throw Error('无法确认旧管理界面，请稍后重试。');const p=spawn(executable,['--quit'],{windowsHide:true,stdio:'ignore',env:{...process.env,CONTEXT_CONTROL_HOME:root}});p.on('error',()=>{});p.unref();for(let i=0;i<40;i++){try{process.kill(pid,0);}catch{return;}await new Promise(r=>setTimeout(r,100));}throw Error('管理界面尚未退出，请稍后重试。');}
   try{process.kill(pid,'SIGTERM');}catch{return;}
   // Wait before replacing/reopening the bundle: Launch Services can otherwise
   // route the open request to the old process while it is still terminating.
