@@ -1199,5 +1199,7 @@
   "计数补偿空间不足，请重开 Codex 加载补偿目录": "Accounting headroom is unavailable. Restart Codex to load the compensation catalog.",
   "实际用量达到阈值，正在原生压缩": "Real usage reached the threshold; compacting natively",
   "请先结束快捷键录制": "Finish recording the shortcut first",
-  "使用 Ctrl、Alt 或 Command 加字母或数字，可同时加 Shift，例如 Ctrl+Shift+M。": "Use Ctrl, Alt or Command with a letter or number. Shift can be added, for example Ctrl+Shift+M."
+  "使用 Ctrl、Alt 或 Command 加字母或数字，可同时加 Shift，例如 Ctrl+Shift+M。": "Use Ctrl, Alt or Command with a letter or number. Shift can be added, for example Ctrl+Shift+M.",
+  "恢复菜单栏入口": "Restore menu bar entry",
+  "补偿已关闭，等待安全恢复原窗口": "Compensation is off; waiting to safely restore the original window."
 }

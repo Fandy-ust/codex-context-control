@@ -130,12 +130,15 @@ export class Bridge {
     if(switching){budget.window=policy.window;budget.compact=policy.compact;budget.details={...budget.details,status:'waiting',extraTokens:0,runtimeWindow:budget.details.targetWindow,message:'切换模型，等待新用量后补偿'};}
     const observed=!record.lastUsage&&record.inheritedUsage?{...record,lastUsage:record.inheritedUsage,usageFresh:true}:record;
     const plan=preflight(observed,policy,record.modelInfo);
-    if(!budget.details.enabled&&!record.compensation?.enabled){record.compensation=budget.details;record.compensationKey=this.budgetKey(policy,budget);}
-    else if(this.budgetKey(policy,budget)!==record.compensationKey&&plan.allowed){
+    const windowMismatch=record.freshUsage===true&&Number.isSafeInteger(record.observedWindow)&&record.observedWindow!==budget.details.runtimeWindow;
+    // A pending observation is not an applied budget. In particular, disabling
+    // must still restore a previously enlarged runtime after a deferred reload.
+    if(!budget.details.enabled&&!record.compensation?.enabled&&!record.compensationKey&&!windowMismatch){record.compensation=budget.details;record.compensationKey=this.budgetKey(policy,budget);}
+    else if((this.budgetKey(policy,budget)!==record.compensationKey||windowMismatch)&&plan.allowed){
       if(!await this.reload(record,policy,plan,budget))throw Error(record.message);
     }else if(!plan.allowed){
       if(switching&&record.compensation?.status==='active'&&record.compensation.extraTokens>0)throw Error('请先取得新用量或手动压缩，再切换模型');
-      record.compensation={...budget.details,status:'waiting',message:'等待新用量或压缩后再应用补偿'};
+      record.compensation={...(record.compensation??budget.details),status:'waiting',pendingEnabled:budget.details.enabled,message:budget.details.enabled?'等待新用量或压缩后再应用补偿':'补偿已关闭，等待安全恢复原窗口'};
     }
   }
   async prepareCompensatedTurn(record,message,line,guarded){
@@ -156,7 +159,9 @@ export class Bridge {
       if(pending&&!m.error){
         const t=m.result?.thread;
         if(t?.id&&['thread/start','thread/resume','thread/fork'].includes(pending.method)) {
-          const record=this.record(t.id);if(pending.method==='thread/resume'){record.compensation=null;record.compensationKey=null;}record.seed={...record.seed,...pending.seed,config:{...record.seed.config,...pending.seed.config}};
+          // Resuming an already loaded thread does not necessarily apply its
+          // config. Retain the last applied compensation until reload/readback.
+          const record=this.record(t.id);if(record.model&&m.result.model&&record.model!==m.result.model){record.compensation=null;record.compensationKey=null;}record.seed={...record.seed,...pending.seed,config:{...record.seed.config,...pending.seed.config}};
           Object.assign(record,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput','threadSource']));
           record.model=m.result.model||record.model;record.status=t.status?.type||'idle';record.snapshot=m.result;const activeTurn=t.turns?.findLast(turn=>['inProgress','in_progress'].includes(turn.status));if(activeTurn)record.turnId=activeTurn.id;
           if(pending.method==='thread/start'&&pending.fork?.newChatPolicy&&!t.ephemeral&&t.canAcceptDirectInput!==false&&!t.forkedFromId){const policy=pending.fork.newChatPolicy;Object.assign(record,{newChatPolicy:policy,policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已沿用新对话默认设置，等待首次窗口读回。'});}

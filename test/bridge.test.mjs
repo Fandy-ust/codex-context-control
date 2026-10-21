@@ -146,3 +146,33 @@ test('manual compaction failure releases the lock without sending queued input',
     assert.equal(f.record.locked,false);assert.equal(f.record.compactionWait,null);assert.equal(f.record.phase,'error');assert.equal(f.writes.length,0);
   }finally{release.resolve();f.close();}
 });
+
+test('disabling compensation retries restoration after stale usage and a desktop resume',async()=>{
+ const f=fixture(async()=>({}));const reloaded=[];
+ try{
+  const budget=policy(600000,500000,1);
+  Object.assign(f.record,{status:'idle',policy:budget,appliedRevision:1,revision:1,usageFresh:false,compensation:{enabled:true,status:'active',extraTokens:100000,targetWindow:570000,runtimeWindow:670000},compensationKey:'previously applied enlarged budget'});
+  f.bridge.resolveCompensation=async()=>({enabled:false});
+  f.bridge.rpc=async(method,params)=>{if(method==='thread/resume'){if(params.config)reloaded.push(params.config);return {thread:{id:'chat',status:{type:'idle'}},model:'fixture',modelProvider:'fixture',sandbox:{type:'readOnly'}};}return {};};
+  await f.bridge.syncCompensation(f.record);
+  assert.equal(reloaded.length,0);assert.equal(f.record.compensation.enabled,true,'pending disable must not erase the applied runtime');assert.equal(f.record.compensation.pendingEnabled,false);
+  f.bridge.external.set(JSON.stringify('resume'),{method:'thread/resume',threadId:'chat',seed:{config:{}},fork:{resume:true,resumePolicy:budget,preserveUsage:true}});
+  f.bridge.fromServer(JSON.stringify({id:'resume',result:{thread:{id:'chat',status:{type:'idle'}},model:'fixture',modelProvider:'fixture'}}));
+  assert.equal(f.record.compensation.enabled,true);assert.equal(f.record.compensationKey,'previously applied enlarged budget');
+  f.record.usageFresh=true;
+  await f.bridge.syncCompensation(f.record);
+  assert.equal(reloaded.length,1);assert.equal(reloaded[0].model_context_window,600000);assert.equal(reloaded[0].model_auto_compact_token_limit,500000);assert.equal(f.record.compensation.enabled,false);
+  await f.bridge.syncCompensation(f.record);assert.equal(reloaded.length,1,'unchanged off state must not reload repeatedly');
+ }finally{f.close();}
+});
+
+test('off state with a mismatched readback restores the base window even after old bookkeeping was lost',async()=>{
+ const f=fixture(async()=>({}));const applied=[];
+ try{
+  const budget=policy(600000,500000,1);Object.assign(f.record,{status:'idle',policy:budget,appliedRevision:1,usageFresh:true,compensation:null,compensationKey:null,observedWindow:670000});
+  f.bridge.resolveCompensation=async()=>({enabled:false});
+  f.bridge.rpc=async(method,params)=>{if(method==='thread/resume'){if(params.config)applied.push(params.config);return {thread:{id:'chat',status:{type:'idle'}},model:'fixture',modelProvider:'fixture',sandbox:{type:'readOnly'}};}return {};};
+  await f.bridge.syncCompensation(f.record);assert.equal(applied.length,1);assert.equal(applied[0].model_context_window,600000);assert.equal(f.record.expectedWindow,570000);assert.equal(f.record.compensation.enabled,false);
+  await f.bridge.syncCompensation(f.record);assert.equal(applied.length,1,'a stale readback immediately after reload is not another mismatch');
+ }finally{f.close();}
+});
