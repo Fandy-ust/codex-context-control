@@ -6,8 +6,8 @@ Codex 的本地扩展：**上下文控制与任务队列**，围绕 5 小时和�
 
 | 平台 | 安装包 | 系统要求 |
 | --- | --- | --- |
-| macOS | [下载 0.25.1 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.1-preview.1/Context-Manager-0.25.1-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [下载 0.25.1 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.1-preview.1/Context-Manager-0.25.1-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [下载 0.25.2 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.2-preview.1/Context-Manager-0.25.2-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [下载 0.25.2 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.2-preview.1/Context-Manager-0.25.2-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac 安装说明](docs/INSTALL_MAC.md) · [Windows 安装说明](docs/INSTALL_WINDOWS.md) · [版本说明](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [English](README.md)
 
@@ -31,7 +31,6 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 - **多设备云同步：** GitHub 私有仓库／Secret Gist，加密统计、账号隔离和响应去重；支持自定义同步间隔。[界面与 GitHub CLI 配置](docs/CLOUD_SYNC.md)。
 
 - **Agent CLI + skill**：管理队列与上下文预算，查看全局额度、分析实测速度。[用法](docs/CLI.md)。 [安装 skill](docs/CLI.md#配套-skill) · [Skill 源码](skills/context-manager/SKILL.md)。
-
 
 - **逐聊天预算**：一组滑条调整窗口和压缩阈值，点击「应用」才保存；新聊天可设默认值，分支继承父聊天预算。
 - **账户额度**：显示剩余额度与重置时间，Mac 使用逐渐空心的闪电图标，Windows 适配系统托盘。
