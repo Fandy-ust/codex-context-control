@@ -176,3 +176,12 @@ test('off state with a mismatched readback restores the base window even after o
   await f.bridge.syncCompensation(f.record);assert.equal(applied.length,1,'a stale readback immediately after reload is not another mismatch');
  }finally{f.close();}
 });
+
+test('disabling stops compensation-triggered compaction even before the enlarged window is restored',async()=>{
+ const f=fixture(async()=>({}));let called=0;
+ try{
+  Object.assign(f.record,{status:'idle',policy:policy(600000,500000,1),usageFresh:true,lastUsage:{totalTokens:510000},compensation:{enabled:true,status:'waiting',pendingEnabled:false}});
+  f.bridge.resolveCompensation=Object.assign(async()=>({enabled:false}),{isEnabled:()=>false});f.bridge.compact=async()=>{called++;};
+  f.bridge.scheduleCompensatedCompaction(f.record);await tick();assert.equal(called,0);
+ }finally{f.close();}
+});

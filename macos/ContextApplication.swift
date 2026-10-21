@@ -1,6 +1,18 @@
 import SwiftUI
 import AppKit
 
+// Let NSApplicationMain initialize AppKit before creating NSApplication or its
+// delegate. A manual shared/run entry skips part of the application check-in.
+@objc(ContextControlApplication) @MainActor final class ContextControlApplication:NSApplication {
+    private var controllerDelegate:ContextControlApp?
+    override init(){
+        super.init()
+        if Bundle.main.bundleIdentifier==ApplicationPreferences.productID{ApplicationPreferences.migrate()}
+        let owner=ContextControlApp();controllerDelegate=owner;delegate=owner
+    }
+    required init?(coder:NSCoder){fatalError("ContextControlApplication uses programmatic initialization")}
+}
+
 @main @MainActor final class ContextControlApp:NSObject,NSApplicationDelegate,NSWindowDelegate {
     private let model=Controller()
     private lazy var statusController=StatusItemController{[weak self] in self?.toggleContextPopover()}
@@ -21,10 +33,7 @@ import AppKit
     private var languageObservers:[NSObjectProtocol]=[]
 
     static func main(){
-        let app=NSApplication.shared
-        let delegate=ContextControlApp();app.delegate=delegate
-        app.setActivationPolicy(.accessory);app.run()
-        withExtendedLifetime(delegate){}
+        _ = NSApplicationMain(CommandLine.argc,CommandLine.unsafeArgv)
     }
     func applicationDidFinishLaunching(_ notification:Notification){
         guard !started else{return};started=true

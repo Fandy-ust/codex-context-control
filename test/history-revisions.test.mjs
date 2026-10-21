@@ -13,7 +13,7 @@ const e=(type,payload)=>({type,payload});
 test('older running bridges require a restart before advertising the compensation fixes',()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-compensation-version-'));
  try{
-  const manager=createCompensationManager({home});manager.setEnabled(true);
+  const manager=createCompensationManager({home,allowExperimental:true});manager.setEnabled(true);
   assert.equal(manager.status([{compensationVersion:1}]).pending,true);
   assert.equal(manager.status([{compensationVersion:3}]).pending,false);
   assert.equal(manager.status([{compensationVersion:3},{compensationVersion:1}]).supportedCount,1);
@@ -42,8 +42,8 @@ test('edited chats resolve immutable history segments and preserve owning chat I
   assert.deepEqual(activeReasoningEstimate(events,{threadId:chat,completedTurnId:'edited'}),{known:true,extraTokens:7176});
   const bytes=cache.metrics.bytesRead;assert.deepEqual(readHistory(f.home,chat,cache),events);assert.equal(cache.metrics.bytesRead,bytes);
   assert.equal(historySourcesUnchanged(f.home,events.sources),true);
-  createCompensationManager({home:f.home}).setEnabled(true);
-  assert.deepEqual(await createCompensationResolver({home:f.home,control:f.home})({id:chat,turnId:'edited',lastUsage:{totalTokens:393659}}),{enabled:true,known:true,extraTokens:7176});
+  createCompensationManager({home:f.home,allowExperimental:true}).setEnabled(true);
+  assert.deepEqual(await createCompensationResolver({home:f.home,control:f.home,allowExperimental:true})({id:chat,turnId:'edited',lastUsage:{totalTokens:393659}}),{enabled:true,known:true,extraTokens:7176});
   fs.appendFileSync(f.second,JSON.stringify(e('event_msg',{type:'turn_aborted',turn_id:'later'}))+'\n');
   assert.equal(historySourcesUnchanged(f.home,events.sources),false);
   assert.deepEqual(activeReasoningEstimate(readHistory(f.home,chat,cache),{threadId:chat,completedTurnId:'edited'}),{known:true,extraTokens:7176});

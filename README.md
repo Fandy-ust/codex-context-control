@@ -32,7 +32,6 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 - **Agent CLI + skill:** manage queues and context budgets, inspect global quota and analyze observed speed. [Usage](docs/en/CLI.md). [Install the skill](docs/en/CLI.md#install-the-skill) · [Skill source](skills/context-manager/SKILL.md).
 
-- **Early compaction compensation (experimental):** an optional switch reserves accounting headroom while keeping the target budget visible. [Details](docs/en/COMPACTION_COMPENSATION.md).
 
 - **Per-chat budgets:** adjust one compact slider group, then click Apply; set new-chat defaults and inherit budgets when forking.
 - **Account quota:** view remaining quota and reset times, with a gradually emptying lightning indicator on Mac and a tray-adapted icon on Windows.
@@ -46,7 +45,7 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 Both platforms share the same core. No app-name or version allowlist; the official Codex runtime is preserved.
 
-The old core patch was retired because its modified runtime lacked the official signing identity required for Computer Use. The new experimental compensation reserves headroom externally. **920K stays available without modifying the core.**
+The old core patch was retired because its modified runtime lacked the official signing identity required for Computer Use. External compaction compensation is also retired in 0.25.2 because it could not reliably track long-running turns. **Context settings up to 920K remain available; they do not guarantee compaction occurs at exactly 900K of reported usage.** [Details](docs/en/COMPACTION_COMPENSATION.md).
 
 [Quota analytics](docs/QUOTA_ANALYTICS.md) · [Usage](docs/en/USAGE.md) · [Cross-platform development](docs/MULTIPLATFORM_DEVELOPMENT.md) · [Build and release](docs/CROSS_PLATFORM_BUILD.md) · [Contributing](CONTRIBUTING.md) · [Privacy](docs/en/PRIVACY.md)
 

@@ -115,3 +115,5 @@ native_compact_maximum = floor(raw_window × 90 / 100)
 官方接口文档确认 fork 复制历史、生成新 ID，并在可用时返回 forkedFromId：[Codex App Server](https://learn.chatgpt.com/docs/app-server)。配置注入能力另外以本机 0.160.0 生成的 schema 核对，并通过 0.159.2 / 0.160.0 的本地模拟服务集成测试。预算继承是本项目增加的行为。临时会话、path 来源和父代理管理的子会话仍不纳入持久控制范围。
 
 启动控制服务时检查版本。已有服务较旧时，核对其 PID 与本项目 daemon 的可执行脚本路径，再替换控制服务；同版且 buildId 相同，或更高版本的服务复用。该操作不终止 Codex 内核。桥接本身仍须正常重开 Codex 才能换成新版；`loadedBridgeVersions` 用于区分安装版本与已加载版本。
+
+0.25.2 的 Mac 界面使用稳定产品标识 `io.github.codex-context-control`，与 Windows 产品标识一致。旧 `io.github.codex-context-control.panel` 的原生偏好迁移一次，新标识下已经存在的选择优先。安装路径、Application Support 数据目录及自动更新协议保持不变。通过 `NSApplicationMain` 和显式 principal class 完成标准 AppKit 初始化，不依赖私有启动或菜单栏 API。

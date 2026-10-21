@@ -1,5 +1,13 @@
 # Changes
 
+## 0.25.2 — Independent menu entry and safe compensation retirement
+
+- Give macOS a stable independent product identity and migrate legacy native preferences without changing the installation or shared data directory.
+- Separate status-entry, icon and main-window lifecycles on both desktops; distinguish resource readiness from actual visibility.
+- Retire external compaction compensation, migrate enabled settings to off and remove its controls on both platforms. Native thresholds and saved budgets remain available.
+- Retain applied compensation across reconnects, retry incomplete restoration, and stop compensation-triggered compaction immediately after disabling.
+- Clarify that reported usage and native compaction accounting can differ; a 920K target does not guarantee a 900K reported-usage boundary.
+
 ## 0.25.1 — Reliable global shortcuts
 
 - Add native Mac shortcut settings alongside Windows, including recording, disabling, clearing and restoring the default.

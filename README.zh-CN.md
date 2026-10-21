@@ -32,7 +32,6 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 - **Agent CLI + skill**：管理队列与上下文预算，查看全局额度、分析实测速度。[用法](docs/CLI.md)。 [安装 skill](docs/CLI.md#配套-skill) · [Skill 源码](skills/context-manager/SKILL.md)。
 
-- **提前压缩补偿（实验性）**：独立开关，为重复计数预留空间，目标容量以本 App 为准。[说明](docs/COMPACTION_COMPENSATION.md)。
 
 - **逐聊天预算**：一组滑条调整窗口和压缩阈值，点击「应用」才保存；新聊天可设默认值，分支继承父聊天预算。
 - **账户额度**：显示剩余额度与重置时间，Mac 使用逐渐空心的闪电图标，Windows 适配系统托盘。
@@ -46,7 +45,7 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 两端共用业务核心，不设 app／版本白名单，保留 Codex 官方运行时。
 
-旧版核心压缩补丁因缺少官方签名而影响 Computer Use，已停用。新的实验性补偿在外层预留空间，不修改核心。**920K 继续保留。**
+旧版核心压缩补丁因缺少官方签名而影响 Computer Use，已停用。外层压缩补偿也因无法可靠跟进长轮次计数，在 0.25.2 停用。**920K 上下文设置继续保留，但不承诺显示用量一定到 900K 才压缩。**[说明](docs/COMPACTION_COMPENSATION.md)。
 
 [额度分析说明](docs/QUOTA_ANALYTICS.md) · [使用指南](docs/FEATURES.md) · [跨平台开发](docs/MULTIPLATFORM_DEVELOPMENT.md) · [构建与发布](docs/CROSS_PLATFORM_BUILD.md) · [参与协作](CONTRIBUTING.md) · [隐私](docs/PRIVACY.md)
 

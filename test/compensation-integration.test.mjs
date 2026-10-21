@@ -17,7 +17,7 @@ async function scenario(enabled,interrupt=false,{smallCatalog=false,high=false,c
  const model={...baseModel,...(smallCatalog?{max_context_window:66000}:{}),...(ceiling?{max_context_window:1022223,effective_context_window_percent:90}:{})};
  const realPolicy=ceiling?{...policy,window:1022223,compact:900000,reserve:20000,effectivePercent:90}:policy;
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-compensate-')),home=path.join(temp,'codex'),control=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(control);
- const manager=createCompensationManager({home:control});manager.setEnabled(enabled);
+ const manager=createCompensationManager({home:control,allowExperimental:true});manager.setEnabled(enabled);
  const catalog=path.join(home,'models.json');const catalogData=JSON.parse(fs.readFileSync(new URL('./fixtures/models.json',import.meta.url)));Object.assign(catalogData.models[0],{max_context_window:enabled?16000000:model.max_context_window,effective_context_window_percent:model.effective_context_window_percent});fs.writeFileSync(catalog,JSON.stringify(catalogData));
  const requests=[];let child,bridge,sequence=0,holdNext=false;const events=[],pending=new Map(),input=new PassThrough(),output=new PassThrough();let stderr='';
  const server=http.createServer(async(req,res)=>{let body='';for await(const chunk of req)body+=chunk;requests.push(JSON.parse(body));const n=requests.length;
@@ -31,7 +31,7 @@ async function scenario(enabled,interrupt=false,{smallCatalog=false,high=false,c
  const call=(method,params)=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>{pending.delete(id);reject(Error(method+' timeout '+stderr.slice(-500)));},15000);pending.set(id,{resolve,reject,timer});input.write(JSON.stringify({id,method,params})+'\n');});
  try{
   child=spawn(binary,['app-server','--listen','stdio://'],{cwd:temp,env:{PATH:process.env.PATH,HOME:temp,TMPDIR:temp,CODEX_HOME:home},stdio:['pipe','pipe','pipe']});child.stderr.on('data',d=>stderr+=d.toString());
-  bridge=new Bridge(child,input,output,async()=>({model}),async id=>({policy:bridge.records.get(id)?.policy,model}),{accountingWindowLimit:enabled?16000000:null,nativeBudgetSupport:true,resolveNewChatBudget:async()=>({policy:interrupt?{...policy,window:700000,compact:600000,revision:0}:realPolicy}),resolveCompensation:createCompensationResolver({home,control})});
+  bridge=new Bridge(child,input,output,async()=>({model}),async id=>({policy:bridge.records.get(id)?.policy,model}),{accountingWindowLimit:enabled?16000000:null,nativeBudgetSupport:true,resolveNewChatBudget:async()=>({policy:interrupt?{...policy,window:700000,compact:600000,revision:0}:realPolicy}),resolveCompensation:createCompensationResolver({home,control,allowExperimental:true})});
   readline.createInterface({input:output}).on('line',line=>{const m=JSON.parse(line);events.push(m);if(!m.method&&pending.has(m.id)){const p=pending.get(m.id);pending.delete(m.id);clearTimeout(p.timer);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}});
   await call('initialize',{clientInfo:{name:'compensation_test',version:'1'},capabilities:{experimentalApi:true}});input.write(JSON.stringify({method:'initialized'})+'\n');
   const id=(await call('thread/start',{model:'context-fixture',cwd:temp,ephemeral:false,approvalPolicy:'never',sandbox:'read-only',baseInstructions:'Reply OK.',developerInstructions:'Keep this test instruction.'})).thread.id;

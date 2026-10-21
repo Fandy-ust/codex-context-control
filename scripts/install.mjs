@@ -1,3 +1,4 @@
+import {createCompensationManager} from '../src/compaction-compensation.mjs';
 import {installQueueCLI,removeQueueCLI} from '../src/cli-launcher.mjs';
 import {editOwnedHook} from '../src/hooks.mjs';
 import fs from 'node:fs';
@@ -39,6 +40,7 @@ if(process.argv.includes('--uninstall')){
   const binary=realBinary();if(!fs.existsSync(binary))throw new Error('未找到 Codex 二进制文件');
   if(process.argv.includes('--require-supported-runtime')){const version=spawnSync(binary,['--version'],{encoding:'utf8',timeout:5000}).stdout?.trim();if(!runtimeSupported(version))throw Error('当前 Codex 运行时尚未支持：'+(version||'无法识别版本'));}
   const upgrade=prepareUpgrade({home:root,version:JSON.parse(fs.readFileSync(path.join(repo,'package.json'))).version});
+createCompensationManager({home:root}).setEnabled(false);
   if(process.argv.includes('--bundled-node')){
     if(!fs.existsSync(path.join(repo,'build/Codex Context Control.app/Contents/MacOS/ContextControl'))||!fs.existsSync(path.join(repo,'node_modules/js-tiktoken/package.json')))throw Error('安装包不完整，请重新下载。');
     nodeBinary=installBundledNode({home:root,license:path.join(repo,'vendor/Node-LICENSE.txt')});

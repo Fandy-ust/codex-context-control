@@ -1201,5 +1201,6 @@
   "请先结束快捷键录制": "Finish recording the shortcut first",
   "使用 Ctrl、Alt 或 Command 加字母或数字，可同时加 Shift，例如 Ctrl+Shift+M。": "Use Ctrl, Alt or Command with a letter or number. Shift can be added, for example Ctrl+Shift+M.",
   "恢复菜单栏入口": "Restore menu bar entry",
-  "补偿已关闭，等待安全恢复原窗口": "Compensation is off; waiting to safely restore the original window."
+  "补偿已关闭，等待安全恢复原窗口": "Compensation is off; waiting to safely restore the original window.",
+  "提前压缩补偿已停用，保留原生压缩和已保存预算。": "Early compaction compensation is retired. Native compaction and saved budgets remain available."
 }

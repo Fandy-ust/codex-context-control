@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const repo=fileURLToPath(new URL('../',import.meta.url)),binary=process.env.CONTEXT_CONTROL_TEST_CODEX||'/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));async function until(fn){for(let i=0;i<400;i++){const result=await fn();if(result)return result;await sleep(25);}throw Error('Ceiling integration timed out');}
 const compensation=true;
-test('real native runtime with accounting catalog reports 920K, compacts after a high final answer and guards a large next input',{skip:!fs.existsSync(binary),timeout:60000},async()=>{
+test('native runtime retires old compensation while preserving 920K, native compaction and input guards',{skip:!fs.existsSync(binary),timeout:60000},async()=>{
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-ceiling-live-')),home=path.join(temp,'home'),control=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(control);fs.writeFileSync(path.join(control,'context-extension.json'),JSON.stringify({enabled:true}));if(compensation)fs.writeFileSync(path.join(control,'compaction-compensation.json'),JSON.stringify({enabled:true}));
  let highDone=false,nearDone=false;
  const fixture=await fixtureServer({usageForRequest(request){const last=JSON.stringify([...(request.input??[])].reverse().find(i=>i.role==='user'));
@@ -23,7 +23,7 @@ test('real native runtime with accounting catalog reports 920K, compacts after a
   const a=(await call('thread/start',{model:'context-fixture',cwd:temp,sandbox:'read-only',approvalPolicy:'never',baseInstructions:'Reply with fixture text. Never call tools.',config:{model_context_window:9999999,model_auto_compact_token_limit:9999999}})).thread.id;
   const e=await turn(a,'CEILING_HIGH');assert.ok(e.some(e=>e.method==='thread/tokenUsage/updated'&&e.params.tokenUsage.modelContextWindow===920000));
   assert.ok(e.some(e=>e.method==='item/completed'&&String(e.params.item?.type).toLowerCase()==='contextcompaction'),'native post-turn compaction must finish without another user input');
-  let state=await request('state');assert.equal(state.contextCeilingPending,false);assert.equal(state.newChatDefaultsPending,false);assert.equal(state.threads.find(t=>t.id===a).modelMetadata.context_ceiling,920000);
+  let state=await request('state');assert.equal(state.compactionCompensation.enabled,false);assert.equal(state.compactionCompensation.available,false);assert.equal(state.contextCeilingPending,false);assert.equal(state.newChatDefaultsPending,false);assert.equal(state.threads.find(t=>t.id===a).modelMetadata.context_ceiling,920000);
   await assert.rejects(request('setPolicy',{id:a,policy:{window:1022223,compact:919000,reserve:16000},apply:true}),/16K/);
   await turn(a,'CEILING_NEAR');const before=fixture.requests.length;
   const guarded=await turn(a,' a'.repeat(20000));

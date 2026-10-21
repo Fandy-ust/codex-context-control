@@ -23,9 +23,10 @@ test('default settings require authentication, persist, reject stale writes and 
  const compensationURL=`http://127.0.0.1:${c.port}/compaction-compensation`;
  assert.equal((await fetch(compensationURL,{method:'POST',body:JSON.stringify({enabled:true})})).status,403);
  assert.equal((await fetch(compensationURL,{method:'POST',headers,body:JSON.stringify({enabled:'true'})})).status,400);
- const compensation=await fetch(compensationURL,{method:'POST',headers,body:JSON.stringify({enabled:true})});assert.equal(compensation.status,200);assert.equal((await compensation.json()).enabled,true);
- assert.equal(JSON.parse(fs.readFileSync(path.join(control,'compaction-compensation.json'))).enabled,true);
- const allState=await (await fetch(`http://127.0.0.1:${c.port}/state`,{headers})).json();assert.equal(allState.compactionCompensation.enabled,true);assert.equal(allState.contextExtension.enabled,false);
+ const compensation=await fetch(compensationURL,{method:'POST',headers,body:JSON.stringify({enabled:true})});assert.equal(compensation.status,400);assert.match((await compensation.json()).error,/已停用/);
+ const disabled=await fetch(compensationURL,{method:'POST',headers,body:JSON.stringify({enabled:false})});assert.equal(disabled.status,200);assert.equal((await disabled.json()).available,false);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(control,'compaction-compensation.json'))).enabled,false);
+ const allState=await (await fetch(`http://127.0.0.1:${c.port}/state`,{headers})).json();assert.equal(allState.compactionCompensation.enabled,false);assert.equal(allState.contextExtension.enabled,false);
  const persisted=JSON.parse(fs.readFileSync(path.join(control,'state.json')));assert.equal(persisted.newChatDefaults.usableWindow,400000);assert.deepEqual(persisted.policies.existing,old);
  const {Store}=await import('../src/store.mjs');assert.equal(new Store().data.newChatDefaults.revision,1);
  }finally{d.web.closeAllConnections();await new Promise(r=>d.web.close(r));await new Promise(r=>d.ipcServer.close(r));fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});}

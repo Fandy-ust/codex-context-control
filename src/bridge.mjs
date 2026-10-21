@@ -324,7 +324,7 @@ export class Bridge {
     // Compensation changes a local counter only. Independently compact once a
     // completed response reaches the saved real threshold, even when the
     // upstream server already included reasoning in its count.
-    const needed=()=>record.compensation?.enabled && record.policy?.enabled!==false && record.policy && record.status==='idle' && !record.locked && record.usageFresh===true && Number.isSafeInteger(record.lastUsage?.totalTokens) && record.lastUsage.totalTokens>=record.policy.compact;
+    const needed=()=>record.compensation?.enabled && (this.resolveCompensation?.isEnabled?.()??true) && record.policy?.enabled!==false && record.policy && record.status==='idle' && !record.locked && record.usageFresh===true && Number.isSafeInteger(record.lastUsage?.totalTokens) && record.lastUsage.totalTokens>=record.policy.compact;
     if(!needed() || record.protectedUsageGeneration===record.usageGeneration)return;
     queueMicrotask(()=>{
       if(!needed() || record.protectedUsageGeneration===record.usageGeneration)return;

@@ -1,25 +1,13 @@
-# Early compaction compensation (experimental)
+# Early compaction compensation is retired
 
-Enable **Early compaction compensation** in **Settings → General**. It defaults off and is independent of Context extension. It applies to chats with an enabled saved budget before their next turn or budget application.
+Starting with 0.25.2, both desktops remove the switch, reject reactivation and migrate an enabled legacy preference to off. Native context windows, compaction thresholds, manual compaction and saved chat budgets remain available.
 
-**Codex may show a larger context window to reserve room for duplicate accounting. Use the target capacity shown in Context Manager.** Context Manager uses the original budget for capacity, percentages and tray displays. Request usage is never increased by the compensation estimate. The target is an application-managed budget, not a promise about the provider's capacity.
+The runtime's compaction counter can include additional historical-reasoning estimates that are absent from displayed request usage. User input during a running turn changes the reasoning boundary. External compensation can update the window only at safe turn boundaries, so it cannot reliably cover an entire long-running turn.
 
-The controller reads the active local history, respects compaction replacements and fork boundaries, and reproduces the runtime's encrypted-reasoning length estimate. Only the required item types, identifiers and lengths are cached in memory. It does not persist reasoning payloads or conversation text.
+Older versions could also forget the applied compensation state on resume even when the runtime retained its old window. Disabling could then incorrectly appear complete. Version 0.25.2 retains applied state, retries restoration and reports pending restoration explicitly.
 
-Interrupted turns also count as finished for this check. Continuing after a pause recalculates compensation before sending input. After message edits, inherited history is resolved by immutable rollout ID rather than the chat's current file. Restart Codex when prompted after upgrading so its running bridge loads the fixes.
+A 920K target does not guarantee compaction waits for 900K of displayed usage. Disabling compensation does not remove the runtime's additional accounting rules. Short synthetic tests establish only their tested scenarios, not live-provider or long-turn guarantees.
 
-While the chat is idle, it adjusts the native window and threshold to reserve compensation space, preserving the saved logical budget. Incoming user input is checked against that target; native compaction can be requested first. Disabling restores the original window before the next turn of a chat with auto-apply enabled.
+Updates preserve budgets and do not actively compact chats. Restore the original parameters at a safe idle boundary; normally restart Codex to load the updated bridge. Restoration is confirmed only when the runtime window matches the target, not merely when the preference says off. Historical compensation fixtures remain isolated test-only inputs; the production UI and API cannot re-enable compensation.
 
-The feature preserves the official executable, usage receipts and chat history. It requires no extra model call. The estimate is not the real model reasoning-token count.
-
-## Limits
-
-- Missing or stale history/usage waits instead of guessing. Unrecognized rollback or incomplete compaction history is not compensated.
-- A local catalog separates accounting headroom from the real budget, preserving the default context window and the app's editable limits. Internal accounting supports up to 16M tokens (or a larger original catalog maximum); this is not additional model capacity. Restart Codex normally after enabling or upgrading to load the catalog and bridge.
-- With a 920K real budget, a 900K real trigger and 500K historical overhead, the internal trigger becomes 1400K. An 800K request remains displayed as 800K against 920K.
-- New-input guards retain the real budget. After a completed turn reaches the real trigger, the bridge requests native compaction, including when the provider already counted reasoning. Failures stay visible.
-- Temporary and parent-managed chats are excluded.
-- Adjustments occur between turns. Provider accounting signals, new instruction boundaries within a turn, and future history/estimator changes may affect behavior. This is not a guarantee against all early compaction or a hard per-step limit during a running turn.
-- Computer Use still requires real-machine acceptance; retaining the signed executable alone does not establish compatibility.
-
-Tests cover history projection, bounds, target/readback separation, authenticated preferences and an original-runtime comparison with local synthetic responses, including restoration after disabling. The legacy binary-replacement patch remains disabled.
+The older binary patch remains retired because a modified runtime lacks the official signing identity required for Computer Use. This update leaves the official Codex executable unchanged.

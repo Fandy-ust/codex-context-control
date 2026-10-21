@@ -7,8 +7,7 @@ function atomicJSON(file,value){fs.mkdirSync(path.dirname(file),{recursive:true,
 import {ceilingModel,CONTEXT_CEILING_VERSION,CEILING_RAW_WINDOW,MAX_CONTEXT_COMPACT} from './core/context-window.mjs';
 export * from './core/context-window.mjs';
 export function contextExtensionEnabled(control){try{return JSON.parse(fs.readFileSync(path.join(control,'context-extension.json'))).enabled===true;}catch{return false;}}
-function compensationEnabled(control){try{return JSON.parse(fs.readFileSync(path.join(control,'compaction-compensation.json'))).enabled===true;}catch{return false;}}
-export function prepareContextCatalog({home=process.env.CONTEXT_CONTROL_CODEX_HOME||process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),control=process.env.CONTEXT_CONTROL_HOME||path.join(os.homedir(),'Library/Application Support/CodexContextControl'),enabled=process.env.CONTEXT_CONTROL_CONTEXT_CEILING==='1'||(process.env.CONTEXT_CONTROL_CONTEXT_CEILING!=='0'&&!process.env.CONTEXT_CONTROL_CATALOG_PATH&&contextExtensionEnabled(control)),compensation=compensationEnabled(control)}={}){
+export function prepareContextCatalog({home=process.env.CONTEXT_CONTROL_CODEX_HOME||process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),control=process.env.CONTEXT_CONTROL_HOME||path.join(os.homedir(),'Library/Application Support/CodexContextControl'),enabled=process.env.CONTEXT_CONTROL_CONTEXT_CEILING==='1'||(process.env.CONTEXT_CONTROL_CONTEXT_CEILING!=='0'&&!process.env.CONTEXT_CONTROL_CATALOG_PATH&&contextExtensionEnabled(control)),compensation=false}={}){
  if(!enabled&&!compensation)return null;
  const source=process.env.CONTEXT_CONTROL_CATALOG_PATH||path.join(home,'models_cache.json');
  try{

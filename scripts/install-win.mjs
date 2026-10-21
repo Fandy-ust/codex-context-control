@@ -1,3 +1,4 @@
+import {createCompensationManager} from '../src/compaction-compensation.mjs';
 import {installQueueCLI,removeQueueCLI} from '../src/cli-launcher.mjs';
 import fs from 'node:fs';
 import {cleanupWindowsInstallations} from '../src/platform/windows-cleanup.mjs';
@@ -73,6 +74,7 @@ atomicJSON(path.join(bin,'launcher.json'),{node,codeRoot:code,controlHome:root})
 const beforeHooks=fs.existsSync(hooksFile)?fs.readFileSync(hooksFile):null;
 const beforeStartup=readJSON(path.join(root,'automatic-startup.json'));
 const upgrade=prepareUpgrade({home:root,version:pkg.version,previousVersion:previous.productVersion});
+createCompensationManager({home:root}).setEnabled(false);
 const installedApp=path.join(target,'ContextManager.exe'),hookCommand=`"${shim}" --hook`;
 let integrationWarning=null;
 try{

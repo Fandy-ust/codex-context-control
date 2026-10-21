@@ -42,9 +42,11 @@ test('downloaded installer validates payload, installs with empty PATH, and surv
   const oldSettings=JSON.parse(fs.readFileSync(path.join(control,'settings.json')));fs.writeFileSync(path.join(control,'settings.json'),JSON.stringify({...oldSettings,futurePreference:'preserved'}));
   const language='{"version":1,"choice":"en"}';fs.writeFileSync(path.join(control,'language.json'),language);
   const obsolete=path.join(control,'runtime/node-v22.0.0-arm64-111111111111');fs.writeFileSync(obsolete,'obsolete runtime');fs.writeFileSync(path.join(control,'runtime/Node-v22.0.0-LICENSE.txt'),'obsolete license');
+  fs.writeFileSync(path.join(control,'compaction-compensation.json'),JSON.stringify({enabled:true,futureField:'keep'}));
   const retainedState={version:2,threads:{},policies:{saved:{window:400000,compact:360000,revision:3}}};fs.writeFileSync(path.join(control,'state.json'),JSON.stringify(retainedState));
   r=run(path.join(app,'Contents/MacOS/Installer'),['--install-update','--no-auto-start'],env);assert.equal(r.status,0,r.stdout+r.stderr);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(control,'state.json'))),retainedState);
+  const compensation=JSON.parse(fs.readFileSync(path.join(control,'compaction-compensation.json')));assert.equal(compensation.enabled,false);assert.equal(compensation.futureField,'keep');
   assert.equal(JSON.parse(fs.readFileSync(path.join(control,'settings.json'))).futurePreference,'preserved');assert.equal(fs.readFileSync(path.join(control,'language.json'),'utf8'),language);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(control,'upgrade-backup/state.json'))),retainedState);
   assert.equal(fs.existsSync(obsolete),false);assert.equal(fs.existsSync(path.join(control,'runtime/Node-v22.0.0-LICENSE.txt')),false);
   assert.equal(JSON.parse(fs.readFileSync(path.join(control,'thread-cache.json'))).entries.cached.summary.lastUsage.totalTokens,123);
