@@ -6,6 +6,7 @@
 - Reject same-version, older and malformed offers again at the Windows prompt; use the native Mac bundle version for displayed versions and update eligibility.
 - Separate the local accounting catalog from real context budgets so historical-reasoning compensation works near the configured capacity, with real-usage compaction at turn boundaries.
 - Keep usage, capacity and rings based on the original budget on both desktops. Preserve the official Codex executable, existing settings and cloud-sync data.
+- Verify an installed Windows controller from its recorded daemon script and bundled Node executable when Windows does not expose the process command line. Continue refusing to stop unidentified processes.
 
 ## 0.24.3 — Use the installed app version for update checks
 

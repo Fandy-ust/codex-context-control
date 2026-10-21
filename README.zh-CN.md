@@ -6,8 +6,8 @@ Codex 的本地扩展：**上下文控制与任务队列**，围绕 5 小时和�
 
 | 平台 | 安装包 | 系统要求 |
 | --- | --- | --- |
-| macOS | [下载 0.24.3 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.3-preview.1/Context-Manager-0.24.3-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [下载 0.24.3 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.3-preview.1/Context-Manager-0.24.3-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [下载 0.25.0 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.0-preview.1/Context-Manager-0.25.0-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [下载 0.25.0 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.0-preview.1/Context-Manager-0.25.0-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac 安装说明](docs/INSTALL_MAC.md) · [Windows 安装说明](docs/INSTALL_WINDOWS.md) · [版本说明](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [English](README.md)
 
