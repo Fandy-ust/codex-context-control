@@ -20,14 +20,15 @@ final class GlobalShortcutManager {
   init(onTrigger: @escaping () -> Void) { self.onTrigger = onTrigger }
 
   func configure(_ value: String, enabled: Bool) -> (registered: Bool, error: String?) {
-    let next = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard enabled && !next.isEmpty else {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard enabled && !trimmed.isEmpty else {
       if let hotKey { UnregisterEventHotKey(hotKey) }
       hotKey = nil
       accelerator = nil
       return (false, nil)
     }
-    guard let (keyCode, modifiers) = Self.parse(next) else { return (false, L("请输入有效的快捷键")) }
+    guard let next = Self.normalized(trimmed), let (keyCode, modifiers) = Self.parse(next) else { return (false, L("请输入有效的快捷键")) }
+    guard !suspended else { return (false, L("请先结束快捷键录制")) }
     if hotKey != nil && accelerator == next { return (true, nil) }
     if handler == nil {
       var eventSpec = EventTypeSpec(
@@ -37,7 +38,7 @@ final class GlobalShortcutManager {
         Unmanaged.passUnretained(self).toOpaque(), &handler)
       guard result == noErr else { return (false, L("无法注册系统快捷键")) }
     }
-    var hotKeyID = EventHotKeyID(signature: signature, id: 1)
+    let hotKeyID = EventHotKeyID(signature: signature, id: 1)
     var newHotKey: EventHotKeyRef?
     let result = RegisterEventHotKey(
       keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), UInt32(kEventHotKeyExclusive),
@@ -49,25 +50,28 @@ final class GlobalShortcutManager {
     return (true, nil)
   }
 
-  func suspend(_ shouldSuspend: Bool) {
-    guard suspended != shouldSuspend else { return }
+  @discardableResult
+  func suspend(_ shouldSuspend: Bool) -> (registered: Bool, error: String?) {
     suspended = shouldSuspend
     if shouldSuspend {
       if let hotKey { UnregisterEventHotKey(hotKey) }
       hotKey = nil
-      return
+      return (false, nil)
     }
-    guard let accelerator, let (keyCode, modifiers) = Self.parse(accelerator) else { return }
-    var hotKeyID = EventHotKeyID(signature: signature, id: 1)
-    var resumedHotKey: EventHotKeyRef?
-    let result = RegisterEventHotKey(
-      keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), UInt32(kEventHotKeyExclusive),
-      &resumedHotKey)
-    if result == noErr { hotKey = resumedHotKey }
+    guard let accelerator else { return (false, nil) }
+    // Reuse configure's idempotence and error reporting. A failed resume must
+    // not leave the settings UI claiming that the shortcut is still active.
+    return configure(accelerator, enabled: true)
   }
 
   func handle(_ event: EventRef) -> OSStatus {
-    DispatchQueue.main.async { self.onTrigger() }
+    var identifier = EventHotKeyID()
+    guard GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &identifier) == noErr,
+      identifier.signature == signature, identifier.id == 1, hotKey != nil, !suspended else { return OSStatus(eventNotHandledErr) }
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.hotKey != nil, !self.suspended else { return }
+      self.onTrigger()
+    }
     return noErr
   }
 
@@ -75,16 +79,18 @@ final class GlobalShortcutManager {
     if let hotKey { UnregisterEventHotKey(hotKey) }
     hotKey = nil
     accelerator = nil
+    suspended = false
     if let handler { RemoveEventHandler(handler) }
     handler = nil
   }
   deinit { dispose() }
 
   private static func parse(_ value: String) -> (UInt32, UInt32)? {
-    let parts = value.split(separator: "+").map {
+    guard value.count <= 100 else { return nil }
+    let parts = value.split(separator: "+", omittingEmptySubsequences: false).map {
       String($0).trimmingCharacters(in: .whitespaces).lowercased()
     }
-    guard !parts.isEmpty else { return nil }
+    guard !parts.isEmpty, !parts.contains(where: { $0.isEmpty }) else { return nil }
     var modifiers: UInt32 = 0
     var key: UInt32? = nil
     for part in parts {
@@ -106,8 +112,14 @@ final class GlobalShortcutManager {
         key = code
       }
     }
-    guard modifiers != 0, let key else { return nil }
+    guard modifiers & UInt32(controlKey | optionKey | cmdKey) != 0, let key else { return nil }
     return (key, modifiers)
+  }
+
+  static func normalized(_ value: String) -> String? {
+    guard let (code, flags) = parse(value), let key = keyName(for: code) else { return nil }
+    let names: [(UInt32, String)] = [(UInt32(controlKey), "Control"), (UInt32(optionKey), "Alt"), (UInt32(shiftKey), "Shift"), (UInt32(cmdKey), "Command")]
+    return (names.filter { flags & $0.0 != 0 }.map { $0.1 } + [key]).joined(separator: "+")
   }
 
   static func keyName(for keyCode: UInt32) -> String? {

@@ -23,7 +23,7 @@ jobs:
         run: |
           $version = node -p "require('./package.json').version"
           $exe = "build/Context-Manager-$version-windows-x64/payload/ContextManager.exe"
-          node scripts/dev-win.mjs --packaged $exe --demo --smoke-test --smoke-language en
+          node scripts/dev-win.mjs --packaged $exe --demo --smoke-test --smoke-language en --shortcut-probe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/dev-win.mjs --packaged $exe --demo --smoke-test --smoke-language zh
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

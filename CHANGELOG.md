@@ -1,5 +1,13 @@
 # Changes
 
+## 0.25.1 — Reliable global shortcuts
+
+- Add native Mac shortcut settings alongside Windows, including recording, disabling, clearing and restoring the default.
+- Reject bare typing keys and Shift-only character shortcuts; normalize equivalent modifier names before registering or saving.
+- End recording when leaving the shortcut page, changing applications, clearing or restoring a binding; report a failed resume accurately.
+- Add shared validation fixtures, native registration and lifecycle tests, and packaged Windows recording/clear regressions.
+- Retain installer payload and OTA archive verification while removing the standalone Windows EXE checksum file.
+
 ## 0.25.0 — Real-budget compensation and update identity
 
 - Recognize a running installation-owned Windows UI even when the install pointer has moved to a different version, so upgrades can close it before launching the replacement.

@@ -64,3 +64,5 @@ Successful updates replace the old app and code, remove unused bundled runtimes 
 Upgrade inheritance keeps unknown preference fields and all existing user data. Before a version change, one configuration snapshot is saved in `upgrade-backup/` under the support directory; it excludes apps, runtimes and chat caches. Same-version reinstalls reuse the existing snapshot.
 
 Update checks prefer the public `update.json` release asset and fall back to the GitHub API. Rate-limited sources respect retry/reset headers; repeated manual checks are throttled. When checking is unavailable, use the release-page link. Users whose older updater shows HTTP 403 should manually install this version once; no GitHub token is required. Network restrictions on GitHub downloads can still require another network or manual download.
+
+Character shortcuts must include Ctrl, Alt or Command; Shift may be added. Equivalent modifier names are normalized. Leaving the shortcut page or switching applications ends recording and restores the existing binding.

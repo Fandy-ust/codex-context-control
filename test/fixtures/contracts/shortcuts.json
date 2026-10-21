@@ -1,0 +1,11 @@
+{
+  "valid": [
+    {"input":"Control+Shift+M","normalized":"Control+Shift+M"},
+    {"input":" shift + ctrl + m ","normalized":"Control+Shift+M"},
+    {"input":"Ctrl+Option+Shift+9","normalized":"Control+Alt+Shift+9"},
+    {"input":"shift+option+control+9","normalized":"Control+Alt+Shift+9"},
+    {"input":"Command+Alt+K","normalized":"Alt+Super+K"},
+    {"input":"Ctrl+-","normalized":"Control+-"}
+  ],
+  "invalid": ["A","Shift+A","Shift+9","Ctrl++M","+Ctrl+M","Ctrl+M+","Ctrl+Ctrl+M","Control+Command","Ctrl+A+B",""]
+}

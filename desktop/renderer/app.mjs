@@ -753,6 +753,15 @@ window.__contextSmoke=async({preview=false}={})=>{
     selectChat(state.threads[0].id);
     openSettings('shortcut');settings=!!document.querySelector('#shortcut-input')&&document.querySelector('#shortcut-input').value==='Ctrl + Shift + M'&&!!document.querySelector('[data-action="shortcut-save"]');
     const saved=await api.invoke('shortcut-save',{accelerator:'Control+Alt+K',enabled:true});preferences=await api.invoke('preferences');settings=settings&&saved.accelerator==='Control+Alt+K'&&preferences.shortcut.accelerator==='Control+Alt+K'&&preferences.shortcut.inactive;
+    await api.invoke('shortcut-save',{accelerator:DEFAULT_SHORTCUT,enabled:true});preferences=await api.invoke('preferences');
+    closeSettings();openSettings('shortcut');
+    const waitShortcut=async predicate=>{const until=Date.now()+4000;while(!predicate()&&Date.now()<until)await new Promise(r=>setTimeout(r,20));return predicate();};
+    root.querySelector('[data-action="shortcut-record"]').click();settings=settings&&await waitShortcut(()=>shortcutRecording);
+    root.querySelector('[data-action="settings-tab"][data-tab="general"]').click();settings=settings&&!shortcutRecording;
+    switchSettingsTab('shortcut');root.querySelector('[data-action="shortcut-record"]').click();settings=settings&&await waitShortcut(()=>shortcutRecording);
+    window.dispatchEvent(new Event('blur'));settings=settings&&!shortcutRecording;
+    root.querySelector('[data-action="shortcut-clear"]').click();root.querySelector('[data-action="shortcut-save"]').click();settings=settings&&await waitShortcut(()=>!busy&&!shortcutDirty);
+    preferences=await api.invoke('preferences');closeSettings();openSettings('shortcut');settings=settings&&preferences.shortcut.accelerator===''&&!preferences.shortcut.enabled&&root.querySelector('#shortcut-input').value==='';
     await api.invoke('shortcut-save',{accelerator:DEFAULT_SHORTCUT,enabled:true});preferences=await api.invoke('preferences');selectChat(state.threads[0].id);
   }
   if(mode==='main'&&preferences.demo){

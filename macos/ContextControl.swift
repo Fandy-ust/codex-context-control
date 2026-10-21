@@ -77,7 +77,8 @@ struct ServiceSettings: Decodable {let node:String}
         globalShortcutEnabled=(saved["enabled"] as? Bool) ?? true
     }
     func saveGlobalShortcutSettings(_ accelerator:String,enabled:Bool)->Bool {
-        let next=accelerator.trimmingCharacters(in:.whitespacesAndNewlines),nextEnabled=enabled && !next.isEmpty
+        let trimmed=accelerator.trimmingCharacters(in:.whitespacesAndNewlines),nextEnabled=enabled && !trimmed.isEmpty
+        let next=nextEnabled ? GlobalShortcutManager.normalized(trimmed) ?? trimmed:trimmed
         let previous=(globalShortcut,globalShortcutEnabled)
         let result=onGlobalShortcutChange?(next,nextEnabled) ?? (false,L("无法注册系统快捷键"))
         guard !nextEnabled || result.registered else{globalShortcutError=result.error ?? L("快捷键已被占用，请选择其他组合");return false}
@@ -86,12 +87,13 @@ struct ServiceSettings: Decodable {let node:String}
             try FileManager.default.createDirectory(at:home,withIntermediateDirectories:true)
             var root=(try? JSONSerialization.jsonObject(with:Data(contentsOf:url))) as? [String:Any] ?? [:]
             root["version"]=(root["version"] as? Int) ?? 1
-            root["shortcut"]=["accelerator":next,"enabled":nextEnabled]
+            var shortcut=root["shortcut"] as? [String:Any] ?? [:]
+            shortcut["accelerator"]=next;shortcut["enabled"]=nextEnabled;root["shortcut"]=shortcut
             let data=try JSONSerialization.data(withJSONObject:root,options:[.sortedKeys]);try data.write(to:url,options:.atomic)
             globalShortcut=next;globalShortcutEnabled=nextEnabled;globalShortcutRegistered=result.registered;globalShortcutError=nil
             return true
         } catch {
-            _=onGlobalShortcutChange?(previous.0,previous.1)
+            let restored=onGlobalShortcutChange?(previous.0,previous.1);globalShortcutRegistered=restored?.registered ?? false
             globalShortcutError=L("设置保存失败：{0}",error.localizedDescription);return false
         }
     }
@@ -758,7 +760,10 @@ struct ContentView: View {
         let hotKeyManager=GlobalShortcutManager{[weak self] in self?.toggleMainWindow()}
         shortcutManager=hotKeyManager
         model.onGlobalShortcutChange={[weak self] key,enabled in self?.shortcutManager?.configure(key,enabled:enabled) ?? (false,L("无法注册系统快捷键"))}
-        model.onGlobalShortcutRecording={[weak self] recording in self?.shortcutManager?.suspend(recording)}
+        model.onGlobalShortcutRecording={[weak self] recording in
+            guard let self,let result=self.shortcutManager?.suspend(recording) else{return}
+            self.model.globalShortcutRegistered=result.registered;self.model.globalShortcutError=result.error
+        }
         let shortcutStatus=hotKeyManager.configure(model.globalShortcut,enabled:model.globalShortcutEnabled)
         model.globalShortcutRegistered=shortcutStatus.registered;model.globalShortcutError=shortcutStatus.error
         installMainMenu()

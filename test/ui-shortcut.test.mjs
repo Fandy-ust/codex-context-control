@@ -20,3 +20,15 @@ test('disabled and test-only shortcuts do not claim a native binding',()=>{
   const f=fixture();f.manager.start();f.manager.set({accelerator:DEFAULT_SHORTCUT,enabled:false});assert.equal(f.bindings.size,0);assert.equal(f.manager.status().registered,false);
   const preview=fixture({inactive:true});preview.manager.start();preview.manager.set({accelerator:'Ctrl+Alt+P'});assert.equal(preview.bindings.size,0);assert.equal(preview.manager.status().registered,false);
 });
+
+test('shared shortcut validation agrees with the native cross-platform contract',async()=>{
+ const fs=await import('node:fs');const cases=JSON.parse(fs.readFileSync(new URL('./fixtures/contracts/shortcuts.json',import.meta.url)));
+ for(const row of cases.valid)assert.equal(normalizeShortcut(row.input),row.normalized);
+ for(const input of cases.invalid)assert.throws(()=>normalizeShortcut(input),undefined,input);
+});
+test('equivalent aliases preserve one registration and clear stays disabled after restart',()=>{
+ const f=fixture({doc:{version:7,keep:'preserved'}});f.manager.start();
+ f.manager.set({accelerator:'shift + ctrl + m',enabled:true});assert.equal(f.bindings.size,1);assert.equal(f.manager.status().registered,true);
+ f.manager.set({accelerator:'',enabled:true});assert.equal(f.bindings.size,0);assert.equal(f.doc().shortcut.enabled,false);assert.equal(f.doc().keep,'preserved');
+ const restarted=fixture({doc:f.doc()});restarted.manager.start();assert.equal(restarted.manager.status().accelerator,'');assert.equal(restarted.manager.status().enabled,false);assert.equal(restarted.bindings.size,0);
+});
