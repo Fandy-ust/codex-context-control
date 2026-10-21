@@ -17,7 +17,6 @@ const native=path.join(repo,'build/windows-native'),embedded=path.join(native,na
 createWindowsZip(path.join(folder,'payload'),embedded);
 fs.writeFileSync(embedded+'.sha256',crypto.createHash('sha256').update(fs.readFileSync(embedded)).digest('hex')+'\n');
 compileWindowsInstaller({output:setup,icon:path.join(native,'ContextManager.ico'),archive:embedded,checksum:embedded+'.sha256'});
-fs.writeFileSync(setup+'.sha256',crypto.createHash('sha256').update(fs.readFileSync(setup)).digest('hex')+'  '+path.basename(setup)+'\n');
 console.log(setup);
 }
 if(updateOnly||process.argv.includes('--with-update-zip')){

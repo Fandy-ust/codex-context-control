@@ -28,7 +28,7 @@ Windows 11 x64 预览版，当前版本为 0.23.5。包含独立 Node、Electron
 
 点击侧栏顶部齿轮，或从托盘右键菜单打开「设置」。设置以悬浮弹层显示，语言、同步聊天、上下文拓展、更新和诊断集中在「通用」，另有「全局默认」「账户额度」「Codex 接入」「快捷键」分类；聊天列表使用侧栏其余空间。点击遮罩、关闭按钮或按 Esc 关闭弹层。
 
-「快捷键」可自定义唤起主窗口的全局快捷键，默认 **Ctrl + Shift + M**，按一次显示主窗口，再按一次隐藏。支持录制按键、直接输入、恢复默认和禁用；组合被其他程序占用时会提示，并保留原来可用的快捷键。管理器驻留托盘时生效，完全退出后不再响应。快捷键偏好单独保存在数据目录的 `ui-settings.json`，更新时保留。
+「快捷键」可自定义唤起主窗口的全局快捷键，默认 **Ctrl + Shift + M**，按一次显示主窗口，再按一次隐藏。支持录制按键、直接输入、恢复默认、禁用和清空；组合被其他程序占用时会提示，并保留原来可用的快捷键。管理器驻留托盘时生效，完全退出后不再响应。快捷键偏好单独保存在数据目录的 `ui-settings.json`，更新时保留。
 
 接入启动异常时，在「通用」或「Codex 接入」点击「打开接入日志」。默认目录为 `%LOCALAPPDATA%\CodexContextControl\logs`，`integration.jsonl` 记录检查阶段、耗时、进程及收发字节数，`launcher.jsonl` 记录原生启动器的首次刷新、EOF 和退出阶段。每个日志达到约 1 MB 后轮换一份备份；不记录 RPC 正文、聊天文本或初始化消息内容。检查失败不会登记接入，失败提示保留在设置中。
 
@@ -66,7 +66,7 @@ npm ci
 npm run build:win
 ```
 
-`build:win` 一次完成编译、压缩与封装，输出独立的 `build/Context-Manager-0.23.5-windows-x64-Setup.exe` 和同名 `.sha256`。分发时只需发送 `Setup.exe`，不需要旁边放 `payload/`。安装后程序会正常展开到安装目录。
+`build:win` 一次完成编译、压缩与封装，输出独立的 `build/Context-Manager-0.23.5-windows-x64-Setup.exe`。GitHub Release 会显示该安装器的 SHA-256 摘要；分发时只需发送 `Setup.exe`，不需要旁边放 `payload/`。安装后程序会正常展开到安装目录。
 
 `build/Context-Manager-0.23.5-windows-x64/` 是构建中间目录。如果只需要目录而不生成 EXE，可执行 `npm run build:win:dir`；需要重新封装现有目录时可执行 `npm run package:win`。
 

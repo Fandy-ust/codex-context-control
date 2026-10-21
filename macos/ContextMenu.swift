@@ -72,9 +72,9 @@ private struct MenuRowFrames:PreferenceKey {
     var body:some View {
         VStack(alignment:.leading,spacing:8){
             Button(action:openSettings){
-                HStack{Text(L("打开主窗口"));Spacer();Text("⌘M").foregroundStyle(.tertiary)}
+                HStack{Text(L("打开主窗口"));Spacer();Text(model.globalShortcutEnabled ? model.globalShortcut.replacingOccurrences(of:"Control",with:"Ctrl").replacingOccurrences(of:"Shift",with:"⇧").replacingOccurrences(of:"Alt",with:"⌥").replacingOccurrences(of:"Command",with:"⌘").replacingOccurrences(of:"+",with:" ") : "").foregroundStyle(.tertiary)}
                     .font(.system(size:13)).padding(.horizontal,10).padding(.vertical,7).contentShape(Rectangle())
-            }.buttonStyle(ContextMenuButtonStyle()).keyboardShortcut("m")
+            }.buttonStyle(ContextMenuButtonStyle())
             AccountQuotaSection(model:model)
             Divider().padding(.horizontal,8)
             ScrollView {

@@ -54,6 +54,12 @@ struct ServiceSettings: Decodable {let node:String}
 @MainActor final class Controller: ObservableObject {
     @Published var languageSelection=Localization.choice
     @Published var languageRevision=0
+    @Published var globalShortcut="Control+Shift+M"
+    @Published var globalShortcutEnabled=true
+    @Published var globalShortcutRegistered=false
+    @Published var globalShortcutError:String?
+    var onGlobalShortcutChange:((String,Bool)->(registered:Bool,error:String?))?
+    var onGlobalShortcutRecording:((Bool)->Void)?
     private var languageObservers:[NSObjectProtocol]=[]
     init(){
         for name in [Localization.didChange,Notification.Name.NSSystemTimeZoneDidChange] {
@@ -64,6 +70,31 @@ struct ServiceSettings: Decodable {let node:String}
     }
     deinit{for observer in languageObservers{NotificationCenter.default.removeObserver(observer)}}
     func setLanguage(_ value:LanguageChoice){do{try Localization.setChoice(value)}catch{notice=L("无法保存语言设置：{0}",error.localizedDescription)}}
+    func loadGlobalShortcutSettings(){
+        let url=home.appendingPathComponent("ui-settings.json")
+        guard let data=try? Data(contentsOf:url),let root=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],let saved=root["shortcut"] as? [String:Any] else{return}
+        globalShortcut=saved["accelerator"] as? String ?? "Control+Shift+M"
+        globalShortcutEnabled=(saved["enabled"] as? Bool) ?? true
+    }
+    func saveGlobalShortcutSettings(_ accelerator:String,enabled:Bool)->Bool {
+        let next=accelerator.trimmingCharacters(in:.whitespacesAndNewlines),nextEnabled=enabled && !next.isEmpty
+        let previous=(globalShortcut,globalShortcutEnabled)
+        let result=onGlobalShortcutChange?(next,nextEnabled) ?? (false,L("无法注册系统快捷键"))
+        guard !nextEnabled || result.registered else{globalShortcutError=result.error ?? L("快捷键已被占用，请选择其他组合");return false}
+        let url=home.appendingPathComponent("ui-settings.json")
+        do {
+            try FileManager.default.createDirectory(at:home,withIntermediateDirectories:true)
+            var root=(try? JSONSerialization.jsonObject(with:Data(contentsOf:url))) as? [String:Any] ?? [:]
+            root["version"]=(root["version"] as? Int) ?? 1
+            root["shortcut"]=["accelerator":next,"enabled":nextEnabled]
+            let data=try JSONSerialization.data(withJSONObject:root,options:[.sortedKeys]);try data.write(to:url,options:.atomic)
+            globalShortcut=next;globalShortcutEnabled=nextEnabled;globalShortcutRegistered=result.registered;globalShortcutError=nil
+            return true
+        } catch {
+            _=onGlobalShortcutChange?(previous.0,previous.1)
+            globalShortcutError=L("设置保存失败：{0}",error.localizedDescription);return false
+        }
+    }
     @Published var queueModels:[QueueModel]=[]
     @Published var queueTaskEditID:String?
     @Published var taskQueues:TaskQueuesState?
@@ -698,6 +729,7 @@ struct ContentView: View {
     private var statusItem:NSStatusItem?
     private var statusHighlight:StatusItemHighlight?
     private var settingsWindow:NSWindow?
+    private var shortcutManager:GlobalShortcutManager?
     private var refreshTask:Task<Void,Never>?
     private var refreshTimer:Timer?
     private var refreshInProgress=false
@@ -722,6 +754,13 @@ struct ContentView: View {
     }
     func applicationDidFinishLaunching(_ notification:Notification){
         startLocalService()
+        model.loadGlobalShortcutSettings()
+        let hotKeyManager=GlobalShortcutManager{[weak self] in self?.toggleMainWindow()}
+        shortcutManager=hotKeyManager
+        model.onGlobalShortcutChange={[weak self] key,enabled in self?.shortcutManager?.configure(key,enabled:enabled) ?? (false,L("无法注册系统快捷键"))}
+        model.onGlobalShortcutRecording={[weak self] recording in self?.shortcutManager?.suspend(recording)}
+        let shortcutStatus=hotKeyManager.configure(model.globalShortcut,enabled:model.globalShortcutEnabled)
+        model.globalShortcutRegistered=shortcutStatus.registered;model.globalShortcutError=shortcutStatus.error
         installMainMenu()
         for name in [Localization.didChange,Notification.Name.NSSystemTimeZoneDidChange]{
             languageObservers.append(NotificationCenter.default.addObserver(forName:name,object:nil,queue:.main){[weak self] _ in
@@ -856,7 +895,8 @@ struct ContentView: View {
     }
     private func installMainMenu(){
         let bar=NSMenu(),appItem=NSMenuItem(),appMenu=NSMenu()
-        appMenu.addItem(withTitle:L("打开主窗口"),action:#selector(showSettings),keyEquivalent:"m").target=self
+        let openItem=appMenu.addItem(withTitle:L("打开主窗口"),action:#selector(showSettings),keyEquivalent:"")
+        openItem.target=self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle:L("退出 Context Manager"),action:#selector(quitEntry),keyEquivalent:"q").target=self
         appItem.submenu=appMenu;bar.addItem(appItem)
@@ -879,6 +919,10 @@ struct ContentView: View {
         settingsWindow?.deminiaturize(nil);settingsWindow?.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps:true);publishStatus();refreshNow()
     }
+    private func toggleMainWindow(){
+        if let window=settingsWindow,window.isVisible,window.isKeyWindow{window.orderOut(nil);publishStatus(windowVisible:false)}
+        else{showSettings()}
+    }
     @objc private func openCodex(){model.launchCodex()}
     @objc private func quitEntry(){NSApplication.shared.terminate(nil)}
     func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows:Bool)->Bool{showSettings();return false}
@@ -900,5 +944,5 @@ struct ContentView: View {
             try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:url.path);lastStatus=data
         }catch{}
     }
-    func applicationWillTerminate(_ notification:Notification){quotaIntroTimer?.invalidate();closeContextMenu();refreshTimer?.invalidate();refreshTask?.cancel();try? FileManager.default.removeItem(at:model.home.appendingPathComponent("ui-status.json"))}
+    func applicationWillTerminate(_ notification:Notification){quotaIntroTimer?.invalidate();closeContextMenu();refreshTimer?.invalidate();refreshTask?.cancel();shortcutManager?.dispose();try? FileManager.default.removeItem(at:model.home.appendingPathComponent("ui-status.json"))}
 }

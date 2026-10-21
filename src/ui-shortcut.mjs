@@ -26,9 +26,9 @@ export function createShortcutManager({read,write,register,unregister,onTrigger,
   const document=()=>{try{return read()||{};}catch{return {};}};
   return {
     status,
-    start(){const saved=document().shortcut;try{current={accelerator:normalizeShortcut(saved?.accelerator||DEFAULT_SHORTCUT),enabled:saved?.enabled!==false};}catch{current={accelerator:DEFAULT_SHORTCUT,enabled:true};}
+    start(){const saved=document().shortcut;try{const accelerator=saved?.accelerator===''?'':normalizeShortcut(saved?.accelerator??DEFAULT_SHORTCUT);current={accelerator,enabled:accelerator!==''&&saved?.enabled!==false};}catch{current={accelerator:DEFAULT_SHORTCUT,enabled:true};}
       if(current.enabled&&!inactive){try{registered=register(current.accelerator,onTrigger)===true;}catch{registered=false;}if(!registered)error='快捷键已被占用，请选择其他组合';}return status();},
-    set(input){const next={accelerator:normalizeShortcut(input.accelerator),enabled:input.enabled!==false},same=next.accelerator===current.accelerator;
+    set(input){const accelerator=typeof input.accelerator==='string'&&input.accelerator.trim()===''?'':normalizeShortcut(input.accelerator),next={accelerator,enabled:accelerator!==''&&input.enabled!==false},same=next.accelerator===current.accelerator;
       let nextRegistered=registered&&same&&next.enabled,newBinding=false;
       if(next.enabled&&!inactive&&!nextRegistered){try{nextRegistered=register(next.accelerator,onTrigger)===true;}catch{nextRegistered=false;}if(!nextRegistered)throw Error('快捷键已被占用，请选择其他组合');newBinding=true;}
       try{const doc=document();write({...doc,version:Math.max(1,Number.isSafeInteger(doc.version)?doc.version:1),shortcut:{...doc.shortcut,...next}});}catch(e){if(newBinding)unregister(next.accelerator);throw e;}

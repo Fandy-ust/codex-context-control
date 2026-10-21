@@ -29,6 +29,10 @@ The installer and app share a local language preference. Automatic mode selects 
 
 Codex starts the bridge automatically through the installed runtime entry. A menu bar companion provides the UI; you do not need to manually launch another app for every chat. For optional Hook stats, review the added Stop hook in Codex’s `/hooks`. Budget control does not depend on hook approval.
 
+## Global shortcut
+
+In **Settings → Shortcut**, customize the global shortcut for showing and hiding the main window. The default is **Ctrl + Shift + M**. You can record, type, disable, clear, or restore it. macOS registers it with Carbon `RegisterEventHotKey`, which does not require Input Monitoring or Accessibility permission. If the system refuses registration, the app reports an error and keeps the current shortcut. The shortcut works while Context Manager is running in the menu bar.
+
 ## Installed locations
 
 | Item | Location |

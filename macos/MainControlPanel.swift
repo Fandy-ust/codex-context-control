@@ -1,20 +1,50 @@
 import SwiftUI
+import AppKit
+
+@MainActor final class ShortcutRecorder:ObservableObject {
+    @Published var isRecording=false
+    @Published var capturedShortcut:String?
+    private var monitor:Any?
+    var onRecordingChanged:((Bool)->Void)?
+    func start(){
+        stop();capturedShortcut=nil;isRecording=true
+        onRecordingChanged?(true)
+        monitor=NSEvent.addLocalMonitorForEvents(matching:.keyDown){[weak self] event in
+            guard let self else{return event}
+            if event.keyCode==53{self.stop();return nil}
+            guard let key=GlobalShortcutManager.keyName(for:UInt32(event.keyCode)) else{return nil}
+            let flags=event.modifierFlags.intersection([.control,.option,.shift,.command])
+            guard !flags.isEmpty else{return nil}
+            var parts:[String]=[]
+            if flags.contains(.control){parts.append("Control")}
+            if flags.contains(.option){parts.append("Alt")}
+            if flags.contains(.shift){parts.append("Shift")}
+            if flags.contains(.command){parts.append("Command")}
+            parts.append(key);capturedShortcut=parts.joined(separator:"+");stop();return nil
+        }
+    }
+    func stop(){if let monitor{NSEvent.removeMonitor(monitor)};monitor=nil;let wasRecording=isRecording;isRecording=false;if wasRecording{onRecordingChanged?(false)}}
+}
 
 struct MainControlPanelView:View {
     @ObservedObject var model:Controller
     var close:()->Void
     @State private var tab:String
     @State private var feedback:String?
+    @State private var shortcutDraft="Control+Shift+M"
+    @State private var shortcutEnabled=true
+    @StateObject private var shortcutRecorder=ShortcutRecorder()
     init(model:Controller,initialTab:String="general",close:@escaping ()->Void={}){self.model=model;self.close=close;_tab=State(initialValue:initialTab)}
     var body:some View {
         VStack(alignment:.leading,spacing:18){
             HStack{if tab=="defaults"{Button(L("返回"),systemImage:"arrow.left"){tab="general"}.buttonStyle(.bordered)};Text(L("设置")).font(.system(size:21,weight:.semibold));Spacer();Button(action:close){Image(systemName:"xmark").foregroundStyle(.secondary)}.buttonStyle(.plain).help(L("关闭设置"))}
-            Picker(L("设置分类"),selection:$tab){Text(L("通用")).tag("general");Text(L("全局默认")).tag("defaults");Text(L("账户额度")).tag("quota");Text(L("任务队列")).tag("queues");Text(L("云同步")).tag("cloud")}.pickerStyle(.segmented)
+            Picker(L("设置分类"),selection:$tab){Text(L("通用")).tag("general");Text(L("全局默认")).tag("defaults");Text(L("账户额度")).tag("quota");Text(L("任务队列")).tag("queues");Text(L("云同步")).tag("cloud");Text(L("快捷键")).tag("shortcut")}.pickerStyle(.segmented)
             ScrollView {
                 Group {
                 if tab=="defaults" {NewChatDefaultsView(model:model,onClose:{tab="general"})}
                 else if tab=="cloud" {CloudSyncView(model:model)}
                 else if tab=="queues" {TaskQueueManagerView(model:model,open:{id in close();model.queueDetailID=id})}
+                else if tab=="shortcut" {shortcutSettings}
                 else if tab=="quota" {
                     VStack(alignment:.leading,spacing:18){
                         AccountQuotaSection(model:model)
@@ -27,7 +57,30 @@ struct MainControlPanelView:View {
                 }.softScrollEdges()
             }
             if let feedback{Text(L(feedback)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)}
-        }.padding(24).frame(width:760,height:560).background(PanelStyle.background).preferredColorScheme(.dark).environment(\.locale,Localization.locale)
+        }.padding(24).frame(width:760,height:560).background(PanelStyle.background).preferredColorScheme(.dark).environment(\.locale,Localization.locale).onAppear{shortcutRecorder.onRecordingChanged={recording in model.onGlobalShortcutRecording?(recording)};shortcutDraft=model.globalShortcut;shortcutEnabled=model.globalShortcutEnabled}.onDisappear{shortcutRecorder.stop()}.onChange(of:shortcutRecorder.capturedShortcut){value in if let value{shortcutDraft=value;shortcutEnabled=true}}
+    }
+    private var shortcutSettings:some View {
+        VStack(alignment:.leading,spacing:16){
+            Text(L("显示 / 隐藏主窗口")).font(.headline)
+            Toggle(L("启用全局快捷键"),isOn:$shortcutEnabled).toggleStyle(.switch).controlSize(.small)
+            Text(L("按下快捷键可显示或隐藏主窗口。清空后不注册快捷键。")).font(.caption).foregroundStyle(.secondary)
+            TextField(L("快捷键"),text:$shortcutDraft).textFieldStyle(.roundedBorder).disabled(!shortcutEnabled || shortcutRecorder.isRecording).overlay(alignment:.trailing){if shortcutRecorder.isRecording{Text(L("按下组合键…")).font(.caption).foregroundStyle(.secondary).padding(.trailing,8)}}
+            Text(L("使用 Ctrl、Shift、Alt 或 Command 加字母或数字，例如 Ctrl+Shift+M。" )).font(.caption).foregroundStyle(.secondary)
+            HStack{
+                Button(L(shortcutRecorder.isRecording ? "取消录制":"录制快捷键")){if shortcutRecorder.isRecording{shortcutRecorder.stop()}else{shortcutEnabled=true;shortcutRecorder.start()}}
+                Button(L("恢复默认")){shortcutDraft="Control+Shift+M";shortcutEnabled=true}
+                Button(L("清空快捷键")){shortcutDraft="";shortcutEnabled=false}
+                Spacer()
+                Button(L("保存设置"),systemImage:"checkmark"){
+                    let saved=model.saveGlobalShortcutSettings(shortcutDraft,enabled:shortcutEnabled)
+                    if saved{shortcutDraft=model.globalShortcut;shortcutEnabled=model.globalShortcutEnabled}
+                    if saved{feedback=L("快捷键设置已保存")}else{feedback=model.globalShortcutError}
+                }.buttonStyle(.borderedProminent).disabled(shortcutRecorder.isRecording)
+            }
+            if let error=model.globalShortcutError{Label(error,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange)}
+            else if model.globalShortcutRegistered{Label(L("快捷键已生效"),systemImage:"checkmark.circle").font(.caption).foregroundStyle(.green)}
+            else{Label(L("快捷键已关闭"),systemImage:"minus.circle").font(.caption).foregroundStyle(.secondary)}
+        }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
     }
     private var general:some View {
         VStack(alignment:.leading,spacing:18){

@@ -35,7 +35,6 @@ jobs:
           name: context-manager-windows-x64
           path: |
             build/Context-Manager-*-windows-x64-Setup.exe
-            build/Context-Manager-*-windows-x64-Setup.exe.sha256
             build/Context-Manager-*-windows-x64.zip
             build/Context-Manager-*-windows-x64.zip.sha256
           if-no-files-found: error

@@ -29,6 +29,6 @@ Both installers inherit user data. Windows installs immutable version directorie
 
 ## Release flow
 
-Build both systems with `.github/workflows/build-desktop.yml`. Regression and installer tests are mandatory. A version tag automatically creates and publishes the release only after both platform jobs succeed. The release contains DMG, Setup EXE, updater ZIP, checksums, and two public update manifests: schema 1 for existing Mac clients and schema 2 for platform-specific selection.
+Build both systems with `.github/workflows/build-desktop.yml`. Regression and installer tests are mandatory. A version tag automatically creates and publishes the release only after both platform jobs succeed. The release contains DMG, Setup EXE, updater ZIP, the DMG/ZIP checksum files required by existing updaters, and two public update manifests: schema 1 for existing Mac clients and schema 2 for platform-specific selection. GitHub displays a SHA-256 digest for every release asset, so Setup EXE no longer needs a duplicate `.sha256` asset.
 
 Both platforms share the version in root `package.json`. UI-only changes bump the shared patch version and ship for both platforms; public UI versions do not diverge.
