@@ -1,5 +1,9 @@
 # Changes
 
+## 0.25.3 — Interactive quota charts
+
+- Add an independent pointer-following guide and data tooltip to each quota chart, with the projected depletion date and time shown beside the forecast.
+
 ## 0.25.2 — Independent menu entry and safe compensation retirement
 
 - Give macOS a stable independent product identity and migrate legacy native preferences without changing the installation or shared data directory.

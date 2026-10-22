@@ -860,6 +860,24 @@ window.__contextQuotaSmoke=async function({preview=false}={}){
   const heat=root.querySelector('.cost-cell:not(.empty)');heat?.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:200,clientY:200}));
   result.tooltip=!!document.querySelector('#qa-hover-tooltip .chart-tooltip-metrics');
   document.dispatchEvent(new Event('scroll'));result.tooltip=result.tooltip&&!document.querySelector('#qa-hover-tooltip');
+  result.chartHover=true;
+  let previousGuide;
+  for(const svg of [...root.querySelectorAll('.qa-card .qa-chart')].slice(0,2)){
+    svg.scrollIntoView({block:'center'});await new Promise(resolve=>setTimeout(resolve,220));
+    const point=svg.querySelector('[data-qa-point]'),guide=svg.querySelector('.qa-hover-guide');
+    const local=new DOMPoint(+point.dataset.qaX,Math.min(+svg.dataset.qaBottom-1,+svg.dataset.qaTop+20)),screen=local.matrixTransform(svg.getScreenCTM());
+    svg.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:screen.x,clientY:screen.y}));
+    result.chartHover=result.chartHover&&guide.getAttribute('visibility')==='visible'&&!!document.querySelector('#qa-hover-tooltip .chart-tooltip-metrics')&&(!previousGuide||previousGuide.getAttribute('visibility')==='hidden');
+    const before=document.querySelector('#qa-hover-tooltip')?.style.left;
+    svg.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:screen.x+4,clientY:screen.y+4}));
+    result.chartHover=result.chartHover&&document.querySelector('#qa-hover-tooltip')?.style.left!==before;
+    previousGuide=guide;
+  }
+  document.dispatchEvent(new Event('scroll'));
+  result.chartHover=result.chartHover&&!document.querySelector('#qa-hover-tooltip')&&previousGuide?.getAttribute('visibility')==='hidden';
+  result.depletionTime=!!root.querySelector('.qa-depletion-time')&&root.querySelector('.qa-depletion-time').textContent.includes(':');
+  result.ok=result.ok&&result.depletionTime;
+  result.ok=result.ok&&result.chartHover;
   result.ok=result.ok&&result.costs&&result.sticky&&result.tooltip&&result.dates;
   if(!preview){root.querySelector('[data-action="qa-close"]').click();result.ok=result.ok&&!!root.querySelector('.sidebar');}else root.querySelector('.main').scrollTop=0;return result;
 };

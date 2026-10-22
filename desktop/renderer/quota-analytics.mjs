@@ -62,9 +62,9 @@ export function quotaChartSVG(chart, {e, t}) {
     else if (kind === 'bar') {const bw = Math.max(2, Math.min(32, w / Math.max(1, points.length) * .7));mark = `<rect x="${xx - bw / 2}" y="${yy}" width="${bw}" height="${Math.max(1, top + h - yy)}" rx="3" fill="${fill}" fill-opacity=".85"/>`;}
     else if (kind === 'box') mark = `<path d="M${xx} ${y(p.low)}V${y(p.high)}M${xx - 8} ${y(p.low)}h16M${xx - 8} ${y(p.high)}h16" stroke="${fill}"/><rect x="${xx - 13}" y="${y(p.q3)}" width="26" height="${Math.max(1, y(p.q1) - y(p.q3))}" fill="${fill}" fill-opacity=".35" stroke="${fill}"/><line x1="${xx - 13}" x2="${xx + 13}" y1="${yy}" y2="${yy}" stroke="white"/>`;
     else mark = `<circle cx="${xx}" cy="${yy}" r="${kind === 'scatter' ? 3 : 1}" fill="${fill}" fill-opacity=".8"/><circle cx="${xx}" cy="${yy}" r="9" fill="transparent"/>`;
-    marks += `<g tabindex="0" data-qa-point="${index}" data-detail="${title}">${mark}</g>`;
+    marks += `<g tabindex="0" data-qa-point="${index}" data-qa-x="${kind==='heatmap'?x(p.x+.5):xx}" data-qa-y="${kind==='heatmap'?top+(p.y+.5)/ymax*h:yy}" data-qa-color="${fill}" data-detail="${title}">${mark}</g>`;
   });
-  return `<svg class="qa-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${e(t(chart.title))}"><defs><clipPath id="clip-${chart.id}"><rect x="${kind==='heatmap'?0:left - 1}" y="${top}" width="${kind==='heatmap'?width:w + 2}" height="${h + 1}"/></clipPath></defs><g class="qa-axis">${grid}${ticks}</g><g clip-path="url(#clip-${chart.id})">${marks}</g></svg>`;
+  return `<svg class="qa-chart" viewBox="0 0 ${width} ${height}" data-qa-kind="${kind}" data-qa-left="${left}" data-qa-right="${width-right}" data-qa-top="${top}" data-qa-bottom="${top+h}" role="img" aria-label="${e(t(chart.title))}"><defs><clipPath id="clip-${chart.id}"><rect x="${kind==='heatmap'?0:left - 1}" y="${top}" width="${kind==='heatmap'?width:w + 2}" height="${h + 1}"/></clipPath></defs><g class="qa-axis">${grid}${ticks}</g><g clip-path="url(#clip-${chart.id})">${marks}</g><g class="qa-hover-guide" visibility="hidden" pointer-events="none" aria-hidden="true"><line y1="${top}" y2="${top+h}" stroke="#ffffff66" stroke-width="1" vector-effect="non-scaling-stroke"/><circle r="4" fill="#262626" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg>`;
 }
 function card(chart, context) {
   const {e, t,headerActions='',footer=''} = context, points = chart.points || [], groups = [...new Set(points.map(p => p.series).filter(Boolean))];
@@ -89,12 +89,33 @@ export function quotaAnalyticsView({report, section = 'overview', period = '', c
 let bindings;
 export function bindQuotaAnalytics(root) {
   bindings?.abort();bindings=new AbortController();const {signal}=bindings;
-  const hide=()=>document.getElementById('qa-hover-tooltip')?.remove();hide();
+  let activeChart, pointCache=new WeakMap();
+  const clearGuide=()=>{activeChart?.querySelector('.qa-hover-guide')?.setAttribute('visibility','hidden');activeChart=null;};
+  const hide=()=>{document.getElementById('qa-hover-tooltip')?.remove();clearGuide();};hide();
   if(!root.querySelector('.quota-analytics'))return;
   let quietUntil=0;
   const show=event=>{
     if(performance.now()<quietUntil)return;
-    const point=event.target.closest('[data-detail]');if(!point){hide();return;}
+    const svg=event.target.closest('.qa-chart');
+    let point=event.target.closest('[data-detail]');
+    if(svg){
+      let candidates=pointCache.get(svg);if(!candidates){candidates=[...svg.querySelectorAll('[data-qa-point]')];pointCache.set(svg,candidates);}
+      if(event.type==='pointermove'){
+        const matrix=svg.getScreenCTM();if(!matrix){hide();return;}
+        const local=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse());
+        if(local.x<+svg.dataset.qaLeft||local.x>+svg.dataset.qaRight||local.y<+svg.dataset.qaTop||local.y>+svg.dataset.qaBottom){hide();return;}
+        const byX=['line','dual','bar'].includes(svg.dataset.qaKind);
+        let best=Infinity,bestY=Infinity;
+        for(const candidate of candidates){const dx=+candidate.dataset.qaX-local.x,dy=+candidate.dataset.qaY-local.y,distance=dx*dx+(byX?0:dy*dy);if(distance<best||(distance===best&&Math.abs(dy)<bestY)){point=candidate;best=distance;bestY=Math.abs(dy);}}
+      }
+      if(point){
+        if(activeChart!==svg)clearGuide();activeChart=svg;
+        const guide=svg.querySelector('.qa-hover-guide'),line=guide.querySelector('line'),dot=guide.querySelector('circle');
+        guide.setAttribute('visibility','visible');line.setAttribute('x1',point.dataset.qaX);line.setAttribute('x2',point.dataset.qaX);
+        dot.setAttribute('cx',point.dataset.qaX);dot.setAttribute('cy',point.dataset.qaY);dot.setAttribute('stroke',point.dataset.qaColor);
+      }
+    }else clearGuide();
+    if(!point){hide();return;}
     const card=point.closest('.qa-card'),readout=card?.querySelector('.qa-readout');if(readout)readout.textContent=point.dataset.detail;
     let node=document.getElementById('qa-hover-tooltip');if(!node){node=document.createElement('div');node.id='qa-hover-tooltip';node.className='chart-hover-tooltip';document.body.append(node);}
     if(node.dataset.detail!==point.dataset.detail){node.dataset.detail=point.dataset.detail;node.replaceChildren();const rows=point.dataset.detail.split(' · '),heading=document.createElement('strong');heading.textContent=rows.shift();node.append(heading);

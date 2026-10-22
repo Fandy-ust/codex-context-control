@@ -11,6 +11,15 @@ export function outlookMessage(period, t) {
     : `${t('预计重置时还有')} ${Number(period.projectedRemaining.toFixed(1))}% ${t('未使用')}`;
   return t({exhausted:'额度已用完，等待重置',stale:'观测已过期，刷新后再预测',awaiting_reset:'已到重置时间，等待新读数',unidentified:'账户尚未识别，暂时无法预测',flat:'近期额度读数未变，暂时无法预测',insufficient:'观测还不够，暂时无法预测'}[period.status] || '暂时无法预测');
 }
+export function depletionTimeText(period, t, now = Date.now()) {
+  if(period.status!=='ready'||!period.finishesBeforeReset||!Number.isFinite(period.depletionAt))return '';
+  const date=new Date(period.depletionAt),today=new Date(now),tomorrow=new Date(now);
+  if(!Number.isFinite(date.getTime()))return '';
+  tomorrow.setDate(tomorrow.getDate()+1);
+  const sameDay=d=>date.toDateString()===d.toDateString();
+  const day=sameDay(today)?t('今天'):sameDay(tomorrow)?t('明天'):date.toLocaleDateString(undefined,{year:'numeric',month:'numeric',day:'numeric'});
+  return t(`预计 ${day} ${date.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false})} 用完`);
+}
 export function quotaOutlookView({report, period, e, t, renderChart,metric='cost',overlay=true,overlayCount=6,smoothing=0,forecastOverlay=false,startText='',endText=''}) {
   const dashboard = report?.dashboard, periods = dashboard?.periods || [];
   const choices=[...periods,...(dashboard?.credits?[dashboard.credits]:[])];
@@ -22,7 +31,7 @@ export function quotaOutlookView({report, period, e, t, renderChart,metric='cost
   const dateTime=value=>{const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);};
   const number = value => value == null ? '—' : Number(value.toFixed(1)) + '%';
   const stat = (label, value) => `<div><span>${e(t(label))}</span><strong>${e(value)}</strong></div>`;
-  let cards = periods.map(p => `<article class="qa-outlook-card" data-qa-period="${p.id}"><header><h2>${e(t(p.title))}</h2><span title="${e(new Date(p.resetAt).toLocaleString())}">${e(quotaDuration(p.hoursUntilReset,t))} ${e(t('后重置'))}</span></header><div class="qa-outlook-metrics">${stat(['stale','awaiting_reset'].includes(p.status)?'上次剩余':'当前剩余', number(p.remainingPercent))}${stat('用完还需', quotaDuration(p.hoursRemaining,t))}${stat('重置时预计剩余', number(p.projectedRemaining))}</div><p class="qa-outlook-verdict ${p.finishesBeforeReset ? 'early' : ''}">${e(outlookMessage(p,t))}</p></article>`).join('');
+  let cards = periods.map(p => `<article class="qa-outlook-card" data-qa-period="${p.id}"><header><h2>${e(t(p.title))}</h2><span title="${e(new Date(p.resetAt).toLocaleString())}">${e(quotaDuration(p.hoursUntilReset,t))} ${e(t('后重置'))}</span></header><div class="qa-outlook-metrics">${stat(['stale','awaiting_reset'].includes(p.status)?'上次剩余':'当前剩余', number(p.remainingPercent))}${stat('用完还需', quotaDuration(p.hoursRemaining,t))}${stat('重置时预计剩余', number(p.projectedRemaining))}</div><p class="qa-outlook-verdict ${p.finishesBeforeReset ? 'early' : ''}"><span>${e(outlookMessage(p,t))}</span>${depletionTimeText(p,t)?`<span class="qa-depletion-time">${e(depletionTimeText(p,t))}</span>`:''}</p></article>`).join('');
   if(dashboard?.credits)cards+=`<article class="qa-outlook-card" data-qa-credit data-qa-period="credits"><header><h2>Credits</h2></header><div class="qa-outlook-metrics">${stat('当前余额',dashboard.credits.balance.toLocaleString(undefined,{maximumFractionDigits:2}))}</div></article>`;
   const smoothingControl=current.id==='credits'?'':`<label class="qa-smoothing">${e(t('平滑'))}<select id="outlook-smoothing" aria-label="${e(t('平滑程度'))}" title="${e(t('仅平滑曲线，悬停显示原始观测'))}">${[0,3,5,9].map(n=>`<option value="${n}" ${n===smoothing?'selected':''}>${e(t(n===0?'关闭':n===3?'低':n===5?'中':'高'))}</option>`).join('')}</select></label>`;
   const dates=`${smoothingControl}<div class="compact-date-range qa-outlook-range"><input type="datetime-local" id="outlook-start" aria-label="${e(t('开始'))}" title="${e(t('开始'))}" value="${e(startText||dateTime(chart.rangeStart??current.chart.xMin))}"><span aria-hidden="true">–</span><input type="datetime-local" id="outlook-end" aria-label="${e(t('结束'))}" title="${e(t('结束'))}" value="${e(endText||dateTime(chart.rangeEnd??current.chart.xMax))}">${dashboard.customRange?`<button class="date-reset" data-action="outlook-cycle" title="${e(t('当前重置周期'))}" aria-label="${e(t('当前重置周期'))}">↶</button>`:''}</div>`;

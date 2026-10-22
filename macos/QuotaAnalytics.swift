@@ -20,7 +20,24 @@ private struct AnalyticsHoverCard:View {
                     VStack(alignment:.leading,spacing:5){if parts.count>1{Text(parts[0]).font(.caption).foregroundStyle(.secondary)};Text(parts.count>1 ? parts.dropFirst().joined(separator:": "):item).font(.callout.weight(.medium)).monospacedDigit()}.frame(maxWidth:.infinity,alignment:.leading)
                 }
             }
-        }.padding(14).frame(width:290).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).strokeBorder(.white.opacity(0.15))).shadow(color:.black.opacity(0.35),radius:14,y:6)
+        }.padding(14).frame(maxWidth:.infinity).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).strokeBorder(.white.opacity(0.15))).shadow(color:.black.opacity(0.35),radius:14,y:6)
+    }
+}
+private struct AnalyticsFloatingHover:ViewModifier {
+    let location:CGPoint?;let title:String;let items:[String]
+    @State private var tooltipSize=CGSize(width:318,height:180)
+    func body(content:Content)->some View {
+        content.overlay{GeometryReader{geometry in
+            if let location {
+                let width=min(318,max(0,geometry.size.width-16))
+                let x=location.x+18+width>geometry.size.width ? location.x-width-18:location.x+18
+                let y=location.y+18+tooltipSize.height>geometry.size.height ? location.y-tooltipSize.height-18:location.y+18
+                AnalyticsHoverCard(title:title,items:items).frame(width:width)
+                    .background{GeometryReader{g in Color.clear.onAppear{tooltipSize=g.size}.onChange(of:g.size){_,size in tooltipSize=size}}}
+                    .position(x:max(8,min(x,geometry.size.width-width-8))+width/2,y:max(8,min(y,geometry.size.height-tooltipSize.height-8))+tooltipSize.height/2)
+                    .allowsHitTesting(false)
+            }
+        }}
     }
 }
 private struct CompactQuotaDateRange:View {
@@ -43,6 +60,7 @@ private struct TokenCostCalendarView:View {
     @Binding var date:Date;@Binding var start:Date;@Binding var end:Date
     var onDate:()->Void;var onApply:()->Void;var onReset:()->Void
     @State private var hovered:TokenCostCalendar.Entry?
+    @State private var pointer:CGPoint?
     private var values:[TokenCostCalendar.Entry] {
         if period=="day"{return calendar.hourly}
         if calendar.customRange==true && period != "day"{return mode=="line" && period=="year" ? calendar.monthly:calendar.daily}
@@ -64,7 +82,8 @@ private struct TokenCostCalendarView:View {
                 else if period=="year" {
                     ScrollView(.horizontal){LazyHGrid(rows:Array(repeating:GridItem(.fixed(12),spacing:4),count:7),spacing:4){ForEach(0..<offset,id:\.self){_ in Color.clear.frame(width:12,height:12)};ForEach(values){p in cell(p).frame(width:12,height:12)}}.padding(.vertical,4)}
                 }else{LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:4),count:period=="week" ? 7:period=="month" ? 7:12),spacing:4){ForEach(values){p in cell(p).frame(height:40).overlay(Text(period=="day" ? String(p.hour ?? 0):String(p.date.suffix(5))).font(.caption).allowsHitTesting(false))}}}
-            }.overlay(alignment:.topTrailing){if let p=hovered{AnalyticsHoverCard(title:p.label,items:[L("估算费用")+": "+money(p.usd)+" USD","Token: "+quotaNumber(p.tokens),L("请求数")+": \(p.requests)",L("无法计价")+": \(p.unpriced)"]).allowsHitTesting(false).padding(8)}}
+            }.onContinuousHover{phase in switch phase{case .active(let p):pointer=p;case .ended:pointer=nil;hovered=nil}}
+                .modifier(AnalyticsFloatingHover(location:hovered == nil ? nil:pointer,title:hovered?.label ?? "",items:hovered.map{p in [L("估算费用")+": "+money(p.usd)+" USD","Token: "+quotaNumber(p.tokens),L("请求数")+": \(p.requests)",L("无法计价")+": \(p.unpriced)"]} ?? []))
             HStack{Text(values.first?.label ?? "");Spacer();Text(L(calendar.customRange==true ? "按所选范围汇总":mode=="line" ? period=="year" ? "最近 12 个月，按月汇总":"每个点表示该时段的 API 估算费用":"颜色越深，估算费用越高"));Spacer();Text(values.last?.label ?? "")}.font(.caption2).foregroundStyle(.secondary)
             CompactQuotaDateRange(start:$start,end:$end,onApply:onApply,onReset:onReset)
             Image(systemName:"info.circle").font(.caption).foregroundStyle(.secondary).help(L("按现有 API 价格估算，沿用聊天费用的 Standard 与缓存写入估算规则；不是订阅账单。按云同步设置中的账号和设备范围汇总，空格表示无记录，无法计价的请求不按零元计算。"))
@@ -81,6 +100,10 @@ private struct TokenCostCalendarView:View {
     }
     private var costLine:some View {
         Chart {
+            if let hovered,let index=values.firstIndex(where:{$0.id==hovered.id}) {
+                RuleMark(x:.value("x",index)).foregroundStyle(.white.opacity(0.4)).lineStyle(StrokeStyle(lineWidth:1))
+                if let usd=hovered.usd{PointMark(x:.value("x",index),y:.value("USD",usd)).foregroundStyle(PanelStyle.blue).symbolSize(45)}
+            }
             ForEach(Array(values.enumerated()),id:\.element.id){i,p in
                 if let usd=p.usd {
                     let segment=values.prefix(i).filter{$0.usd==nil}.count
@@ -116,7 +139,7 @@ struct QuotaOutlook:Decodable {
     struct Period:Decodable,Identifiable {
         let id:String;let title:String;let status:String;let observedAt:Double;let resetAt:Double
         let remainingPercent:Double;let hoursUntilReset:Double;let hoursRemaining:Double?;let projectedRemaining:Double?
-        let finishesBeforeReset:Bool?;let hoursBeforeReset:Double?;let chart:QuotaAnalysisChart;let forecastOverlayChart:QuotaAnalysisChart?;let comparisonChart:QuotaAnalysisChart?;let costChart:QuotaAnalysisChart?;let overlayChart:QuotaAnalysisChart?;let costOverlayChart:QuotaAnalysisChart?
+        let finishesBeforeReset:Bool?;let hoursBeforeReset:Double?;let depletionAt:Double?;let chart:QuotaAnalysisChart;let forecastOverlayChart:QuotaAnalysisChart?;let comparisonChart:QuotaAnalysisChart?;let costChart:QuotaAnalysisChart?;let overlayChart:QuotaAnalysisChart?;let costOverlayChart:QuotaAnalysisChart?
     }
     struct Credits:Decodable {let id:String;let title:String;let balance:Double;let observedAt:Double;let chart:QuotaAnalysisChart}
     let pool:String?;let pools:[QuotaAnalyticsReport.Option];let verified:Bool;let periods:[Period];let credits:Credits?
@@ -130,6 +153,13 @@ func quotaDuration(_ hours:Double?)->String {
 }
 private struct QuotaOutlookCard:View {
     let period:QuotaOutlook.Period
+    private var depletionText:String? {
+        guard period.status=="ready",period.finishesBeforeReset==true,let at=period.depletionAt,at.isFinite else{return nil}
+        let date=Date(timeIntervalSince1970:at/1000),calendar=Calendar.current
+        let day=calendar.isDateInToday(date) ? L("今天"):calendar.isDateInTomorrow(date) ? L("明天"):date.formatted(.dateTime.year().month().day().locale(Localization.locale))
+        let formatter=DateFormatter();formatter.locale=Localization.locale;formatter.dateFormat="HH:mm"
+        return L("预计 {0} 用完").replacingOccurrences(of:"{0}",with:day+" "+formatter.string(from:date))
+    }
     private var verdict:String {
         if period.status=="ready" {
             if period.finishesBeforeReset==true && (period.hoursBeforeReset ?? 0)<1/60{return L("预计接近重置时用完")}
@@ -152,7 +182,10 @@ private struct QuotaOutlookCard:View {
                 metric("用完还需",quotaDuration(period.hoursRemaining))
                 metric("重置时预计剩余",period.projectedRemaining.map{quotaNumber($0)+"%"} ?? "—")
             }
-            Text(verdict).font(.callout).foregroundStyle(period.finishesBeforeReset==true ? Color.orange:PanelStyle.blue)
+            ViewThatFits(in:.horizontal){
+                HStack(spacing:20){Text(verdict);if let depletionText{Text(depletionText).monospacedDigit()}}
+                VStack(alignment:.leading,spacing:8){Text(verdict);if let depletionText{Text(depletionText).monospacedDigit()}}
+            }.font(.callout).foregroundStyle(period.finishesBeforeReset==true ? Color.orange:PanelStyle.blue)
         }.padding(22).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).strokeBorder(.white.opacity(0.08)))
     }
     private func metric(_ title:String,_ value:String,color:Color = .primary)->some View {
@@ -381,6 +414,7 @@ private struct QuotaAnalysisCard:View {
     var footer:AnyView?=nil
     @State private var selected:QuotaAnalysisPoint?
     @State private var hovering=false
+    @State private var pointer:CGPoint?
     @State private var showGuide=false
     private let colors:[Color]=[Color(red:0.43,green:0.63,blue:1),Color(red:0.78,green:0.59,blue:1),Color(red:0.35,green:0.79,blue:0.69),Color(red:0.94,green:0.71,blue:0.42),Color(red:0.91,green:0.49,blue:0.60),.gray]
     private var groups:[String]{var seen=Set<String>();return chart.points.compactMap{$0.series}.filter{seen.insert($0).inserted}}
@@ -398,7 +432,7 @@ private struct QuotaAnalysisCard:View {
             if chart.kind=="table" && !chart.ranking.isEmpty {ranking}
             else if chart.points.isEmpty {Text(L(chart.empty ?? "尚无足够的可比较记录")).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth:.infinity,minHeight:190)}
             else {
-                plot.overlay(alignment:.topTrailing){if hovering,let selected{AnalyticsHoverCard(title:selected.label ?? selected.series ?? L(chart.title),items:detail(selected).components(separatedBy:" · ")).allowsHitTesting(false).padding(8)}}.frame(height:chart.kind=="heatmap" ? min(380,max(210,Double(chart.labels.count)*15+30)):210)
+                plot.modifier(AnalyticsFloatingHover(location:hovering ? pointer:nil,title:selected?.label ?? selected?.series ?? L(chart.title),items:selected.map{detail($0).components(separatedBy:" · ")} ?? [])).frame(height:chart.kind=="heatmap" ? min(380,max(210,Double(chart.labels.count)*15+30)):210)
                 Text(L(chart.xLabel)+(chart.rightLabel.map{" · "+L("右轴")+": "+L($0)} ?? "")).font(.system(size:10)).foregroundStyle(.secondary).frame(maxWidth:.infinity)
                 HStack(alignment:.center,spacing:12){
                     if !groups.isEmpty{HStack(spacing:12){ForEach(Array(groups.prefix(8).enumerated()),id:\.offset){i,name in HStack(spacing:5){Circle().fill(colors[i%colors.count]).frame(width:6,height:6);Text(L(name)).lineLimit(1)}}}.font(.system(size:10)).foregroundStyle(.secondary)}
@@ -418,6 +452,12 @@ private struct QuotaAnalysisCard:View {
     }
     private var plot:some View {
         Chart {
+            if hovering,let selected {
+                let x=chart.kind=="heatmap" ? selected.x+0.5:selected.x
+                let y=chart.kind=="heatmap" ? Double(chart.labels.count)-selected.y-0.5:selected.y
+                RuleMark(x:.value("x",x)).foregroundStyle(.white.opacity(0.4)).lineStyle(StrokeStyle(lineWidth:1))
+                PointMark(x:.value("x",x),y:.value("y",y)).foregroundStyle(color(selected)).symbolSize(45)
+            }
             ForEach(chart.points){p in
                 if chart.kind=="heatmap" {
                     let row=Double(chart.labels.count)-p.y-1
@@ -459,8 +499,13 @@ private struct QuotaAnalysisCard:View {
             switch phase {
             case .active(let location):
                 hovering=frame.contains(location)
+                pointer=location
                 let local=CGPoint(x:location.x-frame.minX,y:location.y-frame.minY)
-                selected=chart.points.min{a,b in distance(a,local,proxy)<distance(b,local,proxy)}
+                selected=chart.points.min{a,b in
+                    let da=distance(a,local,proxy),db=distance(b,local,proxy)
+                    if da != db{return da<db}
+                    return abs((proxy.position(forY:a.y) ?? 0)-local.y)<abs((proxy.position(forY:b.y) ?? 0)-local.y)
+                }
             case .ended:hovering=false
             }
         }.onChange(of:geometry.frame(in:.global).minY){_,_ in hovering=false}}}

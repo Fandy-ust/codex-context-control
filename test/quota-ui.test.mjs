@@ -7,8 +7,27 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {demoQuotaAnalytics} from '../desktop/quota-demo.mjs';
 import {quotaAnalyticsView as renderQuotaAnalytics,quotaPointText} from '../desktop/renderer/quota-analytics.mjs';
+import {depletionTimeText} from '../desktop/renderer/quota-outlook-view.mjs';
+import {translate} from '../src/localization-core.mjs';
 const quotaAnalyticsView=props=>renderQuotaAnalytics({outlookMetric:'remaining',outlookOverlay:false,...props});
 const escape=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
+
+test('depletion time names today, tomorrow and later dates only for usable forecasts',()=>{
+ const now=new Date(2026,9,22,10,0).getTime(),t=s=>s;
+ const period={status:'ready',finishesBeforeReset:true,depletionAt:new Date(2026,9,22,14,30).getTime()};
+ assert.match(depletionTimeText(period,t,now),/今天 14:30/);
+ const english=JSON.parse(fs.readFileSync(new URL('../src/locales/en.json',import.meta.url),'utf8'));
+ const englishText=depletionTimeText(period,s=>translate(s,english,'en').replace(/\{(\d+)\}/g,''),now);
+ assert.equal(englishText,'Expected to run out today 14:30');
+ assert.match(depletionTimeText({...period,depletionAt:new Date(2026,9,23,2,5).getTime()},t,now),/明天 02:05/);
+ const later=depletionTimeText({...period,depletionAt:new Date(2026,10,2,17,15).getTime()},t,now);
+ assert.match(later,/2026/);assert.match(later,/17:15/);assert.doesNotMatch(later,/今天|明天/);
+ for(const status of ['stale','flat','insufficient','awaiting_reset','exhausted','unidentified'])assert.equal(depletionTimeText({...period,status},t,now),'');
+ for(const depletionAt of [null,undefined,NaN,Infinity])assert.equal(depletionTimeText({...period,depletionAt},t,now),'');
+ assert.equal(depletionTimeText({...period,finishesBeforeReset:false},t,now),'');
+ const report=demoQuotaAnalytics();Object.assign(report.dashboard.periods[0],period);
+ assert.match(renderQuotaAnalytics({report,e:escape,t}),/qa-depletion-time/);
+});
 test('web analytics renders the shared six-chart contract with escaped observation labels',()=>{
  const report=demoQuotaAnalytics();report.scopes[0].label='<script>unsafe</script>';
  const html=quotaAnalyticsView({report,analysisMode:'advanced',section:'overview',e:escape,t:s=>s});
