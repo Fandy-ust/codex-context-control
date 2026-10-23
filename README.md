@@ -6,8 +6,8 @@ A local extension for Codex: **context control and quota-aware task queues**, bu
 
 | Platform | Installer | Requirements |
 | --- | --- | --- |
-| macOS | [Download 0.25.2 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.2-preview.1/Context-Manager-0.25.2-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [Download 0.25.2 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.25.2-preview.1/Context-Manager-0.25.2-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [Download 0.26.3 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.26.3-preview.1/Context-Manager-0.26.3-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
+| Windows | [Download 0.26.3 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.26.3-preview.1/Context-Manager-0.26.3-windows-x64-Setup.exe) | Windows 11 · x64 |
 
 [Mac installation](docs/en/INSTALL_MAC.md) · [Windows installation](docs/en/INSTALL_WINDOWS.md) · [Release notes](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [简体中文](README.zh-CN.md)
 

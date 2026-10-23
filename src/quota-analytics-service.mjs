@@ -77,6 +77,7 @@ export function createQuotaAnalyticsService({home = root, historyHome = codexHom
         return {...profile,label:typeof label==='string'?label.slice(0,160):profile.label,id:crypto.createHmac('sha256',key).update(raw).digest('hex').slice(0,32)};
       });
     },
+    activationRecommendation:()=>call('activation-recommendation'),
     syncSettings:params=>call('sync-settings',params),
     syncExport:params=>call('sync-export',params),
     syncImport:params=>call('sync-import',params),

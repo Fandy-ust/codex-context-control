@@ -1,5 +1,6 @@
 import {parentPort, workerData} from 'node:worker_threads';
 import path from 'node:path';
+import {activationRecommendation} from '../core/quota-activation.mjs';
 import {readJSON} from '../paths.mjs';
 import {QuotaLedger} from './ledger.mjs';
 import {buildQuotaAnalytics} from '../core/quota-analytics.mjs';
@@ -21,6 +22,7 @@ parentPort.on('message', ({id, action, params = {}}) => {
     else if (action === 'sync-import') result=ledger.syncImport(params);
     else if (action === 'sync-profiles') result=ledger.syncProfiles();
     else if (action === 'sync-settings') result=ledger.syncSettings(params);
+    else if (action === 'activation-recommendation') {const currentScope=ledger.metadata('currentScope');result=activationRecommendation({...ledger.localRead(Date.now()-21*86400000),currentScope});}
     else if (action === 'report') {
       if (params.refresh || Date.now() - lastScan > 15000) {ledger.scan();lastScan = Date.now();}
       const source=ledger.read(366);

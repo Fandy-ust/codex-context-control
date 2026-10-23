@@ -76,6 +76,10 @@
     "compensation": {
       "method": "POST",
       "path": "/compaction-compensation"
+    },
+    "quota-activation": {
+      "method": "POST",
+      "path": "/quota/activation"
     }
   }
 }

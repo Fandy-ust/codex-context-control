@@ -1,12 +1,12 @@
 # Windows 安装与开发
 
-Windows 11 x64 预览版，当前版本为 0.23.5。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，现已发布到 GitHub Releases。
+Windows 11 x64 预览版，当前版本为 0.26.3。包含独立 Node、Electron 界面、原生启动器和所需依赖；使用者不需要安装 Node 或开发工具。此预览包未做发布者代码签名，现已发布到 GitHub Releases。
 
 ## 下载与安装
 
-[下载 0.23.5 Windows Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/latest)。直接运行这一个文件即可，不需要 GitHub 登录、解压构建产物或安装开发工具。Release 中的 ZIP 供 OTA 使用，普通安装不需要下载。
+[下载 0.26.3 Windows Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/latest)。直接运行这一个文件即可，不需要 GitHub 登录、解压构建产物或安装开发工具。Release 中的 ZIP 供 OTA 使用，普通安装不需要下载。
 
-1. 下载 `Context-Manager-0.23.5-windows-x64-Setup.exe`，只需要这一个文件，不需要旁边放 `payload/`。
+1. 下载 `Context-Manager-0.26.3-windows-x64-Setup.exe`，只需要这一个文件，不需要旁边放 `payload/`。
 2. 双击 `Setup.exe`，选择「安装 / 更新」。安装器先校验并解压内置程序，再安装到当前用户；完成后自动清理临时解压目录，不需要修改 Codex 安装文件。安装成功后可以删除下载的 EXE。
 3. **默认接入 Codex**：启动检查通过后自动登记接入，安装完成后在工作结束时完整退出并重开 Codex。若检查失败，仍完成界面安装并保留原生启动入口；在「设置 → Codex 接入」查看错误或重试。
 4. 在右下角系统托盘点击额度图标。Windows 可能把它收在 `^` 折叠区，可在系统任务栏设置中选择显示。
@@ -59,18 +59,18 @@ Windows 11 x64 预览版，当前版本为 0.23.5。包含独立 Node、Electron
 
 ## 从源码构建
 
-需要 Windows 11 x64、Node 22.13+（本机测试为 24.18.0）以及系统自带的 .NET Framework C# 编译器。需要与目标架构匹配的 Node/Electron。1.0.0 研究分支的单文件 Setup 使用 LZMA2；首次构建会下载固定版本、校验 SHA-256 的公共领域 7zr 解压器并缓存到 `build/tools/`。解压器内嵌在 Setup 中，用户无需安装 7-Zip，也无需联网解压。离线构建可将 `CONTEXT_CONTROL_7ZR` 指向相同校验值的程序。构建仍会取得当前 Node 对应的 LICENSE，并缓存在 `build/licenses/`。在线更新 ZIP 保留现有格式：构建机有 7-Zip 时使用高压缩 Deflate，否则使用系统压缩器。
+需要 Windows 11 x64、Node 22.13+（本机测试为 24.18.0）以及系统自带的 .NET Framework C# 编译器。需要与目标架构匹配的 Node/Electron。0.26.3 正式版单文件 Setup 使用 LZMA2；首次构建会下载固定版本、校验 SHA-256 的公共领域 7zr 解压器并缓存到 `build/tools/`。解压器内嵌在 Setup 中，用户无需安装 7-Zip，也无需联网解压。离线构建可将 `CONTEXT_CONTROL_7ZR` 指向相同校验值的程序。构建仍会取得当前 Node 对应的 LICENSE，并缓存在 `build/licenses/`。在线更新 ZIP 保留现有格式：构建机有 7-Zip 时使用高压缩 Deflate，否则使用系统压缩器。
 
-LZMA2 缩减下载包，不缩减安装后的程序目录。解压时额外生成一份约等于程序体积的中间 ZIP，安装结束或失败后自动清理。研究版验证与限制见 [1.0.0 说明](releases/1.0.0.md)。
+LZMA2 缩减下载包，不缩减安装后的程序目录。解压时额外生成一份约等于程序体积的中间 ZIP，安装结束或失败后自动清理。关键更新与验证范围见 [0.26.3 说明](releases/0.26.3.md)。
 
 ```powershell
 npm ci
 npm run build:win
 ```
 
-`build:win` 一次完成编译、压缩与封装，输出独立的 `build/Context-Manager-0.23.5-windows-x64-Setup.exe`。GitHub Release 会显示该安装器的 SHA-256 摘要；分发时只需发送 `Setup.exe`，不需要旁边放 `payload/`。安装后程序会正常展开到安装目录。
+`build:win` 一次完成编译、压缩与封装，输出独立的 `build/Context-Manager-0.26.3-windows-x64-Setup.exe`。GitHub Release 会显示该安装器的 SHA-256 摘要；分发时只需发送 `Setup.exe`，不需要旁边放 `payload/`。安装后程序会正常展开到安装目录。
 
-`build/Context-Manager-0.23.5-windows-x64/` 是构建中间目录。如果只需要目录而不生成 EXE，可执行 `npm run build:win:dir`；需要重新封装现有目录时可执行 `npm run package:win`。
+`build/Context-Manager-0.26.3-windows-x64/` 是构建中间目录。如果只需要目录而不生成 EXE，可执行 `npm run build:win:dir`；需要重新封装现有目录时可执行 `npm run package:win`。
 
 更新器所用 ZIP 改为显式生成：`npm run package:win:update`（先完成构建）。也可使用 `npm run build:win -- --with-update-zip` 一次生成 EXE 和 ZIP。Actions 的 `context-manager-windows-x64` 同时包含安装 EXE、更新 ZIP 与校验文件；日常安装只需使用其中的 EXE。构建仍包含已有品牌图标和版本信息。
 

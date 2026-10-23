@@ -22,7 +22,8 @@ export function resizeThreadDraft(draft,window,model){
   const compact=ratioWindow>0?Number(BigInt(ratioCompact)*BigInt(window)/BigInt(ratioWindow)/1000n)*1000:1000;
   return {...draft,window,ratioWindow,ratioCompact,compact:Math.max(1000,Math.min(compact,threadDraftLimits(model,window,draft.reserve).compact))};
 }
-export function policyForThreadDraft(draft,model){
+export function policyForThreadDraft(draft,model,thread=null){
+  if(thread?.ambiguous)throw Error('检测到多个接入进程，请完整重启 Codex');
   if(draft.window<2000)throw Error('窗口至少为 2K，压缩阈值至少为 1K');
   const limit=threadDraftLimits(model,draft.window,draft.reserve),budget=calculateBudget({usableWindow:draft.window,compactPercent:1},model);
   if(!limit||model.context_catalog_ready===false)throw Error('请先在 Codex 打开此聊天，或重开 Codex 使上下文设置生效。');

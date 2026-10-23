@@ -3,6 +3,20 @@ import AppKit
 
 struct Budget: Decodable,Equatable { let window:Int;let compact:Int;let reserve:Int;let retainedFloor:Int;let revision:Int;let enabled:Bool? }
 struct Usage: Decodable,Equatable { let totalTokens:Int }
+struct QuotaActivationState:Decodable,Equatable {
+    struct Config:Decodable,Equatable {let notificationsEnabled:Bool?;let weeklyEnabled:Bool;let scheduledAt:Double?;let toleranceMinutes:Int}
+    struct Job:Decodable,Equatable {let status:String;let attempts:Int;let message:String?}
+    struct Recommendation:Decodable,Equatable {let sampleCount:Int;let leadHours:Double?;let consumptionHours:Double?;let leadMinHours:Double?;let leadMaxHours:Double?}
+    let config:Config;let job:Job?;let busy:Bool;let recommendation:Recommendation?
+}
+
+struct QuotaResetEvent:Decodable,Equatable {
+    let id:String
+    let at:Double
+    let deliverAfter:Double
+    let roles:[String]
+}
+
 struct Metadata: Decodable,Equatable { let max_context_window:Int?;let effective_context_window_percent:Int?;let context_ceiling:Int?;let context_compact_ceiling:Int?;let context_catalog_ready:Bool? }
 struct CompensationDetails:Decodable,Equatable {let enabled:Bool;let status:String;let extraTokens:Int;let targetWindow:Int?;let runtimeWindow:Int?;let message:String?}
 struct CompensationState:Decodable,Equatable {let enabled:Bool;let pending:Bool;let message:String}
@@ -42,11 +56,11 @@ struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:
 struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPercent:Double;let windowDurationMins:Int?;let resetsAt:Int?}
 struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?;let creditBalance:String?}
 struct CreditBaseline:Decodable,Equatable {let last:Double;let baseline:Double}
-struct QuotaState:Decodable,Equatable {let creditBaselines:[String:CreditBaseline?]?;let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
+struct QuotaState:Decodable,Equatable {let resetNotification:QuotaResetEvent?;let creditBaselines:[String:CreditBaseline?]?;let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
 struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics:Bool?;let creditBaseline:Bool?}
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
 struct ChatSidebar:Decodable,Equatable {let projects:[SidebarProject];let standaloneThreadIds:[String]}
-struct RuntimeState: Decodable {let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let compactionCompensation:CompensationState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct RuntimeState: Decodable {let quotaActivation:QuotaActivationState?;let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let compactionCompensation:CompensationState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -99,6 +113,8 @@ struct ServiceSettings: Decodable {let node:String}
     }
     @Published var queueModels:[QueueModel]=[]
     @Published var queueTaskEditID:String?
+    let quotaResetNotifier=QuotaResetNotifier()
+    @Published var quotaActivation:QuotaActivationState?
     @Published var taskQueues:TaskQueuesState?
     @Published var queueDetailID:String?
     @Published var chats:[Chat]=[]
@@ -168,6 +184,8 @@ struct ServiceSettings: Decodable {let node:String}
             if quota != state.quota{acceptQuota(state.quota)}
             let desktopUpdate=state.update?.forDesktop(appVersion)
             if updateState != desktopUpdate{updateState=desktopUpdate;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
+            if quotaActivation != state.quotaActivation{quotaActivation=state.quotaActivation}
+            quotaResetNotifier.observe(state.quota?.resetNotification,enabled:state.quotaActivation?.config.notificationsEnabled != false,stale:state.quota?.stale != false)
             if taskQueues != state.taskQueues{taskQueues=state.taskQueues}
             if queueModels != (state.queueModels ?? []){queueModels=state.queueModels ?? []}
             if chats != state.threads{chats=state.threads}
@@ -232,6 +250,7 @@ struct ServiceSettings: Decodable {let node:String}
         else{ratioNumerator=90;ratioDenominator=100;setWindowK(400)}
     }
     func calculate() throws -> BudgetPreview {
+        guard selected?.ambiguous != true else{throw BudgetInputError(message:L("检测到多个接入进程，请完整重启 Codex"))}
         guard let metadata=selected?.modelMetadata,let percent=metadata.effective_context_window_percent,let maximum=metadata.max_context_window else{throw BudgetInputError(message:L("等待当前模型信息后即可设置实际可用窗口"))}
         guard metadata.context_catalog_ready != false else{throw BudgetInputError(message:bridgeCount==0 ? L("打开 Codex 并进入聊天后即可调整"):selected?.connected == true ? L("请完整退出并重开 Codex，使上下文设置生效"):L("请先在 Codex 打开此聊天"))}
         guard !waitingForModel else{throw BudgetInputError(message:L("正在读取此聊天的窗口设置"))}
@@ -300,7 +319,7 @@ struct ServiceSettings: Decodable {let node:String}
 
 func formatted(_ n:Int?) -> String {guard let n else{return L("待观测")};return n.formatted()+" tokens"}
 func phaseName(_ value:String?) -> String {
-    switch value {case "extension_pending":return L("等待重开 Codex");case "compacting":return L("正在保护性压缩");case "confirmed":return L("窗口已确认");case "awaiting_runtime_confirmation":return L("等待下一轮确认");case "reloading":return L("正在应用");case "waiting_for_idle","queued":return L("等待轮次结束");case "needs_compaction":return L("需要先压缩");case "needs_observation":return L("等待用量记录");case "error","mismatch":return L("需要处理");case "saved":return L("已保存");default:return L("尚未接入")}
+    switch value {case "connection_conflict":return L("接入进程冲突");case "extension_pending":return L("等待重开 Codex");case "compacting":return L("正在保护性压缩");case "confirmed":return L("窗口已确认");case "awaiting_runtime_confirmation":return L("等待下一轮确认");case "reloading":return L("正在应用");case "waiting_for_idle","queued":return L("等待轮次结束");case "needs_compaction":return L("需要先压缩");case "needs_observation":return L("等待用量记录");case "error","mismatch":return L("需要处理");case "saved":return L("已保存");default:return L("尚未接入")}
 }
 
 enum PanelStyle {

@@ -1,4 +1,5 @@
 import {spawn,spawnSync} from 'node:child_process';
+import {watchRuntimeLifecycle} from './runtime-lifecycle.mjs';
 import {readFileSync} from 'node:fs';
 import {Bridge} from './bridge.mjs';
 import {createCompensationResolver} from './compaction-compensation.mjs';
@@ -54,7 +55,7 @@ if(!desktop||!isStdioServer(args)||!supported){
     }catch(error){integrationLog('wrapper.service_attach_failed',{message:error.message});if(!closed)setTimeout(attach,1500).unref();}
   }
   attach();
-  process.stdin.once('end',()=>child.stdin.end());
+  watchRuntimeLifecycle({child,input:process.stdin,output:process.stdout,onDisconnect:()=>{closed=true;peer?.close();integrationLog('wrapper.client_disconnected',{parentPid:process.ppid,childPid:child.pid});}});
   child.once('error',error=>{process.stderr.write(`Context Control: ${error.message}\n`);process.exitCode=1;});
   child.once('exit',(code,signal)=>{closed=true;peer?.close();bridge.frontLines.close();bridge.backLines.close();process.exitCode=code??(signal?1:0);});
   process.once('SIGTERM',()=>child.kill('SIGTERM'));process.once('SIGINT',()=>child.kill('SIGINT'));

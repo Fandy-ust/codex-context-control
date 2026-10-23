@@ -184,3 +184,12 @@ input[type=text]{background:#ffffff08;color:inherit;border:1px solid var(--line)
 
 /* Separate event lanes; marker width is bounded by adjacent bucket spacing. */
 .events-plot{height:76px}.events-plot .event-marker{height:8px;min-width:0;border-radius:2px}.event-marker.model{background:#e9b76f}.event-marker.effort{background:#70cfce}.event-legend{flex-wrap:wrap;row-gap:5px}
+
+#activation-date{color-scheme:dark;background:#ffffff08;color:var(--text,#eee);border:1px solid #ffffff20;border-radius:12px;padding:10px 12px;font:inherit;max-width:100%}
+/* Native-style settings switches, shared by general and quota settings. */
+.settings-dialog input.switch{appearance:none;-webkit-appearance:none;position:relative;flex-shrink:0;width:38px;height:22px;padding:0;margin:0;border:1px solid #ffffff20;border-radius:99px;background:#444;cursor:pointer;transition:background .18s,border-color .18s}
+.settings-dialog input.switch::before{content:'';position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0005;transition:transform .18s}
+.settings-dialog input.switch:checked{background:#34c759;border-color:#34c759}
+.settings-dialog input.switch:checked::before{transform:translateX(16px)}
+.settings-dialog input.switch:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.settings-dialog input.switch:disabled{opacity:.4;cursor:default}

@@ -1,5 +1,7 @@
+import {createResetNotifier} from './quota-reset-notifications.mjs';
+import {createQuotaActivation} from '../src/quota-activation.mjs';
 import {createTaskQueues} from '../src/task-queues.mjs';
-import {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell,dialog,clipboard} from 'electron';
+import {app,BrowserWindow,Notification,Tray,Menu,ipcMain,nativeImage,nativeTheme,screen,globalShortcut,shell,dialog,clipboard} from 'electron';
 import fs from 'node:fs';
 import {readClipboardAttachments} from './clipboard-attachments.mjs';
 import {assertControlOperation} from '../src/contracts/control-api.mjs';
@@ -33,6 +35,7 @@ const {demoState,demoStatistics}=await import('./demo.mjs');
 const demoCloudCredentials={};
 let demoCloud={deviceName:'Demo workstation',statisticsMode:'current',excludedAccounts:[],excludedSyncAccounts:[],excludedDevices:[],accounts:[{id:'a'.repeat(32),label:'Demo account',current:true}],deviceList:[],enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:'00000000000000000000000000000000',error:null,running:false};
 const demoQueues=demo?createTaskQueues({quota:{state:()=>({...demoState.quota,updatedAt:Date.now()}),refresh:async()=>{}},thread:id=>demoState.threads.find(t=>t.id===id),start:async(id,task)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='active';chat.automaticTask={executionId:task.executionId,status:'running'};},interrupt:async(id)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='idle';if(chat.automaticTask)chat.automaticTask.status='interrupted';}}):null;
+const demoActivation=demo?createQuotaActivation({quota:{state:()=>({...demoState.quota,updatedAt:Date.now()}),refresh:async()=>{}},probe:async()=>{}}):null;
 const pkg=JSON.parse(fs.readFileSync(path.join(repo,'package.json'),'utf8'));
 // The Electron package is the installed product. A separately running controller
 // can be from an older checkout, so its version/cache must not drive UI prompts.
@@ -43,6 +46,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
 let main,trayWindow,quitting=false,lastState=null,serviceOnline=false,ready=false,timer,menuDragging=false,lastServiceAttempt=Date.now();
 const shortcutManager=createShortcutManager({read:()=>readJSON(path.join(root,'ui-settings.json'),{}),write:doc=>atomicJSON(path.join(root,'ui-settings.json'),doc),register:(key,callback)=>globalShortcut.register(key,callback),unregister:key=>globalShortcut.unregister(key),onTrigger:()=>toggleMain(),inactive:smoke});
 const trayController=createTrayController({create:image=>new Tray(image),render:({remaining,stale,dark})=>icon(remaining,stale,dark),handlers:{click:()=>toggleMenu(),'double-click':()=>showMain(),'right-click':()=>trayController.entry?.popUpContextMenu(trayMenu())}});
+const resetNotifier=createResetNotifier({read:()=>readJSON(path.join(root,'quota-notification-delivery.json'),{}),save:value=>atomicJSON(path.join(root,'quota-notification-delivery.json'),value),show:([cn,en])=>{if(demo||smoke||!Notification.isSupported())return;const n=new Notification({title:'Context Manager',body:label(cn,en)});n.on('click',()=>showSettings());n.on('failed',(_event,error)=>console.error('Quota notification:',error));n.show();}});
 const zh=()=>resolveLanguage(languagePreference())==='zh';
 const label=(a,b)=>zh()?a:b;
 const updateSettingsFile=path.join(root,'ui-settings.json');
@@ -66,7 +70,8 @@ app.on('activate',()=>showMain());
 async function api(action,params={}){
   if(demo){
     if(action==='cloud-sync'){if(params.action==='credential')return {value:demoCloudCredentials[params.field]||''};if(['configure','save-and-sync'].includes(params.action)){const {token,key,action,claimLegacy,...value}=params;if(token)demoCloudCredentials.token=token;if(key)demoCloudCredentials.key=key;demoCloud={...demoCloud,...value,hasToken:!!token||demoCloud.hasToken,hasKey:!!key||demoCloud.hasKey};}if(params.action==='create-gist')demoCloud.gistId='a'.repeat(32);if(['sync','save-and-sync'].includes(params.action)){demoCloud.enabled=true;demoCloud.lastSuccess=Date.now();demoCloud.devices=5;}return structuredClone(demoCloud);}
-    if(action==='state')return structuredClone({...demoState,taskQueues:demoQueues.list()});
+    if(action==='state')return structuredClone({...demoState,quotaActivation:demoActivation.state(),taskQueues:demoQueues.list()});
+    if(action==='quota-activation')return demoActivation.command(params);
     if(action==='task-queue')return demoQueues.command(params);
     if(action==='statistics')return structuredClone({...demoStatistics,threadId:params.id});
     if(action==='quota-refresh')return structuredClone(demoState.quota);
@@ -82,7 +87,7 @@ async function api(action,params={}){
   if(!Number.isSafeInteger(connection?.port)||connection.port<1||connection.port>65535||!/^[a-f0-9]{64}$/.test(connection.token||''))throw Error('Local service connection is unavailable');
   const response=await fetch(`http://127.0.0.1:${connection.port}${route.path}`,{method:route.method,headers:{Authorization:`Bearer ${connection.token}`},...(route.method==='POST'?{body:JSON.stringify(params)}:{}),signal:AbortSignal.timeout(['statistics','quota-analytics'].includes(action)?60000:30000)});
   const body=await response.json();if(!response.ok)throw Error(localize(body.error||'Local service error'));
-  if(action==='state')body.update=uiUpdater.status();
+  if(action==='state'){body.update=uiUpdater.status();resetNotifier.observe(body.quota?.resetNotification,{enabled:body.quotaActivation?.config?.notificationsEnabled!==false,stale:body.quota?.stale!==false});}
   return body;
 }
 const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,shortcut:shortcutManager.status(),menuReady:trayController.ready,menuImageReady:trayController.ready,menuVisibilityEvidence:'unverified',menuWindowVisible:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),menuOnScreen:null,windowVisible:!!(main&&!main.isDestroyed()&&main.isVisible()),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow&&!trayWindow.isDestroyed()?trayWindow.getBounds():undefined});};
@@ -185,6 +190,11 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
   const result=await api(action,params);if(action==='state'){lastState=result;serviceOnline=true;updateTray();}if(action==='quota-refresh'){lastState={...lastState,quota:result};updateTray();}return result;
 });
 app.whenReady().then(async()=>{ensureRoot();ready=true;
+  if(process.platform==='win32'&&app.isPackaged&&!demo&&!smoke){
+    // Windows associates toast permissions and delivery with the Start-menu ID.
+    const shortcut=path.join(app.getPath('appData'),'Microsoft/Windows/Start Menu/Programs/Context Manager/Context Manager.lnk');
+    if(fs.existsSync(shortcut))try{shell.writeShortcutLink(shortcut,'update',{target:process.execPath,appUserModelId:'io.github.codex-context-control'});}catch(error){console.error('Notification shortcut:',error.message);}
+  }
 trayController.start();updateTray();nativeTheme.on('updated',updateTray);
 if(args.includes('--quit')){app.quit();}else{
   if(!demo){try{await ensureUiService();}catch(e){console.error(e.message);}}
@@ -263,6 +273,8 @@ if(args.includes('--quit')){app.quit();}else{
         fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),name+'.png'),(await main.webContents.capturePage()).toPNG());
       }
       const composerSmoke=await main.webContents.executeJavaScript('window.__contextComposerSmoke()');if(!composerSmoke.ok)throw Error(JSON.stringify(composerSmoke));console.log('TASK_COMPOSER_SMOKE '+JSON.stringify(composerSmoke));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){for(const kind of ['base','model','full','attachments']){await main.webContents.executeJavaScript(`window.__contextComposerPreview('${kind}')`);await new Promise(r=>setTimeout(r,180));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'composer-'+kind+'-0.22.5.png'),(await main.webContents.capturePage()).toPNG());}}
+      const activationSmoke=await main.webContents.executeJavaScript('window.__contextActivationSmoke()');if(!activationSmoke.ok)throw Error(JSON.stringify(activationSmoke));console.log('QUOTA_ACTIVATION_SMOKE '+JSON.stringify(activationSmoke));
+      if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR)fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-activation.png'),(await main.webContents.capturePage()).toPNG());
       const appearance=await main.webContents.executeJavaScript('window.__contextAppearanceSmoke()');if(!appearance.ok)throw Error(JSON.stringify(appearance));console.log('APPEARANCE_SMOKE '+JSON.stringify(appearance));
       if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await new Promise(r=>setTimeout(r,120));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'scroll-edges-and-events.png'),(await main.webContents.capturePage()).toPNG());}
       // Exercise the real window state: visible in the background must focus in one press.

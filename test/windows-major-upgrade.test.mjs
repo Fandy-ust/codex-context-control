@@ -9,7 +9,8 @@ import {removeInstallationTree,verifyWindowsPayload,sha} from '../src/platform/w
 
 const previousSetup=process.env.CONTEXT_CONTROL_PREVIOUS_SETUP;
 const currentSetup=process.env.CONTEXT_CONTROL_CURRENT_SETUP;
-test('real ZIP 0.25.4 to LZMA2 1.0.0 upgrade preserves preferences, UI/core content and exact payload bytes',{
+const currentVersion=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
+test('real ZIP 0.25.4 to current LZMA2 stable upgrade preserves preferences, runtime and exact payload bytes',{
   skip:process.platform!=='win32'||!previousSetup||!currentSetup,timeout:120000
 },()=>{
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-major-upgrade-测试-'));
@@ -29,9 +30,9 @@ test('real ZIP 0.25.4 to LZMA2 1.0.0 upgrade preserves preferences, UI/core cont
   try{
     const old=install(previousSetup);assert.equal(old.productVersion,'0.25.4');
     const oldRoot=path.dirname(old.installedApp),before=verifyWindowsPayload(oldRoot);
-    const source=path.resolve('build/Context-Manager-1.0.0-windows-x64/payload');
+    const source=path.resolve(`build/Context-Manager-${currentVersion}-windows-x64/payload`);
     const sourceManifest=JSON.parse(fs.readFileSync(path.join(source,'payload-manifest.json'),'utf8'));
-    const preserved=name=>/^resources\/app\/(desktop|src|node_modules|vendor)\//.test(name)||name.endsWith('.pak')||name.endsWith('.dll')||name.endsWith('.dat')||name.endsWith('.bin');
+    const preserved=name=>/^resources\/app\/(node_modules|vendor)\//.test(name)||name.endsWith('.pak')||name.endsWith('.dll')||name.endsWith('.dat')||name.endsWith('.bin');
     // Git may convert LF/CRLF when creating a new Windows worktree. Permit
     // only that transformation in text sources; binaries must be identical.
     const normalized=new Map();
@@ -41,7 +42,7 @@ test('real ZIP 0.25.4 to LZMA2 1.0.0 upgrade preserves preferences, UI/core cont
     }
     for(const [name,value] of Object.entries(files))fs.writeFileSync(path.join(home,name),JSON.stringify(value));
     fs.writeFileSync(path.join(home,'settings.json'),JSON.stringify({...old,futurePreference:{keep:true}}));
-    const current=install(currentSetup);assert.equal(current.productVersion,'1.0.0');
+    const current=install(currentSetup);assert.equal(current.productVersion,currentVersion);
     assert.deepEqual(current.futurePreference,{keep:true});
     for(const [name,value] of Object.entries(files))assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home,name),'utf8')),value);
     assert.equal(JSON.parse(fs.readFileSync(path.join(home,'upgrade-backup/manifest.json'),'utf8')).from,'0.25.4');
@@ -56,6 +57,6 @@ test('real ZIP 0.25.4 to LZMA2 1.0.0 upgrade preserves preferences, UI/core cont
     }
     const version=spawnSync(current.shim,['--version'],{env,encoding:'utf8',windowsHide:true,timeout:15000});
     assert.equal(version.status,0,version.stderr);assert.match(version.stdout,/^codex-cli /);
-    console.log(`Verified ${Object.keys(after.files).length} installed files byte-for-byte; ${oldFiles.length} UI/core/runtime files unchanged from 0.25.4 (${normalized.size} text files differ only in Git line endings).`);
+    console.log(`Verified ${Object.keys(after.files).length} installed files byte-for-byte; ${oldFiles.length} dependency/runtime files unchanged from 0.25.4 (${normalized.size} text files differ only in Git line endings).`);
   }finally{removeInstallationTree(os.tmpdir(),temp);}
 });

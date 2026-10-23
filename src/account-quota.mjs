@@ -1,3 +1,4 @@
+import {observeQuotaResets} from './core/quota-reset-notifications.mjs';
 import {spawn} from 'node:child_process';
 import readline from 'node:readline';
 import {realBinary,codexHome} from './paths.mjs';
@@ -45,17 +46,20 @@ export function createQuotaManager({read=()=>readAccountQuota({includeAccount:tr
  let buckets=[],updatedAt=null,checkedAt=0,error=null,pending;
  const preferencesFile=home?path.join(home,'quota-preferences.json'):null;
  let preferences;try{preferences=preferencesFile?readJSON(preferencesFile,{}):{};}catch{preferences={};}
+ const resetFile=home?path.join(home,'quota-reset-notifications.json'):null;
+ let resetState;try{resetState=resetFile?readJSON(resetFile,null):null;}catch{resetState=null;}
  let creditBaselines=preferences?.creditBaselines??{},creditScope=preferences?.creditScope??null;
  const creditAccounts=preferences?.creditAccounts??{};
  const saveBaselines=()=>{if(creditScope)creditAccounts[creditScope]=creditBaselines;if(preferencesFile)atomicJSON(preferencesFile,{...preferences,creditScope,creditAccounts,creditBaselines});};
- function state(){return {buckets,creditBaselines,updatedAt,loading:!!pending,stale:!!error||!!updatedAt&&now()-updatedAt>interval*2,error};}
+ function state(){return {buckets,resetNotification:resetState?.scope===creditScope?resetState?.event??null:null,accountScope:creditScope,creditBaselines,updatedAt,loading:!!pending,stale:!!error||!!updatedAt&&now()-updatedAt>interval*2,error};}
  async function refresh(force=false){
   if(pending){await pending;return state();}if(checkedAt&&now()-checkedAt<(force?10000:interval))return state();checkedAt=now();
   pending=(async()=>{try{
-    const response=await read(),observed=normalizeQuota(response),observedAt=now();
-    if(onObservation)try{const scope=await onObservation({buckets:observed,at:observedAt,account:response.account??null});if(typeof scope==='string'&&scope!==creditScope){creditScope=scope;creditBaselines=creditAccounts[scope]??{};}}catch{/* History failure does not hide current quota. */}
+    const response=await read(),observed=normalizeQuota(response),observedAt=now();let resetScope=null;
+    if(onObservation)try{const scope=await onObservation({buckets:observed,at:observedAt,account:response.account??null});if(typeof scope==='string')resetScope=scope;if(typeof scope==='string'&&scope!==creditScope){creditScope=scope;creditBaselines=creditAccounts[scope]??{};}}catch{/* History failure does not hide current quota. */}
     const next={...creditBaselines};for(const bucket of observed)if(!['__proto__','constructor','prototype'].includes(bucket.id))next[bucket.id]=observeCreditBalance(next[bucket.id],bucket.creditBalance);
     if(JSON.stringify(next)!==JSON.stringify(creditBaselines)){creditBaselines=next;saveBaselines();}
+    try{const nextReset=observeQuotaResets(resetState,{buckets:observed,scope:resetScope,at:observedAt});if(nextReset!==resetState){resetState=nextReset;if(resetFile)atomicJSON(resetFile,resetState);}}catch{/* Notification persistence must not hide quota. */}
     buckets=observed;updatedAt=observedAt;error=buckets.length?null:'当前账户暂无额度数据';
   }catch{error='暂时无法读取额度';}return state();})().finally(()=>{pending=null;});
   await pending;return state();

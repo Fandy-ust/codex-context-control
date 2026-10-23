@@ -4,6 +4,12 @@ import {policyForThreadDraft} from '../src/core/budget-editor.mjs';
 import {normalizeStateDocument} from '../src/core/state-document.mjs';
 import {manifestCandidate} from '../src/core/update-artifact.mjs';
 const fixtures=JSON.parse(fs.readFileSync(new URL('./fixtures/contracts/budgets.json',import.meta.url)));
+test('connection conflicts take priority over the generic model readiness hint',()=>{
+ const model={max_context_window:1000000,effective_context_window_percent:90,context_catalog_ready:false},draft={window:400000,compact:360000,reserve:16000,retainedFloor:0};
+ assert.throws(()=>policyForThreadDraft(draft,model,{ambiguous:true}),/检测到多个接入进程，请完整重启 Codex/);
+ assert.throws(()=>policyForThreadDraft(draft,model,{ambiguous:false}),/请先在 Codex 打开此聊天/);
+ assert.doesNotThrow(()=>policyForThreadDraft(draft,{...model,context_catalog_ready:true},{ambiguous:false}));
+});
 test('both client payloads resolve through the same authoritative visible-budget contract',()=>{
  for(const c of fixtures){const model={effective_context_window_percent:c.percent,max_context_window:c.maximum},draft={window:c.usableWindow,compact:c.compact,reserve:16000,retainedFloor:0};const legacy=policyForThreadDraft(draft,model),visible=budgetCommand(draft,legacy,{visibleBudget:true});
  assert.equal(legacy.window,c.rawWindow);assert.deepEqual(normalizeBudgetCommand(visible,model),legacy);assert.deepEqual(normalizeBudgetCommand({policy:legacy},model),legacy);assert.ok(!Object.hasOwn(visible.budget,'window'));}

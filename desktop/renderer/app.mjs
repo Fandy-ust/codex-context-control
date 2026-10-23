@@ -1,5 +1,6 @@
 import {cloudSyncView,cloudSyncForm} from './cloud-sync.mjs';
 import {responseSpeedContent} from './response-speed.mjs';
+import {activationView} from './quota-activation.mjs';
 import {normalizeTaskSettings} from '../../src/core/task-settings.mjs';
 import {queueStrip,queueManager,queueDetail,queueTaskEditor} from './task-queues.mjs';
 import {quotaAnalyticsView,bindQuotaAnalytics} from './quota-analytics.mjs';
@@ -30,6 +31,7 @@ let shortcutDraft=DEFAULT_SHORTCUT,shortcutEnabled=true,shortcutRecording=false,
 let queueID=null,queueReturnSettings=false,queueTaskDraft=null,queueTaskTab='prompt',queueExpanded=false,queueModelOpen=false;
 const queueFormDrafts=new Map(),queuePreviews=new Map();
 let cloudState=null;
+let activationDraft=null;
 let settingsOpen=false,settingsTab='general',settingsSnapshot=null,settingsUnderlay='';
 let integrationError='',integrationPending=false;
 let detailsOpen=false,detailsRestoreScroll=null,statsLoading=false,statsError='',rawSelectedID=null,lastDetailBucket=null,smoothingTimer,deferredStats=null;
@@ -85,7 +87,7 @@ const k=value=>value==null?'—':value>=1000000?(value/1000000).toFixed(2).repla
 const money=value=>value==null?'—':'$'+Number(value).toFixed(2);
 const tokens=value=>value==null?t('待观测','Unobserved'):amount(value)+' tokens';
 const current=()=>state?.threads.find(t=>t.id===selected);
-const phaseNames={extension_pending:['等待重开 Codex','Restart Codex'],compacting:['正在保护性压缩','Compacting'],confirmed:['窗口已确认','Window confirmed'],awaiting_runtime_confirmation:['等待下一轮确认','Awaiting next-turn confirmation'],reloading:['正在应用','Applying'],waiting_for_idle:['等待轮次结束','Waiting for turn end'],queued:['等待轮次结束','Queued'],needs_compaction:['需要先压缩','Compaction needed'],needs_observation:['等待用量记录','Waiting for usage'],error:['需要处理','Needs attention'],mismatch:['需要处理','Readback mismatch'],saved:['已保存','Saved']};
+const phaseNames={connection_conflict:['接入进程冲突','Connection conflict'],extension_pending:['等待重开 Codex','Restart Codex'],compacting:['正在保护性压缩','Compacting'],confirmed:['窗口已确认','Window confirmed'],awaiting_runtime_confirmation:['等待下一轮确认','Awaiting next-turn confirmation'],reloading:['正在应用','Applying'],waiting_for_idle:['等待轮次结束','Waiting for turn end'],queued:['等待轮次结束','Queued'],needs_compaction:['需要先压缩','Compaction needed'],needs_observation:['等待用量记录','Waiting for usage'],error:['需要处理','Needs attention'],mismatch:['需要处理','Readback mismatch'],saved:['已保存','Saved']};
 const phase=thread=>{const names=phaseNames[thread?.phase];return names?t(...names):t('尚未接入','Not connected');};
 function notify(message){const node=document.querySelector('#toast');node.textContent=t(message);node.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.style.display='none',6500);}
 async function run(action,params={},message){if(busy)return;busy=true;document.body.classList.add('busy');try{const result=await api.invoke(action,params);if(message)notify(message);return result;}catch(error){notify(error.message);throw error;}finally{busy=false;document.body.classList.remove('busy');}}
@@ -151,7 +153,7 @@ function settingsBudgetCard(value,model,{defaults=false}={}){
 }
 function chatPage(){
   const chat=current();let previewError=budgetInputError;
-  if(chat&&!previewError){try{if(!draft)throw Error('等待当前模型的原生窗口信息');applePolicyForDraft(draft,chat.modelMetadata);}catch(error){previewError=error.message;}}
+  if(chat&&!previewError){try{if(!draft)throw Error('等待当前模型的原生窗口信息');applePolicyForDraft(draft,chat.modelMetadata,chat);}catch(error){previewError=error.message;}}
   return chatView({chat:chat?{...chat,name:chatName(chat)}:null,draft,observedTitle:observedWindowTitle(chat),modelName:modelDisplayName(chat?.model||''),canEdit:!!draft&&chat?.modelMetadata?.context_catalog_ready!==false,previewError,budgetCard,details:queueStrip({quota:state?.quota,chat,queues:state?.taskQueues,e,t})+detailsPage(),notice:mainNotice,noticeError:mainNoticeError,e,t,tokens});
 }
 
@@ -160,7 +162,7 @@ function defaultsPage(){return `<div class="content"><div><h1>${e(t('全局默�
 function setNotice(message,error=false){mainNotice=message||'';mainNoticeError=error;const node=document.getElementById('main-notice');if(node){node.textContent=t(mainNotice);node.hidden=!mainNotice;node.classList.toggle('error',error);node.classList.toggle('muted',!error);}}
 function refreshBudgetValidity(){
   if(editingDefaults()||mode==='tray')return;
-  let error=budgetInputError;try{if(!error){if(!draft)throw Error('等待当前模型的原生窗口信息');applePolicyForDraft(draft,current()?.modelMetadata);}}catch(failure){error=failure.message;}
+  let error=budgetInputError;try{if(!error){if(!draft)throw Error('等待当前模型的原生窗口信息');applePolicyForDraft(draft,current()?.modelMetadata,current());}}catch(failure){error=failure.message;}
   const fieldset=editorRoot()?.querySelector('.budget-editor');if(fieldset)fieldset.disabled=!draft||current()?.modelMetadata?.context_catalog_ready===false;
   const node=editorRoot()?.querySelector('#budget-error');if(node){node.textContent=t(error||'');node.hidden=!error;}
   for(const action of ['apply']){const button=editorRoot()?.querySelector(`[data-action="${action}"]`);if(button)button.disabled=!!error||!draft;}
@@ -242,11 +244,12 @@ function generalSettings(){
   return `<section class="card stack"><h2>${e(t('通用','General'))}</h2><label class="stack tiny" for="language">${e(t('语言','Language'))}<select id="language"><option value="auto" ${preferences.selection==='auto'?'selected':''}>${e(t('自动（按时区）','Automatic (time zone)'))}</option><option value="zh" ${preferences.selection==='zh'?'selected':''}>中文</option><option value="en" ${preferences.selection==='en'?'selected':''}>English</option></select></label><div class="row wrap"><button data-action="scan">↻ ${e(t('同步本地聊天','Sync local chats'))}</button><button data-action="open-codex">↗ ${e(t('打开 Codex','Open Codex'))}</button></div><div class="extension"><div class="row between"><span>${e(t('拓展上下文','Extended context'))}</span><input type="checkbox" id="extension" class="switch" aria-label="${e(t('拓展上下文','Extended context'))}" ${ext?.enabled?'checked':''} ${!ext?.available||!ext?.compatible?'disabled':''}></div><p class="tiny muted">${e(t(ext?.message||'等待 Codex 连接','Waiting for Codex'))}</p></div><div class="extension"><label class="row between" for="auto-check-updates"><span>${e(t('启动时自动检查更新','Check for updates on startup'))}</span><input type="checkbox" id="auto-check-updates" class="switch" ${preferences.autoCheckUpdates!==false?'checked':''}></label><p class="tiny muted">${e(t('发现新版本时提示，由你决定是否安装。','Show a prompt when an update is available. You choose when to install.'))}</p></div><div class="row wrap"><button data-action="update" ${['downloading','installing'].includes(u.phase)?'disabled':''}>↓ ${e(['downloading','installing'].includes(u.phase)?t('正在更新…','Updating…'):u.available?t('安装更新 {0}','Install update {0}',u.version):t('检查更新','Check for updates'))}</button><button data-action="check-update" ${['downloading','installing'].includes(u.phase)?'disabled':''} ${u.available?'':'hidden'}>↻ ${e(t('检查更新','Check for updates'))}</button><span class="tiny muted">v${e(preferences.version||'')}</span></div>${u.error?`<span class="tiny error" role="status">${e(t(u.error))}</span>`:''}<div class="row wrap"><button data-action="diagnostics">${e(t('诊断','Diagnostics'))}</button><button data-action="open-logs">${e(t('打开接入日志','Open integration logs'))}</button></div><div class="feature-note"><strong>${e(t('提前压缩修复','Early compaction fix'))}</strong><p class="tiny muted">${e(t('上游已停用此旧版补丁，Windows 不提供该开关。原生自动压缩与聊天页的压缩触发阈值仍可使用。','The legacy patch is disabled upstream and unavailable on Windows. Native automatic compaction and per-chat thresholds remain available.'))}</p></div></section>`;
 }
 function settingsDialog(){
-  const tabs=[['general',t('通用','General')],['defaults',t('全局默认','Global defaults')],['queues',t('任务队列','Task queues')],['quota',t('账户额度','Account quota')],['cloud',t('云同步','Cloud sync')],['integration',t('Codex 接入','Codex integration')],['shortcut',t('快捷键','Shortcut')]];
-  const content=settingsTab==='cloud'?cloudSyncView(cloudState,{e,t}):settingsTab==='queues'?queueManager({queues:state?.taskQueues,chats:state?.threads??[],e,t}):settingsTab==='general'?generalSettings():settingsTab==='defaults'?(state?defaultsPage():''):settingsTab==='quota'?quotaPanel():settingsTab==='integration'?integrationSettings():shortcutSettings();
+  const tabs=[['activation',t('额度启动','Quota activation')],['general',t('通用','General')],['defaults',t('全局默认','Global defaults')],['queues',t('任务队列','Task queues')],['quota',t('账户额度','Account quota')],['cloud',t('云同步','Cloud sync')],['integration',t('Codex 接入','Codex integration')],['shortcut',t('快捷键','Shortcut')]];
+  const content=settingsTab==='activation'?activationView(state?.quotaActivation,activationDraft,{e,t}):settingsTab==='cloud'?cloudSyncView(cloudState,{e,t}):settingsTab==='queues'?queueManager({queues:state?.taskQueues,chats:state?.threads??[],e,t}):settingsTab==='general'?generalSettings():settingsTab==='defaults'?(state?defaultsPage():''):settingsTab==='quota'?quotaPanel():settingsTab==='integration'?integrationSettings():shortcutSettings();
   return `<div class="settings-backdrop" data-action="settings-dismiss"><section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><header class="settings-header row between"><h1 id="settings-title">${e(t('设置','Settings'))}</h1><button class="settings-close flat" data-action="settings-close" aria-label="${e(t('关闭设置','Close settings'))}">×</button></header><nav class="settings-tabs" role="tablist" aria-label="${e(t('设置分类','Settings sections'))}">${tabs.map(([id,label])=>`<button role="tab" id="settings-tab-${id}" aria-controls="settings-panel" aria-selected="${id===settingsTab}" class="${id===settingsTab?'active':''}" data-action="settings-tab" data-tab="${id}">${e(label)}</button>`).join('')}</nav><div class="settings-body" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab-${settingsTab}">${content}</div></section></div>`;
 }
 function openSettings(tab='general'){
+  for(const menu of root.querySelectorAll('.queue-permission-menu,.queue-attach-menu,.queue-model-menu'))menu.open=false;queueModelOpen=false;
   if(!settingsOpen){settingsSnapshot={draft:draft?{...draft}:null,dirty};settingsUnderlay=root.querySelector('.main')?.innerHTML||'';}
   if(shortcutRecording)finishShortcutRecording();
   settingsOpen=true;settingsTab=tab;hover=pinned=null;if(tab==='cloud')void loadCloudSync();
@@ -259,7 +262,7 @@ function closeSettings(){
   settingsSnapshot=null;settingsUnderlay='';if(!dirty)loadDraft();render(true);root.querySelector('.settings-trigger')?.focus();
 }
 function switchSettingsTab(tab){
-  if(!['general','defaults','quota','queues','cloud','integration','shortcut'].includes(tab))return;
+  if(!['general','defaults','quota','queues','cloud','integration','shortcut','activation'].includes(tab))return;
   if(shortcutRecording)finishShortcutRecording();
   settingsTab=tab;if(tab==='cloud')void loadCloudSync();
   if(tab==='defaults')loadDraft();else if(settingsSnapshot){draft=settingsSnapshot.draft;dirty=settingsSnapshot.dirty;}
@@ -448,7 +451,11 @@ function selectChat(id){
   if(current()&&mode==='main')openDetails();else render();
 }
 function loadDraft(){if(editingDefaults()){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else{const next=threadDraft(current());if(draft?.expectedRevision!==next?.expectedRevision){budgetText={};budgetInputError='';}draft=next;}dirty=false;}
-async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator??DEFAULT_SHORTCUT;shortcutEnabled=shortcutDraft!==''&&preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(view==='quota'&&!settingsOpen){if(!document.activeElement?.closest('.compact-date-range')&&!qaLoading&&Date.now()-qaLastLoad>(qaReport?.quality?.progress?.pending?1500:5000))await loadQuotaAnalytics();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}}return;}if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen){if(!detailsOpen&&view==='chat'&&current()){openDetails();}refreshBudgetValidity();}if(settingsOpen&&settingsTab==='cloud'){void pollCloudSync();return;}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select,textarea')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
+async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator??DEFAULT_SHORTCUT;shortcutEnabled=shortcutDraft!==''&&preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(view==='quota'&&!settingsOpen){if(!document.activeElement?.closest('.compact-date-range')&&!qaLoading&&Date.now()-qaLastLoad>(qaReport?.quality?.progress?.pending?1500:5000))await loadQuotaAnalytics();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}}return;}if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen){if(!detailsOpen&&view==='chat'&&current()){openDetails();}refreshBudgetValidity();}if(settingsOpen&&settingsTab==='activation'){
+const holder=document.createElement('div');holder.innerHTML=activationView(state?.quotaActivation,activationDraft,{e,t});
+for(const selector of ['[data-activation-status]','[data-activation-recommendation]']){const a=root.querySelector(selector),b=holder.querySelector(selector);if(a&&b)a.replaceWith(b);}
+const run=root.querySelector('[data-action="activation-run"]');if(run)run.disabled=!!state?.quotaActivation?.busy||['waiting','running','verifying'].includes(state?.quotaActivation?.job?.status);return;
+}if(settingsOpen&&settingsTab==='cloud'){void pollCloudSync();return;}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select,textarea')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
   try{
     if(action.startsWith('queue-')&&view==='chat')queueID=selected;
@@ -505,6 +512,14 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action==='qa-period'){qaPeriod=button.dataset.period;if(!qaOutlookRange){qaOutlookStart='';qaOutlookEnd='';}render();return;}
     if(action==='outlook-cycle'){qaOutlookRange=null;qaOutlookStart=qaOutlookEnd='';await loadQuotaAnalytics();return;}
     if(action==='qa-refresh'){await run('quota-refresh');await loadQuotaAnalytics(true);return;}
+    if(action.startsWith('activation-')){
+      let params={action:action==='activation-run'?'run':action==='activation-cancel'?'cancel':'configure'};
+      if(params.action==='configure'){
+        const date=document.getElementById('activation-date').value;
+        params={...params,notificationsEnabled:document.getElementById('activation-notifications').checked,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:Number(document.getElementById('activation-tolerance').value),scheduledAt:date?new Date(date).getTime():null};
+      }
+      await api.invoke('quota-activation',params);activationDraft=null;await refresh();render();return;
+    }
     if(action==='quota-refresh'){await run('quota-refresh');await refresh();if(settingsOpen)render();return;}
     if(action==='integration-toggle'){
       const enabled=preferences.integration?.enabled!==true;
@@ -1087,4 +1102,24 @@ window.__contextCloudSmoke=async({preview=false}={})=>{
   for(const field of ['token','key']){document.querySelector('#toast').textContent='';root.querySelector(`[data-action="cloud-copy"][data-field="${field}"]`).click();await wait(()=>document.querySelector('#toast').textContent===t(field==='token'?'Token 已复制':'同步密钥已复制'));}
   closeSettings();openSettings('cloud');await wait(()=>root.querySelector('#cloud-key'));if(!root.querySelector('#cloud-key').placeholder.includes('•'))throw Error('Credential mask lost on reopen');
   await wait(()=>cloudState?.lastSuccess);const result={ok:true,provider:cloudState.provider,customInterval:cloudState.intervalMinutes,credentialsRedacted:!root.querySelector('#cloud-key').value,maskedAfterReopen:root.querySelector('#cloud-key').placeholder.includes('•'),savedCopy:true};if(!preview)closeSettings();return result;
+};
+
+root.addEventListener('input',event=>{
+  if(!event.target.id.startsWith('activation-'))return;
+  activationDraft={notificationsEnabled:document.getElementById('activation-notifications').checked,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:document.getElementById('activation-tolerance').value,date:document.getElementById('activation-date').value};
+});
+window.__contextActivationSmoke=async()=>{
+  openSettings('activation');
+  const date=new Date(Date.now()+3600000),local=new Date(date-date.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  document.getElementById('activation-weekly').checked=true;
+  document.getElementById('activation-date').value=local;
+  document.getElementById('activation-date').dispatchEvent(new Event('input',{bubbles:true}));
+  root.querySelector('[data-action="activation-save"]').click();
+  for(let i=0;i<100&&!state?.quotaActivation?.config.weeklyEnabled;i++)await new Promise(r=>setTimeout(r,20));
+  const saved=state?.quotaActivation?.config;
+  const toggle=document.getElementById('activation-weekly'),onStyle=getComputedStyle(toggle,'::before').transform;
+  toggle.checked=false;toggle.classList.add('no-motion');await new Promise(r=>setTimeout(r,220));const offStyle=getComputedStyle(toggle,'::before').transform;toggle.checked=true;
+  const slidingSwitch=toggle.getAttribute('role')==='switch'&&getComputedStyle(toggle).appearance==='none'&&onStyle!==offStyle;
+  const ok=saved?.weeklyEnabled===true&&saved?.scheduledAt===new Date(local).getTime()&&!!root.querySelector('[data-activation-recommendation]')&&slidingSwitch;
+  return {ok,saved,slidingSwitch};
 };

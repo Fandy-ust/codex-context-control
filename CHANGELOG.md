@@ -1,5 +1,27 @@
 # Changes
 
+## 0.26.3 — Cross-platform runtime ownership cleanup
+
+- End the owned native stdio runtime when its client disconnects, its original parent disappears, or its wrapper exits. This prevents orphaned old connections from repeatedly claiming the same chats after upgrades.
+- Keep genuine multi-client conflicts protected, and validate cleanup with a real client/wrapper/native-process regression test.
+- Publish the accumulated stable LZMA2 Windows installer, quota activation, reset notifications and settings improvements for both desktops.
+
+## 0.26.2 — Native quota reset notifications
+
+- Notify through Windows and macOS when the 5-hour quota, weekly quota, or both reset. Combine adjacent readings and persist delivery IDs to avoid duplicate alerts.
+- Add an independent notification switch, enabled by default, without requiring automatic model probes.
+
+## 0.26.1 — Settings switches and connection conflict guidance
+
+- Use sliding switches in Windows settings and native switch controls for quota activation on macOS.
+- Show an explicit multiple-connection warning instead of asking users to open an already registered chat. Keep budget edits blocked until the conflict is resolved.
+- Continue the stable LZMA2 installer and existing in-place update path; this is not the Lab distribution.
+
+## 0.26.0 — LZMA2 stable upgrade and quota activation
+
+- Package the normal Windows installation with LZMA2; preserve existing data, integration and ZIP automatic updates. No isolated Lab profile.
+- Include weekly reset probing, one-time activation schedules and wake-up lead recommendations on Windows and macOS.
+
 ## 1.0.0 — Smaller Windows installers (research branch)
 
 - Compress the complete Windows payload with LZMA2, with a pinned, embedded public-domain decoder; preserve the existing installer UI, application UI and runtime files.

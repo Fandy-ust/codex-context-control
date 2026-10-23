@@ -1,0 +1,20 @@
+export function activationView(value,draft,{e,t}){
+  const s=value??{},c=draft??s.config??{},r=s.recommendation,j=s.job;
+  const local=at=>{if(!at)return '';const d=new Date(at);return new Date(at-d.getTimezoneOffset()*60000).toISOString().slice(0,16);};
+  return `<section class="card stack"><h2>${e(t('额度启动','Quota activation'))}</h2>
+    <label class="row between">${e(t('额度重置系统通知','Quota reset notifications'))}<input id="activation-notifications" class="switch" role="switch" type="checkbox" ${c.notificationsEnabled!==false?'checked':''}></label>
+    <p class="tiny muted">${e(t('5 小时、每周额度重置时提醒；同时重置合并通知。需保持管理器在后台运行，并允许系统通知。无需开启自动发消息。','Notify when 5-hour or weekly quotas reset; simultaneous resets are combined. Keep the manager running and allow system notifications. Automatic messages are not required.'))}</p>
+    <p class="tiny muted">${e(t('使用 GPT-6 Luna 发送独立短消息，收到回复即停止，每次最多尝试 3 次。','Send an isolated short message with GPT-6 Luna, stop on the first reply, and try at most 3 times.'))}</p>
+    <label class="row between">${e(t('周额度重置后自动启动','Activate after weekly reset'))}<input id="activation-weekly" class="switch" role="switch" type="checkbox" ${c.weeklyEnabled?'checked':''}></label>
+    <label class="stack">${e(t('重置时间容差（分钟）','Reset tolerance (minutes)'))}<input id="activation-tolerance" type="number" min="1" max="60" value="${e(c.toleranceMinutes??10)}"></label>
+    <p class="tiny muted">${e(t('以新到期时间接近当前时间 + 7 天确认周重置；预约启动则检查 + 5 小时。','Verify weekly activation near now + 7 days; scheduled activation checks now + 5 hours.'))}</p>
+    <label class="stack">${e(t('一次性预约（本机时间）','One-time schedule (local time)'))}<input id="activation-date" type="datetime-local" value="${e(c.date??local(c.scheduledAt))}"></label>
+    <p class="tiny muted">${e(t('留空不预约。电脑需保持唤醒、服务运行；错过超过 15 分钟不补发。','Leave blank for no schedule. Keep the computer awake and service running; schedules missed by over 15 minutes are skipped.'))}</p>
+    <div class="row wrap"><button data-action="activation-save">${e(t('保存设置','Save settings'))}</button><button data-action="activation-run" ${s.busy||['waiting','running','verifying'].includes(j?.status)?'disabled':''}>${e(t('立即启动一次','Activate now'))}</button><button data-action="activation-cancel">${e(t('停止并取消预约','Stop and cancel schedule'))}</button></div>
+    <div data-activation-status role="status" class="tiny">${e(j?`${j.status} · ${j.attempts}/3 · ${t(j.message??'')}`:t('尚未执行探测','No probe yet'))}</div><div data-activation-recommendation>
+    <hr><h3>${e(t('起床前提前多久','How long before waking'))}</h3>
+    <p>${e(r?.leadHours!=null?t('建议提前 {0} 小时触发','Activate {0} hours before waking',r.leadHours):t('有效历史不足，至少需要 3 个有足够用量的周期。','Not enough history: at least 3 cycles with sufficient usage are required.'))}</p>
+    ${r?.leadHours!=null?`<p class="tiny muted">${e(t('近期 {0} 个周期，预计活跃使用 {1} 小时用完；建议范围提前 {2}–{3} 小时。','Across {0} recent cycles, estimated active use is {1} hours; suggested lead range is {2}–{3} hours.',r.sampleCount,r.consumptionHours,r.leadMinHours,r.leadMaxHours))}</p>`:''}
+    <p class="tiny muted">${e(t('按近 21 天、最多 10 个周期估算：提前量 = 5 小时 − 预计用完时间。由你按起床时间设置预约，不保证实际耗尽时间。','Based on up to 10 cycles in 21 days: lead time = 5 hours minus estimated consumption time. Set your schedule from your wake-up time; actual usage varies.'))}</p>
+    </div></section>`;
+}

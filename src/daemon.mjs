@@ -1,4 +1,6 @@
 import net from 'node:net';
+import {createQuotaActivation} from './quota-activation.mjs';
+import {runQuotaProbe} from './quota-probe.mjs';
 import {createRunningSpeedCache} from './running-speed.mjs';
 import {runningThread} from './tray-state.mjs';
 import {createTaskQueues} from './task-queues.mjs';
@@ -59,6 +61,9 @@ export async function startDaemon() {
   const bridges=new Map();const owners=new Map();
   const quotaAnalytics=createQuotaAnalyticsService();
   const quota=createQuotaManager({home:root,onObservation:observation=>quotaAnalytics.record(observation)});
+  const activationFile=path.join(root,'quota-activation.json');
+  const quotaActivation=createQuotaActivation({load:()=>{try{return JSON.parse(fs.readFileSync(activationFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(activationFile,value),quota,probe:runQuotaProbe,recommend:()=>quotaAnalytics.activationRecommendation()});
+  const activationTimer=setInterval(()=>quotaActivation.tick().catch(()=>{}),10000);activationTimer.unref();
   const cloudSync=createCloudSync({home:root,analytics:quotaAnalytics,prepare:()=>quota.refresh(true)});
   const queueFile=path.join(root,'task-queues.json');
   function queuePeers(id){const ownersForThread=owners.get(id)||[];return ownersForThread.length?ownersForThread:[...bridges.keys()].filter(peer=>supportsTaskQueues(bridges.get(peer)));}
@@ -84,14 +89,14 @@ export async function startDaemon() {
   function bridgeReady(b){return !!b&&(extension.enabled()?b.contextCeiling===CONTEXT_CEILING_VERSION&&b.contextCatalogRevision===2:b.contextCeiling!==CONTEXT_CEILING_VERSION);}
   function runtimeModel(id,slug,extended){const m=store.model(slug??store.data.threads[id]?.model)||nativeDefaultModel();if(typeof extended!=='boolean'){const peers=owners.get(id)||[];extended=peers.length===1?bridges.get(peers[0])?.contextCeiling===CONTEXT_CEILING_VERSION:extension.enabled();}return extended?ceilingModel(m):m;}
   function extensionState(fix=runtimeFix.status()){return extension.status([...bridges.values()],{compatible:!!fix.originalVersion,available:!!nativeDefaultModel()});}
-  function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===0?!!m:peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,responseSpeed:runningThread(t)?responseSpeeds.get(id):null,taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!peers.length&&queueSupported(id),policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:'extension_pending',message:(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
+  function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===0?!!m:peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,responseSpeed:runningThread(t)?responseSpeeds.get(id):null,taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!peers.length&&queueSupported(id),policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:t.ambiguous?'connection_conflict':'extension_pending',message:t.ambiguous?'检测到多个接入进程，请完整重启 Codex':(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
   function newChatDefaults(){return clampNewChatDefaults(store.data.newChatDefaults||(extension.enabled()?initialNewChatDefaults:nativeNewChatDefaults),defaultModel());}
   function state(){
     store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);
     const threads=Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity);
     // Keep background monitoring light: speed sampling is needed only while the tray menu is visible.
     try{if(JSON.parse(fs.readFileSync(path.join(root,'ui-status.json'),'utf8')).menuWindowVisible===true)responseSpeeds.observe(threads);}catch{}
-    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,compactionCompensation:false},taskQueues:taskQueues.list(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
+    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueues.list(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
   }
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version,buildId};
@@ -204,6 +209,7 @@ export async function startDaemon() {
       if(operation==='state')answer=state();
       else if(operation==='cloud-sync')answer=await cloudSync.command(params);
       else if(operation==='task-queue'){if(params.action==='enable'&&params.enabled&&typeof params.id==='string'&&Object.hasOwn(store.data.threads,params.id)&&!(owners.get(params.id)||[]).length&&queueSupported(params.id))await queueCall(params.id,'queue-prepare',{});answer=taskQueues.command(params);}
+      else if(operation==='quota-activation'){answer=quotaActivation.command(params);void quotaActivation.tick().catch(()=>{});}
       else if(operation==='quota-refresh')answer=await quota.refresh(true);
       else if(operation==='quota-credit-baseline')answer=quota.resetCredits(params.id,params.legacy??null);
       else if(operation==='quota-analytics'){
@@ -249,7 +255,7 @@ export async function startDaemon() {
   const cleanupStart=setTimeout(cleanup,30000);cleanupStart.unref();
   const cleanupTimer=setInterval(cleanup,5*60*1000);cleanupTimer.unref();
   const scanTimer=setInterval(()=>store.refreshMetadata(),15000);scanTimer.unref();
-  web.once('close',()=>{cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
+  web.once('close',()=>{clearInterval(activationTimer);quotaActivation.close();cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
   const shutdown=()=>{responseSpeeds.close();contextStatistics.close();try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};
