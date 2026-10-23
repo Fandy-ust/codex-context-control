@@ -1,5 +1,11 @@
 # Changes
 
+## 1.0.0 — Smaller Windows installers (research branch)
+
+- Compress the complete Windows payload with LZMA2, with a pinned, embedded public-domain decoder; preserve the existing installer UI, application UI and runtime files.
+- Retain destination validation, checksums, cleanup and standalone installation. Keep standard ZIP updates readable by existing versions.
+- Share version 1.0.0 across Windows and macOS. macOS packaging and behavior are unchanged; this branch is not a published release.
+
 ## 0.25.4 — Read long chat histories in bounded chunks
 
 - Stream history records before projecting statistics, allowing projected histories up to 1 GiB per segment instead of rejecting every chat above 128 MiB.

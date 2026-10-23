@@ -59,7 +59,9 @@ Windows 11 x64 预览版，当前版本为 0.23.5。包含独立 Node、Electron
 
 ## 从源码构建
 
-需要 Windows 11 x64、Node 22.13+（本机测试为 24.18.0）以及系统自带的 .NET Framework C# 编译器。需要与目标架构匹配的 Node/Electron。构建机安装 7-Zip 时会使用更高压缩率的标准 ZIP/Deflate；未安装则使用系统压缩器，普通用户无需安装 7-Zip。构建会取得当前 Node 对应的 LICENSE，并缓存在 `build/licenses/`。
+需要 Windows 11 x64、Node 22.13+（本机测试为 24.18.0）以及系统自带的 .NET Framework C# 编译器。需要与目标架构匹配的 Node/Electron。1.0.0 研究分支的单文件 Setup 使用 LZMA2；首次构建会下载固定版本、校验 SHA-256 的公共领域 7zr 解压器并缓存到 `build/tools/`。解压器内嵌在 Setup 中，用户无需安装 7-Zip，也无需联网解压。离线构建可将 `CONTEXT_CONTROL_7ZR` 指向相同校验值的程序。构建仍会取得当前 Node 对应的 LICENSE，并缓存在 `build/licenses/`。在线更新 ZIP 保留现有格式：构建机有 7-Zip 时使用高压缩 Deflate，否则使用系统压缩器。
+
+LZMA2 缩减下载包，不缩减安装后的程序目录。解压时额外生成一份约等于程序体积的中间 ZIP，安装结束或失败后自动清理。研究版验证与限制见 [1.0.0 说明](releases/1.0.0.md)。
 
 ```powershell
 npm ci

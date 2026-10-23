@@ -6,6 +6,7 @@ The project’s original code is available under the [MIT License](LICENSE). Thi
 
 | Component | License / notices |
 | --- | --- |
+| Windows Setup LZMA2 decoder (`7zr.exe` 26.05) | Public domain, from Igor Pavlov's [LZMA SDK](https://www.7-zip.org/sdk.html). Pinned SHA-256: `9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7`. Embedded only in Setup and removed with temporary extraction files; no separate installation required. |
 | Node.js, bundled with the Mac installer | Node’s license and third-party notices are shipped in `vendor/Node-LICENSE.txt` and retained in the installed runtime directory. |
 | js-tiktoken and its production dependencies | MIT; js-tiktoken’s upstream license is in `third-party-licenses/js-tiktoken.txt`. Other production dependency licenses remain in `node_modules/` in the installer. |
 | Optional patched Codex runtime | Apache-2.0; see [runtime-patches/LICENSE](runtime-patches/LICENSE) and [CODEX-NOTICE](runtime-patches/CODEX-NOTICE). It is distributed separately. |

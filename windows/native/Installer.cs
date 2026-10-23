@@ -44,7 +44,8 @@ internal static class Installer {
 
   static Payload PreparePayload() {
     var assembly = Assembly.GetExecutingAssembly();
-    using (var archive = assembly.GetManifestResourceStream(ArchiveResource)) {
+    bool lzma2 = assembly.GetManifestResourceInfo("ContextManager.Payload.7z") != null;
+    using (var archive = assembly.GetManifestResourceStream(lzma2 ? "ContextManager.Payload.7z" : ArchiveResource)) {
       if (archive == null) {
         var external = Path.Combine(Path.GetDirectoryName(assembly.Location), "payload");
         if (!File.Exists(Path.Combine(external, "payload-manifest.json")))
@@ -66,7 +67,10 @@ internal static class Installer {
       try {
         System.IO.Directory.CreateDirectory(payload.Directory);
         var prefix = Path.GetFullPath(payload.Directory) + Path.DirectorySeparatorChar;
-        using (var zip = new ZipArchive(archive, ZipArchiveMode.Read, true)) {
+        // The decoder only writes a ZIP to stdout. Our existing ZIP reader
+        // continues to validate every destination before creating any file.
+        using (var decoded = lzma2 ? DecodeLzma2(assembly, archive, temporary) : null)
+        using (var zip = new ZipArchive(decoded ?? archive, ZipArchiveMode.Read, true)) {
           foreach (var entry in zip.Entries) {
             var name = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
             var destination = Path.GetFullPath(Path.Combine(payload.Directory, name));
@@ -84,6 +88,51 @@ internal static class Installer {
         return payload;
       } catch { payload.Dispose(); throw; }
     }
+  }
+
+  static FileStream DecodeLzma2(Assembly assembly, Stream archive, string temporary) {
+    var decoder = Path.Combine(temporary, "7zr.exe");
+    using (var resource = assembly.GetManifestResourceStream("ContextManager.Decoder.exe")) {
+      if (resource == null) throw new IOException("Installer decoder is missing.");
+      using (var sha = SHA256.Create()) {
+        var digest = BitConverter.ToString(sha.ComputeHash(resource)).Replace("-", "").ToLowerInvariant();
+        if (!String.Equals(digest, DecoderIdentity.SHA256, StringComparison.Ordinal))
+          throw new IOException("Installer decoder checksum verification failed.");
+      }
+      resource.Position = 0;
+      using (var output = new FileStream(decoder, FileMode.CreateNew, FileAccess.Write)) resource.CopyTo(output);
+    }
+    var compressed = Path.Combine(temporary, "payload.7z");
+    using (var output = new FileStream(compressed, FileMode.CreateNew, FileAccess.Write)) archive.CopyTo(output);
+    var decoded = Path.Combine(temporary, "payload.zip");
+    var info = new ProcessStartInfo(decoder) {
+      Arguments = "e -so -bd -y " + Quote(compressed), WorkingDirectory = temporary,
+      UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+    };
+    using (var process = Process.Start(info)) {
+      var stderr = process.StandardError.ReadToEndAsync();
+      var copy = Task.Run(() => {
+        using (var output = new FileStream(decoded, FileMode.CreateNew, FileAccess.Write)) {
+          var buffer = new byte[65536]; long total = 0; int count;
+          while ((count = process.StandardOutput.BaseStream.Read(buffer, 0, buffer.Length)) > 0) {
+            total += count;
+            if (total > 2L * 1024 * 1024 * 1024) throw new IOException("Installer decoded archive exceeds its size limit.");
+            output.Write(buffer, 0, count);
+          }
+        }
+      });
+      try {
+        if (!copy.Wait(TimeSpan.FromMinutes(3))) throw new IOException("Installer decompression timed out.");
+        if (!process.WaitForExit(30000)) throw new IOException("Installer decoder did not exit.");
+        if (process.ExitCode != 0) throw new IOException("Installer decompression failed: " + stderr.GetAwaiter().GetResult());
+      } finally {
+        if (!process.HasExited) { process.Kill(); process.WaitForExit(); }
+        // Let the reader close its file before Payload.Dispose removes the tree.
+        try { copy.GetAwaiter().GetResult(); } catch { }
+      }
+    }
+    File.Delete(compressed); File.Delete(decoder);
+    return new FileStream(decoded, FileMode.Open, FileAccess.Read);
   }
 
   sealed class Result { public int ExitCode; public string Output; }
