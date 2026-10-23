@@ -1,5 +1,10 @@
 # Changes
 
+## 0.25.4 — Read long chat histories in bounded chunks
+
+- Stream history records before projecting statistics, allowing projected histories up to 1 GiB per segment instead of rejecting every chat above 128 MiB.
+- Preserve complete-record, fork byte/ordinal boundary, append-cache and UTF-8 handling in the shared Windows/macOS reader.
+
 ## 0.25.3 — Interactive quota charts
 
 - Add an independent pointer-following guide and data tooltip to each quota chart, with the projected depletion date and time shown beside the forecast.

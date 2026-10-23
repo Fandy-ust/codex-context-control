@@ -7,9 +7,33 @@ import {DatabaseSync} from 'node:sqlite';
 import {readHistory,createHistoryCache,historySourcesUnchanged} from '../src/context-history.mjs';
 import {activeReasoningEstimate,projectCompensationEvent} from '../src/core/compaction-compensation.mjs';
 import {createCompensationManager,createCompensationResolver} from '../src/compaction-compensation.mjs';
+import {statisticsEvent} from '../src/statistics-events.mjs';
 
 const chat='11111111-1111-1111-1111-111111111111',revision='22222222-2222-2222-2222-222222222222',latest='33333333-3333-3333-3333-333333333333';
 const e=(type,payload)=>({type,payload});
+test('projected histories stream past 128 MiB and resume split UTF-8 records',()=>{
+ const f=fixture(),cache=createHistoryCache({projectEvent:statisticsEvent});
+ try{
+  f.db.prepare('UPDATE threads SET rollout_path=? WHERE id=?').run(f.first,chat);
+  const bulky=JSON.stringify(e('response_item',{type:'reasoning',encrypted_content:'x'.repeat(1024*1024)}))+'\n';
+  for(let i=0;i<129;i++)fs.appendFileSync(f.first,bulky);
+  assert.ok(fs.statSync(f.first).size>128*1024*1024);
+  const tail=Buffer.from(JSON.stringify(e('response_item',{type:'message',role:'user',content:[{type:'input_text',text:'跨块中文'}]}))+'\n');
+  // Split in the middle of a multibyte character; unfinished live tails are
+  // reread from the last complete newline when the writer finishes appending.
+  const split=tail.indexOf(Buffer.from('中文'))+1;
+  fs.appendFileSync(f.first,tail.subarray(0,split));
+  const before=readHistory(f.home,chat,cache);
+  assert.equal(before.length,132);assert.ok(cache.metrics.retainedBytes<100000);
+  assert.throws(()=>readHistory(f.home,chat),/历史大小/);
+  fs.appendFileSync(f.first,tail.subarray(split));
+  const after=readHistory(f.home,chat,cache);
+  assert.equal(after.length,133);assert.equal(after.at(-1).payload.content[0].text,'跨块中文');
+  assert.equal(cache.metrics.appendReads,1);
+  const bytes=cache.metrics.bytesRead;
+  assert.deepEqual(readHistory(f.home,chat,cache),after);assert.equal(cache.metrics.bytesRead,bytes);
+ }finally{f.close();}
+});
 test('older running bridges require a restart before advertising the compensation fixes',()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-compensation-version-'));
  try{

@@ -63,7 +63,11 @@ export function readHistory(home,id,cache=null){
     if(seen.includes(file))throw new Error('分支继承历史异常');
     if(!pathInside(root,file)||!file.endsWith('.jsonl'))throw new Error('聊天记录不在本地 Codex 目录内');
     const stat=fs.statSync(file),size=stat.size,n=limit??size;
-    if(!Number.isSafeInteger(n)||n<0||n>size||n>128*1024*1024||(bytes+=n)>256*1024*1024)throw new Error('历史大小或分支边界无法安全读取');
+    // Projected consumers discard bulky image/reasoning payloads per record.
+    // Bound raw consumers as before, but allow long chats without materializing
+    // their entire source file (or a second full UTF-8 copy) in memory.
+    const fileLimit=cache?.projectEvent?1024*1024*1024:128*1024*1024;
+    if(!Number.isSafeInteger(n)||n<0||n>size||n>fileLimit||(bytes+=n)>fileLimit*2)throw new Error('历史大小或分支边界无法安全读取');
     const key=`${threadId}:${file}:${limit??'live'}`;
     const stamp=fingerprint(stat);sources.push({threadId,file,fingerprint:stamp,immutable:limit!=null});
     const previous=cache?.files.get(key);let entry;
@@ -73,22 +77,37 @@ export function readHistory(home,id,cache=null){
       // same-size edits rebuild; explicit refresh clears this cache as well.
       const append=limit==null&&previous&&previous.ino===stat.ino&&previous.dev===stat.dev&&size>previous.size;
       const start=append?previous.completeBytes:0;
-      const fd=fs.openSync(file,'r'),buffer=Buffer.alloc(n-start);
-      try {let read=0;while(read<buffer.length){const count=fs.readSync(fd,buffer,read,buffer.length-read,start+read);if(!count)throw new Error('历史在读取期间改变，请刷新');read+=count;}}
-      finally {fs.closeSync(fd);}
-      const complete=buffer.lastIndexOf(10)+1;
-      if(limit!=null&&complete!==buffer.length)throw new Error('继承边界不是完整记录');
-      let added,owner=append?previous.owner:threadId;
-      try{added=buffer.subarray(0,complete).toString('utf8').split('\n').filter(Boolean).map(line=>{
-        const parsed=JSON.parse(line);
-        if(parsed.type==='session_meta'&&validId(parsed.payload?.id))owner=parsed.payload.id;
-        const event={...parsed,originThreadId:owner};return cache?.projectEvent?cache.projectEvent(event):event;
-      });}catch{throw new Error('本地历史记录解析失败');}
+      const fd=fs.openSync(file,'r'),buffer=Buffer.alloc(Math.min(1024*1024,n-start));
+      const added=[];let owner=append?previous.owner:threadId,complete=0,offset=start,parts=[],pendingBytes=0;
+      try {
+        while(offset<n){
+          const count=fs.readSync(fd,buffer,0,Math.min(buffer.length,n-offset),offset);
+          if(!count)throw new Error('历史在读取期间改变，请刷新');
+          let from=0;
+          for(let end=buffer.indexOf(10,from);end>=0&&end<count;end=buffer.indexOf(10,from)){
+            const length=pendingBytes+end-from;
+            if(length>128*1024*1024)throw new Error('历史大小或分支边界无法安全读取');
+            const line=parts.length?Buffer.concat([...parts,buffer.subarray(from,end)],length):buffer.subarray(from,end);
+            if(length){
+              try{
+                const parsed=JSON.parse(line.toString('utf8'));
+                if(parsed.type==='session_meta'&&validId(parsed.payload?.id))owner=parsed.payload.id;
+                const event={...parsed,originThreadId:owner};added.push(cache?.projectEvent?cache.projectEvent(event):event);
+              }catch{throw new Error('本地历史记录解析失败');}
+            }
+            parts=[];pendingBytes=0;from=end+1;complete=offset+from-start;
+          }
+          if(from<count){parts.push(Buffer.from(buffer.subarray(from,count)));pendingBytes+=count-from;}
+          if(pendingBytes>128*1024*1024)throw new Error('历史大小或分支边界无法安全读取');
+          offset+=count;
+        }
+      }finally {fs.closeSync(fd);}
+      if(limit!=null&&complete!==n-start)throw new Error('继承边界不是完整记录');
       const local=append?[...previous.events,...added]:added;
       if(local[0]?.type!=='session_meta')throw new Error('聊天元数据缺失');
       const retainedBytes=(append?previous.retainedBytes:0)+(cache?.projectEvent?Buffer.byteLength(JSON.stringify(added)):complete);
       entry={events:local,owner,retainedBytes,completeBytes:start+complete,size,ino:stat.ino,dev:stat.dev,fingerprint:stamp,revision:append&&added.length===0?previous.revision:cache?++cache.serial:0};
-      if(cache){cache.metrics.bytesRead+=buffer.length;cache.metrics.parsedLines+=added.length;cache.metrics[append?'appendReads':'fullReads']++;}
+      if(cache){cache.metrics.bytesRead+=n-start;cache.metrics.parsedLines+=added.length;cache.metrics[append?'appendReads':'fullReads']++;}
     }
     if(cache){
       cache.files.delete(key);cache.files.set(key,entry);
