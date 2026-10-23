@@ -33,6 +33,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: context-manager-windows-x64
+          retention-days: 7
           path: |
             build/Context-Manager-*-windows-x64-Setup.exe
             build/Context-Manager-*-windows-x64.zip
@@ -63,6 +64,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: context-manager-macos-arm64
+          retention-days: 7
           path: |
             build/distribution/*.dmg
             build/distribution/*.sha256

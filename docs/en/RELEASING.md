@@ -33,6 +33,8 @@ Current previews use local signing, without Developer ID or Apple notarization. 
 
 ## Publish
 
-The repository is public. A **draft** is a maintainer review artifact, not a public download. Publishing an app release is separate from uploading a demo video. Upload only the versioned ZIP, its `.sha256`, `package-info.json`, and installation notes for that build.
+The repository is public. Use **Build Windows and macOS** with `publish_release` enabled, or push the established `v<version>-preview.1` release tag. Both platform jobs must pass before the publishing job makes the draft public. Normal branch/PR validation does not publish a Release.
 
-The **macOS installer** Actions workflow builds and validates artifacts but does not automatically publish a Release. Preserve third-party notices and include the project’s MIT license.
+Publish the Mac DMG, Windows LZMA2 Setup.exe, Windows ZIP update package, corresponding checksums, package information, installation notes, and both update manifests. Keep `update.json` for legacy Mac clients and `update-v2.json` for platform-specific updates. Preserve third-party notices and include the MIT license.
+
+Development artifacts expire after seven days. Keep the latest five normal releases and selected fallback milestones; archive retired notes before deleting older releases, preserve source tags, and protect referenced downloads. [Retention policy and maintenance commands](../RELEASE_POLICY.md).

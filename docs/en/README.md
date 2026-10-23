@@ -11,6 +11,10 @@
 - [Architecture](ARCHITECTURE.md)
 - [Development](DEVELOPMENT.md)
 - [Packaging and releases](RELEASING.md)
+- [Quota activation and reset notifications](../QUOTA_ACTIVATION.md)
+- [Connection troubleshooting](../CONNECTION_TROUBLESHOOTING.md)
+- [Retained downloads and historical notes](../releases/archive/index.md)
+- [Release retention policy](../RELEASE_POLICY.md)
 - [Localization](LOCALIZATION.md)
 - [MIT license](../../LICENSE) and [third-party notices](../../THIRD_PARTY_NOTICES.md)
 

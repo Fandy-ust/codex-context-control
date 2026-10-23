@@ -6,8 +6,12 @@ A local extension for Codex: **context control and quota-aware task queues**, bu
 
 | Platform | Installer | Requirements |
 | --- | --- | --- |
-| macOS | [Download 0.26.3 · DMG](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.26.3-preview.1/Context-Manager-0.26.3-macos-arm64.dmg) | Apple Silicon · macOS 14+ |
-| Windows | [Download 0.26.3 · Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.26.3-preview.1/Context-Manager-0.26.3-windows-x64-Setup.exe) | Windows 11 · x64 |
+| macOS | [Latest macOS DMG](https://github.com/Fandy-ust/codex-context-control/releases/latest) | Apple Silicon · macOS 14+ |
+| Windows | [Latest Windows Setup.exe · LZMA2](https://github.com/Fandy-ust/codex-context-control/releases/latest) | Windows 11 · x64 |
+
+Windows Setup is a single EXE with embedded LZMA2 compression. Run it to update the normal installation and preserve your data. The release ZIP is for automatic updates; you do not need it for a manual install.
+
+[Previous installers and archived notes](docs/releases/archive/index.md) · [Release retention policy](docs/RELEASE_POLICY.md) · [Full changelog](CHANGELOG.md)
 
 [Mac installation](docs/en/INSTALL_MAC.md) · [Windows installation](docs/en/INSTALL_WINDOWS.md) · [Release notes](https://github.com/Fandy-ust/codex-context-control/releases/latest) · [简体中文](README.zh-CN.md)
 
@@ -34,6 +38,8 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 
 - **Per-chat budgets:** adjust one compact slider group, then click Apply; set new-chat defaults and inherit budgets when forking.
 - **Account quota:** view remaining quota and reset times, with a gradually emptying lightning indicator on Mac and a tray-adapted icon on Windows.
+- **Reset notifications:** native Windows/macOS reminders for 5-hour, weekly or combined resets, with deduplication and an independent settings switch. Keep the manager running and allow system notifications.
+- **Quota activation:** optional weekly reset probes, one-time local schedules and history-based suggestions for how long before waking to start a quota window. [Behavior and settings](docs/QUOTA_ACTIVATION.md).
 - **Credits:** compact sidebar balance and a local progress baseline, with exact-value tooltips and manual baseline reset in quota settings.
 - **Control panel:** open settings from the sidebar header, with matching sections and control order on both platforms.
 - **Quota outlook:** independently estimate whether 5-hour and weekly allowances will be used before reset, how soon they may run out, and how much may remain. Historical charts stay in Advanced analysis.
@@ -43,6 +49,8 @@ https://github.com/user-attachments/assets/da7d0fd3-1b86-46e6-ac8f-0abca71e1c94
 - **Usage statistics:** view context, cache, estimated cost and response speed directly below the budget controls.
 
 Both platforms share the same core. No app-name or version allowlist; the official Codex runtime is preserved.
+
+Connection ownership is checked separately from cached history. The current release cleans up its owned runtime when the client exits; a genuine multi-client conflict keeps budget changes disabled. [Connection troubleshooting](docs/CONNECTION_TROUBLESHOOTING.md).
 
 The old core patch was retired because its modified runtime lacked the official signing identity required for Computer Use. External compaction compensation is also retired in 0.25.2 because it could not reliably track long-running turns. **Context settings up to 920K remain available; they do not guarantee compaction occurs at exactly 900K of reported usage.** [Details](docs/en/COMPACTION_COMPENSATION.md).
 

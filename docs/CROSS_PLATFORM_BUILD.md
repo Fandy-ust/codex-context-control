@@ -44,4 +44,4 @@ Mac 和 Windows 始终共用一个产品版本。即使只修改某个平台的 
 - 生成清单时重新校验实际文件大小、哈希与文件名；不把只有一个平台的包发布为完整更新。
 - 客户端自动检查，用户点击后安装；预算、缓存、语言和界面偏好保留。旧程序文件在确认未使用后回收。
 
-发布前，将 README 的两端下载入口一起更新到该版本，并在 `docs/releases/<version>.md` 汇总相较上个发布版的变化；发布工作流会将该文件附加到 Release 下载说明中。
+发布前确认 README 两端下载入口都指向最新发布页，在 `docs/releases/<version>-summary.md` 写关键摘要，在 `docs/releases/<version>.md` 写完整说明；发布工作流内嵌摘要、链接全文。日常测试使用保留 7 天的 Actions artifacts；历史版本按[保留规则](RELEASE_POLICY.md)维护，不为每次试验编译创建公开 Release。

@@ -1,0 +1,1363 @@
+{
+  "repository": "Fandy-ust/codex-context-control",
+  "releases": [
+    {
+      "tag": "v0.24.3-preview.1",
+      "name": "Context Manager 0.24.3 · macOS & Windows",
+      "publishedAt": "2026-10-20T16:38:55Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.24.3-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.24.3.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.3-preview.1/Context-Manager-0.24.3-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.24.3 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.3-preview.1/Context-Manager-0.24.3-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.24.3-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 0.24.3\n\n- 修复后台控制服务版本落后或超前时，界面仍提示安装当前版本的问题。\n- 更新检查、版本比较、下载校验和安装改由桌面程序按自身版本执行；Windows 和 macOS 使用独立于后台服务的更新缓存。\n- 安装前再次验证最新发布版本，只有严格高于当前界面版本时才允许更新。\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.24.3-macos-arm64.dmg",
+          "size": 45972807,
+          "digest": "sha256:1bdde4df029e9c5eac06468a529354048ab9d3e0a005002c40cb82f0c5175e1e"
+        },
+        {
+          "name": "Context-Manager-0.24.3-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:3eff419590b0e9962f256616f8dbd9dad453cf8e70eb6f8ed8adad756f77e784"
+        },
+        {
+          "name": "Context-Manager-0.24.3-windows-x64-Setup.exe",
+          "size": 176590336,
+          "digest": "sha256:d82e0bec0135d9900b0ca73b43b00ee3a760644799d5db0b25b98f51617614c9"
+        },
+        {
+          "name": "Context-Manager-0.24.3-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:8be21aa9c0e7ada4f2f00fb19a9e6a32ad5a982b42092e8349927f543f671898"
+        },
+        {
+          "name": "Context-Manager-0.24.3-windows-x64.zip",
+          "size": 176879812,
+          "digest": "sha256:95c4290d7e0a67da12897beabbe7e9d098fcc510e830726853698a9e21be9676"
+        },
+        {
+          "name": "Context-Manager-0.24.3-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:f2111cab15e04e4a2c28494b0ba22c677fe285ff6de7869c0c09b5a0ba9814ac"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:5c0be4145daebef47a92e11f22accc674c645240841add90ded35523e0b12ad8"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:6a8bf9b72cc68762c704f88b34b0a7ea1736353bba9b85c4b53a47cb525d0d55"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:06b65374fda7d78efea7de81357e5242a45a84795c73238749789a4d05ca8293"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:b46c6f4cfd150c8fb89ea16553928d9e37a8c65dc82e4d86af7ee22b4f67b076"
+        }
+      ]
+    },
+    {
+      "tag": "v0.24.2-preview.1",
+      "name": "Context Manager 0.24.2 · macOS & Windows",
+      "publishedAt": "2026-10-20T09:04:38Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.24.2-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.24.2.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.2-preview.1/Context-Manager-0.24.2-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.24.2 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.2-preview.1/Context-Manager-0.24.2-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.24.2-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 0.24.2\n\n- 新增「账号与设备」：自动识别 Codex 账号，切换登录后保留各账号的费用与 Token 历史，套餐或模型变化不拆分账号。\n- 支持当前账号、全部账号、所选账号统计，以及按设备勾选；取消统计不删除历史。\n- 每个账号可独立暂停同步，已下载数据仍可查看；重新开启后补齐新增统计。\n- 通过加密目录发现其他设备和账号，设备名称可编辑；所有账号可共用同一私有仓库和同步密钥。\n- 未归属旧记录默认不混入账号，可勾选「显示未归属历史（不上传）」查看；只有明确确认后才归入当前账号。\n- Windows 与 macOS 同步更新。建议所有设备都升级到 0.24.2；旧版数据可读取，但旧版不会发布多账号发现目录。\n- 不上传账号邮箱、登录凭据或聊天内容。其他设备发现的账号使用匿名编号，本机登录过的账号显示本机账号信息。\n\n统计筛选和暂停同步仅在当前设备生效，不删除 GitHub 上的数据。设备旁的时间表示最近一次发布数据快照的时间。\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.24.2-macos-arm64.dmg",
+          "size": 45970796,
+          "digest": "sha256:e10e5cfb7d1131bdcd4dd1992b0df2ab50c994602a31eeaad14513451c984684"
+        },
+        {
+          "name": "Context-Manager-0.24.2-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:bddbe7f62ce6655354f79e9bc419ebaba68594f95f94a39b060cff2b4f87e018"
+        },
+        {
+          "name": "Context-Manager-0.24.2-windows-x64-Setup.exe",
+          "size": 176482304,
+          "digest": "sha256:623e0ec8e4102f81a24ac5978323e587f6dcf7634de63bb886c8cbca800141dc"
+        },
+        {
+          "name": "Context-Manager-0.24.2-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:5066d60df231b1a3518bea9fa46b141d3d1cd2172a5ec90ffd931e842a77e43a"
+        },
+        {
+          "name": "Context-Manager-0.24.2-windows-x64.zip",
+          "size": 176771232,
+          "digest": "sha256:23ceb3dac1bbefddb64b5e3fd89519d7dd27279b17b4afcc07abf810d96a13c3"
+        },
+        {
+          "name": "Context-Manager-0.24.2-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:f60902916a718519a033ce81be06eef37bb429be14594ebfda9ce1093fcf8a9e"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:49382a77ee5b3665a230db66c82b69206ba3c4633f25a947c9071f752ff1dc88"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:77678ab2998fc803f130ca6149efe92f5a61952af414307289158a2e4c5964be"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:b4f89fbe5abdcedba5c1db55c96855627f021b41507a96a2a65c2e099a7f866e"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:a0700fb67e36fb31c0a48420187629be0ae4ec00a94e8ff387614adcd60e0ec1"
+        }
+      ]
+    },
+    {
+      "tag": "v0.24.1-preview.1",
+      "name": "Context Manager 0.24.1 · macOS & Windows",
+      "publishedAt": "2026-10-20T08:26:20Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.24.1-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.24.1.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.1-preview.1/Context-Manager-0.24.1-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.24.1 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.1-preview.1/Context-Manager-0.24.1-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.24.1-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 0.24.1 · 云同步凭据复制与 Mac 同步入口修复\n\n- 取消同步密钥至少 16 个字符的要求，非空即可。\n- 保存后 Token 和密钥保留圆点及“已保存”标记；两者均可随时复制，重新打开设置后仍可复制。\n- 修复 Mac 填好配置后同步按钮仍为灰色的问题：支持直接“启用并同步／保存并同步”，自动保存当前输入并启用同步。\n- 同步前刷新账号额度；凭据写入后读回校验，避免保存失败却显示成功。\n- Windows 与 macOS 同步更新，保留现有凭据和同步数据。\n\n### English\n\n- Remove the 16-character minimum for nonempty sync keys.\n- Keep saved credentials visibly masked, with persistent Copy Token / Copy key actions.\n- Fix the grey Mac sync button: Enable and sync / Save and sync saves the current form and starts sync directly.\n- Refresh account quota before syncing and verify OS credential writes by reading them back.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.24.1-macos-arm64.dmg",
+          "size": 45954263,
+          "digest": "sha256:ac7e17442cfd2a0446580ede7c7593d4f10e36a5c72ded3576deada4841c4c7d"
+        },
+        {
+          "name": "Context-Manager-0.24.1-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:791911fc7f526a312845c4fed76f5c667070cf062cd00c90f5b7dcc431f8ebc4"
+        },
+        {
+          "name": "Context-Manager-0.24.1-windows-x64-Setup.exe",
+          "size": 176477184,
+          "digest": "sha256:bc9a20482c2c498ffbac5e8e3db90c60805b7a671a83418d3f5436988e363fd2"
+        },
+        {
+          "name": "Context-Manager-0.24.1-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:0761231bc0c80c2cd2a08f834c5b712bddbd1a85e4fb39160213ca1e7efb159f"
+        },
+        {
+          "name": "Context-Manager-0.24.1-windows-x64.zip",
+          "size": 176764651,
+          "digest": "sha256:cb6c8b38f04fdb673d5b5c999bac87765a60262eb2a40f53400526709adc1daf"
+        },
+        {
+          "name": "Context-Manager-0.24.1-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:44d8fe0f1bc371f81e6bec16e590943f3456cab60f5ad69b0330668de647e824"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:1e4cdd374648ed8e622605844c3cb8daefe5c2e20ba4c386108b410373e49b02"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:fbfd385a79478ac572e5dfecd88344d9c3c6ebe0b3a31744e5722621e56fadb8"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:fcc9ae5041e8ddd7905014bba8a1b3f473a9efe1a5c96f35721f4c5b8b6d9095"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:52b41bc7b11685cc08da9b966a75e3e971993d5fef08091d25e92bf2362f6932"
+        }
+      ]
+    },
+    {
+      "tag": "v0.24.0-preview.1",
+      "name": "Context Manager 0.24.0 · macOS & Windows",
+      "publishedAt": "2026-10-20T07:40:36Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.24.0-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.24.0.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.0-preview.1/Context-Manager-0.24.0-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.24.0 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.24.0-preview.1/Context-Manager-0.24.0-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.24.0-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 0.24.0 · 多设备云同步与持续额度监视\n\n- 新增设置 → 云同步：GitHub 私有仓库和 Secret Gist，两端共用加密、合并和去重核心；支持同步间隔下拉、自定义间隔、手动同步和状态反馈。\n- 每台设备独立上传数值记录，按 response ID 去重；区分账号，上传前加密，Token／密钥使用 DPAPI／钥匙串保存。不上传聊天正文或标题，不累加账号额度百分比。\n- 增加完整[配置文档](https://github.com/Fandy-ust/codex-context-control/blob/main/docs/CLOUD_SYNC.md)，涵盖 Windows／macOS 界面及 GitHub CLI 配置。\n- 每个聊天的额度监视可持续开启，队列完成后不自动关闭，并可保护后续手动轮次；设置新增全局监视开关。\n- 修复 Windows 补偿开关 Unknown action；点击最近聊天不自动展开项目，保留侧栏位置。\n- 增加滚动边缘渐变模糊、分离时间线事件标记、模型／思考程度变更标记，以及响应编号下的时间。\n- 修复云同步标签点击后未切换页面的问题。\n\n更新后请完全退出并重开 Codex，加载新的连接程序。云同步默认关闭，按文档自行配置后启用。\n\n### English\n\n- Encrypted multi-device numeric analytics via GitHub private repositories or Secret Gist, with account isolation, response-ID deduplication, configurable intervals and manual sync.\n- Persistent per-chat quota monitoring and a global monitoring switch.\n- Sidebar stability, scroll edge blur, separated timeline events with model/effort changes and response timestamps.\n- Windows compensation action and Cloud sync tab navigation fixes. Both platforms share version 0.24.0.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.24.0-macos-arm64.dmg",
+          "size": 45940822,
+          "digest": "sha256:7e86d6b361d5b5d2873dda8f02525267b086710d5c4482b93b529404252ce364"
+        },
+        {
+          "name": "Context-Manager-0.24.0-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:8ec278b9fd0519ff3a1002e3fe442b379132804b310ee3064fc4ec3bb909f86c"
+        },
+        {
+          "name": "Context-Manager-0.24.0-windows-x64-Setup.exe",
+          "size": 176476160,
+          "digest": "sha256:5ba9085f0425cdcf0cb47d607122869dc86aed71298892fea539bfd0d3f5a326"
+        },
+        {
+          "name": "Context-Manager-0.24.0-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:ee65a60afde8fb94da586dea4f48e131031c7348c47f2c0e69d97519017f62b4"
+        },
+        {
+          "name": "Context-Manager-0.24.0-windows-x64.zip",
+          "size": 176762076,
+          "digest": "sha256:a94bef733bc8acf600a1924e4dc5a2eb206278cb833a8d8b77b6c2d3921e3cf8"
+        },
+        {
+          "name": "Context-Manager-0.24.0-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:9278183ebeb6ceea7144e1c37471a37c163d64906fe7dd93194682e7ff99f25b"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:a13b53ba3f6f69fab1fb127cbeaff0adf35295c2e35a470139e3b424b01613f4"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:c21de5ac7cb21049f891f8613f23200fce1c52100a57e6323a6b59cafa677652"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:1ef5b8918e1312d36f7d0c95fba34846e28facf3abea09d1c3a487440110a481"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:6c76ba217b877a6561d4e9f8a337c91c30b83f47a62eab015955cf0d92d1fffc"
+        }
+      ]
+    },
+    {
+      "tag": "v0.23.4-preview.1",
+      "name": "Context Manager 0.23.4 · macOS & Windows",
+      "publishedAt": "2026-10-19T05:25:35Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.23.4-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.23.4.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.4-preview.1/Context-Manager-0.23.4-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.23.4 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.4-preview.1/Context-Manager-0.23.4-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.23.4-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 0.23.4 · 英文 Skill 与侧栏留白调整\n\n- 收紧滚动条右侧留白，让列表延伸到侧栏边缘。\n- 配套 skill 全面改为英文，随 Mac／Windows 安装包提供。\n- 统一介绍为 Codex 的本地扩展，重点是上下文控制，以及围绕 5 小时和每周额度调度任务队列。\n- 保留一键安装入口：`context-manager skill install`。\n- 包含 0.23.3 的细白图标与固定细灰滚动条。\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.23.4-macos-arm64.dmg",
+          "size": 45817348,
+          "digest": "sha256:6688c6433c8bb29bd16314daa08d5e2cbaf11f4bf6acbf513f103924b550d724"
+        },
+        {
+          "name": "Context-Manager-0.23.4-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:689d377ab5fcaaf753164ffe6669e74c6f0f00c594bca0c7999394ce8d1e1e26"
+        },
+        {
+          "name": "Context-Manager-0.23.4-windows-x64-Setup.exe",
+          "size": 176452096,
+          "digest": "sha256:261179a075ba4bcceeeb252456ffd2abd0279898ed2bbb230dc33b215921364c"
+        },
+        {
+          "name": "Context-Manager-0.23.4-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:539ad9ad07f50041e4ee8a0f32da15da0b86cc509451489afcc11ef3d3be643b"
+        },
+        {
+          "name": "Context-Manager-0.23.4-windows-x64.zip",
+          "size": 176725169,
+          "digest": "sha256:af98e4ccdb2867cdaf4e26e53152f84d6554ee9707947a5c0749740c98220c42"
+        },
+        {
+          "name": "Context-Manager-0.23.4-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:28d9614f5a8911c93ad276ba34d8f132d465c11bf8bb7267a0cb58139cd323d2"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:75c99c6743560cc96faae805e4812ea07bc4d8ebf1bf3800dfef655d2daad940"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:d3462f8f53251beaefb375e6ba101096000f35372b182ee82a92806308fa61b9"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:c535bb2db06c3c98e05aa24dabfb892e2858c34cd65dd33eb73e065e66b59d9b"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:e01d315a838f7250a8e95f783d9dc445ba9fcd5f3dd2631bae10d63e398d862d"
+        }
+      ]
+    },
+    {
+      "tag": "v0.23.3-preview.1",
+      "name": "Context Manager 0.23.3 · macOS & Windows",
+      "publishedAt": "2026-10-19T05:08:42Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.23.3-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.23.3.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.3-preview.1/Context-Manager-0.23.3-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.23.3 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.3-preview.1/Context-Manager-0.23.3-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.23.3-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 0.23.3 · 更轻的侧栏样式\n\n- 项目文件夹和最近图标改为细白色描边。\n- 滚动条固定预留窄边，始终使用细灰色样式，不弹出、不变白。\n- 展开或折叠列表时保持内容宽度稳定，保留滚轮和拖动操作。\n- Mac 与 Windows 同步更新。\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.23.3-macos-arm64.dmg",
+          "size": 45788261,
+          "digest": "sha256:71d9fe88ef3c3331efa4c3495c5690403ef94bf87f8c6092f4d16a6dd0ea7d25"
+        },
+        {
+          "name": "Context-Manager-0.23.3-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:ce8ec1fd71ae78194024d5a67581129dfa1de35ea897fa9df2466896a19a80b3"
+        },
+        {
+          "name": "Context-Manager-0.23.3-windows-x64-Setup.exe",
+          "size": 176452608,
+          "digest": "sha256:1826e62c96ea2830eb83b73789891bcb4dde043ce5d1f8ed9ebd4c104c31fb8f"
+        },
+        {
+          "name": "Context-Manager-0.23.3-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:7a585dc1f202845667d74a9c403f1512a37bae867b3b4d999884357e70d43e52"
+        },
+        {
+          "name": "Context-Manager-0.23.3-windows-x64.zip",
+          "size": 176724734,
+          "digest": "sha256:92295ade456989c92a9a9b4ec796650df735e86d13d172f91bec30d1fb779b05"
+        },
+        {
+          "name": "Context-Manager-0.23.3-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:97c39ac60fac80f168fd3d8365567d8b0381a18361a051a2a34fe11bad33fbda"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:514d4c59a1a8d12d0d36fe30b8f1d4f71964ee9821191888babca9149c2d0cbc"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:13c309c0625f0ea20f3922c8dea9445a566ea4d7f63a862029185e53745c315a"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:916d796f6ed7377ded1cb75c64604155258e90b27f0becf6e8b6ee4f18fbe73e"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:2994ecaa54b745f5849bdec07345b4a94249f84b07606b35dc41c42136eca4a1"
+        }
+      ]
+    },
+    {
+      "tag": "v0.23.2-preview.1",
+      "name": "Context Manager 0.23.2 · macOS & Windows",
+      "publishedAt": "2026-10-19T04:46:18Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.23.2-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.23.2.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.2-preview.1/Context-Manager-0.23.2-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.23.2 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.2-preview.1/Context-Manager-0.23.2-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.23.2-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 0.23.2 · Windows 减重、侧栏与快捷控制更新\n\n- Windows 安装包裁掉无用的分词表、重复模块和未使用的 Chromium 语言资源；保留中文、英文、图形兼容组件和独立 Node，CLI 与后台服务继续可用。\n- 提高 ZIP 压缩率，安装仍只需一个 Setup.exe；旧版更新器可继续读取新 OTA 包，无需额外安装解压工具。\n- 启动时额度图标从底部描边，再填充到实际额度；运行中的聊天显示持续更新的响应速度、小折线和红绿升降箭头；速度 ≥40 为绿、30–39.9 为黄、低于 30 为红。菜单调节区移除叉并加宽「应用」。\n- 最近列表可折叠并记住状态，折叠后与项目行等高；项目与最近共用一个滚动区域，按展开内容动态占用空间。\n- 项目改用打开／关闭文件夹图标，移除展开箭头，悬停时整行高亮；移除项目和最近列表底部的模糊光带。\n- 侧栏顶部版本号旁新增「有更新」快捷按钮，点击安装；下载／安装时显示「更新中」。\n- 修复发现旧更新后无法继续检查新版的问题：两端始终保留「检查更新」，手动检查获取新结果，安装前再次检查最新版。\n- 更新来源不可用时显示原因，保留已知版本信息，不静默安装过期缓存。\n- 包含 0.23.1 的 CLI 与 skill 一键安装，以及独立提前压缩补偿开关。两端产品版本一致。\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.23.2-macos-arm64.dmg",
+          "size": 45769226,
+          "digest": "sha256:97c65a84e98887da93ed87564b55a64b5e86c6c4ed8dba12ce461d9daf5f3420"
+        },
+        {
+          "name": "Context-Manager-0.23.2-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:493ed4178bf27aaf5888f2963a02aa5962622c5c2e16a3d151b9ed671b4b55b0"
+        },
+        {
+          "name": "Context-Manager-0.23.2-windows-x64-Setup.exe",
+          "size": 176452608,
+          "digest": "sha256:1377aec0778ff539e51b3ebcea12819ef9b01b2cbba9b302a3033488e75bae89"
+        },
+        {
+          "name": "Context-Manager-0.23.2-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:be148ef67b8f8d847f6647d0aa74066a9efcd1545b036141fbe55661b79ecabf"
+        },
+        {
+          "name": "Context-Manager-0.23.2-windows-x64.zip",
+          "size": 176724126,
+          "digest": "sha256:3e7c9769dc491332a346e2054b266bfd32142530600b7f66d8145fcbc0a663a2"
+        },
+        {
+          "name": "Context-Manager-0.23.2-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:ded215cfbd5e17ddfc9fafacc933c6f89068268260e48833be28fa0b87876b4f"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:b2c65f9e961fab836e54c4b0f2f09962429a3bf8e2c1825daf70836164c8342c"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:0b694086e5c6374a8e6320fa8bbc4403f26966de1f52f4774fb5c82944af7562"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:55dc0f299cd4a5dbc8bf5264be91c7f1f11c63a9f60f64bdc2cc269e81740d04"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:000be38856f3a5facd9546d9781cdf1fbc62a554ed80eaeaa2305394f8acf297"
+        }
+      ]
+    },
+    {
+      "tag": "v0.23.1-preview.1",
+      "name": "Context Manager 0.23.1 · macOS & Windows",
+      "publishedAt": "2026-10-19T04:01:26Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.23.1-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.23.1.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.1-preview.1/Context-Manager-0.23.1-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.23.1 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.1-preview.1/Context-Manager-0.23.1-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.23.1-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 0.23.1 · 一键安装 Agent Skill\n\n- `context-manager skill install` 将内置 skill 安装到 Codex 的个人 skills 目录，Mac 与 Windows 用法一致；其他 agent 可通过 `--path` 指定目录。\n- 更新 App 后重复运行同一命令即可更新 skill。保留本地修改及其他文件，覆盖自行修改的技能需显式加 `--force`。\n- GitHub 同步维护技能源码、用途说明和中英文安装指南。\n- 包含 0.23.0 的独立提前压缩补偿开关、全局／聊天／队列 CLI 和只读速度分析；补偿默认关闭，目标容量以 App 为准，极端长度不保证完整补偿。\n\n[安装与用法](https://github.com/Fandy-ust/codex-context-control/blob/main/docs/CLI.md) · [Skill 源码](https://github.com/Fandy-ust/codex-context-control/blob/main/skills/context-manager/SKILL.md) · [补偿说明](https://github.com/Fandy-ust/codex-context-control/blob/main/docs/COMPACTION_COMPENSATION.md)\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.23.1-macos-arm64.dmg",
+          "size": 45764666,
+          "digest": "sha256:e41fb053460e6e44c2bab54d36b02201db66bf2162106c3b6293f0379f95bdaf"
+        },
+        {
+          "name": "Context-Manager-0.23.1-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:f8409d8601a42dfd97be31d19c9ea7bc9482a7a7ed301489fa72075683121481"
+        },
+        {
+          "name": "Context-Manager-0.23.1-windows-x64-Setup.exe",
+          "size": 204594176,
+          "digest": "sha256:b93af851d8f93f4cbbbc8e5e522e02867f37c110316fd6db07e317b2ee6f74d3"
+        },
+        {
+          "name": "Context-Manager-0.23.1-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:5a49ce48be538d01e2231c6b37dbfffbef25cefcb869e1f1129fb794bb672c40"
+        },
+        {
+          "name": "Context-Manager-0.23.1-windows-x64.zip",
+          "size": 204868042,
+          "digest": "sha256:91e83a099a1a2ab302ee04e0afca54ee71bff22a139f3434bbe900c7fcb38f44"
+        },
+        {
+          "name": "Context-Manager-0.23.1-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:ef990037dadb2d4eeeff0dd4ae7afa90b0637d11b49051bd7ba12b27ada5b612"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:9310eab155539ca48342d50b3daf8848ae9b906a10ff78c62e4355f19c5254ef"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:653b804b68f68e26d4914b82f7eae318d53ce27c2a4834a22856d55d068cc6c6"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:020cc79d2a2a56bc3e0bc340fe2e8145c5993437a8a6e773ddf559ec7713ad52"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:63dd82e2a21d820d79525c2a09fb26f45324b4d7c764f7591a7ae042210d377d"
+        }
+      ]
+    },
+    {
+      "tag": "v0.23.0-preview.1",
+      "name": "Context Manager 0.23.0 · macOS & Windows",
+      "publishedAt": "2026-10-19T03:50:38Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.23.0-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.23.0.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.0-preview.1/Context-Manager-0.23.0-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.23.0 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.23.0-preview.1/Context-Manager-0.23.0-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.23.0-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 0.23.0 · 提前压缩补偿与 Agent 队列 CLI\n\n- Mac 与 Windows 新增独立的「提前压缩补偿（实验性）」开关，默认关闭。根据有效历史的推理长度动态预留运行时空间，保持官方二进制不变。\n- Codex 可能显示更大的上下文窗口，目标容量以 Context Manager 为准；历史不足或接近上限时明确显示未补偿。它不是对所有路由与极端长度的完整修复保证。\n- 补偿覆盖普通提交、可确认的完整 fork、恢复聊天和任务队列；关闭后自动应用中的聊天下轮恢复原窗口。\n- 新增供 agent 调用的队列 CLI：查询聊天／队列、添加和编辑任务、调整额度配置、排序、启动、暂停、重试及停止指定任务。使用同一套队列服务与额度保护。\n- CLI 扩展到全局状态／默认预算、单聊天上下文调节及只读速度分析；配套 `context-manager` skill 说明入口与操作边界，随两端安装包分发。速度不提供模式切换。\n- CLI 默认输出 JSON，支持文件／stdin 输入、revision 冲突检测和添加任务的 request ID 去重。安装器附带使用内置 Node 的独立入口，无需另装运行环境。\n- 包含此前 0.22.5 的任务编辑器、附件与额度分析改进。两端保持相同版本；Windows 的真实 Codex 接入与 Computer Use 仍需实机验收。\n\n[补偿说明](https://github.com/Fandy-ust/codex-context-control/blob/main/docs/COMPACTION_COMPENSATION.md) · [队列 CLI](https://github.com/Fandy-ust/codex-context-control/blob/main/docs/QUEUE_CLI.md)\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.23.0-macos-arm64.dmg",
+          "size": 45758591,
+          "digest": "sha256:b72a1ef9e59ee3f09196b0569781df4c34209d7a835f619ecfaa1755a5ed6127"
+        },
+        {
+          "name": "Context-Manager-0.23.0-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:2d30bdf954d6a6d65304368007316d1c0af8ce4d259288cd1b2566eb5c31f897"
+        },
+        {
+          "name": "Context-Manager-0.23.0-windows-x64-Setup.exe",
+          "size": 204592128,
+          "digest": "sha256:76c50776146eb268413fb3ec83b97ce4a9d51f60c98b9930388ce7c93acca413"
+        },
+        {
+          "name": "Context-Manager-0.23.0-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:6191fe2624139f4750f7ea31ddd58e722f847d8ffc4b1c46b3614ca241eb86ed"
+        },
+        {
+          "name": "Context-Manager-0.23.0-windows-x64.zip",
+          "size": 204864624,
+          "digest": "sha256:aadcb9ba4e0543067eb77cf07e2d966a64283f47e4cc032c458abdf57620ca97"
+        },
+        {
+          "name": "Context-Manager-0.23.0-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:2fafc3f09d66cfe745b2b9c9d1e63ff9955faf0f58ee02bf5c34e54f8120f671"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:5692b03daadd4e087f92edc506436329e7b27acc11bb8f8d895e0ec7a4d3e89c"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:adf97bd7c550a51addde71a8ee88a307aac2b3bb5f4c803cc6d2b697d4cc0c30"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:9cdd5c333ef830ae08ffae5bbd2c2a21c7d3eb08ca6a124adb1bec21aca08672"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:3de4ced906219803a0e76d70d919f94146d40a781684e07840bb7cc52e3f3d2a"
+        }
+      ]
+    },
+    {
+      "tag": "v0.22.5-preview.1",
+      "name": "Context Manager 0.22.5 · macOS & Windows",
+      "publishedAt": "2026-10-19T02:07:12Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.22.5-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.22.5.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.22.5-preview.1/Context-Manager-0.22.5-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.22.5 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.22.5-preview.1/Context-Manager-0.22.5-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.22.5-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n# 0.22.5 · 任务编辑器与额度图表\n\n本次包含 0.22.0 之后的累计更新，Windows 与 macOS 使用相同版本与共享队列、费用和额度分析核心。\n\n## 这次修好了什么\n\n- 修复粘贴图片时报 `clipboard.readImage is not a function`：适配 Electron 44 的异步剪贴板接口，支持截图、复制的照片及文件；普通文字和路径仍可作为文字粘贴。\n- 任务输入框顶部直接排列方形附件卡片，图片显示缩略图，文件显示名称，每项可单独移除；没有附件时直接显示正文。\n- 统一加号、权限、模型和发送按钮的高度与水平对齐，去掉模型旁多余的向下箭头、右上角放大按钮与对应留白。模型仍可点击打开闪电图标与思考程度面板。\n- 保留简洁的当前周期额度预测，优先显示剩余多少、预计何时用完及能否撑到重置。此图也能比较多个周期，重叠默认关闭。\n- 新增的费用比例／历史周期比较图放在预测下方，支持 5hr、Weekly，以及每消耗 1% 额度对应的本机预估 API 费用；默认比较最近 6 个实际观测周期，可选 3／6／12 个。\n- 日期范围与图例放在同一底栏，周期切换按卡片居中。略微加粗曲线、保留小数据点；悬停详情只显示在悬浮卡片中。\n- 新增关闭／低／中／高平滑程度。平滑按周期、连续数据段分别计算，不跨越断档；费用比例按额度变化加权，悬停保留原始读数，预测不受平滑影响。\n\n## 从 0.22.0 累计改进\n\n- 每项队列任务可单独设置提示词、附件、模型、思考程度、审批权限、5 小时／Weekly 保留额度与最多三个临近重置释放梯度；聊天配置作为新任务默认值。\n- 监视开关可接管当前执行中的任务；队列完成自动关闭，无任务时不持续监视或阻止睡眠。设置内可集中管理与关闭监视。\n- 支持后台连接聊天，无需先在 Codex 中点击对应窗口；支持重试及 `/compact` 简单指令。\n- 修复预算已经保存仍阻止队列启动的情况，保留预算安全预检与提交确认；权限默认沿用当前聊天，也可为任务重新选择。\n- 未完成任务保持执行顺序，已完成任务放在后面，完成超过 12 小时自动归档。\n- 提高额度采样频率，保留已观测到的每次百分比及 Credits 变化；增加 Credits 历史、完整重置周期与自定义日期范围。\n- Mac 使用 SwiftUI Menu、Popover、Picker、Toggle、DatePicker，以及 AppKit 原生文本与剪贴板接口，同步任务编辑器与图表交互。\n\n**任务队列、额度保护与自动恢复仍为 EXP 实验性功能。** 额度来自最近观测，暂停存在执行与刷新延迟；费用只包含可计价的本机 API 估算，不是订阅账单。\n\n安装后请完整退出并重新打开 Codex，使新版桥接程序生效，再重试之前失败的任务。更新保留原有配置与记录。\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.22.5-macos-arm64.dmg",
+          "size": 45708539,
+          "digest": "sha256:b3156144ba974ca468592745ffc5ae1de3bfdb801a68fede23bb5f96308f2107"
+        },
+        {
+          "name": "Context-Manager-0.22.5-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:9efea1dcab59b01b050ca4b8b15baf777daf5b0232bbeffeca9da2a575aac6bd"
+        },
+        {
+          "name": "Context-Manager-0.22.5-windows-x64-Setup.exe",
+          "size": 204575744,
+          "digest": "sha256:b3056eb4c70208a4ad5113210586deb9cde16af436efd3a46dd9cb8820bf1894"
+        },
+        {
+          "name": "Context-Manager-0.22.5-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:9d607744b416a9e0252ba9165cdbcbaa27a64262ab115f8723a1fcc6ede29e7d"
+        },
+        {
+          "name": "Context-Manager-0.22.5-windows-x64.zip",
+          "size": 204837389,
+          "digest": "sha256:9ad3aee38fa3a919ae9e503cc36d3414c6d8a9ada7013a311b8fabff125e828b"
+        },
+        {
+          "name": "Context-Manager-0.22.5-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:f84b5f79c434f3f772774105fd7b4aff4f6aad61e0905ffce3e357a6508a2b24"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:19c805fdc1de4ea7983a9e6ec15d8e035498be4fb448eeb43e27d5ef848b4d38"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:d08f8d955bffd07c91acb8edce030118bf4b06974777ef3cc1ad0ea53e35167b"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:7e9c9151e5843084cdb8bf126f2de953ab5b4b36125bedbd95eae6486d8735f4"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:b5b09d04e533ae837e9cf66d121d90cc48517ac086061723bc13b336f4b48501"
+        }
+      ]
+    },
+    {
+      "tag": "v0.22.0-preview.1",
+      "name": "Context Manager 0.22.0 · EXP 实验性功能 · macOS & Windows",
+      "publishedAt": "2026-10-18T17:58:24Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.22.0-preview.1",
+      "body": "> **EXP 实验性功能**：本版本新增的额度保护（Quota Guard）、自动恢复（Auto Resume）、任务队列（Task Queue）和临近重置额度释放（Quota Burn-down）均作为实验性功能提供，后续会根据实际使用反馈继续完善。默认关闭，需要时手动开启；队列完成后自动关闭监视。\r\n\r\n> **Experimental (EXP):** Quota Guard, Auto Resume, Task Queue and Quota Burn-down are experimental features. They are off by default, require explicit enablement, and stop monitoring when the queue finishes.\r\n\r\n## Download / 下载\r\n- **macOS · Apple Silicon:** [Context Manager 0.22.0.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.22.0-preview.1/Context-Manager-0.22.0-macos-arm64.dmg)\r\n- **Windows · x64:** [Context Manager 0.22.0 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.22.0-preview.1/Context-Manager-0.22.0-windows-x64-Setup.exe)\r\n\r\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\r\n\r\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\r\n\r\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.22.0-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\r\n\r\n# 0.22.0 — 额度保护与任务队列\r\n\r\nWindows 与 macOS 同步加入任务队列、额度保护及重置恢复。Mac 使用原生 SwiftUI 表单和可排序列表。\r\n\r\n- 每个聊天可单独开启监视，默认关闭。开启时可将当前正在执行的轮次加入队首。\r\n- 后续任务各自填写完整提示词，支持添加、编辑、删除、拖动排序。前项正常结束后才发送下一项；失败不会跳过。\r\n- 聊天页在上下文预算和上下文详情之间显示开关、状态、前两项任务及详情入口。详情页返回按钮固定在顶部。\r\n- 分别设置 5 小时和 Weekly 的最低保留比例，任一触线都暂停自动执行。默认保留 20% / 10%。\r\n- 达到保留线时等待当前 turn 结束；低于保留线 2 个百分点（如 20% → 18%）或为 0 时，请求原生中断。只控制队列发起或用户明确接管的轮次。\r\n- 每种额度最多两级临近重置释放，例如平时 20%、最后 30 分钟 10%、最后 15 分钟 3%。重置后恢复基础比例。\r\n- 支持重置后自动恢复、手动恢复，以及仅暂停当前周期。自动恢复需要重新读到有效额度和更新后的重置时间。\r\n- 任务、顺序、设置及执行状态保存在本机。重启后未确认完成的任务关闭监视，核对进度后可继续，避免重复提交。\r\n- 只有启用且仍有任务的队列才增加额度监视和系统防睡眠。队列完成自动关闭；关闭监视不会中断当前轮次，但不再发送下一任务。\r\n- 设置新增“任务队列”页面，可统一查看及关闭全部监视，解除队列防睡眠。\r\n- 中英文界面同步更新。\r\n\r\n额度监视最多约每 10 秒读取一次本机账户额度。额度读取失败或过期时不会启动新轮次；网络及服务更新存在延迟，保留比例不是服务端的硬额度保证。上下文不足时会暂停任务并提示先手动压缩。\r\n\r\n## 0.21.0 之后的累计更新\r\n\r\n0.21.1–0.21.7 已加入双端侧栏布局调整、全窗口额度分析及固定返回、图表滚动修复、模型筛选、合并额度预测和高级分析、简洁/高级切换、日常语言统计说明、Token 费用热力图与折线图、日周月年及自选日期时间范围、统一悬浮提示、滑块边界拖动修复、空闲聊天手动压缩。详细记录见 [0.21.7](0.21.7.md)。\r\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.22.0-macos-arm64.dmg",
+          "size": 45462683,
+          "digest": "sha256:e217141455ce1222580cce6eab8a62a6fa48061065081bcb1bfc156483021846"
+        },
+        {
+          "name": "Context-Manager-0.22.0-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:c13770453e2ef221f27fbcad7d33e6771758203d4dbd91673f5b00b1655f9fc4"
+        },
+        {
+          "name": "Context-Manager-0.22.0-windows-x64-Setup.exe",
+          "size": 204548608,
+          "digest": "sha256:e7372afd75c1e9a6425a613d0ce99831ba72f0a4510b10356a8f05d76f63a7a0"
+        },
+        {
+          "name": "Context-Manager-0.22.0-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:68e5c4b75a3aee24ce6b772092cfc7d28b303414138a52b63853744aba603c07"
+        },
+        {
+          "name": "Context-Manager-0.22.0-windows-x64.zip",
+          "size": 204798274,
+          "digest": "sha256:19b0b1ec63b193bde6ed46e15c00b37b232cd88cc687da0415a079cd54c97f7d"
+        },
+        {
+          "name": "Context-Manager-0.22.0-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:a2f5ebfe8bb2d99400d1373ca109fb3321fdcf2d2470c33019f321b1b28e6f4a"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:a0f1f25ccc7e58796a26e7c6ece46a15b68ef9f8a45ea7b70146f9d2880592d7"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:b86aa8914501a2ff6e864046f739809d383229b5f0f55aa35dda415d22ab32a1"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:52b353f08f2fd880a7702164015121ebe625b04fc061d6f164138bcbca30b023"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:d405261f5e1ee265026b451fdaf40cc347a032390765e5e7827968299bdf3a97"
+        }
+      ]
+    },
+    {
+      "tag": "v0.21.7-preview.1",
+      "name": "Context Manager 0.21.7 · macOS & Windows",
+      "publishedAt": "2026-10-18T17:22:46Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.21.7-preview.1",
+      "body": "## Download / 下载\r\n- **macOS · Apple Silicon:** [Context Manager 0.21.7.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.21.7-preview.1/Context-Manager-0.21.7-macos-arm64.dmg)\r\n- **Windows · x64:** [Context Manager 0.21.7 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.21.7-preview.1/Context-Manager-0.21.7-windows-x64-Setup.exe)\r\n\r\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\r\n\r\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\r\n\r\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.21.7-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\r\n\r\n# 0.21.7\r\n\r\n## 从 0.21.0 升级：更新了什么\r\n\r\n本次汇总 0.21.1–0.21.7 的改动，macOS 与 Windows 使用同一版本，并同步更新界面与程序逻辑。Mac 保留原生 SwiftUI / Swift Charts，Windows 保留现有桌面交互。\r\n\r\n### 更容易使用的额度与用量分析\r\n\r\n- 额度分析占满软件内容区域，不再挤在聊天右侧；带边框的返回按钮始终可见，向下滚动也能返回。\r\n- 额度预测与用量分析合并到同一页面，预测下方可以直接查看图表，减少页面跳转。\r\n- 新增「简洁模式 / 高级分析」切换。简洁模式集中显示每周消耗、5h 窗口贡献、多周热力图和项目 / 对话排行；统计关系、波动及异常窗口等保留在高级分析。\r\n- 支持按模型筛选，分别查看不同模型的 Token 与额度消耗关系。账户总额度与预测保持账户口径，不误当作某个模型的独立额度。\r\n- 统计结论改用日常语言，例如「目前 Token 数量无法可靠预测额度消耗」；换算数值标注可信程度，R² 等指标收进可展开的技术详情。\r\n- 图表说明移到标题旁的提示按钮，减少页面中的长段说明；解释力不足的拟合线不再显示。只有多个模型存在可比较数据时，简洁模式才显示模型对比。\r\n\r\n### Token 费用日历与折线图\r\n\r\n- 新增类似 GitHub 贡献图的费用热力图，也可以切换折线图，查看按现有 API 价格估算的 Token 费用。\r\n- 支持日、周、月、年视图，历史日期选择，以及自定义起止日期和时间；日视图按小时、年折线图按月汇总。\r\n- 费用沿用聊天详情的 Standard 定价与缓存写入估算规则。显示的是本机记录对应的 API 估算费用，不是订阅账单；无法计价的请求单独计数，不当作零费用。\r\n- 本地分析记录保留范围扩展到最多一年；可从仍存在的历史日志补充数据。\r\n\r\n### 聊天操作与界面修复\r\n\r\n- 「应用」旁新增「手动压缩」按钮，仅在已接入且空闲的对话中可用。调用原生压缩，防止重复触发；压缩失败时不会继续发送等待中的输入。\r\n- 修复 Windows 对话趋势图频繁上下滚动时可能卡住的问题，协调滚轮、悬浮选择与自动刷新；Mac 同步处理滚动中的悬浮状态与刷新。\r\n- 修复 Windows 上下文窗口拉满后，白色滑块外侧无法拖动的问题；两端改进相邻滑块选择与拖动偏移，保留原有联动比例和模型上限。\r\n- 统一分析图表悬浮卡片的指标布局，并在滚动或筛选数据改变后清除旧内容。\r\n- 侧栏交换版本号与设置按钮的位置，压缩项目标题和项目之间的间距，保留最近聊天间距与底部额度显示空间。额度分析入口统一放在设置的账户额度中。\r\n- 核对双端功能覆盖，补齐 Mac 日期范围默认值、旧悬浮信息清除和 Token / pp 悬浮信息。\r\n\r\n---\r\n\r\nBoth platforms now show a bordered **Compact now** button beside Apply. It calls the existing native `thread/compact/start` operation instead of submitting chat text. Only a uniquely connected, idle, directly usable chat is eligible; the bridge also rejects requests while a turn is being submitted or a reload/compaction is in progress. Repeated clicks cannot launch concurrent compactions. New input arriving during compaction waits for completion; failures reject that input rather than silently sending it.\r\n\r\n## Recent macOS parity audit\r\n\r\n| Feature | Windows | macOS |\r\n| --- | --- | --- |\r\n| Compact projects, unchanged Recent spacing and quota footer | CSS | SwiftUI layout |\r\n| Version before Settings | Implemented | Implemented |\r\n| Analytics uses the app content area and keeps bordered Back visible | Fixed header | Native safe-area inset |\r\n| Prediction and usage analysis on the same page | Implemented | Implemented |\r\n| Model/source/pool/time filters | Shared report API | Same report API |\r\n| Simple / Advanced modes and conditional model comparisons | Shared chart selection | Same chart selection |\r\n| Cost heatmap / line, day/week/month/year, historical dates and exact ranges | Implemented | Implemented |\r\n| Plain-language fit interpretation, reliability and collapsed technical details | Shared report fields | Same fields |\r\n| Guide text behind title info control | Popup | Native popover |\r\n| Hover metric cards and dismiss on scrolling | DOM card | Native material card |\r\n| Conversation chart scroll/hover handling | Passive wheel and deferred refresh | Native scrolling and deferred selection/refresh |\r\n| Budget handle dragging | Pointer hit targets and grab offset | Native geometry and grab offset |\r\n\r\nThe audit found three small gaps, now addressed: native default custom ranges ended at the current instant rather than the next midnight and did not follow a newly selected historical day; old native hover data could remain after filters changed; native point details omitted the Token / pp value shown on Windows. Cost range defaults now span the selected local day, and hover state clears when its data changes.\r\n\r\nmacOS intentionally retains native SwiftUI controls, Swift Charts, popovers and material cards. Its tooltip position and heatmap cell rendering differ visually. Both apps share the daemon, analytics, pricing and prediction calculations; no second native implementation of those calculations is required. GitHub Actions has now successfully compiled and tested the native macOS app, including chart rendering and language switching, and validated both platform installers.\r\n\r\n\r\n\r\n## 验证结果\r\n\r\nWindows 与 macOS 的 Actions 编译、测试、界面检查和安装包验证全部通过。macOS 原生图表渲染与中英文切换已在 Mac runner 验证。\r\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.21.7-macos-arm64.dmg",
+          "size": 45295616,
+          "digest": "sha256:369f243e6da7bda64c0c6dfda4efdc2b35349b5ebcf7196a421e7605a45a429c"
+        },
+        {
+          "name": "Context-Manager-0.21.7-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:b0236383afe32db0f7a99d664a44f574ef6690ca6b6a4ed6be2329f4b27cfba4"
+        },
+        {
+          "name": "Context-Manager-0.21.7-windows-x64-Setup.exe",
+          "size": 204535296,
+          "digest": "sha256:0b7ec8873de1d73bcf01b2bd7f936d474b045fee17c9eff575a90a23c29cbb35"
+        },
+        {
+          "name": "Context-Manager-0.21.7-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:e32ae3f8c6c6b84f46fe08ac16aeded2bb46b55f6b557f9367513b3f27aa35a4"
+        },
+        {
+          "name": "Context-Manager-0.21.7-windows-x64.zip",
+          "size": 204783561,
+          "digest": "sha256:7f81e45a203ae54cf5174149a2a2d0ac37e27305211481d0fa2ba48a657e1afa"
+        },
+        {
+          "name": "Context-Manager-0.21.7-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:b968eeb9a4d9ba7debb9527c4107313c0beb93c1d984d2d4ff21b51fe2ac0924"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:8e5293574824cae68ebeff181362fea89825cfbbb4c96fe749ae3c69fe1f6497"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:34917bfdac7d1be1a95bc23e77d770f0c435b1c7c85dd82717ce709b005ca160"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:db094c6fed24e943897d2979b155eb7bb0efe06afb3c9db522278b52e6fd3782"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:e6dfa7b8fbc2c9e6954d9a758d146b282b92aebea4256e480ec4b53a2905e45e"
+        }
+      ]
+    },
+    {
+      "tag": "v0.21.0-preview.1",
+      "name": "Context Manager 0.21.0 · macOS & Windows",
+      "publishedAt": "2026-10-18T14:52:14Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.21.0-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.21.0.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.21.0-preview.1/Context-Manager-0.21.0-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.21.0 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.21.0-preview.1/Context-Manager-0.21.0-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.21.0-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n- Mac 与 Windows 的额度分析默认展示：当前剩余、用完还需多久、重置时预计剩余多少。\n- 5 小时与 Weekly 分别计算，明确提示预计提前多久用完，或预计有多少额度到重置时仍未使用。\n- 只预测已识别的当前账户；记录不足、过期、已重置或读数未变时显示原因。旧历史保留在高级分析。\n- 当前周期走势使用实际时间，实线表示观测、虚线表示预测；更新保留原有预算、缓存和偏好。\n\nBoth desktops now open quota analytics with a practical outlook: quota remaining, estimated time to use it all, and expected unused quota at reset. Five-hour and weekly limits are calculated independently from fresh current-account observations. Historical charts remain in Advanced analysis; unavailable predictions show a reason.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.21.0-macos-arm64.dmg",
+          "size": 45161234,
+          "digest": "sha256:8be3150024fdc8e2161d0ae74875374c2466ea619082c81e436fbd0da826a7cc"
+        },
+        {
+          "name": "Context-Manager-0.21.0-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:1e3852b0f7dff6196e2be8ccb665cbc7990c689b8e010e0aa20bd9b3739e897e"
+        },
+        {
+          "name": "Context-Manager-0.21.0-windows-x64-Setup.exe",
+          "size": 204513280,
+          "digest": "sha256:319c0a7f48450259e976143ee28982a821be89fadc6512c126a7ad0f7c3f9c22"
+        },
+        {
+          "name": "Context-Manager-0.21.0-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:81ecb1df83e57a0f5e72b639d5430fa1f02b206eb61312503c46a2240656065f"
+        },
+        {
+          "name": "Context-Manager-0.21.0-windows-x64.zip",
+          "size": 204752919,
+          "digest": "sha256:6648f395bf3213e903a77d4e5475d5541a63ab42665d5d5fd22b9dfdc2fd78d8"
+        },
+        {
+          "name": "Context-Manager-0.21.0-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:680b4e8fdae0fbf216dc3a2fab321cabad698f8871aa07dd7a28b13b41e2a189"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:c5a014d7610f814a7e9f3c6d7ab87f70e430c119363ed9b3794bd1925c91aa8a"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:f77f30d0704916190b31d0de48a51ce884b46d7ebc1c6eb7d3f194467c700201"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:831037879f48a3416fcb183371298d0ea5378e0d590c00bdd0afb32e3f32905c"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:c7764062a94191d0542cde6d0b91121ce113201c2d894cf60a0c748ca8c9335d"
+        }
+      ]
+    },
+    {
+      "tag": "v0.20.3-preview.1",
+      "name": "Context Manager 0.20.3 · macOS & Windows",
+      "publishedAt": "2026-10-18T14:25:56Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.20.3-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.20.3.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.3-preview.1/Context-Manager-0.20.3-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.20.3 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.3-preview.1/Context-Manager-0.20.3-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.20.3-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n- Mac 和 Windows：上下文详情直接显示在预算下方；保留一组滑条和「应用」，拖动不自动保存。\n- 移除主面板重复的大卡片、预检、手动原生压缩及停止自动应用入口。\n- 额度分析自动选择有可比较记录的来源；没有 5h 配额时隐藏相关指标和图表。\n- 修复重置时间几秒偏差导致的周期拆分；同周期较长间隔支持带标记的净变化比较，不推断中间小时消耗。数据库、预算和偏好沿用。\n\nContext details now appear below the budget controls on both platforms. One slider group and an explicit Apply button replace redundant actions. Analytics automatically selects useful records, hides unsupported 5h views, and tolerates reset countdown rounding. Same-cycle gaps can produce labelled net-change comparisons without inventing hourly usage.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.20.3-macos-arm64.dmg",
+          "size": 45122978,
+          "digest": "sha256:997b61da73064bdac70763c2cbb206ba50164ec9ee525c4bd5eaadcc1f891043"
+        },
+        {
+          "name": "Context-Manager-0.20.3-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:5bf280e668c1c9afb14387fad36944985bc97d77d8491ec537fd56594d5e89f6"
+        },
+        {
+          "name": "Context-Manager-0.20.3-windows-x64-Setup.exe",
+          "size": 204507648,
+          "digest": "sha256:4d3f7cb0fe2d1d1948bc2d21ff44c3d4305bd008ad5369fa284f90de3668fa0e"
+        },
+        {
+          "name": "Context-Manager-0.20.3-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:e551a6fdea4dde99fdcd4b3c2ead43a7a5159882a14657524bcdb525a5990130"
+        },
+        {
+          "name": "Context-Manager-0.20.3-windows-x64.zip",
+          "size": 204746091,
+          "digest": "sha256:044798aa35f1404d003990bc97c8549aa654af466961fc9aca2ef7e0710e66c9"
+        },
+        {
+          "name": "Context-Manager-0.20.3-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:74602a66f53a29646204b9edf624fe7a2367cb46f72eaf38311a6a91bdabec99"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:d0ce29e1b26795661a6d0f12a935ff63c651bbca1f573631caaac95f5ed7e569"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:3b3d01c09e88c083719036a13516bc2234a57467cf28993923045e3f4c5262e0"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:d3cac5f845209265409077f9cee556be20cc474214f5e88ea4230b16600ced2e"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:f52c5f9a3f870b630f76df09f521e4da78e6656cd9709ce9f590df3332e463e5"
+        }
+      ]
+    },
+    {
+      "tag": "v0.20.2-preview.1",
+      "name": "Context Manager 0.20.2 · macOS & Windows",
+      "publishedAt": "2026-10-18T12:39:53Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.20.2-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.20.2.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.2-preview.1/Context-Manager-0.20.2-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.20.2 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.2-preview.1/Context-Manager-0.20.2-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.20.2-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 本次更新 / What’s new\n\n修正整数百分点下的预测口径：按有效观测时间计算平均消耗速度，以小时聚合估计较慢／较快场景。短时间额度读数不跳动，不再被误当成未来完全不消耗。\n\n保留 0.20.1 的统计 worker 重启修复，以及 0.20.0 的六张主图、增强分析和双平台界面对齐。Mac 与 Windows 同步更新，预算、缓存与偏好保留。\n\nCorrect quota projections when readings are rounded to whole percentage points. The central line now uses observed consumption per hour; slower/faster scenarios use hourly aggregates. The release retains reliable worker restarts, all analytics views and the aligned Mac/Windows interface.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.20.2-macos-arm64.dmg",
+          "size": 45184154,
+          "digest": "sha256:0a231f45170470bb4e25b2934a75a6f8ca13484194467c7b4cbcdee28152859a"
+        },
+        {
+          "name": "Context-Manager-0.20.2-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:c1d1625378184996bc0e8d5fa4ede56fe70d0f8fbec0cdc559ad3e23080afde6"
+        },
+        {
+          "name": "Context-Manager-0.20.2-windows-x64-Setup.exe",
+          "size": 204507648,
+          "digest": "sha256:01a47fccaa62d486bac0c696c6f931b6f6d8e8971dfe5c785f12b9ac71f35ffc"
+        },
+        {
+          "name": "Context-Manager-0.20.2-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:d062da04d410cf18e03d0e0ff83d5822753a1462d714fadd00d2cb11121eefca"
+        },
+        {
+          "name": "Context-Manager-0.20.2-windows-x64.zip",
+          "size": 204745208,
+          "digest": "sha256:740127ee4a465599f8a7c041758c111eed95248adcce5f903edd13695b8dadcf"
+        },
+        {
+          "name": "Context-Manager-0.20.2-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:16a9b8177fca446b0bddf0ba9c4f1a80dc1fbad5d72ae18d840d18321f57625f"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:f48c8792226a5c5461046cb0153a961d15162074cab5f1c19713c99adfff2b8a"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:97d8d616be36704ba1115792e6cbefd5f92a74ab45fed7921663fcdc87bf8128"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:b03ed45299ea916013e52ff95b3d70932b4f5f552d1d5e2a22123c667390dad5"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:5b6575b42e9eccfe3b45bb6fcc3ed8e84dfd9641aa8fbbf1bb0a0aaed6bab0a8"
+        }
+      ]
+    },
+    {
+      "tag": "v0.20.1-preview.1",
+      "name": "Context Manager 0.20.1 · macOS & Windows",
+      "publishedAt": "2026-10-18T12:33:12Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.20.1-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.20.1.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.1-preview.1/Context-Manager-0.20.1-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.20.1 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.1-preview.1/Context-Manager-0.20.1-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.20.1-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 本次更新 / What’s new\n\n修复额度分析在空闲后重启时可能偶发读取失败的问题。旧统计 worker 会先关闭本地账本，新 worker 等它退出后再启动，避免 Windows 文件锁竞争。\n\nMac 与 Windows 同步更新，保留 0.20.0 的额度分析、界面对齐和全部数据。\n\nFix an intermittent quota-analytics startup failure after an idle period. Workers now close the ledger cleanly and finish exiting before a replacement opens it. Both platforms share this update; analytics, budgets and user preferences are preserved.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.20.1-macos-arm64.dmg",
+          "size": 45211427,
+          "digest": "sha256:1b10739c6c210bf7b7509c84f1e47e9ec72beca7bdf9793f1c1d5e63ec6bb731"
+        },
+        {
+          "name": "Context-Manager-0.20.1-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:225b623f0ad03761dfd99540658b31376aeaf220065c3b53224cae7d5e97041a"
+        },
+        {
+          "name": "Context-Manager-0.20.1-windows-x64-Setup.exe",
+          "size": 204507136,
+          "digest": "sha256:5e8f8118e86783f1fef608bb93bff3f25e4ba144bce41619fec189897f5f5c8a"
+        },
+        {
+          "name": "Context-Manager-0.20.1-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:623a43902f6344a58965aba5ac9fcdacbb779ee5a05249a5ceb23d2864e37f4b"
+        },
+        {
+          "name": "Context-Manager-0.20.1-windows-x64.zip",
+          "size": 204744330,
+          "digest": "sha256:822317d638d47455ecaafbeba463f7597c6215b0843999bbea4d0bdcfff3e9fd"
+        },
+        {
+          "name": "Context-Manager-0.20.1-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:dd0e5db2fd253e1ddb004f35f82ab98a821444456d82f06f5535724858fc4a5a"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:107c2da4badff67a6273eef0e5df04a8034c443714b9b8117a8c88708a9215d3"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:21952c7bf8721fde70476774f27f6e78b788401231acac0dc19e0d4d2939fc06"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:9117973c291274dc4530625bd51bf3a6a7d07223f82d848686b75bfca469ec3b"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:c2ae11cf3c126db539fdf0efcbfb728f9afc254dde791d07d7fa7f732d6168a9"
+        }
+      ]
+    },
+    {
+      "tag": "v0.20.0-preview.1",
+      "name": "Context Manager 0.20.0 · macOS & Windows",
+      "publishedAt": "2026-10-18T12:19:24Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.20.0-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.20.0.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.0-preview.1/Context-Manager-0.20.0-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.20.0 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.20.0-preview.1/Context-Manager-0.20.0-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.20.0-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 额度分析 / Quota analytics\n\nMac 和 Windows 使用同一版本、同一统计核心，并对齐侧栏、Credits 指示和分析页布局。\n\n- **6 张主图**：Weekly 曲线、5h 窗口贡献、Token vs Weekly%、Token vs 5h%、Token / 1% 效率、多周热力图。\n- **更多分析**：累计双轴、模型与缓存比较、分布、箱线图、近期速度预测、异常窗口、日内热力图、5h/weekly 比值，以及本机对话和项目 token 排行。\n- **本地缓存**：后台分批导入已有数字记录，后续只读新增内容。请求去重，fork、压缩和回滚不会重复计入消耗。\n- **统一口径**：缺失周期不会显示成零；重置和断档不会生成虚假的消耗。换算展示本机相关观测，不代表官方固定兑换率；其他设备的使用可能影响比较。\n- **界面对齐**：Mac 新增与 Windows 一致的 Credits 圈、顶部设置入口和详情页工具栏；两端共用 Credits 基准与重置逻辑。\n\nMac and Windows share the same release and analytics core. The Overview contains six essential charts; three further sections cover trends, comparisons and window details. Incremental local history imports are deduplicated and kept in a numeric ledger. Quota resets, missing records and mixed-model observations are handled explicitly. Token/percentage figures are local correlations, not official conversion rates. Updates preserve existing budgets, preferences and compatible Credits baselines.\n\n真实额度与 token 记录按本机情况显示；没有 5h 数据的账户会显示暂无记录。预测需要足够的近期观测，对话排行不虚构逐聊天额度消耗。\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.20.0-macos-arm64.dmg",
+          "size": 45211574,
+          "digest": "sha256:a64e87caff06d4c0ee67d85c1b5232d0cea99ca9e56442c26c7dd738cdf88bb6"
+        },
+        {
+          "name": "Context-Manager-0.20.0-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:3221c6852472ee5b45ca75c77a2f22e5f39839458548238f22a0204646443236"
+        },
+        {
+          "name": "Context-Manager-0.20.0-windows-x64-Setup.exe",
+          "size": 204507136,
+          "digest": "sha256:3fd3d306eda0211eaeaf2cbdc1937fbb41706c4b0218533fab2e11a70ff6f4b2"
+        },
+        {
+          "name": "Context-Manager-0.20.0-windows-x64-Setup.exe.sha256",
+          "size": 111,
+          "digest": "sha256:3881f1f595bec933edc247c249cf5e9b3201e63b64fdbfbe3163daf248af4850"
+        },
+        {
+          "name": "Context-Manager-0.20.0-windows-x64.zip",
+          "size": 204743176,
+          "digest": "sha256:1a794c8f36efa84a2ce9fec8a3f2527d0df366ca4d14fa3cd430af378473f578"
+        },
+        {
+          "name": "Context-Manager-0.20.0-windows-x64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:d21c0245ff24d0156866e58442d582c3d606c49ce39d2c1724ed1e74139c09c1"
+        },
+        {
+          "name": "package-info.json",
+          "size": 385,
+          "digest": "sha256:241955acea6d4de72b2b001179e2379dcf23a8fd6fe1cc6449f08f1dd73ee2ba"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2086,
+          "digest": "sha256:fcfb3204b44f7c8daf12ba635e2e9c8a75d1da055aa55c165fd937cb2d09a24c"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 486,
+          "digest": "sha256:336196f256708c5446ad096ae9e1297cbf8f1de668c9b5d850a39f6a8ecabcb8"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:363b6fe8785d536758361005ceda31021ce69c643a2cf1387b62056de7f02e85"
+        }
+      ]
+    },
+    {
+      "tag": "v0.19.20-preview.1",
+      "name": "Context Manager 0.19.20 · macOS & Windows",
+      "publishedAt": "2026-10-18T11:02:19Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.19.20-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.19.20.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.20-preview.1/Context-Manager-0.19.20-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.19.20 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.20-preview.1/Context-Manager-0.19.20-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.19.20-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 本次更新 / What’s new\n\n相较于 0.19.18，本版本改进 Windows 侧栏与上下文详情：\n\n- **Credits 余额**：设置入口移至侧栏顶部版本号左侧；底部新增两行圆形余额入口。大额使用 K/M 等缩写，悬停显示完整数额，点击进入账户额度详情。标签为灰色小字，数字为白色，并留足圈内空间。\n- **Credits 进度**：复用额度胶囊的边框粗细、顶部中点顺时针起始、端点圆点与告警颜色。首次读到余额和每次观察到余额增加时，以当前数额建立新基准；消费后按当前余额占基准的比例显示，基准在本机保存。此进度为本机观察值，不代表官方提供的总额度。\n- **手动重置基准**：设置的账户额度页新增「重置 Credits 基准」，可将当前余额设为新的 100%；余额为零时保持空圈。未知余额不当作零，读取失败或缓存过期时需先刷新。\n- **上下文详情布局**：返回预算和刷新按钮使用一致的带框样式；标题放到按钮行下方，增加留白，并移除聊天名称副标题。\n\n本次界面改动面向 Windows；macOS 保持现有界面，两端继续使用同一产品版本。更新保留预算、缓存与偏好。\n\nCompared with 0.19.18, this release refines the Windows sidebar and context details:\n\n- Move Settings beside the version in the sidebar header. Add a two-line circular Credits balance with K/M abbreviations, an exact-value tooltip and a shortcut to account quota details.\n- Match the Credits ring to quota outlines, clockwise progress from top center, endpoint dots and warning colors. The first balance and each observed increase establish a locally saved baseline; spending reduces the displayed ratio. This is a local observation, not an official total-credit allowance.\n- Add **Reset Credits baseline** in account quota settings to use the current balance as the new 100%. Zero stays empty; missing balances remain unknown, and stale observations must be refreshed before resetting.\n- Give Back to budget and Refresh matching bordered buttons, move the context-details title below the toolbar, and remove its chat-name subtitle.\n\nThese UI changes target Windows. macOS retains its existing interface and shares the same product version. Updates preserve budgets, caches and preferences.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.19.20-macos-arm64.dmg",
+          "size": 44979053,
+          "digest": "sha256:68ecd29a619482fefa1e9a0bf3453760a14d43a010860d08a21dfaa8cdaf5c4d"
+        },
+        {
+          "name": "Context-Manager-0.19.20-macos-arm64.dmg.sha256",
+          "size": 106,
+          "digest": "sha256:6f0237dcd2e60021fafd7e3f6ea49e4ecc4c020c2b1c1a50870be080448bb756"
+        },
+        {
+          "name": "Context-Manager-0.19.20-windows-x64-Setup.exe",
+          "size": 204480000,
+          "digest": "sha256:9070246f280ef54890f437e997b7c16bcfe9474a761345a7f39a8b98c1f7ff60"
+        },
+        {
+          "name": "Context-Manager-0.19.20-windows-x64-Setup.exe.sha256",
+          "size": 112,
+          "digest": "sha256:ce91f7de1a7e94c4d111d2ba84bf8e67478e1a4bba664237fce1cf9d3c1ddd8f"
+        },
+        {
+          "name": "Context-Manager-0.19.20-windows-x64.zip",
+          "size": 204711630,
+          "digest": "sha256:fe56c6836cac4953c01030e8cf40bbe076e4e88ca5266a10b01308e0c77d4158"
+        },
+        {
+          "name": "Context-Manager-0.19.20-windows-x64.zip.sha256",
+          "size": 106,
+          "digest": "sha256:a059ae6e56e4403cc72e4bcd62b6a24e68d022c00e385c839ebb0a4f60904163"
+        },
+        {
+          "name": "package-info.json",
+          "size": 387,
+          "digest": "sha256:5de9c436c11f9a007550b7760849832b51365517296a9503c7134ff726a2e663"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2080,
+          "digest": "sha256:47f9e566f7d4282200693a95e3ecef38eabe3221c395fd4db85eaf0f4cc7a82f"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 490,
+          "digest": "sha256:ae8dd8f700e31696fecd025d99c78e65d7981691b51ced6db4542e1399a28f99"
+        },
+        {
+          "name": "update.json",
+          "size": 237,
+          "digest": "sha256:44706281b641ab0a40c93166cd02d543e3ef2dee429b7ddb4bede822d9763d78"
+        }
+      ]
+    },
+    {
+      "tag": "v0.19.18-preview.1",
+      "name": "Context Manager 0.19.18 · macOS & Windows",
+      "publishedAt": "2026-10-18T10:36:48Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.19.18-preview.1",
+      "body": "## Download / 下载\n- **macOS · Apple Silicon:** [Context Manager 0.19.18.dmg](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.18-preview.1/Context-Manager-0.19.18-macos-arm64.dmg)\n- **Windows · x64:** [Context Manager 0.19.18 Setup.exe](https://github.com/Fandy-ust/codex-context-control/releases/download/v0.19.18-preview.1/Context-Manager-0.19.18-windows-x64-Setup.exe)\n\nBoth platforms use the same product version and shared core. Download one installer for your system; no development tools are required.\n\n两端使用同一产品版本和共用核心。只需下载对应系统的单个安装文件，无需安装开发工具。更新保留预算、缓存和偏好。\n\nThe ZIP and JSON files are for automatic updates. See [changes](https://github.com/Fandy-ust/codex-context-control/blob/v0.19.18-preview.1/CHANGELOG.md) and [installation guides](https://github.com/Fandy-ust/codex-context-control/blob/main/README.md).\n\n## 本次更新 / What’s new\n\n相较于 0.19.6，本版本统一包含以下更新：\n\n- **项目与最近聊天**：新增可展开的项目侧栏；最近聊天包含项目内和独立聊天，按最新活动实时排序。聊天副标题显示项目名与接入状态。\n- **额度显示**：新增侧栏额度、重置时间和实时倒计时；仅显示账户实际返回的周期。剩余低于 20% 显示黄色，低于 5% 显示红色，并兼容仅每周额度及积分账户。\n- **Windows 界面**：等宽额度胶囊以顺时针边框和端点圆点显示剩余比例；调整侧栏比例、字体、设置按钮和聊天背景，列表底部使用柔和渐隐。\n- **上下文详情**：详情回到主窗口右侧，切换聊天时直接查看对应统计。Windows 保留滚动位置和未保存的预算输入。\n- **统计事件**：悬浮卡和选中详情显示模型、思考深度的前后变化，以及 ⚡ Fast / ⚡⚡ Ultrafast 标记。\n- **Windows 快捷键**：窗口被其他窗口遮挡时，按一次即可置前；只有已聚焦时才隐藏。\n- **Windows 更新提示**：启动发现新版本时可选择更新、本次跳过或关闭自动检查；设置中可重新开启或手动检查。macOS 保留原有后台检查和手动更新流程。\n\n预算、缓存和偏好会在更新时保留；只有选择更新后才下载安装。\n\nCompared with 0.19.6:\n\n- Expandable projects and a live Recent list covering all chats, with project names and connection status.\n- Sidebar quota with actual reset cycles, reset times and live countdowns; yellow below 20%, red below 5%, including weekly-only and credit-only accounts.\n- Refined Windows sidebar, equal-width quota capsules with clockwise outlines and endpoint dots, clearer chat cards and soft list fades.\n- Context details in the main pane; Windows preserves per-chat scroll positions and unsaved budget input.\n- Model/reasoning transitions and ⚡ Fast / ⚡⚡ Ultrafast markers in chart details.\n- A Windows shortcut that raises a covered window in one press and hides it only when focused.\n- A Windows startup update prompt with Update, Skip this time and Disable automatic checks, plus settings controls. macOS retains background checks and manual installation.\n\nUpdates preserve budgets, caches and preferences. Downloads and installation require choosing Update.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.19.18-macos-arm64.dmg",
+          "size": 44982548,
+          "digest": "sha256:05ee65354884fcd89851f50ac60088cd678034f4a017e28bea43ed08ae6d4e63"
+        },
+        {
+          "name": "Context-Manager-0.19.18-macos-arm64.dmg.sha256",
+          "size": 106,
+          "digest": "sha256:e6d4c451f0e49d325c882a350c4bf9222935e31412ad29221170d5f4d169bd2b"
+        },
+        {
+          "name": "Context-Manager-0.19.18-windows-x64-Setup.exe",
+          "size": 204477952,
+          "digest": "sha256:c62a7853f54cc84103a674fda824a1f86f1d37d267a4a988aacbb0358c75d8d6"
+        },
+        {
+          "name": "Context-Manager-0.19.18-windows-x64-Setup.exe.sha256",
+          "size": 112,
+          "digest": "sha256:9ef72b51f80d58e9f2f9e4f2bf8b632d5d9eaedee3dd936ee2bdc0af86fa86f4"
+        },
+        {
+          "name": "Context-Manager-0.19.18-windows-x64.zip",
+          "size": 204707544,
+          "digest": "sha256:41c465a8eb70bc90e894e4bb95d333a4e5fd1d9921dc41e7ae24ab8f636f0e5d"
+        },
+        {
+          "name": "Context-Manager-0.19.18-windows-x64.zip.sha256",
+          "size": 106,
+          "digest": "sha256:5c2c32e7cc18a85352261bdd4d05218c8136e9671b7a3b8908b13e5e44faf01a"
+        },
+        {
+          "name": "package-info.json",
+          "size": 387,
+          "digest": "sha256:8d1a1de0d01444c1374ad9d92cae5db847a5eed980924cc13b18d02372d49731"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2080,
+          "digest": "sha256:846d82092766adf8596a04f810f172eb617f89d8856920a5536d8f02befaddb6"
+        },
+        {
+          "name": "update-v2.json",
+          "size": 490,
+          "digest": "sha256:e441f37fef94b95b999c60f7a308437a5fbc1b5d3a7754d389e1d5a4cb04f44c"
+        },
+        {
+          "name": "update.json",
+          "size": 237,
+          "digest": "sha256:3a0e8e2859a3b215c026db4d14586a29e4cc0d2f0431f36b2e7f09801ebaf046"
+        }
+      ]
+    },
+    {
+      "tag": "v0.18.3-preview.1",
+      "name": "0.18.3 · Reliable update checks",
+      "publishedAt": "2026-10-18T04:27:12Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.18.3-preview.1",
+      "body": "## 0.18.3 — More reliable update checks\n\n- Check the public release manifest first, avoiding routine dependence on anonymous GitHub REST API limits. Use the API only as a fallback.\n- Distinguish rate limiting from other HTTP 403 refusals, connection failures, and invalid metadata. Honor retry/reset times and throttle repeated clicks.\n- Show retry timing and a manual release-page download link. No GitHub token or account setup is required.\n- Verify the downloaded image against both the manifest hash and checksum file, then run the existing payload verification.\n\n## 更新检查修复\n\n- 优先读取公开版本文件，减少对匿名 GitHub API 的依赖；失败时才使用 API。\n- 区分限流、普通 403、网络失败和无效版本信息，遵守重试时间，避免重复请求。\n- 检查失败时提供重试时间及手动下载入口，不要求用户配置 GitHub Token。\n- 保留下载校验、安装内容校验，以及原有预算、设置和缓存。\n\n**If your old updater still reports HTTP 403, manually install this release once. You can skip intermediate versions.** A network that blocks GitHub downloads may still require a working network or manual transfer; this update does not guarantee every 403 disappears.\n\n**旧版若仍报 HTTP 403，请手动覆盖安装本版一次，可以直接跨版本升级。** 若网络本身限制 GitHub 下载，仍需使用可访问的网络或手动传递安装包。\n\nApple Silicon · macOS 14+ · DMG. Locally signed preview, not Developer ID signed or Apple notarized.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.18.3-macos-arm64.dmg",
+          "size": 45500270,
+          "digest": "sha256:6db3fb5cc0be3f1cdcfce76e2d48e089ed30be2c8da440a3b723443f930d5764"
+        },
+        {
+          "name": "Context-Manager-0.18.3-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:f66efa3e66e8cd239e95b1049f99b1db9de60377065eedfb22e05351444bdd6c"
+        },
+        {
+          "name": "package-info.json",
+          "size": 384,
+          "digest": "sha256:7bdf22f940a046b6c7380ba5e8ae9406d4ba23e09373bbc1bc84105b80731551"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2079,
+          "digest": "sha256:d03a8c95c37e300f9bd021db46f1ff3355d9d6636aac46de613ac0fb0ce9d46d"
+        },
+        {
+          "name": "update.json",
+          "size": 234,
+          "digest": "sha256:c77b4e5165e0fca2380d471e6cb0b777f54f1ef2c4f98592ebf2ee394502029f"
+        }
+      ]
+    },
+    {
+      "tag": "v0.18.2-preview.1",
+      "name": "0.18.2 · Compact spacing & credit balance",
+      "publishedAt": "2026-10-18T04:08:19Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.18.2-preview.1",
+      "body": "## 0.18.2 — Compact menu bar spacing & credit balance\n\n- Shorten the menu-bar item's reserved width from 56 to 44 points and trim unused canvas. The lightning bolt and percentage keep their size and placement.\n- Replace “Extra credits available” with the reported numeric credit balance, displayed to at most two decimal places. Hide the line when the API does not provide a finite balance.\n- Preserve existing budgets, preferences, and caches.\n\n## 更紧凑的菜单栏与具体 credit 余额\n\n- 缩短菜单栏高亮区域的留白，闪电和数字不缩小。\n- 不再泛泛显示「额外额度可用」；有具体余额就显示 credit 数值，没有有效数值就隐藏。\n- 保留原有预算、设置和缓存。\n\nUpdate in-app or download the DMG below. Apple Silicon · macOS 14+. Locally signed preview, not Developer ID signed or Apple notarized.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.18.2-macos-arm64.dmg",
+          "size": 45497624,
+          "digest": "sha256:4e56d3146e90a05fc59f2e7954131ba2cb255f7d80d901963469b617fd990f58"
+        },
+        {
+          "name": "Context-Manager-0.18.2-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:14664aabc9dbde2f22c929fb6f44b66e2b547336adf8dc35464c9ad6a3cd0ad9"
+        },
+        {
+          "name": "package-info.json",
+          "size": 384,
+          "digest": "sha256:d2f6b11180578810d51a19f95bcad9f5446fad0da20007ff76c4945f01faa3d1"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2079,
+          "digest": "sha256:eeee7a613cb698834a2b6178284ec1044a35f89b96b02ced2f55255e13d00012"
+        }
+      ]
+    },
+    {
+      "tag": "v0.18.1-preview.1",
+      "name": "0.18.1 · Striped lightning quota indicator",
+      "publishedAt": "2026-10-18T03:56:36Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.18.1-preview.1",
+      "body": "## 0.18.1 — Striped lightning quota indicator\n\nApplies the approved B design: vertical stripes form a lightning bolt. Its fill decreases with remaining quota, and the transparent percentage sits closer at the lower right.\n\nThe shared quota/chat menu and bottom-left floating control panel stay unchanged. Existing budgets, preferences, and caches are preserved.\n\n## 竖条闪电额度图标\n\n采用确认的 B 版：竖条组成闪电，额度减少时逐渐空心；透明百分比向左靠近，保留右下位置。\n\n额度与聊天共用菜单、左下角主控制面板、原有预算和缓存保持不变。\n\nUpdate in-app or download the DMG below. Apple Silicon · macOS 14+. Locally signed preview, not Developer ID signed or Apple notarized.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.18.1-macos-arm64.dmg",
+          "size": 45492553,
+          "digest": "sha256:1b8b67f530c4eadce9a7ebb67c1e51c2026072b55f50d4e3dc793694f0a627d8"
+        },
+        {
+          "name": "Context-Manager-0.18.1-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:53f9a43371a1c9385de7f932ee6da5b22c8a8d70a76e6ca3034c6bd65bd5b805"
+        },
+        {
+          "name": "package-info.json",
+          "size": 384,
+          "digest": "sha256:646780097b5f3904ea0134e6cdf2bb01ae98be71388b1cf1ef248959036b2c92"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2079,
+          "digest": "sha256:04d26943b8aa97e61534637bc8743c9faa0b2695351193c796a97046e5a4c9ff"
+        }
+      ]
+    },
+    {
+      "tag": "v0.18.0-preview.1",
+      "name": "0.18.0 · Quota bars & floating controls",
+      "publishedAt": "2026-10-17T18:28:00Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.18.0-preview.1",
+      "body": "## 0.18.0 — Quota indicator & floating controls\n\n- A stepped-bar menu icon replaces the old logo. Bars gradually become hollow as quota decreases; the lower-right label shows the remaining percentage.\n- Quota, reset times, extra-credit availability, and chats share one dropdown.\n- Sidebar settings open from a bottom-left Control panel button. Click outside to close; default budgets open inside the same compact panel.\n- Quotas come from the official runtime, with a five-minute cache and manual refresh. No chat or model-generation request is created.\n\n## 额度指示与悬浮控制面板\n\n- 菜单栏改为阶梯条形图，取代旧 logo。额度减少时条形逐渐空心，右下角显示剩余百分比。\n- 额度、重置时间、额外额度和聊天列表共用一个下拉面板。\n- 左下角「主控制面板」集中设置，点击外部收起；默认预算在同一紧凑浮窗内打开。\n- 使用官方额度接口，五分钟缓存，可手动刷新，不打开聊天、不发起模型生成。\n\nExisting budgets, settings, and caches are preserved. Update in-app or use the DMG below.\n\nApple Silicon · macOS 14+ · about 45 MB. Locally signed preview, not Developer ID signed or Apple notarized.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.18.0-macos-arm64.dmg",
+          "size": 45494080,
+          "digest": "sha256:d4a1c2e1541ae83d9d5efc0036d3365b237b2f21f122f275e88a6f291c3e3f00"
+        },
+        {
+          "name": "Context-Manager-0.18.0-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:06d32360f14914291347ff5bd8c2b0dbd3735dcadaff4b54ec4cbb81bf485a0a"
+        },
+        {
+          "name": "package-info.json",
+          "size": 384,
+          "digest": "sha256:cc277a82b11c4e8917523be9201a96ad956801eb38711ff08e772091a39ca7a4"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2079,
+          "digest": "sha256:2207de808fc0fc8dd318e5368b3389955e178b175af5bbb02593d74cf6a7a658"
+        }
+      ]
+    },
+    {
+      "tag": "v0.17.2-preview.1",
+      "name": "0.17.2 · Upgrade inheritance & cleanup",
+      "publishedAt": "2026-10-17T16:44:08Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.17.2-preview.1",
+      "body": "## 0.17.2 — Upgrade inheritance and clean installation\n\n- Preserve budgets, defaults, language, switches, caches, and unknown preference fields across updates.\n- Keep one lightweight configuration snapshot before a version change. Same-version reinstalls do not duplicate backups.\n- Replace old app/code and remove unused runtimes. Keep files that are still in use until their processes exit.\n- Retry busy installer-volume detach operations and defer cleanup safely, so downloaded installers do not accumulate.\n\n## 升级继承与旧版本清理\n\n- 预算、默认设置、语言、开关、缓存和未知设置字段原样继承。\n- 升级前仅保留一份轻量配置快照，同版本重装不重复生成。\n- 旧 App 和代码原位替换，不再使用的运行环境自动清理；仍在使用的文件延后处理。\n- 安装镜像繁忙时重试卸载，退出后补做清理，避免 OTA 文件累积。\n\n**0.17.x 用户可在应用内检查并安装更新。** 新用户下载下方 DMG 安装。\n\nApple Silicon · macOS 14+ · DMG, about 45 MB. Locally signed preview, not Developer ID signed or Apple notarized.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.17.2-macos-arm64.dmg",
+          "size": 45389465,
+          "digest": "sha256:fd4f457fa2f7e5833663f50ab5e86192f6e26b622be73dbdd0b41c96b8eb0c48"
+        },
+        {
+          "name": "Context-Manager-0.17.2-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:5e4f4a19e0a3b7e01c1a28bf693fb4f84c6469a9085455ae078170771799df97"
+        },
+        {
+          "name": "package-info.json",
+          "size": 384,
+          "digest": "sha256:84a9ae394c9b2a26bc2111c4281808b2010fb54f91d22c3275b2605a488d43a0"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2079,
+          "digest": "sha256:3573fac197672378631295020b5f4424d30a41dc60dc9d1f101cc161fb0b1fb0"
+        }
+      ]
+    },
+    {
+      "tag": "v0.17.1-preview.1",
+      "name": "0.17.1 · Seamless upgrades & cleanup",
+      "publishedAt": "2026-10-17T16:38:14Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.17.1-preview.1",
+      "body": "## 0.17.1 — Replace old versions, reclaim disk space\n\nUpdates now remove unused older bundled runtimes and the disabled legacy compaction core after successful installation. Files still used by running processes are retained temporarily and checked again every five minutes. The app and program code continue to be replaced in place.\n\nBudgets, language settings, chat caches, and user backups are preserved. OTA download files are removed when the update finishes. Manually downloaded DMGs are left alone.\n\n## 更新后自动清理旧版本\n\n成功安装后会清理不再使用的旧运行环境和已停用的压缩修复核心，App 与程序代码继续原位替换。\n\n仍被进程使用的旧文件暂时保留，退出后自动清理。预算、语言、聊天缓存和备份不受影响；OTA 下载文件在更新结束后删除，手动下载的 DMG 不会自动删除。\n\n**0.17.0 用户可在应用内点击「检查更新」，再点击「安装更新」。** 新用户下载下方 DMG 安装即可。\n\nApple Silicon · macOS 14+ · about 45 MB. Locally signed preview; not Developer ID signed or Apple notarized.\n\nUpgrade inheritance now preserves unknown preference fields and newer schema markers. A single lightweight configuration snapshot is retained before version changes; reinstalling the same version does not duplicate backups.\n\n升级继承会保留预算、语言、开关、缓存及设置中的未知字段；升级前仅保留一份轻量配置快照，同版本重装不会重复生成备份。\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.17.1-macos-arm64.dmg",
+          "size": 45390467,
+          "digest": "sha256:b3120ec01b330f68948f39a6f5115a4c37f527c89944de688e290c2d3caf191e"
+        },
+        {
+          "name": "Context-Manager-0.17.1-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:c28b5518c5eed3aae8521cebfd5ea909bda7ac58d02f96a6a0fdc6eaaeba5b12"
+        },
+        {
+          "name": "package-info.json",
+          "size": 384,
+          "digest": "sha256:d012f39295733eccfebc94048c6b67c587a1904cfea80091ef39dd0a8eb1dd37"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2079,
+          "digest": "sha256:b7812ad5d7c64b6542ece6bdb2e5c39fe988da9ebac28f1149b1351576331d9f"
+        }
+      ]
+    },
+    {
+      "tag": "v0.17.0-preview.1",
+      "name": "0.17.0 · Local cache & in-app updates",
+      "publishedAt": "2026-10-17T16:08:42Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.17.0-preview.1",
+      "body": "## 0.17.0 — Local cache & in-app updates / 本地缓存与在线更新\n\nDownload the DMG below, open **Install Context Manager.app**, choose **Install / Update**, then restart Codex.\n\n下载下方 DMG，打开安装器，点击「安装 / 更新」，然后重开 Codex。\n\n### What's new / 更新内容\n\n- **Startup cache:** local chats and their last recorded usage appear without opening every chat in Codex. Cached data is labeled separately from live connections.\n- **Incremental sync:** unchanged files are skipped; complete appended records are read in the background. Use **Sync local chats** for a manual refresh.\n- **Click-to-install updates:** check GitHub automatically every six hours; download and install only after you click. Downloads and installer contents are verified. Budgets, language, and caches are preserved.\n- **920K stays available**, using the official Codex runtime. The modified early-compaction core remains disabled to preserve Computer Use compatibility.\n\n- **启动缓存**：无需逐个打开 Codex 聊天，即可查看本地记录中的模型和最近用量，明确区分缓存与实时连接。\n- **增量同步**：跳过未变化的文件，后台只读追加内容，也可点击「同步本地聊天」。\n- **在线更新**：每六小时自动检查，点击后才下载、校验和安装，保留预算、语言和缓存。\n- **继续支持 920K**，保留官方 Codex 核心；提前压缩修复仍关闭。\n\n**Install 0.17.0 once to enable future in-app updates. / 旧版本需先安装一次 0.17.0，之后即可在应用内更新。**\n\nApple Silicon · macOS 14+ · DMG, about 45 MB. Cached data comes from bounded local history reads; remote-only or missing records require Codex to sync first. Historical usage does not authorize live budget changes or compaction.\n\nValidated: full regression suite (128 passed, 4 conditional skips), additional updater failure/retry checks, and native unattended installation with budget/cache preservation. The installer is locally signed, not Developer ID signed or Apple notarized; if macOS blocks a trusted download, use Privacy & Security → Open Anyway.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.17.0-macos-arm64.dmg",
+          "size": 45389019,
+          "digest": "sha256:086fe0a6939963175f13880b1fc9b7472b096c803857d41f0759c75ee53e1a9d"
+        },
+        {
+          "name": "Context-Manager-0.17.0-macos-arm64.dmg.sha256",
+          "size": 105,
+          "digest": "sha256:df9ae265aa64a34b49017adc92229fde03691ae9ba70422f9f7158623c1ab478"
+        },
+        {
+          "name": "package-info.json",
+          "size": 384,
+          "digest": "sha256:af7a29abefd16438fb4ccccd272f9e06c95f6bcd18a853158bff27210287b8d9"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 2079,
+          "digest": "sha256:e645e5cb743ecd6e328bd93ea1d8f1b7e1b41d873303a10d21e67154712db646"
+        }
+      ]
+    },
+    {
+      "tag": "v0.16.0-preview.1",
+      "name": "0.16.0 · English / 中文 · MIT",
+      "publishedAt": "2026-10-17T08:11:38Z",
+      "source": "https://github.com/Fandy-ust/codex-context-control/tree/v0.16.0-preview.1",
+      "body": "English | 中文\n\n## English and Chinese UI\n\nContext Manager 0.16.0 adds English / 中文 selection throughout the app, menu bar, context details, charts, status messages, Stop hook, and installer. Choose **Automatic (time zone)**, **中文**, or **English** in the main window’s sidebar.\n\nAutomatic mode uses Chinese for mainland China, Hong Kong, Macao, and Taiwan time zones, and English elsewhere. A manual choice takes priority and is saved locally. Switching is immediate and preserves chat names and budgets. The README and core usage/development guides now have language links.\n\nOriginal project code is now **MIT licensed** as selected by the owner. Third-party notices and licenses are retained.\n\n## 安装 / Install\n\nDownload `Context-Manager-0.16.0-macos-arm64.zip` (about 49 MB), extract it, open **Install Context Manager.app**, and choose **Install / Update**. Fully quit and reopen Codex after the first installation or a bridge upgrade. No Node, Homebrew, or Xcode is required. Supports Apple Silicon, macOS 14+, verified Codex runtime 0.160.0.\n\n下载 ZIP，解压并打开安装器，选择「安装 / 更新」。首次安装或桥接更新后请完整退出并重开 Codex。语言在主窗口左侧可选「自动（按时区）／中文／English」，立即生效并保存；更新保留预算、功能开关和语言偏好。\n\nThis preview is locally signed, **not Developer ID signed or Apple notarized**. For a trusted download blocked by macOS, follow Privacy & Security → Open Anyway. 本测试包尚未 Apple 公证，首次打开可能需要在「隐私与安全」中允许。\n\nThe large optional patched runtime is not included. No credentials, chat history, or author settings are bundled.\n\nValidation: 122 regression checks passed with the distribution-only item executed separately and passed; native English→Chinese switching was verified against the rendered UI without changing the chat budget. The English and Chinese Stop hook were exercised through a real local runtime connected only to a loopback fixture. No paid model stress requests.\n\nSource: b22118dcaf9343c5f1caa290cf64320f5e09132b (clean tree). Includes the ZIP, SHA-256, package metadata, and bilingual installation notes.\n",
+      "assets": [
+        {
+          "name": "Context-Manager-0.16.0-macos-arm64.zip",
+          "size": 49053361,
+          "digest": "sha256:3faf50f5d22971bda8d15f7be6338fd4f30f97370c2a8e64ba8c732f6942cf63"
+        },
+        {
+          "name": "Context-Manager-0.16.0-macos-arm64.zip.sha256",
+          "size": 105,
+          "digest": "sha256:d9f7cfd6463bd70b139f8d0bc0b704e855d67605a09c108aca6ec38c1038a27c"
+        },
+        {
+          "name": "package-info.json",
+          "size": 384,
+          "digest": "sha256:9f900f6848013f6dba50ae505f2a53fdd3604bd00c2b94d50e544e1a7daf21c8"
+        },
+        {
+          "name": "README-FIRST.txt",
+          "size": 1589,
+          "digest": "sha256:611faf4cf036540015cd3f2b8f3893caf5f9062c6b0d6af44063fbf25c8a8dad"
+        }
+      ]
+    }
+  ]
+}
