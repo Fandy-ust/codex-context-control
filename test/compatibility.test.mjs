@@ -8,5 +8,5 @@ test('recognized runtimes are accepted without a version allowlist',()=>{
 test('Code Mode websocket arguments do not disable the stdio bridge',()=>{
   assert.ok(isStdioServer(['app-server','--code-mode-host','ws://127.0.0.1:1','--listen','stdio://']));
   assert.ok(!isStdioServer(['app-server','--listen','ws://127.0.0.1:2']));
-  assert.ok(!isStdioServer(['app-server','daemon','version']));assert.ok(!isStdioServer(['--version']));
+  assert.ok(!isStdioServer(['app-server','daemon','version']));assert.ok(!isStdioServer(['app-server','proxy','--sock','control.sock']));assert.ok(!isStdioServer(['app-server','help']));assert.ok(!isStdioServer(['--version']));
 });

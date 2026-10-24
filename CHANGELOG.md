@@ -1,5 +1,11 @@
 # Changes
 
+## 0.26.5 — Restore Codex desktop startup policy reads
+
+- Pass the new `app-server proxy` command through unchanged instead of treating it as a direct stdio server and injecting context settings into it.
+- Allow the native Codex app-server to finish sending its response after stdin EOF instead of terminating it immediately. Retain bounded cleanup for runtimes that remain alive after EOF.
+- Apply the shared runtime fix to Windows and macOS, and cover graceful completion and timeout cleanup with regression tests.
+
 ## 0.26.3 — Cross-platform runtime ownership cleanup
 
 - End the owned native stdio runtime when its client disconnects, its original parent disappears, or its wrapper exits. This prevents orphaned old connections from repeatedly claiming the same chats after upgrades.
