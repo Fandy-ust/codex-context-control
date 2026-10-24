@@ -155,6 +155,7 @@ export class Bridge {
     if(!m.method&&this.internal.has(key(m.id))){const item=this.internal.get(key(m.id));this.internal.delete(key(m.id));clearTimeout(item.timer);m.error?item.reject(new Error(m.error.message)):item.resolve(m.result);return;}
     if(!m.method&&m.id!=null){
       const pending=this.external.get(key(m.id));this.external.delete(key(m.id));
+      if(pending?.method==='initialize'&&m.result&&!m.error)this.initialized=true;
       if(pending?.method==='turn/start'&&m.error){const r=this.records.get(pending.threadId);if(r)r.compensationTurnPending=false;}
       if(pending&&!m.error){
         const t=m.result?.thread;

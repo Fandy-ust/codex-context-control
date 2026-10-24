@@ -17,10 +17,10 @@ export function watchRuntimeLifecycle({child,input,output,parentPid=process.ppid
   let disconnected=false,forceTimer,eofTimer,checking=false,disposed=false;
   const alive=()=>child.exitCode==null&&child.signalCode==null;
   const force=()=>{if(alive())try{child.kill('SIGKILL');}catch{}};
-  const disconnect=()=>{
-    if(disconnected)return;disconnected=true;
+  const disconnect=(reason='requested')=>{
+    if(disconnected||disposed)return;disconnected=true;
     clearTimeout(eofTimer);
-    onDisconnect();
+    onDisconnect(reason);
     try{child.stdin?.end();}catch{}
     // Native app-server can keep active threads alive after stdin EOF.
     if(alive())try{child.kill('SIGTERM');}catch{}
@@ -29,13 +29,13 @@ export function watchRuntimeLifecycle({child,input,output,parentPid=process.ppid
   const inputEnded=()=>{
     if(disconnected||disposed||eofTimer)return;
     try{child.stdin?.end();}catch{}
-    eofTimer=setTimeout(disconnect,eofGrace);eofTimer.unref?.();
+    eofTimer=setTimeout(()=>disconnect('stdin-eof-timeout'),eofGrace);eofTimer.unref?.();
   };
   const parentTimer=setInterval(async()=>{
     if(parentPid<=1||checking||disposed||disconnected)return;checking=true;
-    try{if(!await parentAlive(parentPid)&&!disposed)disconnect();}catch{/* Unknown liveness never terminates a runtime. */}finally{checking=false;}
+    try{if(!await parentAlive(parentPid)&&!disposed)disconnect('parent-exited');}catch{/* Unknown liveness never terminates a runtime. */}finally{checking=false;}
   },interval);parentTimer.unref?.();
-  const bindings=[[input,'end',inputEnded],[input,'close',inputEnded],[input,'error',disconnect],[output,'close',disconnect],[output,'error',disconnect]];
+  const bindings=[[input,'end',inputEnded],[input,'close',inputEnded],[input,'error',()=>disconnect('stdin-error')],[output,'close',()=>disconnect('stdout-closed')],[output,'error',()=>disconnect('stdout-error')]];
   for(const [stream,event,handler]of bindings)stream?.on(event,handler);
   exitEvents.once('exit',force);
   const close=()=>{disposed=true;clearInterval(parentTimer);clearTimeout(forceTimer);clearTimeout(eofTimer);for(const [stream,event,handler]of bindings)stream?.removeListener(event,handler);exitEvents.removeListener('exit',force);};

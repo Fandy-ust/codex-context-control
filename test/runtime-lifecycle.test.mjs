@@ -35,3 +35,17 @@ test('broken frontend output and abrupt wrapper exit both clean up the owned chi
 test('native child exit removes watchers and never kills an exited process',async()=>{
  const f=fixture();f.child.exitCode=0;f.child.emit('exit',0);f.input.emit('end');f.exitEvents.emit('exit');await sleep(30);assert.equal(f.disconnected,0);assert.deepEqual(f.signals,[]);assert.equal(f.exitEvents.listenerCount('exit'),0);
 });
+
+test('disconnect reasons distinguish output errors, parent death and EOF timeout',async()=>{
+  for(const [reason,trigger]of [
+    ['stdout-error',f=>f.output.emit('error',Error('EPIPE'))],
+    ['stdout-closed',f=>f.output.emit('close')],
+    ['stdin-error',f=>f.input.emit('error',Error('EPIPE'))],
+    ['stdin-eof-timeout',f=>f.input.emit('end')],
+  ]){
+    const reasons=[],f=fixture({onDisconnect:value=>reasons.push(value)});
+    try{trigger(f);await sleep(35);assert.deepEqual(reasons,[reason]);}finally{f.watcher.close();}
+  }
+  const reasons=[],f=fixture({parentAlive:()=>false,onDisconnect:value=>reasons.push(value)});
+  try{await sleep(35);assert.deepEqual(reasons,['parent-exited']);}finally{f.watcher.close();}
+});

@@ -39,12 +39,13 @@ try{
     const [id,window,compact]=args;if(!id||!window)throw new Error('用法：set <聊天ID> <400K> [320K]');
     const answer=await request('setPolicy',{id,policy:{window,compact},apply:true});process.stdout.write(JSON.stringify(answer,null,2)+'\n');
   }else if(command==='doctor'){
+    const {readRuntimeCompatibility}=await import('./runtime-compatibility.mjs');
     let service=false;try{service=(await request('ping',{},500)).ok;}catch{}
     let version='unavailable';try{version=spawnSync(realBinary(),['--version'],{windowsHide:true,encoding:'utf8'}).stdout.trim();}catch{}
     const state=service?await request('state'):{bridgeCount:0,threads:[]};
     const settings=readJSON(path.join(root,'settings.json'),{});
     console.log(JSON.stringify({version:productVersion,node:process.version,runtime:version,runtimeSupported:runtimeSupported(version),service,connectedBridges:state.bridgeCount,serviceVersion:state.version??null,loadedBridgeVersions:(state.bridges||[]).map(b=>b.version),automaticStartup:['darwin','win32'].includes(process.platform)?automaticStartupStatus():null,
-      runtimeFix:state.runtimeFix??null,contextExtension:state.contextExtension??null,newChatDefaults:state.newChatDefaults??null,newChatDefaultsPending:state.newChatDefaultsPending??null,observedChats:state.threads.length,installRoot:root,queueCLI:queueCLIPath(root),hookInstalled:!!settings.hookCommand,menuBar:menuBarStatus(),
+      runtimeCompatibility:readRuntimeCompatibility(root),runtimeFix:state.runtimeFix??null,contextExtension:state.contextExtension??null,newChatDefaults:state.newChatDefaults??null,newChatDefaultsPending:state.newChatDefaultsPending??null,observedChats:state.threads.length,installRoot:root,queueCLI:queueCLIPath(root),hookInstalled:!!settings.hookCommand,menuBar:menuBarStatus(),
       activation:state.bridgeCount?'connected':L('照常打开 Codex；首次安装或更新后请正常重开一次客户端。')},null,2));
   }else throw new Error('支持 doctor、start、list、set-usable、set（底层配置）、queue、hook');
 }catch(error){if(['queue','global','chat','skill'].includes(command)){process.stderr.write(JSON.stringify({schemaVersion:1,ok:false,error:{code:error.code||'CLI_ERROR',message:error.message}})+'\n');process.exitCode=1;}else if(command==='hook'){process.stdout.write('{}\n');}else{process.stderr.write(L(error.message)+'\n');process.exitCode=1;}}

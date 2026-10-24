@@ -1,34 +1,42 @@
-import {spawn,spawnSync} from 'node:child_process';
+import {spawn} from 'node:child_process';
 import {watchRuntimeLifecycle} from './runtime-lifecycle.mjs';
 import {readFileSync} from 'node:fs';
-import {Bridge} from './bridge.mjs';
-import {createCompensationResolver} from './compaction-compensation.mjs';
-import {connect,request} from './ipc.mjs';
 import {callerRuntime} from './runtime-selection.mjs';
-import {ensureDaemon} from './service.mjs';
-import {createRuntimeFixManager} from './runtime-fix.mjs';
-import {prepareContextCatalog,contextCeilingLaunchArgs} from './context-ceiling.mjs';
-import {runtimeSupported,isStdioServer} from './compatibility.mjs';
-import {settings} from './paths.mjs';
+import {classifyRuntimeCommand} from './compatibility.mjs';
+import {settings,root} from './paths.mjs';
+import {checkRuntimeCompatibility,recordRuntimeStartupFailure} from './runtime-compatibility.mjs';
 import {integrationLog} from './diagnostic-log.mjs';
 
 const startupAt=Date.now();integrationLog('wrapper.boot',{node:process.execPath,argumentCount:process.argv.length-2});
 const args=process.argv.slice(2);const caller=callerRuntime();
 const desktop=caller.desktop&&settings().uninstalled!==true,originalBinary=caller.binary;
-integrationLog('wrapper.runtime_selected',{desktop,binary:originalBinary,node:process.execPath,stdio:isStdioServer(args)});
-const runtime=desktop&&isStdioServer(args)?createRuntimeFixManager().select(originalBinary):{binary:originalBinary,runtimeFixId:null};
-const binary=runtime.binary;
-const bridgeVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
-const nativeVersion=isStdioServer(args)?spawnSync(binary,['--version'],{windowsHide:true,encoding:'utf8',timeout:5000}).stdout||'':'';
-const supported=!isStdioServer(args)||runtimeSupported(nativeVersion);
-integrationLog('wrapper.runtime_checked',{supported,elapsedMs:Date.now()-startupAt});
-if(!desktop||!isStdioServer(args)||!supported){
-  if(!supported)process.stderr.write('Context Control: 无法识别 Codex 运行时，本次仅透传。\n');
-  const p=spawn(binary,args,{stdio:'inherit',env:process.env});p.on('exit',(code,signal)=>signal?process.kill(process.pid,signal):process.exit(code??1));
+const command=classifyRuntimeCommand(args);
+integrationLog('wrapper.runtime_selected',{desktop,binary:originalBinary,node:process.execPath,...command});
+const metadata=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')),bridgeVersion=metadata.version;
+let runtime={binary:originalBinary,runtimeFixId:null},ceiling,launchArgs=args,compatibility,enhanced=false;
+let Bridge,createCompensationResolver,connect,request,ensureDaemon;
+if(desktop&&command.stdio){
+  try{
+    // Unknown/short-lived commands never load enhancement modules or start the
+    // control service. All fallible preparation happens before consuming stdin.
+    const [{createRuntimeFixManager},{prepareContextCatalog,contextCeilingLaunchArgs},bridge,compensation,ipc,service]=await Promise.all([
+      import('./runtime-fix.mjs'),import('./context-ceiling.mjs'),import('./bridge.mjs'),
+      import('./compaction-compensation.mjs'),import('./ipc.mjs'),import('./service.mjs')]);
+    runtime=createRuntimeFixManager().select(originalBinary);
+    ceiling=prepareContextCatalog();launchArgs=contextCeilingLaunchArgs(args,ceiling);
+    compatibility=await checkRuntimeCompatibility({binary:runtime.binary,home:root,managerVersion:bridgeVersion+':'+(metadata.buildId??'source'),extraArgs:ceiling?.args??[]});
+    if(compatibility.enhanced){
+      ({Bridge}=bridge);({createCompensationResolver}=compensation);({connect,request}=ipc);({ensureDaemon}=service);enhanced=true;
+    }
+  }catch{compatibility={enhanced:false,reason:'enhancement-preparation-failed'};}
+  integrationLog('wrapper.runtime_checked',{...compatibility,elapsedMs:Date.now()-startupAt});
+}
+if(!enhanced){
+  if(desktop&&command.stdio)process.stderr.write(`Context Manager: 增强兼容性尚未确认，本次使用原生启动 (${compatibility?.reason})。\n`);
+  const p=spawn(originalBinary,args,{stdio:'inherit',env:process.env});p.on('exit',(code,signal)=>signal?process.kill(process.pid,signal):process.exit(code??1));
   p.once('error',error=>{integrationLog('wrapper.passthrough_error',{code:error.code,message:error.message});process.stderr.write('Context Manager: '+error.message+'\n');process.exitCode=1;});
 }else{
-  const ceiling=prepareContextCatalog();
-  const child=spawn(binary,contextCeilingLaunchArgs(args,ceiling),{stdio:['pipe','pipe','inherit'],env:process.env});
+  const child=spawn(runtime.binary,launchArgs,{stdio:['pipe','pipe','inherit'],env:process.env});
   child.once('spawn',()=>integrationLog('wrapper.native_started',{childPid:child.pid,contextCeiling:!!ceiling?.version}));
   child.once('exit',(code,signal)=>integrationLog('wrapper.native_exit',{code,signal}));
   let peer,closed=false,bridge;
@@ -55,8 +63,15 @@ if(!desktop||!isStdioServer(args)||!supported){
     }catch(error){integrationLog('wrapper.service_attach_failed',{message:error.message});if(!closed)setTimeout(attach,1500).unref();}
   }
   attach();
-  watchRuntimeLifecycle({child,input:process.stdin,output:process.stdout,onDisconnect:()=>{closed=true;peer?.close();integrationLog('wrapper.client_disconnected',{parentPid:process.ppid,childPid:child.pid});}});
-  child.once('error',error=>{process.stderr.write(`Context Control: ${error.message}\n`);process.exitCode=1;});
-  child.once('exit',(code,signal)=>{closed=true;peer?.close();bridge.frontLines.close();bridge.backLines.close();process.exitCode=code??(signal?1:0);});
+  const lifecycle=watchRuntimeLifecycle({child,input:process.stdin,output:process.stdout,onDisconnect:reason=>{closed=true;peer?.close();integrationLog('wrapper.client_disconnected',{reason,parentPid:process.ppid,childPid:child.pid});}});
+  child.stdin.on('error',error=>{if(!closed&&!bridge.initialized)recordRuntimeStartupFailure(root,compatibility);integrationLog('wrapper.native_input_error',{code:error.code});lifecycle.disconnect('native-input-error');});
+  child.once('error',error=>{recordRuntimeStartupFailure(root,compatibility);closed=true;peer?.close();process.stderr.write(`Context Control: ${error.message}\n`);process.exitCode=1;});
+  child.once('exit',(code,signal)=>{
+    // Never restart/replay an established stream. Only the next launch may use
+    // native mode after an unexpected pre-initialization startup failure.
+    if(!closed&&!bridge.initialized&&(code!==0||signal))recordRuntimeStartupFailure(root,compatibility);
+    closed=true;peer?.close();process.exitCode=code??(signal?1:0);
+  });
+  child.once('close',()=>{bridge.frontLines.close();bridge.backLines.close();});
   process.once('SIGTERM',()=>child.kill('SIGTERM'));process.once('SIGINT',()=>child.kill('SIGINT'));
 }

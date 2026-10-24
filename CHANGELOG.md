@@ -1,5 +1,12 @@
 # Changes
 
+## 0.26.6 — Revalidate Codex enhancements after runtime updates
+
+- Only wrap recognized direct stdio commands. Pass startup configuration reads, sign-out, help, unknown commands/options and other transports through unchanged.
+- Check the native runtime in an isolated home using initialize, initialized and config/read before enabling enhancements. Confirm manager-owned context overrides, cache successful checks, and invalidate them when the runtime, manager build or enhancement configuration changes.
+- Use the original runtime and arguments when preparation or validation fails. Cool down failed checks, preserve saved settings, and never replay an already submitted request. Existing context, budget, fork and queue behavior stays enabled on verified runtimes.
+- Share the compatibility gate across Windows and macOS; use the full handshake in the Windows executable preflight. Report compatibility evidence through doctor and log specific disconnect causes.
+
 ## 0.26.5 — Restore Codex desktop startup policy reads
 
 - Pass the new `app-server proxy` command through unchanged instead of treating it as a direct stdio server and injecting context settings into it.
