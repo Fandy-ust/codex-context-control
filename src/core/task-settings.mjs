@@ -1,4 +1,11 @@
 import {defaultQueueConfig,validateQueueConfig} from './queue-config.mjs';
+export function inheritedTaskEffort(record){
+  return record?.sticky?.collaborationMode?.settings?.reasoning_effort||record?.sticky?.effort||record?.seed?.collaborationMode?.settings?.reasoning_effort||record?.seed?.effort||record?.snapshot?.reasoningEffort||record?.effort||'medium';
+}
+export function displayedTaskEffort(settings,chat,model){
+  const wanted=settings?.effort||(!settings?.model||settings.model===chat?.model?chat?.effort:null)||'medium';
+  return !model?.efforts?.length||model.efforts.includes(wanted)?wanted:model.defaultEffort||model.efforts[0];
+}
 export function normalizeTaskSettings(value,defaults=defaultQueueConfig()){
   const v=value??{};
   if(typeof v!=='object'||Array.isArray(v))throw Error('任务设置无效');

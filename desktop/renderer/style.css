@@ -58,7 +58,7 @@ input[type=text]{background:#ffffff08;color:inherit;border:1px solid var(--line)
 .sidebar-footer-row{display:flex;align-items:center;gap:10px;flex-shrink:0;min-width:0}
 .sidebar-account-list{display:flex;flex-direction:column;gap:9px;flex-shrink:0;max-height:40vh;overflow:auto}
 .sidebar-account{min-width:0;--account-ink:#eee}
-.sidebar-account-name{display:flex;align-items:center;gap:4px;font-size:9px;line-height:12px;margin:0 2px 3px;color:var(--muted);min-width:0}
+.sidebar-account-name{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;line-height:16px;min-height:18px;margin:0 2px 4px;color:var(--muted);min-width:0}
 .sidebar-account-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sidebar-account-name i{width:4px;height:4px;border-radius:50%;background:var(--blue);flex-shrink:0}
 .sidebar-account.inactive{--blue:#6b7e9e;--account-ink:#aaa}
@@ -203,3 +203,16 @@ input[type=text]{background:#ffffff08;color:inherit;border:1px solid var(--line)
 .settings-dialog input.switch:checked::before{transform:translateX(16px)}
 .settings-dialog input.switch:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
 .settings-dialog input.switch:disabled{opacity:.4;cursor:default}
+
+.sidebar-account-name span{flex:1;min-width:0}
+.sidebar-account-switch{flex:0 0 22px;display:flex;align-items:center;justify-content:center;width:22px;height:18px;border:0;border-radius:5px;background:transparent;padding:0;color:var(--muted);font-size:14px;line-height:1;font-weight:500}
+.sidebar-account-switch:hover:not(:disabled){color:#ddd;background:#ffffff0b}
+.account-card-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,330px);gap:18px;align-items:center}
+.account-card-info{min-width:0}.account-card-info strong,.account-card-info>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-card-quota{min-width:0;--sidebar-meta-size:9px}
+.account-card-quota .sidebar-quota{cursor:default}
+@media(max-width:720px){.account-card-head{grid-template-columns:minmax(0,1fr)}.account-card-quota{width:100%;max-width:330px;justify-self:end}}
+
+.queue-drag-handle{position:absolute;left:6px;top:14px;color:var(--muted);font-size:16px;cursor:grab;opacity:.65}.queue-task.dragging-task{opacity:.45}.queue-task.drop-target{outline:2px solid var(--blue);outline-offset:3px}.queue-task:has(.queue-drag-handle) .queue-task-state{padding-left:6px}
+
+#activation-time{width:100%;min-width:0;min-height:40px;box-sizing:border-box;font:inherit;background:#ffffff08;color:inherit;border:1px solid var(--line);border-radius:var(--radius-control);padding:10px 12px}#activation-time:disabled{opacity:.45}

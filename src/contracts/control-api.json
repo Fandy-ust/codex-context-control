@@ -1,6 +1,10 @@
 {
   "version": 1,
   "routes": {
+    "account-switch": {
+      "method": "POST",
+      "path": "/accounts"
+    },
     "cloud-sync": {
       "method": "POST",
       "path": "/cloud-sync"

@@ -25,7 +25,7 @@ export function queueQuotaGate(config,quota,now=Date.now()){
 // The service owns scheduling; bridges own the exact automatic turn identity.
 // Persist before sending so an uncertain delivery is never replayed on restart.
 export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,prepare=async()=>{},interrupt,inhibit=()=>{},now=Date.now,id=randomUUID}={}){
-  const saved=load()??{},queues=new Map();let monitoringEnabled=saved.monitoringEnabled!==false,ticking=false,timer=null,closed=false,sleep=false,lastSaved='';
+  const saved=load()??{},queues=new Map();let monitoringEnabled=saved.monitoringEnabled!==false,ticking=false,suspended=0,timer=null,closed=false,sleep=false,lastSaved='';
   for(const q of Object.values(saved.queues??{})){
     try{if(typeof q.id!=='string'||!Array.isArray(q.tasks))continue;q.config=validateQueueConfig(q.config);for(const t of q.tasks)t.settings=normalizeTaskSettings(t.settings,q.config);
       // Observations are reattached to the live turn after restart; they are
@@ -58,7 +58,7 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
     if(p.action==='add'){if(q.tasks.filter(t=>!t.monitorOnly).length>=200)throw Error('每个聊天最多保留 200 个任务');q.tasks.push({id:id(),...(p.requestId?{requestId:p.requestId,requestHash:additionHash(p)}:{}),prompt:text(),status:'waiting',createdAt:now(),settings:normalizeTaskSettings(p.settings,q.config)});}
     else if(p.action==='edit'){const t=task();if(t.status==='running')throw Error('不能编辑执行中的任务');t.prompt=text();if(p.settings!=null)t.settings=normalizeTaskSettings(p.settings,q.config);}
     else if(p.action==='delete'){if(task().status==='running')throw Error('请先停止执行中的任务');q.tasks=q.tasks.filter(t=>t.id!==p.taskId);}
-    else if(p.action==='reorder'){const tasks=q.tasks.filter(t=>!t.monitorOnly);if(!Array.isArray(p.order)||p.order.length!==tasks.length||new Set(p.order).size!==tasks.length||p.order.some(key=>!tasks.some(t=>t.id===key)))throw Error('排序无效');q.tasks=[...q.tasks.filter(t=>t.monitorOnly),...p.order.map(key=>tasks.find(t=>t.id===key))];}
+    else if(p.action==='reorder'){const tasks=q.tasks.filter(t=>!t.monitorOnly);if(!Array.isArray(p.order)||p.order.length!==tasks.length||new Set(p.order).size!==tasks.length||p.order.some(key=>!tasks.some(t=>t.id===key)))throw Error('排序无效');if(tasks.some((t,i)=>t.status==='running'&&p.order[i]!==t.id))throw Error('不能移动执行中的任务');q.tasks=[...q.tasks.filter(t=>t.monitorOnly),...p.order.map(key=>tasks.find(t=>t.id===key))];}
     else if(p.action==='config')q.config=validateQueueConfig(p.config);
     else if(p.action==='task-config'){const t=task();t.settings={...normalizeTaskSettings(t.settings,q.config),quota:validateQueueConfig(p.config)};}
     else if(p.action==='enable'){if(typeof p.enabled!=='boolean')throw Error('开关值无效');q.enabled=p.enabled;if(p.enabled)q.pause=null;q.message=p.enabled?(monitoringEnabled?'等待检查额度':'全局监视已暂停；保留此聊天的监视设置'):'监视已关闭';}
@@ -69,12 +69,13 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
     q.revision++;queues.set(q.id,q);persist();void tick();return list();
   }
   async function tick(){
-    if(ticking||closed||![...queues.values()].some(q=>active(q)||q.tasks.some(t=>t.status==='running')))return;
+    if(ticking||suspended||closed||![...queues.values()].some(q=>active(q)||q.tasks.some(t=>t.status==='running')))return;
     ticking=true;
     try{
       if([...queues.values()].some(active))await quota.refresh(true);
-      if(closed)return;
+      if(closed||suspended)return;
       for(const q of queues.values()){
+        if(suspended||closed)return;
         const chat=thread(q.id),running=q.tasks.find(t=>t.status==='running'),owned=chat?.automaticTask;
         let config=running?.kind==='current'?q.config:running?.settings?.quota??q.tasks.find(pending)?.settings?.quota??q.config;
         if(chat?.taskQueueRestartRequired||chat?.connected&&chat.taskQueueSupported===false){q.state='waiting-runtime';q.message=QUEUE_RUNTIME_RESTART;continue;}
@@ -125,5 +126,5 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
     }catch(error){for(const q of queues.values())if(active(q)){q.state='waiting-quota';q.message=error.message;}persist();}
     finally{ticking=false;}
   }
-  persist();return {list,get,command,tick,close(){closed=true;clearInterval(timer);inhibit(false);}};
+  persist();return {list,get,command,tick,async suspend(){suspended++;while(ticking)await new Promise(r=>setTimeout(r,20));let resumed=false;return ()=>{if(!resumed){resumed=true;suspended--;}};},close(){closed=true;clearInterval(timer);inhibit(false);}};
 }

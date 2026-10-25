@@ -25,24 +25,30 @@ struct QuotaProgressBorder:View {
 struct QuotaSidebarView:View {
     @ObservedObject var model:Controller
     var open:()->Void
+    @State private var switching:QuotaAccount?
+    @State private var switchError:String?
     var body:some View {
         let accounts=(model.quota?.accounts ?? []).filter{$0.showQuota != false}.sorted{ $0.current && !$1.current }
-        if model.quota?.accounts?.isEmpty != false {QuotaSidebarAccountRow(model:model,open:open)}
+        Group{if model.quota?.accounts?.isEmpty != false {QuotaSidebarAccountRow(model:model,open:open)}
         else if !accounts.isEmpty {ScrollView(.vertical){
             VStack(alignment:.leading,spacing:9){
                 ForEach(accounts){account in
                     VStack(alignment:.leading,spacing:3){
-                        HStack(spacing:4){if account.current{Circle().fill(PanelStyle.blue).frame(width:4,height:4)};Text(account.label ?? String(account.scope.suffix(8))).lineLimit(1).truncationMode(.middle)}.font(.system(size:9)).foregroundStyle(.secondary).help((account.label ?? "")+(account.current ? " · "+L("当前登录"):" · "+L("上次记录，待刷新")))
+                        HStack(spacing:4){if account.current{Circle().fill(PanelStyle.blue).frame(width:4,height:4)};Text(account.label ?? String(account.scope.suffix(8))).lineLimit(1).truncationMode(.middle);Spacer(minLength:4);if account.loginId != nil && !account.current{Button{switching=account} label:{Image(systemName:"arrow.left.arrow.right").font(.system(size:10,weight:.medium))}.buttonStyle(.plain).help(L("快速切换"))}}.font(.system(size:10,weight:.semibold)).frame(minHeight:18).foregroundStyle(.secondary).help((account.label ?? "")+(account.current ? " · "+L("当前登录"):" · "+L("上次记录，待刷新")))
                         QuotaSidebarAccountRow(model:model,account:account,open:open)
                             .saturation(account.current ? 1:0.3)
                             .foregroundStyle(account.current ? Color.primary:Color.secondary)
                     }
                 }
             }
-        }.scrollIndicators(.hidden).frame(height:CGFloat(min(260,accounts.count*68)))}
+        }.scrollIndicators(.hidden).frame(height:CGFloat(min(280,accounts.count*74)))}}
+        .alert(L("切换账号"),isPresented:Binding(get:{switching != nil || switchError != nil},set:{if !$0{switching=nil;switchError=nil}})){
+            if let account=switching{Button(L("取消"),role:.cancel){switching=nil};Button(L("切换")){switching=nil;Task{do{_ = try await switchSavedLogin(model,id:account.loginId ?? "")}catch{switchError=error.localizedDescription}}}}
+            else{Button(L("确定")){switchError=nil}}
+        } message:{if let error=switchError{Text(L(error))}else{Text((switching?.label ?? "")+"\n"+L("切换前将检查运行状态；如仍有任务，将提示是否强制停止。"))}}
     }
 }
-private struct QuotaSidebarAccountRow:View {
+struct QuotaSidebarAccountRow:View {
     @ObservedObject var model:Controller
     var account:QuotaAccount?=nil
     var open:()->Void

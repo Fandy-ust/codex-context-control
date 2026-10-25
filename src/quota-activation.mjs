@@ -1,9 +1,12 @@
 import {quotaWindow,resetConfirmed} from './core/quota-activation.mjs';
+import {validActivationTime,localActivationTime,nextActivationAt,latestActivationAt} from './core/activation-schedule.mjs';
 
 // Attempts and due dates are saved before model dispatch. An interrupted process
 // never replays an uncertain send. All triggers share one serialized runner.
 export function createQuotaActivation({load=()=>({}),save=()=>{},quota,probe,recommend=async()=>null,now=Date.now}={}){
   const saved=load();let config={notificationsEnabled:true,weeklyEnabled:false,scheduledAt:null,toleranceMinutes:10,...saved.config};
+  config.scheduleMode??=config.scheduledAt?'once':'off';
+  config.scheduleTime??=config.scheduledAt?localActivationTime(config.scheduledAt):'08:00';
   let job=saved.job??null,lastWeekly=saved.lastWeekly??null,lastWindow=saved.lastWindow??null,scope=saved.scope??null;
   let busy=false,closed=false,abort=null,recommendation=null,recommendedAt=0;
   if(job?.status==='running')job={...job,status:'uncertain',message:'上次探测中断，未自动重发；请检查额度后再手动触发。'};
@@ -14,14 +17,19 @@ export function createQuotaActivation({load=()=>({}),save=()=>{},quota,probe,rec
       const next={...config};
       if(p.notificationsEnabled!==undefined){if(typeof p.notificationsEnabled!=='boolean')throw Error('Invalid notification switch');next.notificationsEnabled=p.notificationsEnabled;}
       if(p.weeklyEnabled!==undefined){if(typeof p.weeklyEnabled!=='boolean')throw Error('Invalid weekly switch');next.weeklyEnabled=p.weeklyEnabled;}
-      if(p.scheduledAt!==undefined){if(p.scheduledAt!==null&&(!Number.isSafeInteger(p.scheduledAt)||p.scheduledAt<=now()||p.scheduledAt>now()+366*86400000))throw Error('请选择未来的触发日期与时间');next.scheduledAt=p.scheduledAt;}
+      if(p.scheduleMode!==undefined||p.scheduleTime!==undefined){
+        const mode=p.scheduleMode??next.scheduleMode,time=p.scheduleTime??next.scheduleTime;
+        if(!['off','once','daily'].includes(mode))throw Error('预约方式无效');
+        if(!validActivationTime(time))throw Error('请选择有效的预约时间');
+        next.scheduleMode=mode;next.scheduleTime=time;next.scheduledAt=mode==='off'?null:nextActivationAt(time,now(),{tomorrow:mode==='once'});
+      }else if(p.scheduledAt!==undefined){if(p.scheduledAt!==null&&(!Number.isSafeInteger(p.scheduledAt)||p.scheduledAt<=now()||p.scheduledAt>now()+366*86400000))throw Error('请选择未来的触发日期与时间');next.scheduledAt=p.scheduledAt;next.scheduleMode=p.scheduledAt?'once':'off';if(p.scheduledAt)next.scheduleTime=localActivationTime(p.scheduledAt);}
       if(p.toleranceMinutes!==undefined){if(!Number.isInteger(p.toleranceMinutes)||p.toleranceMinutes<1||p.toleranceMinutes>60)throw Error('容差须为 1–60 分钟');next.toleranceMinutes=p.toleranceMinutes;}
       config=next;
     }else if(p.action==='run'){
       if(busy||['waiting','verifying'].includes(job?.status))throw Error('已有探测正在进行');
       job={kind:'manual',minutes:300,status:'waiting',attempts:0,nextAt:now()};
     }else if(p.action==='cancel'){
-      abort?.abort();if(job)job={...job,status:'cancelled',message:'已停止探测'};config.scheduledAt=null;
+      abort?.abort();if(job)job={...job,status:'cancelled',message:'已停止探测'};config.scheduledAt=null;config.scheduleMode='off';
     }else throw Error('Unknown activation action');
     persist();return state();
   }
@@ -41,10 +49,12 @@ export function createQuotaActivation({load=()=>({}),save=()=>{},quota,probe,rec
         persist();return;
       }
       const weekly=quotaWindow(q,10080),reset=weekly?.resetsAt;
+      if(['scheduled','daily'].includes(job?.kind)&&job.status==='waiting'&&job.dueAt&&now()-job.dueAt>15*60000){job={...job,status:'missed',message:'已错过预约超过 15 分钟，不再补发本次探测'};persist();}
       if(!job||!['waiting','running','verifying'].includes(job.status)){
         if(config.scheduledAt&&now()>=config.scheduledAt){
-          const due=config.scheduledAt;config.scheduledAt=null;
-          job={kind:'scheduled',minutes:300,attempts:0,status:now()-due<=15*60000?'waiting':'missed',nextAt:now(),message:now()-due>15*60000?'已错过预约超过 15 分钟，请重新预约':null};persist();
+          const daily=config.scheduleMode==='daily',due=daily?Math.max(config.scheduledAt,latestActivationAt(config.scheduleTime,now())):config.scheduledAt;
+          config.scheduledAt=daily?nextActivationAt(config.scheduleTime,now()):null;if(!daily)config.scheduleMode='off';
+          job={kind:daily?'daily':'scheduled',dueAt:due,minutes:300,attempts:0,status:now()-due<=15*60000?'waiting':'missed',nextAt:now(),message:now()-due>15*60000?'已错过预约超过 15 分钟，不再补发本次探测':null};persist();
         }else if(config.weeklyEnabled&&weekly&&lastWindow&&lastWeekly!==lastWindow.resetsAt&&
           ((lastWindow.resetsAt*1000<=now()&&now()-lastWindow.resetsAt*1000<=24*3600000)||
            (lastWindow.usedPercent>1&&weekly.usedPercent<=1))){

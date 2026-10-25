@@ -125,6 +125,7 @@ struct QueueQuotaEditor:View {
 struct TaskQueueDetailView:View {
     @ObservedObject var model:Controller;let chatID:String;var onBack:()->Void
     @State private var config=QueueConfig();@State private var editor:QueueTask?;@State private var expandedEditor:QueueTask?
+    @State private var draggedTask:String?
     private var queue:ChatTaskQueue?{model.taskQueue(chatID)}
     var body:some View{
         Group{if let expandedEditor{QueueTaskEditor(model:model,chatID:chatID,task:expandedEditor,expanded:true,resize:{draft in self.expandedEditor=nil;editor=draft},close:{self.expandedEditor=nil})}else{overview}}
@@ -149,7 +150,7 @@ struct TaskQueueDetailView:View {
     @ViewBuilder private var taskList:some View{
         if let all=queue?.tasks,!all.isEmpty{
             let tasks=all.filter{$0.archivedAt==nil}
-            List{ForEach(tasks){task in QueueTaskCard(model:model,chatID:chatID,task:task){editor=task}.listRowSeparator(.hidden).listRowBackground(Color.clear)}.onMove{source,destination in var ids=tasks.map{$0.id};ids.move(fromOffsets:source,toOffset:destination);Task{await model.queueCommand(chatID,"reorder",values:["order":ids+all.filter{$0.archivedAt != nil}.map{$0.id}])}}}.listStyle(.plain).scrollContentBackground(.hidden).frame(height:min(540,CGFloat(tasks.count)*180+20))
+            List{ForEach(tasks){task in QueueTaskCard(model:model,chatID:chatID,task:task){editor=task}.overlay(alignment:.topLeading){if task.status != "running"{Image(systemName:"line.3.horizontal").font(.caption2).foregroundStyle(.secondary).padding(4).help(L("拖动调整顺序"))}}.moveDisabled(task.status=="running").onDrag{guard task.status != "running" else{return NSItemProvider()};draggedTask=task.id;return NSItemProvider(object:task.id as NSString)}.onDrop(of:[UTType.text],isTargeted:nil){_ in guard let source=draggedTask,task.status != "running",source != task.id else{return false};draggedTask=nil;var ids=all.filter{$0.status != "running"}.map{$0.id};guard let from=ids.firstIndex(of:source),let to=ids.firstIndex(of:task.id) else{return false};ids.insert(ids.remove(at:from),at:to);var index=0;let order=all.map{item -> String in if item.status=="running"{return item.id};defer{index+=1};return ids[index]};Task{await model.queueCommand(chatID,"reorder",values:["order":order])};return true}.listRowSeparator(.hidden).listRowBackground(Color.clear)}.onMove{source,destination in var ids=tasks.map{$0.id};ids.move(fromOffsets:source,toOffset:destination);guard !tasks.enumerated().contains(where:{$0.element.status=="running" && ids[$0.offset] != $0.element.id}) else{return};Task{await model.queueCommand(chatID,"reorder",values:["order":ids+all.filter{$0.archivedAt != nil}.map{$0.id}])}}}.listStyle(.plain).scrollContentBackground(.hidden).frame(height:min(540,CGFloat(tasks.count)*180+20))
             if all.contains(where:{$0.archivedAt != nil}){DisclosureGroup(L("归档任务")){ForEach(all.filter{$0.archivedAt != nil}){task in QueueTaskCard(model:model,chatID:chatID,task:task){editor=task}}}}
         }else{Text(L("添加你的第一个任务")).foregroundStyle(.secondary).frame(maxWidth:.infinity,minHeight:100)}
     }
@@ -163,7 +164,7 @@ struct QueueTaskEditor:View {
     init(model:Controller,chatID:String,task:QueueTask,expanded:Bool=false,resize:@escaping(QueueTask)->Void,close:@escaping ()->Void){self.model=model;self.chatID=chatID;self.task=task;self.expanded=expanded;self.resize=resize;self.close=close;_prompt=State(initialValue:task.prompt);_settings=State(initialValue:task.settings ?? QueueTaskSettings(quota:model.taskQueue(chatID)?.config ?? QueueConfig()))}
     private var currentModel:QueueModel?{let id=settings.model.isEmpty ? model.chats.first{$0.id==chatID}?.model:settings.model;return model.queueModels.first{$0.id==id}}
     private var efforts:[String]{currentModel?.efforts ?? []}
-    private var effort:String{settings.effort.isEmpty ? currentModel?.defaultEffort ?? efforts.first ?? "":settings.effort}
+    private var effort:String{let chat=model.chats.first{$0.id==chatID};let wanted=settings.effort.isEmpty ? (settings.model.isEmpty || settings.model==chat?.model ? chat?.effort ?? "medium":"medium"):settings.effort;return efforts.isEmpty || efforts.contains(wanted) ? wanted:currentModel?.defaultEffort ?? efforts.first ?? "medium"}
     private var snapshot:QueueTask{QueueTask(id:task.id,prompt:prompt,status:task.status,error:task.error,settings:settings)}
     var body:some View{
         VStack(alignment:.leading,spacing:16){
@@ -187,7 +188,7 @@ struct QueueTaskEditor:View {
                 }
                 Spacer()
                 if prompt.trimmingCharacters(in:.whitespacesAndNewlines).lowercased() != "/compact"{
-                    Button{showModel.toggle()}label:{HStack(spacing:4){Text(currentModel?.name ?? L("跟随聊天"));Text(efforts.isEmpty ? L("模型默认"):queueEffortName(effort)).foregroundStyle(.secondary)}}.font(.callout).frame(height:36).buttonStyle(.plain).popover(isPresented:$showModel,arrowEdge:.bottom){modelPanel.padding(4)}
+                    Button{showModel.toggle()}label:{HStack(spacing:4){Text(currentModel?.name ?? L("跟随聊天"));Text(queueEffortName(effort)).foregroundStyle(.secondary)}}.font(.callout).frame(height:36).buttonStyle(.plain).popover(isPresented:$showModel,arrowEdge:.bottom){modelPanel.padding(4)}
                 }
                 Button{Task{await save()}}label:{Image(systemName:"arrow.up").font(.system(size:19,weight:.medium)).foregroundStyle(.white).frame(width:34,height:34).background(prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? Color.gray:Color.blue,in:Circle())}.buttonStyle(.plain).disabled(prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.working).help(L(task.status=="draft" ? "添加到队列":"保存任务")).accessibilityLabel(L(task.status=="draft" ? "添加到队列":"保存任务")).keyboardShortcut(.return,modifiers:.command)
             }.frame(height:36)
@@ -209,7 +210,7 @@ struct QueueTaskEditor:View {
     }
     private var modelPanel:some View{
         VStack(spacing:6){
-            HStack{Image(systemName:"bolt").foregroundStyle(.secondary);Spacer();Text(efforts.isEmpty ? L("模型默认"):queueEffortName(effort)).foregroundStyle(.blue).font(.headline);Spacer();Button{settings.effort=""}label:{Image(systemName:"arrow.counterclockwise")}.buttonStyle(.borderless).help(L("恢复模型默认思考程度"))}
+            HStack{Image(systemName:"bolt").foregroundStyle(.secondary);Spacer();Text(queueEffortName(effort)).foregroundStyle(.blue).font(.headline);Spacer();Button{settings.effort=""}label:{Image(systemName:"arrow.counterclockwise")}.buttonStyle(.borderless).help(L("沿用当前聊天的思考程度"))}
             Menu{Button(L("跟随聊天")){settings.model=""};ForEach(model.queueModels){m in Button(m.name){settings.model=m.id}}}label:{Text((currentModel?.name ?? L("跟随聊天"))+" ›").font(.caption).foregroundStyle(.secondary)}.menuStyle(.borderlessButton).fixedSize()
             ZStack{HStack{ForEach(Array(efforts.enumerated()),id:\.offset){index,_ in Circle().fill(.secondary.opacity(0.5)).frame(width:4,height:4);if index<efforts.count-1{Spacer()}}}.padding(.horizontal,8);Slider(value:Binding(get:{Double(efforts.firstIndex(of:effort) ?? 0)},set:{value in let index=Int(value);if efforts.indices.contains(index){settings.effort=efforts[index]}}),in:0...Double(max(1,efforts.count-1)),step:1).labelsHidden().disabled(efforts.count<2)}.accessibilityLabel(L("思考程度"))
         }.padding(14).frame(width:286).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:22)).overlay(RoundedRectangle(cornerRadius:22).strokeBorder(.white.opacity(0.14)))

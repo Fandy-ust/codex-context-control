@@ -1,7 +1,7 @@
 import readline from 'node:readline';
 import {taskCommand} from './core/task-command.mjs';
 import fs from 'node:fs';
-import {normalizeTaskSettings,taskInput} from './core/task-settings.mjs';
+import {normalizeTaskSettings,taskInput,inheritedTaskEffort} from './core/task-settings.mjs';
 import {randomUUID} from 'node:crypto';
 import {Tiktoken} from 'js-tiktoken/lite';
 import ranks from 'js-tiktoken/ranks/o200k_base';
@@ -182,7 +182,7 @@ export class Bridge {
         }else if(pending.threadId&&['turn/start','thread/settings/update'].includes(pending.method)){
           const record=this.record(pending.threadId);Object.assign(record.sticky,pick(pending.seed,stickyFields));
           const nextModel=pending.seed.collaborationMode?.settings?.model||pending.seed.model;
-          if(nextModel&&nextModel!==record.model){record.model=nextModel;record.modelInfo=null;record.freshUsage=false;record.usageFresh=false;record.expectedWindow=null;record.compensation=null;record.compensationKey=null;record.appliedRevision=null;this.notify(record);}
+          if(nextModel&&nextModel!==record.model){record.model=nextModel;record.modelInfo=null;record.freshUsage=false;record.usageFresh=false;record.expectedWindow=null;record.compensation=null;record.compensationKey=null;record.appliedRevision=null;}this.notify(record);
         }
       }
     }
@@ -196,7 +196,7 @@ export class Bridge {
           this.notify(record);
         }
         if(m.method==='thread/status/changed'){record.status=p.status.type;this.notify(record);if(record.status==='idle')this.schedule(record);}
-        if(m.method==='turn/started'){record.lastStartedAt=timestampMs(p.turn?.startedAt)??Date.now();record.status='active';record.turnId=p.turn.id;if(record.automaticTask?.status==='starting'){record.automaticTask.turnId=p.turn.id;record.automaticTask.status='running';}record.usageFresh=false;this.notify(record);}
+        if(m.method==='turn/started'){record.lastStartedAt=timestampMs(p.turn?.startedAt)??Date.now();record.status='active';record.turnId=p.turn.id;if(record.automaticTask?.status==='starting'&&!record.automaticTask.preparingContext){record.automaticTask.turnId=p.turn.id;record.automaticTask.status='running';}record.usageFresh=false;this.notify(record);}
         if(m.method==='error'&&record.compactionWait)record.compactionWait.reject(new Error(p.error?.message||'原生压缩失败'));
         if(m.method==='turn/completed'){record.compensationTurnPending=false;record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error||['failed','interrupted'].includes(p.turn?.status)?record.compactionWait.reject(new Error(p.turn?.error?.message||'原生压缩未完成')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.scheduleCompensatedCompaction(record);this.schedule(record);}
         if(m.method==='thread/name/updated'){record.name=p.name;this.notify(record);}
@@ -221,7 +221,7 @@ export class Bridge {
     if(ready)this.fromClient(line,null,true);
     const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
   }
-  publicRecord(record){return pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask','compensation']);}
+  publicRecord(record){return {...pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask','compensation']),effort:inheritedTaskEffort(record)};}
   async prepareAutomatic(id){
     if(this.records.has(id)){await this.notify(this.records.get(id));return {ok:true};}
     const resolved=await this.resolveFork(id),policy=resolved?.policy?.enabled?(this.contextCeiling?migrateCeilingPolicy(resolved.policy,resolved.model):policyForModel(resolved.policy,resolved.model)):null;
@@ -235,20 +235,21 @@ export class Bridge {
     if(policy){Object.assign(r,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,phase:'awaiting_runtime_confirmation',modelInfo:resolved.model,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??resolved.model?.effective_context_window_percent??95)/100)});}
     await this.notify(r);return {ok:true};
   }
-  async startAutomatic(id,task){
+  async prepareAutomaticContext(id,task){
+    const r=this.records.get(id),generation=r.usageGeneration??0;
+    r.automaticTask={executionId:task.executionId,taskId:task.taskId,status:'starting',preparingContext:true};await this.notify(r);
+    try{await this.compact(id,(success,error)=>{void (async()=>{
+      if(r.automaticTask?.executionId!==task.executionId||r.automaticTask.status!=='starting')return;
+      try{if(!success)throw error||Error('原生压缩失败');if((r.usageGeneration??0)<=generation)throw Error('压缩后尚无用量记录，已暂停发送新输入。');await this.startAutomatic(id,task,true);}
+      catch(failure){if(r.automaticTask?.executionId===task.executionId){r.automaticTask.status='error';r.automaticTask.error=failure.message;await this.notify(r);}}
+    })();},true);return r.automaticTask;}
+    catch(error){r.automaticTask.status='error';r.automaticTask.error=error.message;await this.notify(r);throw error;}
+  }
+  async startAutomatic(id,task,contextPrepared=false){
     const r=this.records.get(id);if(!r||r.ephemeral||r.canAcceptDirectInput===false)throw Error('聊天不支持直接输入');
-    if(r.automaticTask?.executionId===task.executionId)return r.automaticTask;
+    if(r.automaticTask?.executionId===task.executionId&&!contextPrepared)return r.automaticTask;
     if(task.adoptTurnId){if(r.status!=='active'||r.turnId!==task.adoptTurnId)throw Error('当前轮次已经变化');r.automaticTask={executionId:task.executionId,taskId:task.taskId,turnId:r.turnId,status:'running'};await this.notify(r);return r.automaticTask;}
     if(r.status!=='idle'||r.locked||r.initializing||[...this.external.values()].some(p=>p.threadId===id&&p.method==='turn/start'))throw Error('请等待聊天空闲');
-    if(r.policy&&r.appliedRevision!==r.policy.revision){
-      if(this.sameRuntimeBudget(r,r.policy)){r.appliedRevision=r.policy.revision;r.revision=r.policy.revision;}
-      else await this.apply(r);
-      // A fresh usage record can only arrive after the next turn. Like a manual
-      // turn, allow that observation under the runtime's current configuration;
-      // do not shrink/reload history without preflight or mark the task failed.
-      if(r.policy&&r.appliedRevision!==r.policy.revision&&r.phase!=='needs_observation')throw Error(r.message||'请先完成上下文预算应用');
-      if(r.status!=='idle'||r.locked||r.initializing)throw Error('请等待聊天空闲');
-    }
     if(typeof task.prompt!=='string'||!task.prompt.trim()||task.prompt.length>16000)throw Error('任务提示词无效');
     const settings=normalizeTaskSettings(task.settings);
     const command=taskCommand(task.prompt);
@@ -258,15 +259,24 @@ export class Bridge {
       try{await this.compact(id,(success,error)=>{if(r.automaticTask?.executionId!==task.executionId)return;r.automaticTask.status=success?'completed':'error';r.automaticTask.error=error?.message??null;void this.notify(r);});if(r.automaticTask.status==='starting')r.automaticTask.status='running';await this.notify(r);return r.automaticTask;}
       catch(error){r.automaticTask.status='error';r.automaticTask.error=error.message;await this.notify(r);throw error;}
     }
+    if(r.policy&&r.appliedRevision!==r.policy.revision){
+      if(this.sameRuntimeBudget(r,r.policy)){r.appliedRevision=r.policy.revision;r.revision=r.policy.revision;}
+      else await this.apply(r);
+      if(r.phase==='needs_compaction'&&!contextPrepared)return this.prepareAutomaticContext(id,task);
+      // A fresh usage record can only arrive after the next turn. Like a manual
+      // turn, allow that observation under the runtime's current configuration;
+      // do not shrink/reload history without preflight or mark the task failed.
+      if(r.policy&&r.appliedRevision!==r.policy.revision&&r.phase!=='needs_observation')throw Error(r.message||'请先完成上下文预算应用');
+      if(r.status!=='idle'||r.locked||r.initializing)throw Error('请等待聊天空闲');
+    }
     for(const file of settings.attachments){try{if(!fs.statSync(file.path).isFile())throw Error();}catch{throw Error('附件不存在或无法读取：'+file.name);}}
-    let selectedModel=settings.model||r.model,selectedEffort=settings.effort;
+    let selectedModel=settings.model||r.model,selectedEffort=settings.effort||(!settings.model||settings.model===r.model?inheritedTaskEffort(r):'medium');
     if(settings.model||settings.effort||settings.attachments.some(f=>f.kind==='image')){
       let cursor=null,catalogModel;
       for(let page=0;page<20;page++){const result=await this.rpc('model/list',{limit:100,includeHidden:false,...(cursor?{cursor}:{})});catalogModel=result.data?.find(m=>m.model===selectedModel||m.id===selectedModel);if(catalogModel||!result.nextCursor)break;cursor=result.nextCursor;}
       if(!catalogModel)throw Error('所选模型当前不可用，请重新选择');
-      if(selectedEffort&&!catalogModel.supportedReasoningEfforts?.some(e=>e.reasoningEffort===selectedEffort))throw Error('所选模型不支持此思考程度');
+      if(selectedEffort&&!catalogModel.supportedReasoningEfforts?.some(e=>e.reasoningEffort===selectedEffort)){if(settings.effort)throw Error('所选模型不支持此思考程度');selectedEffort=catalogModel.defaultReasoningEffort||catalogModel.supportedReasoningEfforts?.[0]?.reasoningEffort||'';}
       if(settings.attachments.some(f=>f.kind==='image')&&catalogModel.inputModalities&&!catalogModel.inputModalities.includes('image'))throw Error('所选模型不支持图片输入');
-      if(settings.model&&!selectedEffort)selectedEffort=catalogModel.defaultReasoningEffort??'';
     }
     // Catalog reads are asynchronous; recheck turn ownership before submitting.
     if(r.status!=='idle'||r.locked||r.initializing||[...this.external.values()].some(p=>p.threadId===id&&p.method==='turn/start'))throw Error('请等待聊天空闲');
@@ -283,12 +293,14 @@ export class Bridge {
     r.automaticTask={executionId:task.executionId,taskId:task.taskId,status:'starting'};await this.notify(r);
     try{
       if(this.resolveCompensation&&r.policy){r.locked=true;try{await this.syncCompensation(r,selectedModel);}finally{r.locked=false;}}
-      if(this.contextCeiling||r.compensation?.enabled){const logical=r.policy&&Number.isInteger(r.modelInfo?.effective_context_window_percent)?Math.floor(r.policy.window*r.modelInfo.effective_context_window_percent/100):null;const incoming=incomingTokens(input),cap=Math.min(logical??r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,this.contextCeiling?MAX_CONTEXT_INPUT:Number.MAX_SAFE_INTEGER),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if((r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve))throw Error('上下文接近上限，请先手动压缩后重试任务');}
+      if(this.contextCeiling||r.compensation?.enabled){const logical=r.policy&&Number.isInteger(r.modelInfo?.effective_context_window_percent)?Math.floor(r.policy.window*r.modelInfo.effective_context_window_percent/100):null;const incoming=incomingTokens(input),cap=Math.min(logical??r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,this.contextCeiling?MAX_CONTEXT_INPUT:Number.MAX_SAFE_INTEGER),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if(incoming==null||incoming+reserve>=cap)throw Error('新输入本身已接近上下文上限，请拆分输入。');if((r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve)){if(!contextPrepared)return this.prepareAutomaticContext(id,task);throw Error('压缩后上下文仍接近上限，已暂停任务');}}
       const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
     catch(error){r.automaticTask.status='error';r.automaticTask.error=error.message;await this.notify(r);throw error;}
     finally{const queued=r.queue.splice(0);r.queueBytes=0;for(const line of queued)this.fromClient(line);}
   }
-  async interruptAutomatic(id,executionId){const r=this.records.get(id),task=r?.automaticTask;if(task?.executionId!==executionId||task.status!=='running'||r.status!=='active'||r.turnId!==task.turnId)throw Error('队列轮次已变化，未中断其他任务');await this.rpc('turn/interrupt',{threadId:id,turnId:task.turnId});return {ok:true};}
+  async interruptAutomatic(id,executionId){const r=this.records.get(id),task=r?.automaticTask;
+    if(task?.executionId===executionId&&task.preparingContext&&task.status==='starting'){task.status='interrupted';if(r.status==='active'&&r.turnId)await this.rpc('turn/interrupt',{threadId:id,turnId:r.turnId});await this.notify(r);return {ok:true};}
+    if(task?.executionId!==executionId||task.status!=='running'||r.status!=='active'||r.turnId!==task.turnId)throw Error('队列轮次已变化，未中断其他任务');await this.rpc('turn/interrupt',{threadId:id,turnId:task.turnId});return {ok:true};}
   notify(record){
     return Promise.resolve(this.publish(this.publicRecord(record))).then(reply=>{
       if(reply?.model?.slug===record.model)record.modelInfo=reply.model;

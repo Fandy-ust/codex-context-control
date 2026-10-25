@@ -1,4 +1,8 @@
 import net from 'node:net';
+import {createAccountSwitcher} from './account-switch.mjs';
+import {accountQuotaViews} from './core/account-quota-link.mjs';
+import {accountProcessBlocker,stopAccountProcesses,openAccountDesktop} from './account-processes.mjs';
+import {accountTaskBlockers} from './core/account-switch-blockers.mjs';
 import {createQuotaActivation} from './quota-activation.mjs';
 import {runQuotaProbe} from './quota-probe.mjs';
 import {createRunningSpeedCache} from './running-speed.mjs';
@@ -25,7 +29,7 @@ import {defaultRoot,prepareEndpoint,secureEndpoint,windows} from './platform/ind
 import {authenticateServer} from './ipc-auth.mjs';
 import {L} from './localization.mjs';
 import {Peer,request} from './ipc.mjs';
-import {root,socketPath,ensureRoot,atomicJSON,ipcKey} from './paths.mjs';
+import {root,codexHome,socketPath,ensureRoot,atomicJSON,ipcKey} from './paths.mjs';
 import {compareThreadActivity,mergeActivity} from './thread-activity.mjs';
 import {Store} from './store.mjs';
 import {normalizePolicy,preflight} from './policy.mjs';
@@ -63,15 +67,17 @@ export async function startDaemon() {
   const quota=createQuotaManager({home:root,onObservation:async observation=>{const scope=await quotaAnalytics.record(observation);await cloudSync.command({action:'status'}).catch(()=>{});return scope;}});
   const activationFile=path.join(root,'quota-activation.json');
   const quotaActivation=createQuotaActivation({load:()=>{try{return JSON.parse(fs.readFileSync(activationFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(activationFile,value),quota,probe:runQuotaProbe,recommend:()=>quotaAnalytics.activationRecommendation()});
-  const activationTimer=setInterval(()=>quotaActivation.tick().catch(()=>{}),10000);activationTimer.unref();
+  let accountTransition=false;
+  const activationTimer=setInterval(()=>{if(!accountTransition)void quotaActivation.tick().catch(()=>{});},10000);activationTimer.unref();
   const cloudSync=createCloudSync({home:root,analytics:quotaAnalytics,prepare:()=>quota.refresh(true),removeQuotaAccounts:scopes=>quota.removeAccounts(scopes)});
   // Hydrate saved accounts without opening a new ledger in an empty installation.
   if(fs.existsSync(path.join(root,'quota-history.sqlite')))void cloudSync.command({action:'status'}).catch(()=>{});
   function accountQuotaState(){
     const value=quota.state(),profiles=cloudSync.state().accounts,result=new Map();
-    for(const profile of profiles){const candidates=value.accounts.filter(a=>profile.scopes?.includes(a.scope));if(profile.quota)candidates.push(profile.quota);candidates.sort((a,b)=>b.updatedAt-a.updatedAt);const account=candidates[0]||{scope:profile.scopes?.[0]||'cloud:'+profile.id,buckets:[],updatedAt:null};if(account)result.set(profile.id,{...account,current:profile.scopes?.includes(value.accountScope)||false,label:profile.customName||profile.label||account.label,showQuota:profile.showQuota!==false,creditBaselines:value.accounts.find(a=>a.scope===account.scope)?.creditBaselines||{}});}
+    for(const profile of profiles){const candidates=value.accounts.filter(a=>profile.scopes?.includes(a.scope));if(profile.quota)candidates.push(profile.quota);candidates.sort((a,b)=>b.updatedAt-a.updatedAt);const account=candidates[0]||{scope:profile.scopes?.[0]||'cloud:'+profile.id,buckets:[],updatedAt:null};if(account)result.set(profile.id,{...account,current:profile.scopes?.includes(value.accountScope)||false,label:profile.customName||profile.label||account.label,email:profile.label||account.label,showQuota:profile.showQuota!==false,creditBaselines:value.accounts.find(a=>a.scope===account.scope)?.creditBaselines||{}});}
     for(const account of value.accounts)if(!profiles.some(p=>p.scopes?.includes(account.scope)))result.set(account.scope,account);
-    return {...value,accounts:[...result.values()].sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt)};
+    const observed={...value,accounts:[...result.values()].sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt)};
+    return accountQuotaViews(accountSwitcher.state(),observed).quota;
   }
   const queueFile=path.join(root,'task-queues.json');
   function queuePeers(id){const ownersForThread=owners.get(id)||[];return ownersForThread.length?ownersForThread:[...bridges.keys()].filter(peer=>supportsTaskQueues(bridges.get(peer)));}
@@ -80,6 +86,25 @@ export async function startDaemon() {
   const queueCall=(id,op,params)=>{const peers=queuePeers(id);if(peers.length!==1)throw Error('需要唯一的已接入运行时');if(!queueSupported(id))throw Error(QUEUE_RUNTIME_RESTART);return peers[0].call(op,{id,...params},30000);};
   const taskQueues=createTaskQueues({load:()=>{try{return JSON.parse(fs.readFileSync(queueFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(queueFile,value),quota,thread:id=>Object.hasOwn(store.data.threads,id)?{...store.publicThread(id,owners),taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!(owners.get(id)||[]).length&&queueSupported(id)}:null,prepare:id=>queueCall(id,'queue-prepare',{}),start:(id,task)=>queueCall(id,'queue-start',{task}),interrupt:(id,executionId)=>queueCall(id,'queue-interrupt',{executionId}),inhibit:createQueueSleepInhibitor()});
   let analyticsTimer;
+  function switchBlockers(){
+    for(const [peer,bridge]of bridges){if(Number.isSafeInteger(bridge.pid)&&bridge.pid>0)try{process.kill(bridge.pid,0);}catch(error){if(error.code==='ESRCH'){bridges.delete(peer);peer.socket.destroy();}}}
+    rebuildOwners();
+    const blockers=accountTaskBlockers({threads:Object.keys(store.data.threads).map(id=>store.publicThread(id,owners)),tasks:taskQueues.list(),activation:quotaActivation.state(),sync:cloudSync.state()});
+    if(bridges.size||accountProcessBlocker())blockers.push('Codex 或 CLI 会话仍在运行');
+    return blockers;
+  }
+  const accountSwitcher=createAccountSwitcher({home:root,codexHome,openDesktop:openAccountDesktop,
+    quiesce:async()=>{accountTransition=true;let resumeQueues;try{resumeQueues=await taskQueues.suspend();const resume=await quota.suspend();return ()=>{resume();resumeQueues();accountTransition=false;};}catch(error){resumeQueues?.();accountTransition=false;throw error;}},
+    prepareSwitch:async()=>{
+      taskQueues.command({action:'monitoring',enabled:false});
+      taskQueues.command({action:'disable-all'});
+      quotaActivation.command({action:'cancel'});
+      await stopAccountProcesses();
+      for(let i=0;i<30&&(bridges.size||quotaActivation.state().busy);i++)await new Promise(r=>setTimeout(r,100));
+    },
+    guard:async()=>{
+      const blockers=switchBlockers();if(blockers.length)throw Error(blockers.join('；'));
+    }});
   if(root===defaultRoot()){const scan=async()=>{let delay=10000;try{const progress=await quotaAnalytics.scan();if(progress.pending)delay=1000;}catch{}analyticsTimer=setTimeout(scan,delay);analyticsTimer.unref();};analyticsTimer=setTimeout(scan,3000);analyticsTimer.unref();}
   if(root===defaultRoot()){const initial=setTimeout(()=>quota.refresh().catch(()=>{}),1500);initial.unref();const polling=setInterval(()=>quota.refresh().catch(()=>{}),10000);polling.unref();}
   const updater=createUpdateManager({current:JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url))).version});
@@ -135,7 +160,7 @@ export async function startDaemon() {
       const previousPolicy=JSON.stringify(store.data.policies[p.id]??null);
       const hadOwner=b.ids.has(p.id);
       b.ids.add(p.id);rebuildOwners();
-      const allowed=['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource','automaticTask','compensation'];
+      const allowed=['id','name','cwd','model','effort','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource','automaticTask','compensation'];
       const clean=Object.fromEntries(allowed.filter(k=>Object.hasOwn(p,k)).map(k=>[k,p[k]]));
       if(!Object.hasOwn(clean,'usageFresh'))clean.usageFresh=clean.freshUsage===true;
       if(clean.threadSource!=null&&typeof clean.threadSource!=='string')delete clean.threadSource;
@@ -215,6 +240,8 @@ export async function startDaemon() {
       const params=body?JSON.parse(body):{};const route=req.url;
       let answer;const operation=controlOperation(req.method,route);
       if(operation==='state')answer=state();
+      else if(operation==='account-switch'){if(params.action==='preflight')answer={blockers:switchBlockers()};else{const result=await accountSwitcher.command(params);if(params.action==='switch')quota.invalidate();answer=accountQuotaViews(result,accountQuotaState()).login;}}
+      else if(accountTransition&&['cloud-sync','quota-activation','task-queue','quota-refresh','quota-credit-baseline'].includes(operation))throw Error('账号切换正在进行，请稍后重试');
       else if(operation==='cloud-sync')answer=await cloudSync.command(params);
       else if(operation==='task-queue'){if(params.action==='enable'&&params.enabled&&typeof params.id==='string'&&Object.hasOwn(store.data.threads,params.id)&&!(owners.get(params.id)||[]).length&&queueSupported(params.id))await queueCall(params.id,'queue-prepare',{});answer=taskQueues.command(params);}
       else if(operation==='quota-activation'){answer=quotaActivation.command(params);void quotaActivation.tick().catch(()=>{});}
@@ -263,7 +290,7 @@ export async function startDaemon() {
   const cleanupStart=setTimeout(cleanup,30000);cleanupStart.unref();
   const cleanupTimer=setInterval(cleanup,5*60*1000);cleanupTimer.unref();
   const scanTimer=setInterval(()=>store.refreshMetadata(),15000);scanTimer.unref();
-  web.once('close',()=>{clearInterval(activationTimer);quotaActivation.close();cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
+  web.once('close',()=>{accountSwitcher.close();clearInterval(activationTimer);quotaActivation.close();cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
   const shutdown=()=>{responseSpeeds.close();contextStatistics.close();try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};

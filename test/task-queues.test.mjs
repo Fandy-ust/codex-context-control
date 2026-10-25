@@ -6,7 +6,8 @@ import {createTaskQueues,defaultQueueConfig,queueQuotaGate,validateQueueConfig,e
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {normalizeTaskSettings} from '../src/core/task-settings.mjs';
+import {normalizeTaskSettings,displayedTaskEffort} from '../src/core/task-settings.mjs';
+import {movedQueueOrder} from '../src/core/queue-order.mjs';
 import {supportsTaskQueues} from '../src/core/queue-runtime.mjs';
 import {Bridge} from '../src/bridge.mjs';
 
@@ -31,6 +32,12 @@ test('queues default off, sequentially submit full prompts and keep monitoring a
  const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'完整任务一\n包含验收条件'});f.command({action:'add',prompt:'完整任务二'});await f.settle();assert.equal(f.calls.length,0);assert.equal(f.engine.list().sleepPrevented,false);
  f.command({action:'enable',enabled:true});await f.settle();assert.equal(f.calls[0].prompt,'完整任务一\n包含验收条件');await f.engine.tick();assert.equal(f.calls.length,1);
  f.done();await f.engine.tick();assert.equal(f.calls[1].prompt,'完整任务二');f.done();await f.engine.tick();assert.equal(f.engine.get('chat').enabled,true);assert.equal(f.engine.get('chat').state,'monitoring');assert.equal(f.engine.list().sleepPrevented,true);assert.deepEqual(f.sleep,[true]);
+});
+
+test('account switching suspension prevents dispatch until explicitly released',async t=>{
+ const f=fixture();t.after(()=>f.engine.close());const resume=await f.engine.suspend();
+ f.command({action:'add',prompt:'task'});f.command({action:'enable',enabled:true});await f.settle();await f.engine.tick();assert.equal(f.calls.length,0);
+ resume();resume();await f.engine.tick();assert.equal(f.calls.length,1);
 });
 test('soft threshold finishes current turn; hard threshold interrupts exact queue execution; fresh reset resumes',async t=>{
  const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'任务'});f.command({action:'enable',enabled:true});await f.settle();f.bucket.primary.remainingPercent=20;await f.engine.tick();assert.equal(f.calls.length,1);
@@ -116,6 +123,47 @@ function bridgeFixture(t,resolve=async()=>null){
  const child=new EventEmitter();child.stdin=new PassThrough();child.stdout=new PassThrough();const input=new PassThrough(),output=new PassThrough(),b=new Bridge(child,input,output,async()=>({}),resolve);
  t.after(()=>{b.frontLines.close();b.backLines.close();for(const stream of [input,output,child.stdin,child.stdout])stream.destroy();});return b;
 }
+
+test('task defaults inherit the observed reasoning effort and fall back to medium rather than catalog low',async t=>{
+ const b=bridgeFixture(t),r=b.record('chat'),turns=[];r.model='fixture';
+ b.rpc=async(method,params)=>{assert.equal(method,'turn/start');turns.push(params);return {turn:{id:'turn-'+turns.length,status:'completed'}};};
+ await b.startAutomatic('chat',{executionId:'default',prompt:'task'});assert.equal(turns[0].effort,'medium');
+ r.sticky={collaborationMode:{mode:'default',settings:{model:'fixture',reasoning_effort:'high'}}};r.status='idle';
+ await b.startAutomatic('chat',{executionId:'inherit',prompt:'task'});assert.equal(turns[1].effort,'high');assert.equal(b.publicRecord(r).effort,'high');
+ const model={efforts:['low','medium','high'],defaultEffort:'low'};
+ assert.equal(displayedTaskEffort({},null,model),'medium');assert.equal(displayedTaskEffort({},{model:'fixture',effort:'high'},model),'high');
+});
+
+test('queue automatically compresses blocked context, waits for native completion and sends the original task once',async t=>{
+ const b=bridgeFixture(t),r=b.record('chat'),calls=[];
+ Object.assign(r,{model:'fixture',policy:{revision:2,window:400000,compact:300000,reserve:16000,retainedFloor:0},appliedRevision:1,usageFresh:true,lastUsage:{totalTokens:350000},modelInfo:{max_context_window:828000,effective_context_window_percent:100}});
+ b.reload=async(record,policy)=>{record.appliedRevision=policy.revision;return true;};
+ b.rpc=async(method,params)=>{calls.push({method,params});return method==='turn/start'?{turn:{id:'queued-turn',status:'inProgress'}}:{};};
+ const task={executionId:'auto-context',taskId:'task',prompt:'Original task'};
+ await b.startAutomatic('chat',task);assert.deepEqual(calls.map(c=>c.method),['thread/compact/start']);assert.equal(r.automaticTask.status,'starting');
+ b.fromServer(JSON.stringify({method:'turn/started',params:{threadId:'chat',turn:{id:'compact-turn'}}}));assert.equal(r.automaticTask.status,'starting');
+ b.fromServer(JSON.stringify({method:'thread/tokenUsage/updated',params:{threadId:'chat',tokenUsage:{modelContextWindow:400000,last:{totalTokens:50000}}}}));
+ assert.equal(calls.length,1);
+ b.fromServer(JSON.stringify({method:'turn/completed',params:{threadId:'chat',turn:{id:'compact-turn',status:'completed'}}}));
+ for(let i=0;i<6;i++)await new Promise(r=>setImmediate(r));
+ assert.deepEqual(calls.map(c=>c.method),['thread/compact/start','turn/start']);assert.equal(calls[1].params.input[0].text,'Original task');
+ await b.startAutomatic('chat',task);assert.equal(calls.length,2);assert.equal(r.automaticTask.status,'running');
+});
+
+test('missing post-compression usage never sends work and stopping preparation prevents continuation',async t=>{
+ const b=bridgeFixture(t),r=b.record('chat'),calls=[];b.rpc=async method=>{calls.push(method);return {};};
+ await b.prepareAutomaticContext('chat',{executionId:'missing',prompt:'Do not send'});
+ b.fromServer(JSON.stringify({method:'turn/completed',params:{threadId:'chat',turn:{id:'compress',status:'completed'}}}));
+ for(let i=0;i<4;i++)await new Promise(r=>setImmediate(r));assert.equal(r.automaticTask.status,'error');assert.deepEqual(calls,['thread/compact/start']);
+ await b.prepareAutomaticContext('chat',{executionId:'cancel',prompt:'Do not send'});await b.interruptAutomatic('chat','cancel');
+ b.fromServer(JSON.stringify({method:'turn/completed',params:{threadId:'chat',turn:{id:'compress-2',status:'completed'}}}));
+ for(let i=0;i<4;i++)await new Promise(r=>setImmediate(r));assert.equal(r.automaticTask.status,'interrupted');assert.deepEqual(calls,['thread/compact/start','thread/compact/start']);
+});
+
+test('drag reordering preserves running slots and retained hidden tasks',()=>{
+ const tasks=[{id:'run',status:'running'},{id:'a',status:'waiting'},{id:'b',status:'waiting'},{id:'old',status:'completed',archivedAt:1}];
+ assert.deepEqual(movedQueueOrder(tasks,'b','a'),['run','b','a','old']);assert.equal(movedQueueOrder(tasks,'a','run'),null);assert.equal(movedQueueOrder(tasks,'run','b'),null);
+});
 
 test('background resume preserves thread settings, policy and an existing active turn',async t=>{
  const policy={enabled:true,revision:4,window:400000,compact:360000};const b=bridgeFixture(t,async()=>({policy})),calls=[];

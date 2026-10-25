@@ -43,7 +43,7 @@ export function normalizeQuota(response){
  return entries.map(([id,value])=>({id,name:typeof value?.limitName==='string'?value.limitName.slice(0,100):id,primary:window(value?.primary),secondary:window(value?.secondary),creditBalance:creditBalance(value?.credits),hasCredits:value?.credits?.hasCredits===true,unlimitedCredits:value?.credits?.unlimited===true})).filter(v=>v.primary||v.secondary||v.creditBalance!=null||v.hasCredits||v.unlimitedCredits).sort((a,b)=>(a.id==='codex'?-1:b.id==='codex'?1:a.id.localeCompare(b.id)));
 }
 export function createQuotaManager({read=()=>readAccountQuota({includeAccount:true}),now=Date.now,interval=10000,home=null,onObservation=null}={}){
- let buckets=[],updatedAt=null,checkedAt=0,error=null,pending;
+ let buckets=[],updatedAt=null,checkedAt=0,error=null,pending,paused=false;
  const preferencesFile=home?path.join(home,'quota-preferences.json'):null;
  let preferences;try{preferences=preferencesFile?readJSON(preferencesFile,{}):{};}catch{preferences={};}
  const resetFile=home?path.join(home,'quota-reset-notifications.json'):null;
@@ -54,6 +54,7 @@ export function createQuotaManager({read=()=>readAccountQuota({includeAccount:tr
  const saveBaselines=()=>{if(creditScope)creditAccounts[creditScope]=creditBaselines;if(preferencesFile)atomicJSON(preferencesFile,{...preferences,accounts,creditScope,creditAccounts,creditBaselines});};
  function state(){return {accounts:Object.entries(accounts).map(([scope,value])=>({...value,scope,current:scope===creditScope,creditBaselines:creditAccounts[scope]??{}})).sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt),buckets,resetNotification:resetState?.scope===creditScope?resetState?.event??null:null,accountScope:creditScope,creditBaselines,updatedAt,loading:!!pending,stale:!!error||!!updatedAt&&now()-updatedAt>interval*2,error};}
  async function refresh(force=false){
+  if(paused)return state();
   if(pending){await pending;return state();}if(checkedAt&&now()-checkedAt<(force?10000:interval))return state();checkedAt=now();
   pending=(async()=>{try{
     const response=await read(),observed=normalizeQuota(response),observedAt=now();let resetScope=null;
@@ -75,5 +76,5 @@ export function createQuotaManager({read=()=>readAccountQuota({includeAccount:tr
   saveBaselines();return state();
  }
  function removeAccounts(scopes){for(const scope of scopes){delete accounts[scope];delete creditAccounts[scope];for(const key of Object.keys(preferences.creditSources??{}))if(key.startsWith(scope+':'))delete preferences.creditSources[key];}if(scopes.includes(creditScope)){creditBaselines={};buckets=[];updatedAt=null;}if(scopes.includes(resetState?.scope)){resetState=null;if(resetFile)atomicJSON(resetFile,null);}saveBaselines();}
- return {state,refresh,resetCredits,removeAccounts};
+ return {state,refresh,resetCredits,removeAccounts,async suspend(){paused=true;await pending;return ()=>{paused=false;};},invalidate(){buckets=[];updatedAt=null;checkedAt=0;creditScope=null;creditBaselines={};error=null;saveBaselines();}};
 }

@@ -1,5 +1,27 @@
 # Changes
 
+## 0.27.2 — Daily quota activation schedules
+
+- Replace the date-time reservation with local time selection and Off, Every day, or Tomorrow only modes on Windows and macOS. Display the saved next occurrence.
+- Persist daily occurrences before dispatch, preserve local clock time across daylight saving changes, and skip missed days without replaying a backlog or cancelling the next day. Cancelling removes recurrence; legacy one-time reservations remain readable.
+
+## 0.27.1 — Queue controls and automatic context recovery
+
+- Expand the bundled and installed context-manager skill with chat selection, queue additions, full-order reordering, global quota-monitor controls and retry guidance.
+- Follow the target chat's observed model and reasoning effort for queued tasks; use Medium when reasoning effort is unknown rather than silently selecting the catalog's Low default.
+- Add visible drag handles and drop feedback, preserve cards while dragging, and keep running tasks fixed while reordering pending tasks on Windows and macOS.
+- Automatically request native compaction when context preflight blocks queued work. Wait for completion and fresh usage, recheck the budget, and send the original task once. Failed compaction, missing usage or stopping preparation prevents submission.
+
+## 0.27.0 — Experimental authorized account switching
+
+- Show the same cached Credits and quota windows in account cards as in the sidebar. Strengthen sidebar labels and add a confirmed quick-switch action for unambiguously linked inactive sign-ins.
+
+- Add a dedicated account switcher with official Codex browser OAuth, an optional isolated in-app sign-in window, saved-login naming/removal, and current file-login capture on Windows and macOS.
+- Encrypt the local credential vault with AES-GCM and protect its key through DPAPI/Keychain. Keep login credentials outside numeric cloud sync and public UI state.
+- Respect global monitoring pause and disconnected observations when checking for running work. If sessions or queues remain active, offer an explicit force-stop confirmation that pauses queues and closes Codex runtimes, verifies exit, then switches. Suspend queue dispatch throughout the switch.
+- Save outgoing credentials, validate the selected identity, preserve rotated credentials, check concurrent writers, and switch the file-backed login before attempting to reopen Codex.
+- Preserve configuration and chat history, with rollback for ordinary write failures. Native desktop hot switching, automatic quota rotation and cross-device token sync are excluded. See `docs/releases/0.27.0.md` for validation limits.
+
 ## 0.26.7 — Manage accounts and stack saved quota
 
 - Rename remembered accounts, with the account email as the default label. Add a per-account sidebar visibility switch independent of statistics and cloud sync selections.

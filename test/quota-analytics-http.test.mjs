@@ -14,6 +14,9 @@ test('authenticated analytics scans local numeric records and rejects invalid fi
   assert.equal((await fetch(url,{method:'POST',body:'{}'})).status,403);
   const syncURL=`http://127.0.0.1:${c.port}/cloud-sync`;
   assert.equal((await fetch(syncURL,{method:'POST',body:'{}'})).status,403);
+  const accountURL=`http://127.0.0.1:${c.port}/accounts`;
+  assert.equal((await fetch(accountURL,{method:'POST',body:'{}'})).status,403);
+  const accountStatus=await fetch(accountURL,{method:'POST',headers,body:'{"action":"status"}'});assert.equal(accountStatus.status,200);assert.deepEqual((await accountStatus.json()).profiles,[]);
   const syncStatus=await fetch(syncURL,{method:'POST',headers,body:'{"action":"status"}'});assert.equal(syncStatus.status,200);assert.equal((await syncStatus.json()).enabled,false);
   assert.equal((await fetch(syncURL,{method:'POST',headers,body:'{"action":"configure","intervalMinutes":1}'})).status,400);
   assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify({days:999})})).status,400);

@@ -4,8 +4,8 @@ struct QuotaActivationView:View {
     @ObservedObject var model:Controller
     @State private var notifications=true
     @State private var weekly=false
-    @State private var scheduled=false
-    @State private var date=Date().addingTimeInterval(3600)
+    @State private var scheduleMode="off"
+    @State private var date=Calendar.current.date(bySettingHour:8,minute:0,second:0,of:Date()) ?? Date()
     @State private var tolerance=10
     @State private var saving=false
     @State private var message=""
@@ -19,13 +19,14 @@ struct QuotaActivationView:View {
             Toggle(L("周额度重置后自动启动"),isOn:$weekly).toggleStyle(.switch)
             Stepper(L("重置时间容差（分钟）：{0}",String(tolerance)),value:$tolerance,in:1...60)
             Text(L("以新到期时间接近当前时间 + 7 天确认周重置；预约启动则检查 + 5 小时。")).font(.caption).foregroundStyle(.secondary)
-            Toggle(L("一次性预约（本机时间）"),isOn:$scheduled).toggleStyle(.switch)
-            if scheduled{DatePicker(L("触发时间"),selection:$date,in:Date()...,displayedComponents:[.date,.hourAndMinute])}
-            Text(L("电脑需保持唤醒、服务运行；错过超过 15 分钟不补发。")).font(.caption).foregroundStyle(.secondary)
+            Picker(L("预约方式"),selection:$scheduleMode){Text(L("不预约")).tag("off");Text(L("每天重复")).tag("daily");Text(L("仅明天一次")).tag("once")}.pickerStyle(.segmented)
+            DatePicker(L("触发时间（本机时间）"),selection:$date,displayedComponents:[.hourAndMinute]).disabled(scheduleMode=="off")
+            Text(L("单次只在明天的指定时间执行；每天重复会在下一个指定时间开始，之后每天执行。电脑需保持唤醒、服务运行；错过超过 15 分钟不补发，当天错过不影响后续每日预约。")).font(.caption).foregroundStyle(.secondary)
+            if let at=model.quotaActivation?.config.scheduledAt{Text(L("已保存的下次预约：{0}",Date(timeIntervalSince1970:at/1000).formatted(date:.abbreviated,time:.shortened))).font(.caption).foregroundStyle(.secondary)}
             HStack{
-                Button(L("保存设置")){Task{await command(["action":"configure","notificationsEnabled":notifications,"weeklyEnabled":weekly,"toleranceMinutes":tolerance,"scheduledAt":scheduled ? Int64(date.timeIntervalSince1970*1000) as Any:NSNull()])}}
+                Button(L("保存设置")){Task{let parts=Calendar.current.dateComponents([.hour,.minute],from:date);await command(["action":"configure","notificationsEnabled":notifications,"weeklyEnabled":weekly,"toleranceMinutes":tolerance,"scheduleMode":scheduleMode,"scheduleTime":String(format:"%02d:%02d",parts.hour ?? 8,parts.minute ?? 0)])}}
                 Button(L("立即启动一次")){Task{await command(["action":"run"])}}.disabled(active)
-                Button(L("停止并取消预约")){Task{await command(["action":"cancel"]);scheduled=false}}
+                Button(L("停止并取消预约")){Task{await command(["action":"cancel"]);scheduleMode=model.quotaActivation?.config.scheduleMode ?? "off"}}
             }.disabled(saving || !model.serviceAvailable)
             if let job=model.quotaActivation?.job{Text("\(job.status) · \(job.attempts)/3 · \(L(job.message ?? ""))").font(.caption)}
             if !message.isEmpty{Text(message).font(.caption)}
@@ -36,7 +37,7 @@ struct QuotaActivationView:View {
                 Text(L("近期 {0} 个周期，预计活跃使用 {1} 小时用完；建议范围提前 {2}–{3} 小时。",String(r.sampleCount),(r.consumptionHours ?? 0).formatted(),(r.leadMinHours ?? 0).formatted(),(r.leadMaxHours ?? 0).formatted())).font(.caption)
             }else{Text(L("有效历史不足，至少需要 3 个有足够用量的周期。")).font(.caption)}
             Text(L("按近 21 天、最多 10 个周期估算：提前量 = 5 小时 − 预计用完时间。由你按起床时间设置预约，不保证实际耗尽时间。")).font(.caption).foregroundStyle(.secondary)
-        }.padding(20).onAppear{if let c=model.quotaActivation?.config{notifications=c.notificationsEnabled != false;weekly=c.weeklyEnabled;tolerance=c.toleranceMinutes;scheduled=c.scheduledAt != nil;if let at=c.scheduledAt{date=Date(timeIntervalSince1970:at/1000)}}}
+        }.padding(20).onAppear{if let c=model.quotaActivation?.config{notifications=c.notificationsEnabled != false;weekly=c.weeklyEnabled;tolerance=c.toleranceMinutes;scheduleMode=c.scheduleMode ?? (c.scheduledAt != nil ? "once":"off");if let time=c.scheduleTime{let parts=time.split(separator:":").compactMap{Int($0)};if parts.count==2{date=Calendar.current.date(bySettingHour:parts[0],minute:parts[1],second:0,of:Date()) ?? date}}else if let at=c.scheduledAt{date=Date(timeIntervalSince1970:at/1000)}}}
     }
     private func command(_ body:[String:Any]) async {
         saving=true;defer{saving=false}

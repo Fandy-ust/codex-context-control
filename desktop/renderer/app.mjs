@@ -1,3 +1,6 @@
+import {nextActivationAt} from '../../src/core/activation-schedule.mjs';
+import {movedQueueOrder} from '../../src/core/queue-order.mjs';
+import {accountSwitchView,switchSavedAccount} from './account-switch.mjs';
 import {cloudSyncView,cloudSyncForm} from './cloud-sync.mjs';
 import {responseSpeedContent} from './response-speed.mjs';
 import {activationView} from './quota-activation.mjs';
@@ -28,9 +31,10 @@ const api=window.contextManager,root=document.querySelector('#app'),mode=new URL
 const scrollEdges=installScrollEdges(root);
 let state=null,preferences={language:'zh',selection:'auto',english:{}},selected=null,view='chat',draft=null,dirty=false,dragging=false,busy=false,stats=null,statsJSON='',timeline=null,period=0,hover=null,pinned=null,page=0,auto=true,lastStats=0,toastTimer,refreshing=false,interactionId=null;
 let shortcutDraft=DEFAULT_SHORTCUT,shortcutEnabled=true,shortcutRecording=false,shortcutDirty=false;
+let queueDrag=null;
 let queueID=null,queueReturnSettings=false,queueTaskDraft=null,queueTaskTab='prompt',queueExpanded=false,queueModelOpen=false;
 const queueFormDrafts=new Map(),queuePreviews=new Map();
-let cloudState=null;
+let cloudState=null,loginState=null,loginRendered="";
 let activationDraft=null;
 let settingsOpen=false,settingsTab='general',settingsSnapshot=null,settingsUnderlay='';
 let integrationError='',integrationPending=false;
@@ -244,15 +248,16 @@ function generalSettings(){
   return `<section class="card stack"><h2>${e(t('通用','General'))}</h2><label class="stack tiny" for="language">${e(t('语言','Language'))}<select id="language"><option value="auto" ${preferences.selection==='auto'?'selected':''}>${e(t('自动（按时区）','Automatic (time zone)'))}</option><option value="zh" ${preferences.selection==='zh'?'selected':''}>中文</option><option value="en" ${preferences.selection==='en'?'selected':''}>English</option></select></label><div class="row wrap"><button data-action="scan">↻ ${e(t('同步本地聊天','Sync local chats'))}</button><button data-action="open-codex">↗ ${e(t('打开 Codex','Open Codex'))}</button></div><div class="extension"><div class="row between"><span>${e(t('拓展上下文','Extended context'))}</span><input type="checkbox" id="extension" class="switch" aria-label="${e(t('拓展上下文','Extended context'))}" ${ext?.enabled?'checked':''} ${!ext?.available||!ext?.compatible?'disabled':''}></div><p class="tiny muted">${e(t(ext?.message||'等待 Codex 连接','Waiting for Codex'))}</p></div><div class="extension"><label class="row between" for="auto-check-updates"><span>${e(t('启动时自动检查更新','Check for updates on startup'))}</span><input type="checkbox" id="auto-check-updates" class="switch" ${preferences.autoCheckUpdates!==false?'checked':''}></label><p class="tiny muted">${e(t('发现新版本时提示，由你决定是否安装。','Show a prompt when an update is available. You choose when to install.'))}</p></div><div class="row wrap"><button data-action="update" ${['downloading','installing'].includes(u.phase)?'disabled':''}>↓ ${e(['downloading','installing'].includes(u.phase)?t('正在更新…','Updating…'):u.available?t('安装更新 {0}','Install update {0}',u.version):t('检查更新','Check for updates'))}</button><button data-action="check-update" ${['downloading','installing'].includes(u.phase)?'disabled':''} ${u.available?'':'hidden'}>↻ ${e(t('检查更新','Check for updates'))}</button><span class="tiny muted">v${e(preferences.version||'')}</span></div>${u.error?`<span class="tiny error" role="status">${e(t(u.error))}</span>`:''}<div class="row wrap"><button data-action="diagnostics">${e(t('诊断','Diagnostics'))}</button><button data-action="open-logs">${e(t('打开接入日志','Open integration logs'))}</button></div><div class="feature-note"><strong>${e(t('提前压缩修复','Early compaction fix'))}</strong><p class="tiny muted">${e(t('上游已停用此旧版补丁，Windows 不提供该开关。原生自动压缩与聊天页的压缩触发阈值仍可使用。','The legacy patch is disabled upstream and unavailable on Windows. Native automatic compaction and per-chat thresholds remain available.'))}</p></div></section>`;
 }
 function settingsDialog(){
-  const tabs=[['activation',t('额度启动','Quota activation')],['general',t('通用','General')],['defaults',t('全局默认','Global defaults')],['queues',t('任务队列','Task queues')],['quota',t('账户额度','Account quota')],['cloud',t('云同步','Cloud sync')],['integration',t('Codex 接入','Codex integration')],['shortcut',t('快捷键','Shortcut')]];
-  const content=settingsTab==='activation'?activationView(state?.quotaActivation,activationDraft,{e,t}):settingsTab==='cloud'?cloudSyncView(cloudState,{e,t}):settingsTab==='queues'?queueManager({queues:state?.taskQueues,chats:state?.threads??[],e,t}):settingsTab==='general'?generalSettings():settingsTab==='defaults'?(state?defaultsPage():''):settingsTab==='quota'?quotaPanel():settingsTab==='integration'?integrationSettings():shortcutSettings();
+  if(settingsTab==='accounts')loginRendered=JSON.stringify(loginState);
+  const tabs=[['accounts',t('账号切换','Account switching')],['activation',t('额度启动','Quota activation')],['general',t('通用','General')],['defaults',t('全局默认','Global defaults')],['queues',t('任务队列','Task queues')],['quota',t('账户额度','Account quota')],['cloud',t('云同步','Cloud sync')],['integration',t('Codex 接入','Codex integration')],['shortcut',t('快捷键','Shortcut')]];
+  const content=settingsTab==='accounts'?accountSwitchView(loginState,{e,t,pool:preferences.quotaPool,language:preferences.language}):settingsTab==='activation'?activationView(state?.quotaActivation,activationDraft,{e,t}):settingsTab==='cloud'?cloudSyncView(cloudState,{e,t}):settingsTab==='queues'?queueManager({queues:state?.taskQueues,chats:state?.threads??[],e,t}):settingsTab==='general'?generalSettings():settingsTab==='defaults'?(state?defaultsPage():''):settingsTab==='quota'?quotaPanel():settingsTab==='integration'?integrationSettings():shortcutSettings();
   return `<div class="settings-backdrop" data-action="settings-dismiss"><section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><header class="settings-header row between"><h1 id="settings-title">${e(t('设置','Settings'))}</h1><button class="settings-close flat" data-action="settings-close" aria-label="${e(t('关闭设置','Close settings'))}">×</button></header><nav class="settings-tabs" role="tablist" aria-label="${e(t('设置分类','Settings sections'))}">${tabs.map(([id,label])=>`<button role="tab" id="settings-tab-${id}" aria-controls="settings-panel" aria-selected="${id===settingsTab}" class="${id===settingsTab?'active':''}" data-action="settings-tab" data-tab="${id}">${e(label)}</button>`).join('')}</nav><div class="settings-body" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab-${settingsTab}">${content}</div></section></div>`;
 }
 function openSettings(tab='general'){
   for(const menu of root.querySelectorAll('.queue-permission-menu,.queue-attach-menu,.queue-model-menu'))menu.open=false;queueModelOpen=false;
   if(!settingsOpen){settingsSnapshot={draft:draft?{...draft}:null,dirty};settingsUnderlay=root.querySelector('.main')?.innerHTML||'';}
   if(shortcutRecording)finishShortcutRecording();
-  settingsOpen=true;settingsTab=tab;hover=pinned=null;if(tab==='cloud')void loadCloudSync();
+  settingsOpen=true;settingsTab=tab;hover=pinned=null;if(tab==='cloud')void loadCloudSync();if(tab==='accounts')void pollLogins();
   shortcutDraft=preferences.shortcut?.accelerator??DEFAULT_SHORTCUT;shortcutEnabled=shortcutDraft!==''&&preferences.shortcut?.enabled!==false;shortcutDirty=false;
   if(tab==='defaults')loadDraft();render();root.querySelector('.settings-close')?.focus();
 }
@@ -262,9 +267,9 @@ function closeSettings(){
   settingsSnapshot=null;settingsUnderlay='';if(!dirty)loadDraft();render(true);root.querySelector('.settings-trigger')?.focus();
 }
 function switchSettingsTab(tab){
-  if(!['general','defaults','quota','queues','cloud','integration','shortcut','activation'].includes(tab))return;
+  if(!['accounts','general','defaults','quota','queues','cloud','integration','shortcut','activation'].includes(tab))return;
   if(shortcutRecording)finishShortcutRecording();
-  settingsTab=tab;if(tab==='cloud')void loadCloudSync();
+  settingsTab=tab;if(tab==='cloud')void loadCloudSync();if(tab==='accounts')void pollLogins();
   if(tab==='defaults')loadDraft();else if(settingsSnapshot){draft=settingsSnapshot.draft;dirty=settingsSnapshot.dirty;}
   render();root.querySelector('.settings-body').scrollTop=0;root.querySelector(`[data-tab="${tab}"]`)?.focus();
 }
@@ -451,11 +456,11 @@ function selectChat(id){
   if(current()&&mode==='main')openDetails();else render();
 }
 function loadDraft(){if(editingDefaults()){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else{const next=threadDraft(current());if(draft?.expectedRevision!==next?.expectedRevision){budgetText={};budgetInputError='';}draft=next;}dirty=false;}
-async function refresh(){if(refreshing||dragging)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator??DEFAULT_SHORTCUT;shortcutEnabled=shortcutDraft!==''&&preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(view==='quota'&&!settingsOpen){if(!document.activeElement?.closest('.compact-date-range')&&!qaLoading&&Date.now()-qaLastLoad>(qaReport?.quality?.progress?.pending?1500:5000))await loadQuotaAnalytics();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}}return;}if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen){if(!detailsOpen&&view==='chat'&&current()){openDetails();}refreshBudgetValidity();}if(settingsOpen&&settingsTab==='activation'){
+async function refresh(){if(refreshing||dragging||queueDrag)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator??DEFAULT_SHORTCUT;shortcutEnabled=shortcutDraft!==''&&preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(view==='quota'&&!settingsOpen){if(!document.activeElement?.closest('.compact-date-range')&&!qaLoading&&Date.now()-qaLastLoad>(qaReport?.quality?.progress?.pending?1500:5000))await loadQuotaAnalytics();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}}return;}if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen){if(!detailsOpen&&view==='chat'&&current()){openDetails();}refreshBudgetValidity();}if(settingsOpen&&settingsTab==='activation'){
 const holder=document.createElement('div');holder.innerHTML=activationView(state?.quotaActivation,activationDraft,{e,t});
-for(const selector of ['[data-activation-status]','[data-activation-recommendation]']){const a=root.querySelector(selector),b=holder.querySelector(selector);if(a&&b)a.replaceWith(b);}
+for(const selector of ['[data-activation-status]','[data-activation-recommendation]','[data-activation-schedule]']){const a=root.querySelector(selector),b=holder.querySelector(selector);if(a&&b)a.replaceWith(b);}
 const run=root.querySelector('[data-action="activation-run"]');if(run)run.disabled=!!state?.quotaActivation?.busy||['waiting','running','verifying'].includes(state?.quotaActivation?.job?.status);return;
-}if(settingsOpen&&settingsTab==='cloud'){void pollCloudSync();return;}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select,textarea')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
+}if(settingsOpen&&settingsTab==='accounts'){void pollLogins();return;}if(settingsOpen&&settingsTab==='cloud'){void pollCloudSync();return;}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select,textarea')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
   try{
     if(action.startsWith('queue-')&&view==='chat')queueID=selected;
@@ -480,6 +485,16 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       if(action==='queue-edit'){openQueueTask(taskId);return;}
       if(['queue-delete','queue-retry','queue-stop'].includes(action)){await queueCommand({id:queueID,taskId,action:action.slice(6)});return;}
       if(['queue-up','queue-down'].includes(action)){const order=q.tasks.map(t=>t.id),from=order.indexOf(taskId),to=from+(action==='queue-up'?-1:1);[order[from],order[to]]=[order[to],order[from]];await queueCommand({id:queueID,action:'reorder',order});return;}
+    }
+    if(action.startsWith('login-')){
+      const id=button.dataset.id;
+      if(action==='login-switch'){const next=await switchSavedAccount(api,{id,name:button.dataset.name});if(!next)return;loginState=next;}
+      else if(action==='login-remove'){const reply=await api.invoke('confirm-login-remove');if(!reply.confirmed)return;loginState=await api.invoke('account-switch',{action:'remove',id});}
+      else if(action==='login-rename'){const input=[...root.querySelectorAll('[data-login-name]')].find(n=>n.dataset.loginName===id);loginState=await api.invoke('account-switch',{action:'rename',id,name:input.value});}
+      else if(action==='login-add'||action==='login-embedded'){loginState=await api.invoke('account-switch',{action:'login',name:root.querySelector('#login-name').value,browser:action==='login-embedded'?'embedded':'system'});}
+      else if(action==='login-capture')loginState=await api.invoke('account-switch',{action:'capture'});
+      else if(action==='login-cancel')loginState=await api.invoke('account-switch',{action:'cancel'});
+      render();return;
     }
     if(action==='cloud-account-rename'){
       const input=[...root.querySelectorAll('[data-cloud-account-name]')].find(n=>n.dataset.cloudAccountName===button.dataset.id);
@@ -523,8 +538,7 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action.startsWith('activation-')){
       let params={action:action==='activation-run'?'run':action==='activation-cancel'?'cancel':'configure'};
       if(params.action==='configure'){
-        const date=document.getElementById('activation-date').value;
-        params={...params,notificationsEnabled:document.getElementById('activation-notifications').checked,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:Number(document.getElementById('activation-tolerance').value),scheduledAt:date?new Date(date).getTime():null};
+        params={...params,notificationsEnabled:document.getElementById('activation-notifications').checked,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:Number(document.getElementById('activation-tolerance').value),scheduleMode:document.getElementById('activation-mode').value,scheduleTime:document.getElementById('activation-time').value};
       }
       await api.invoke('quota-activation',params);activationDraft=null;await refresh();render();return;
     }
@@ -971,11 +985,11 @@ root.addEventListener('change',async event=>{
 root.addEventListener('dragover',event=>{if(view==='queue-task'&&event.dataTransfer.types.includes('Files'))event.preventDefault();});
 root.addEventListener('drop',event=>{if(view!=='queue-task'||!event.dataTransfer.files.length||queueTaskDraft?.status==='running')return;event.preventDefault();captureQueueTask();const files=[...event.dataTransfer.files].map(file=>{const path=api.filePath(file);return {path,name:file.name,kind:/\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name)?'image':'file'};});mergeQueueAttachments(files);});
 
-let queueDrag=null;
-root.addEventListener('dragstart',event=>{const card=event.target.closest('[data-task-id].queue-task');if(card){if(view==='chat')queueID=selected;queueDrag=card.dataset.taskId;event.dataTransfer.setData('text/plain',queueDrag);}});
-root.addEventListener('dragover',event=>{if(queueDrag&&event.target.closest('.queue-task'))event.preventDefault();});
-root.addEventListener('drop',async event=>{const card=event.target.closest('.queue-task');if(!queueDrag||!card)return;event.preventDefault();const order=state.taskQueues.queues.find(q=>q.id===queueID).tasks.map(t=>t.id),from=order.indexOf(queueDrag),to=order.indexOf(card.dataset.taskId);queueDrag=null;if(from<0||to<0)return;order.splice(to,0,order.splice(from,1)[0]);try{await queueCommand({id:queueID,action:'reorder',order});}catch(error){notify(error.message);}});
-root.addEventListener('dragend',()=>{queueDrag=null;});
+const clearQueueDrag=()=>{queueDrag=null;for(const card of root.querySelectorAll('.queue-task'))card.classList.remove('dragging-task','drop-target');};
+root.addEventListener('dragstart',event=>{const card=event.target.closest('[data-task-id].queue-task');if(!card)return;if(card.draggable!==true||event.target.closest('.queue-task-delete')){event.preventDefault();return;}if(view==='chat')queueID=selected;queueDrag=card.dataset.taskId;card.classList.add('dragging-task');event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',queueDrag);});
+root.addEventListener('dragover',event=>{const card=event.target.closest('.queue-task[draggable=true]');if(!queueDrag||!card)return;event.preventDefault();event.dataTransfer.dropEffect='move';for(const other of root.querySelectorAll('.drop-target'))other.classList.remove('drop-target');if(card.dataset.taskId!==queueDrag)card.classList.add('drop-target');});
+root.addEventListener('drop',async event=>{const card=event.target.closest('.queue-task[draggable=true]');if(!queueDrag||!card)return;event.preventDefault();const q=state.taskQueues.queues.find(q=>q.id===queueID),order=movedQueueOrder(q?.tasks||[],queueDrag,card.dataset.taskId);clearQueueDrag();if(!order)return;try{await queueCommand({id:queueID,action:'reorder',order});}catch(error){notify(error.message);}});
+root.addEventListener('dragend',clearQueueDrag);
 
 window.__contextQueueSmoke=async()=>{
  if(!preferences.demo)return {ok:false};
@@ -983,10 +997,16 @@ window.__contextQueueSmoke=async()=>{
  await queueCommand({id:queueID,action:'add',prompt:'第一项完整任务：实现 UI 并验证'});
  await queueCommand({id:queueID,action:'add',prompt:'第二项完整任务：修复 Bug 并运行测试'});
  let q=state.taskQueues.queues.find(q=>q.id===queueID);
- await queueCommand({id:queueID,action:'reorder',order:q.tasks.map(t=>t.id).reverse()});
- const ordered=state.taskQueues.queues.find(q=>q.id===queueID).tasks[0].prompt.startsWith('第二项');
- openQueueTask();const editor=!!document.querySelector('#queue-task-editor textarea')&&document.querySelectorAll('.queue-stage-row').length===6&&!!document.querySelector('[name=effort]');queueTaskDraft=null;view='queue';render();const controls=editor&&!!document.querySelector('#queue-config')&&document.querySelectorAll('.queue-task').length===2;
- const scroller=document.querySelector('.main');scroller.scrollTop=500;await new Promise(r=>requestAnimationFrame(r));const back=document.querySelector('[data-action="queue-back"]').getBoundingClientRect(),parent=scroller.getBoundingClientRect();
+ render(true);
+ const cards=root.querySelectorAll('#queue-tasks .queue-task'),transfer=new DataTransfer();
+ cards[1].dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));
+ await refresh();const dragStable=root.querySelectorAll('#queue-tasks .queue-task')[1]===cards[1];
+ cards[0].dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));const dropHint=cards[0].classList.contains('drop-target');
+ cards[0].dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+ const deadline=Date.now()+3000;while((state.taskQueues.queues.find(q=>q.id===queueID).tasks[0].id!==q.tasks[1].id||busy)&&Date.now()<deadline)await new Promise(r=>setTimeout(r,20));
+ const ordered=state.taskQueues.queues.find(q=>q.id===queueID).tasks[0].id===q.tasks[1].id&&dragStable&&dropHint;
+ openQueueTask();const editor=document.querySelector('[data-queue-trigger-effort]')?.textContent==='Medium'&&!!document.querySelector('#queue-task-editor textarea')&&document.querySelectorAll('.queue-stage-row').length===6&&!!document.querySelector('[name=effort]');queueTaskDraft=null;view='queue';render(true);const controls=editor&&!!document.querySelector('#queue-config')&&document.querySelectorAll('.queue-task').length===2;
+ const scroller=document.querySelector('.main');scroller.scrollTop=500;await new Promise(r=>requestAnimationFrame(r));const back=document.querySelector('[data-action="queue-back"]').getBoundingClientRect(),parent=document.querySelector('.main').getBoundingClientRect();
  const sticky=back.top>=parent.top&&back.bottom<parent.bottom;
  await queueCommand({id:queueID,action:'disable-all'});
  const off=state.taskQueues.queues.every(q=>!q.enabled)&&!state.taskQueues.sleepPrevented;
@@ -997,7 +1017,7 @@ window.__contextQueueSmoke=async()=>{
   manager=manager&&state.taskQueues.monitoringEnabled===enabled&&document.querySelector('[data-queue-global-toggle]').checked===enabled;
  }
  closeSettings();view='queue';render();
- return {ok:ordered&&controls&&sticky&&off&&manager,ordered,controls,sticky,off,manager};
+ return {ok:ordered&&controls&&sticky&&off&&manager,ordered,controls,sticky,off,manager,stickyGeometry:{top:back.top,bottom:back.bottom,parentTop:parent.top,parentBottom:parent.bottom}};
 };
 
 root.addEventListener('input',event=>{const form=event.target.closest('#queue-add,#queue-config');if(form){const values={};for(const input of form.querySelectorAll('[name]'))values[input.name]=input.type==='checkbox'?input.checked:input.value;queueFormDrafts.set(queueID+':'+form.id,values);}});
@@ -1095,6 +1115,22 @@ for(const region of ['data-cloud-accounts','data-cloud-devices']){
 }
 for(const action of ['cloud-save','cloud-run']){const a=root.querySelector(`[data-action="${action}"]`),b=holder.querySelector(`[data-action="${action}"]`);if(a&&b){a.disabled=b.disabled;a.textContent=b.textContent;}}}catch(error){notify(error.message);}}
 
+window.__contextLoginSmoke=async({preview=false}={})=>{
+  const wait=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,20));}throw Error('Login manager smoke timeout');};
+  openSettings('accounts');await wait(()=>root.querySelectorAll('[data-login-profile]').length===2);
+  if(root.querySelectorAll('[data-login-quota] .sidebar-credits').length!==2||root.querySelectorAll('[data-login-quota] [data-quota-reset]').length!==4)throw Error('Account cards missing quota summaries');
+  const first=root.querySelector('[data-login-name]');first.value='Work sign-in';first.focus();await pollLogins();if(!first.isConnected||first.value!=='Work sign-in')throw Error('Login polling replaced draft');
+  root.querySelector(`[data-action="login-rename"][data-id="${first.dataset.loginName}"]`).click();await wait(()=>loginState?.profiles.some(p=>p.name==='Work sign-in'));
+  root.querySelector('#login-name').value='Added sign-in';root.querySelector('[data-action="login-add"]').click();await wait(()=>loginState?.profiles.length===3);
+  root.querySelector('[data-action="login-switch"][data-id="'+('b'.repeat(32))+'"]').click();await wait(()=>loginState?.activeId==='b'.repeat(32));
+  const added=loginState.profiles.find(p=>p.name==='Added sign-in');root.querySelector(`[data-action="login-remove"][data-id="${added.id}"]`).click();await wait(()=>loginState?.profiles.length===2);
+  closeSettings();render();const quick=root.querySelector('.sidebar-account-switch');if(!quick)throw Error('Missing sidebar quick switch');
+  const nameStyle=getComputedStyle(root.querySelector('.sidebar-account-name'));if(Number(nameStyle.fontWeight)<600||parseFloat(nameStyle.lineHeight)<16)throw Error('Sidebar account label too small');
+  quick.click();await wait(()=>loginState?.activeId===quick.dataset.id);openSettings('accounts');await pollLogins();
+  const result={ok:!!root.querySelector('[data-action="login-embedded"]')&&!/access_token|refresh_token|authUrl/.test(root.innerHTML),accounts:loginState.profiles.length,switched:true,renamed:true,removed:true,quickSwitch:true,quotaSummary:true};
+  if(!preview)closeSettings();return result;
+};
+
 window.__contextAccountsPreview=async()=>{openSettings('cloud');await loadCloudSync();root.querySelector('[data-cloud-accounts]')?.scrollIntoView({block:'start'});};
 
 window.__contextAccountsSmoke=async()=>{
@@ -1137,17 +1173,26 @@ window.__contextCloudSmoke=async({preview=false}={})=>{
 
 root.addEventListener('input',event=>{
   if(!event.target.id.startsWith('activation-'))return;
-  activationDraft={notificationsEnabled:document.getElementById('activation-notifications').checked,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:document.getElementById('activation-tolerance').value,date:document.getElementById('activation-date').value};
+  activationDraft={notificationsEnabled:document.getElementById('activation-notifications').checked,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:document.getElementById('activation-tolerance').value,scheduleMode:document.getElementById('activation-mode').value,scheduleTime:document.getElementById('activation-time').value};
+  if(event.target.id==='activation-mode')render(true);
 });
 window.__contextActivationSmoke=async()=>{
   openSettings('activation');
-  const date=new Date(Date.now()+3600000),local=new Date(date-date.getTimezoneOffset()*60000).toISOString().slice(0,16);
   document.getElementById('activation-weekly').checked=true;
-  document.getElementById('activation-date').value=local;
-  document.getElementById('activation-date').dispatchEvent(new Event('input',{bubbles:true}));
+  document.getElementById('activation-mode').value='once';
+  document.getElementById('activation-mode').dispatchEvent(new Event('input',{bubbles:true}));
+  document.getElementById('activation-time').value='06:35';
+  document.getElementById('activation-time').dispatchEvent(new Event('input',{bubbles:true}));
   root.querySelector('[data-action="activation-save"]').click();
-  for(let i=0;i<100&&!state?.quotaActivation?.config.weeklyEnabled;i++)await new Promise(r=>setTimeout(r,20));
+  for(let i=0;i<150&&state?.quotaActivation?.config.scheduleMode!=='once';i++)await new Promise(r=>setTimeout(r,20));
+  const tomorrowOnly=state?.quotaActivation?.config.scheduledAt===nextActivationAt('06:35',Date.now(),{tomorrow:true});
+  document.getElementById('activation-mode').value='daily';
+  document.getElementById('activation-mode').dispatchEvent(new Event('input',{bubbles:true}));
+  root.querySelector('[data-action="activation-save"]').click();
+  for(let i=0;i<150&&state?.quotaActivation?.config.scheduleMode!=='daily';i++)await new Promise(r=>setTimeout(r,20));
   const saved=state?.quotaActivation?.config;
+  openSettings('activation');
+  const persisted=document.getElementById('activation-mode').value==='daily'&&document.getElementById('activation-time').value==='06:35';
   const toggle=document.getElementById('activation-weekly');
   // Sample the actual transition endpoints even when CI throttles a hidden window.
   const switchPosition=checked=>{
@@ -1158,6 +1203,8 @@ window.__contextActivationSmoke=async()=>{
   };
   const onPosition=switchPosition(true),offPosition=switchPosition(false);toggle.checked=true;
   const slidingSwitch=toggle.getAttribute('role')==='switch'&&getComputedStyle(toggle).appearance==='none'&&Math.abs(onPosition-16)<.1&&Math.abs(offPosition)<.1;
-  const ok=saved?.weeklyEnabled===true&&saved?.scheduledAt===new Date(local).getTime()&&!!root.querySelector('[data-activation-recommendation]')&&slidingSwitch;
-  return {ok,saved,slidingSwitch,onPosition,offPosition};
+  const ok=saved?.weeklyEnabled===true&&saved?.scheduledAt===nextActivationAt('06:35',Date.now())&&tomorrowOnly&&persisted&&!!root.querySelector('[data-activation-recommendation]')&&slidingSwitch;
+  return {ok,saved,tomorrowOnly,persisted,slidingSwitch,onPosition,offPosition};
 };
+
+async function pollLogins(){try{const next=await api.invoke('account-switch',{action:'status'}),changed=JSON.stringify(next)!==loginRendered;loginState=next;if(changed&&settingsOpen&&settingsTab==='accounts'&&!document.activeElement?.matches('input'))render();}catch(error){notify(error.message);}}

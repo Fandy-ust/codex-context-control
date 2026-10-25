@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createQuotaActivation} from '../src/quota-activation.mjs';
 import {activationRecommendation,resetConfirmed,HOUR,WEEK} from '../src/core/quota-activation.mjs';
+import {nextActivationAt,latestActivationAt} from '../src/core/activation-schedule.mjs';
+import {spawnSync} from 'node:child_process';
 
 function harness(saved={}){
   let time=1800000000000,sends=0,persisted;
@@ -9,6 +11,41 @@ function harness(saved={}){
   const manager=createQuotaActivation({load:()=>saved,save:v=>{persisted=structuredClone(v);},now:()=>time,quota:{state:()=>q,refresh:async()=>{q.updatedAt=time;}},probe:async()=>{sends++;}});
   return {manager,q,advance(ms){time+=ms;},get now(){return time;},get sends(){return sends;},get saved(){return persisted;}};
 }
+
+test('tomorrow-only always uses tomorrow, accepts only a valid local time and fires once',async()=>{
+ const h=harness(),today=new Date(h.now),expected=new Date(today.getFullYear(),today.getMonth(),today.getDate()+1,6,35).getTime();
+ h.manager.command({action:'configure',scheduleMode:'once',scheduleTime:'06:35'});assert.equal(h.saved.config.scheduledAt,expected);
+ for(const time of ['24:00','12:60','6:35','bad'])assert.throws(()=>h.manager.command({action:'configure',scheduleMode:'daily',scheduleTime:time}));
+ assert.equal(h.saved.config.scheduledAt,expected,'invalid configuration must preserve the prior reservation');
+ h.advance(expected-h.now);await h.manager.tick();assert.equal(h.sends,1);assert.equal(h.saved.config.scheduleMode,'off');assert.equal(h.saved.config.scheduledAt,null);
+});
+
+test('daily schedules persist the next local occurrence before sending and survive a restart',async()=>{
+ const h=harness();h.manager.command({action:'configure',scheduleMode:'daily',scheduleTime:'08:10'});const due=h.saved.config.scheduledAt;
+ h.advance(due-h.now);await h.manager.tick();assert.equal(h.sends,1);assert.equal(h.saved.config.scheduleMode,'daily');
+ const next=nextActivationAt('08:10',h.now);assert.equal(h.saved.config.scheduledAt,next);
+ const restarted=harness(h.saved);restarted.advance(h.now-restarted.now);await restarted.manager.tick();assert.equal(restarted.sends,0,'a restart must not resend the consumed occurrence');
+ h.q.buckets[0].primary.resetsAt=(h.now+5*HOUR)/1000;h.advance(10000);await h.manager.tick();assert.equal(h.saved.job.status,'confirmed');
+ h.advance(next-h.now);await h.manager.tick();assert.equal(h.sends,2);assert.equal(h.saved.config.scheduledAt,nextActivationAt('08:10',h.now));
+});
+
+test('missed daily occurrences are skipped without cancelling the following day or replaying a backlog',async()=>{
+ const h=harness();h.manager.command({action:'configure',scheduleMode:'daily',scheduleTime:'08:10'});const due=h.saved.config.scheduledAt;
+ h.advance(due-h.now+3*24*HOUR+20*60000);await h.manager.tick();assert.equal(h.sends,0);assert.equal(h.saved.job.status,'missed');assert.equal(h.saved.config.scheduleMode,'daily');
+ const next=h.saved.config.scheduledAt;assert.ok(next>h.now);h.advance(next-h.now);await h.manager.tick();assert.equal(h.sends,1);
+});
+
+test('waking within the latest daily grace window sends today once and cancellation removes recurrence',async()=>{
+ const h=harness();h.manager.command({action:'configure',scheduleMode:'daily',scheduleTime:'08:10'});const due=h.saved.config.scheduledAt;
+ h.advance(due-h.now+2*24*HOUR+5*60000);await h.manager.tick();assert.equal(h.sends,1);assert.equal(h.saved.job.dueAt,latestActivationAt('08:10',h.now));
+ h.manager.command({action:'cancel'});assert.equal(h.saved.config.scheduledAt,null);assert.equal(h.saved.config.scheduleMode,'off');h.advance(2*24*HOUR);await h.manager.tick();assert.equal(h.sends,1);
+});
+
+test('local calendar scheduling preserves the chosen time over daylight saving changes',()=>{
+ const url=new URL('../src/core/activation-schedule.mjs',import.meta.url).href;
+ const code=`import {nextActivationAt} from ${JSON.stringify(url)};const a=new Date(2026,9,31,8).getTime(),b=nextActivationAt('08:00',a);const c=new Date(2026,2,7,8).getTime(),d=nextActivationAt('08:00',c);console.log(JSON.stringify({fall:(b-a)/3600000,spring:(d-c)/3600000,hour:new Date(b).getHours()}));`;
+ const r=spawnSync(process.execPath,['--input-type=module','-e',code],{env:{...process.env,TZ:'America/New_York'},encoding:'utf8'});assert.equal(r.status,0,r.stderr);assert.deepEqual(JSON.parse(r.stdout),{fall:25,spring:23,hour:8});
+});
 test('one schedule sends once, verifies a fresh 5h timer, and never repeats',async()=>{
   const h=harness();h.manager.command({action:'configure',scheduledAt:h.now+1000});
   await h.manager.tick();assert.equal(h.sends,0);h.advance(1000);await h.manager.tick();assert.equal(h.sends,1);

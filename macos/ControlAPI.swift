@@ -2,6 +2,7 @@
 import Foundation
 enum ControlAPI {
     static let version = 1
+    static let accountSwitch = "/accounts"
     static let cloudSync = "/cloud-sync"
     static let state = "/state"
     static let statistics = "/context-stats"
@@ -23,6 +24,7 @@ enum ControlAPI {
     static let compensation = "/compaction-compensation"
     static let quotaActivation = "/quota/activation"
     static let routes: [String:String] = [
+        "account-switch": "/accounts",
         "cloud-sync": "/cloud-sync",
         "state": "/state",
         "statistics": "/context-stats",

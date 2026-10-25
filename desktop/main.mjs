@@ -1,3 +1,5 @@
+import {accountQuotaViews} from '../src/core/account-quota-link.mjs';
+import {openAccountBrowser} from './account-browser.mjs';
 import {createResetNotifier} from './quota-reset-notifications.mjs';
 import {createQuotaActivation} from '../src/quota-activation.mjs';
 import {createTaskQueues} from '../src/task-queues.mjs';
@@ -33,6 +35,7 @@ const {resolveLanguage,languagePreference,localize}=await import('../src/localiz
 if(process.platform==='win32')app.commandLine.appendSwitch('lang',resolveLanguage(languagePreference())==='zh'?'zh-CN':'en-US');
 const {demoState,demoStatistics}=await import('./demo.mjs');
 const demoCloudCredentials={};
+let demoLogins={profiles:[{id:'a'.repeat(32),email:'work@example.com',name:'Work',workspace:'demo-work',plan:'plus'},{id:'b'.repeat(32),email:'personal@example.com',name:'Personal',workspace:'demo-personal',plan:'plus'}],activeId:'a'.repeat(32),busy:false,restartRequired:false,job:null};
 let demoCloud={deviceName:'Demo workstation',statisticsMode:'current',excludedAccounts:[],excludedSyncAccounts:[],excludedDevices:[],accounts:[{id:'a'.repeat(32),label:'work@example.com',customName:'Work',current:true},{id:'b'.repeat(32),label:'personal@example.com',current:false}],deviceList:[],enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:'00000000000000000000000000000000',error:null,running:false};
 const demoQueues=demo?createTaskQueues({quota:{state:()=>({...demoState.quota,updatedAt:Date.now()}),refresh:async()=>{}},thread:id=>demoState.threads.find(t=>t.id===id),start:async(id,task)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='active';chat.automaticTask={executionId:task.executionId,status:'running'};},interrupt:async(id)=>{const chat=demoState.threads.find(t=>t.id===id);chat.status='idle';if(chat.automaticTask)chat.automaticTask.status='interrupted';}}):null;
 const demoActivation=demo?createQuotaActivation({quota:{state:()=>({...demoState.quota,updatedAt:Date.now()}),refresh:async()=>{}},probe:async()=>{}}):null;
@@ -69,12 +72,20 @@ app.on('window-all-closed',()=>{});
 app.on('activate',()=>showMain());
 async function api(action,params={}){
   if(demo){
+    if(action==='account-switch'){
+      if(params.action==='preflight')return {blockers:[]};
+      if(params.action==='rename'){demoLogins.profiles.find(p=>p.id===params.id).name=params.name;}
+      if(params.action==='remove'){demoLogins.profiles=demoLogins.profiles.filter(p=>p.id!==params.id);}
+      if(params.action==='switch'){demoLogins.activeId=params.id;demoLogins.job={status:'switched'};}
+      if(params.action==='login'){demoLogins.profiles.push({id:'c'.repeat(32),email:'added@example.com',name:params.name||'',workspace:'demo-added',plan:'plus'});demoLogins.job={status:'completed'};}
+      return structuredClone(accountQuotaViews(demoLogins,demoState.quota).login);
+    }
     if(action==='cloud-sync'){
       if(params.action==='set-account-visibility'){demoCloud.accounts.find(p=>p.id===params.id).showQuota=params.visible;demoState.quota.accounts.find(a=>a.scope==='account:'+params.id).showQuota=params.visible;}
       if(params.action==='rename-account'){const p=demoCloud.accounts.find(p=>p.id===params.id);p.customName=params.name.trim();demoState.quota.accounts.find(a=>a.scope==='account:'+p.id).label=p.customName||p.label;}
       if(params.action==='delete-account'){demoCloud.accounts=demoCloud.accounts.filter(p=>p.id!==params.id);demoState.quota.accounts=demoState.quota.accounts.filter(p=>p.scope!=='account:'+params.id);}
       if(params.action==='credential')return {value:demoCloudCredentials[params.field]||''};if(['configure','save-and-sync'].includes(params.action)){const {token,key,action,claimLegacy,...value}=params;if(token)demoCloudCredentials.token=token;if(key)demoCloudCredentials.key=key;demoCloud={...demoCloud,...value,hasToken:!!token||demoCloud.hasToken,hasKey:!!key||demoCloud.hasKey};}if(params.action==='create-gist')demoCloud.gistId='a'.repeat(32);if(['sync','save-and-sync'].includes(params.action)){demoCloud.enabled=true;demoCloud.lastSuccess=Date.now();demoCloud.devices=5;}return structuredClone(demoCloud);}
-    if(action==='state')return structuredClone({...demoState,quotaActivation:demoActivation.state(),taskQueues:demoQueues.list()});
+    if(action==='state')return structuredClone({...demoState,quota:accountQuotaViews(demoLogins,demoState.quota).quota,quotaActivation:demoActivation.state(),taskQueues:demoQueues.list()});
     if(action==='quota-activation')return demoActivation.command(params);
     if(action==='task-queue')return demoQueues.command(params);
     if(action==='statistics')return structuredClone({...demoStatistics,threadId:params.id});
@@ -134,6 +145,18 @@ function trayMenu(){return Menu.buildFromTemplate([{label:label('打开主窗口
 ipcMain.handle('context-manager',async(event,action,params)=>{
   if(![main?.webContents.id,trayWindow?.webContents.id].includes(event.sender.id)||event.senderFrame!==event.sender.mainFrame)throw Error('Unknown UI sender');
   if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>65536)throw Error('Invalid UI request');
+  if(action==='account-switch'){
+    const result=await api(action,params);
+    if(params.action==='login'&&result.authUrl){try{if(params.browser==='embedded')openAccountBrowser(result.authUrl,main);else if(!smoke)await shell.openExternal(result.authUrl);}catch{await api(action,{action:'cancel'});throw Error(label('无法打开授权窗口，请重试','Could not open sign-in; please retry'));}}
+    const {authUrl,...publicResult}=result;return publicResult;
+  }
+  if(['confirm-account-switch','confirm-login-remove'].includes(action)){
+    if(smoke&&demo)return {confirmed:true};
+    const switching=action==='confirm-account-switch';
+    const blockers=switching?(await api('account-switch',{action:'preflight'})).blockers||[]:[],force=blockers.length>0;
+    const detail=switching?(force?label(blockers.join('；')+'。强制停止将暂停所有队列并关闭 Codex 和 CLI 会话，中断运行中的任务，然后切换账号。','Force stop will pause all queues, close Codex and CLI sessions, interrupt running work, then switch accounts.'):label('将切换账号并重新打开 Codex，保留聊天历史。','Switch accounts and reopen Codex, preserving chat history.')):label('不会退出当前账号，也不会删除该账号的统计数据。','This does not sign out the active account or delete its statistics.');
+    const answer=await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender),{type:force?'warning':'question',title:label(switching?'切换账号':'移除保存的登录',switching?'Switch account':'Remove saved sign-in'),message:label(switching?`切换到 ${typeof params.name==='string'?params.name.slice(0,160):'所选账号'} 并重新打开 Codex？`:'从本机保险库移除此登录？',switching?`Switch to ${typeof params.name==='string'?params.name.slice(0,160):'the selected account'} and reopen Codex?`:'Remove this sign-in from the local vault?'),detail,buttons:[label('取消','Cancel'),label(switching?(force?'强制停止并切换':'切换'):'移除',switching?(force?'Force stop and switch':'Switch'):'Remove')],defaultId:0,cancelId:0,noLink:true});return {confirmed:answer.response===1,force:answer.response===1&&force};
+  }
   if(action==='cloud-sync'&&params.action==='credential')throw Error('Use the credential copy action');
   if(action==='cloud-copy-credential'){
     if(!['token','key'].includes(params.field))throw Error('Invalid sync credential field');
@@ -250,7 +273,7 @@ if(args.includes('--quit')){app.quit();}else{
           await new Promise(resolve=>setTimeout(resolve,220));
           fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-statistics.png'),(await main.webContents.capturePage()).toPNG());
       }
-      await main.webContents.executeJavaScript('window.__contextQuotaSmoke()');console.log('QUOTA_ANALYTICS_SMOKE '+JSON.stringify(analyticsSmoke));const cloudSmoke=await main.webContents.executeJavaScript('window.__contextCloudSmoke()');if(!cloudSmoke.ok)throw Error(JSON.stringify(cloudSmoke));console.log('CLOUD_SYNC_SMOKE '+JSON.stringify(cloudSmoke));const accountsSmoke=await main.webContents.executeJavaScript('window.__contextAccountsSmoke()');if(!accountsSmoke.ok)throw Error(JSON.stringify(accountsSmoke));console.log('ACCOUNT_MANAGEMENT_SMOKE '+JSON.stringify(accountsSmoke));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'multi-account-sidebar.png'),(await main.webContents.capturePage()).toPNG());await main.webContents.executeJavaScript('window.__contextAccountsPreview()');await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'account-management.png'),(await main.webContents.capturePage()).toPNG());}const results=await Promise.all([main,trayWindow].map(w=>w.webContents.executeJavaScript('window.__contextSmoke()')));if(results.some(r=>!r.ok))throw Error(JSON.stringify(results));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await main.webContents.executeJavaScript('window.__contextSmoke({preview:true})');await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'timeline-settings.png'),(await main.webContents.capturePage()).toPNG());}
+      await main.webContents.executeJavaScript('window.__contextQuotaSmoke()');console.log('QUOTA_ANALYTICS_SMOKE '+JSON.stringify(analyticsSmoke));const cloudSmoke=await main.webContents.executeJavaScript('window.__contextCloudSmoke()');if(!cloudSmoke.ok)throw Error(JSON.stringify(cloudSmoke));console.log('CLOUD_SYNC_SMOKE '+JSON.stringify(cloudSmoke));const accountsSmoke=await main.webContents.executeJavaScript('window.__contextAccountsSmoke()');if(!accountsSmoke.ok)throw Error(JSON.stringify(accountsSmoke));console.log('ACCOUNT_MANAGEMENT_SMOKE '+JSON.stringify(accountsSmoke));const loginSmoke=await main.webContents.executeJavaScript('window.__contextLoginSmoke({preview:true})');if(!loginSmoke.ok)throw Error(JSON.stringify(loginSmoke));console.log('ACCOUNT_SWITCH_SMOKE '+JSON.stringify(loginSmoke));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR)fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'account-switch-0.27.0.png'),(await main.webContents.capturePage()).toPNG());await main.webContents.executeJavaScript("document.querySelector('.settings-close').click()");if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'multi-account-sidebar.png'),(await main.webContents.capturePage()).toPNG());await main.webContents.executeJavaScript('window.__contextAccountsPreview()');await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'account-management.png'),(await main.webContents.capturePage()).toPNG());}const results=await Promise.all([main,trayWindow].map(w=>w.webContents.executeJavaScript('window.__contextSmoke()')));if(results.some(r=>!r.ok))throw Error(JSON.stringify(results));if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await main.webContents.executeJavaScript('window.__contextSmoke({preview:true})');await new Promise(r=>setTimeout(r,100));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'timeline-settings.png'),(await main.webContents.capturePage()).toPNG());}
       // Use native wheel input so Chromium's scroll latching is exercised.
       const sliderPoint=await main.webContents.executeJavaScript("window.__contextSliderSmoke('prepare')");
       main.webContents.sendInputEvent({type:'mouseMove',...sliderPoint});

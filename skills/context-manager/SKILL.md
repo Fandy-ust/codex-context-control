@@ -1,6 +1,6 @@
 ---
 name: context-manager
-description: "Control Codex context budgets and quota-aware task queues through the installed Context Manager extension. Use for per-chat or global context settings, quota checks, queue scheduling, and response-speed analysis; not for editing source code or generic Codex configuration."
+description: "Manage Codex chat task queues, quota monitoring, context budgets and recorded response speed through Context Manager. Use to add or reorder a chat's tasks, start/pause monitoring, adjust quota reserves or inspect reset times; not for source-code editing or generic Codex configuration."
 ---
 
 # Context Manager
@@ -35,16 +35,30 @@ After a change, inspect `phase`, `expectedWindow`, `observedWindow`, and `compen
 
 Read `global quota` and `queue show CHAT_ID` before adjusting the queue. Use `global usage` for consumption history and `global status` for extension state.
 
+Resolve the requested chat with `queue chats` or `chat list`, then `chat show CHAT_ID`. For “this chat”, prefer a known current thread ID (for example `CODEX_THREAD_ID`) and verify it against the controller. Do not assume the first or most recently active chat is the foreground chat. Ask only when the target remains ambiguous.
+
 ```text
 queue add CHAT_ID --prompt-file task.txt --request-id UNIQUE_ID
 queue start CHAT_ID
 queue pause CHAT_ID
 queue pause-cycle CHAT_ID
+queue monitoring-off
+queue monitoring-on
 ```
+
+`queue monitoring-off/on` controls the global quota monitor while preserving per-chat switches and reserves. `queue pause-all` disables every chat's switch. Neither is a request to interrupt a live turn. Use `queue stop CHAT_ID TASK_ID` when the user asks to stop the running task, then inspect its status.
+
+To add work, put the full task and acceptance criteria in a UTF-8 prompt file; supply a stable request ID. Add multiple tasks separately in the requested order. Omit model and effort overrides by default: empty values follow the target chat's current model and observed reasoning effort at dispatch; missing effort falls back to `medium` (not `median`). Explicit user choices take precedence. Inspect `queue models` before specifying a model or effort it may not support. Keep inherited permissions unless the user requests a change.
 
 Use `queue config` or `queue task-config` with `--input config.json` to set 5-hour and weekly reserves, optional release stages near a reset, and automatic or manual resumption. Read `queue schema` for the current format. Task settings, including model, effort, inherited permissions, and attachments, can be supplied through `--settings-file`.
 
 Adding a task does not start a paused queue. Start/resume remains subject to quota, connection, idle-state, and context checks. `queue pause` stops later dispatches; `queue stop CHAT_ID TASK_ID` requests interruption of the specified running task. Query again to confirm the result. The controller owns scheduling and quota protection.
+
+To reorder tasks, read the latest queue and send the **complete** task-ID array (including retained history) to `queue reorder CHAT_ID --input order.json`. Preserve the running task's position and every other task's settings and attachments. Use the snapshot's revision; reread on conflict. The UI also supports dragging task cards.
+
+Quota monitoring defaults to 20% five-hour and 10% weekly reserves; read the actual saved configuration instead of resetting existing settings. `global quota --refresh` shows observed balances and reset timestamps; cached data from an inactive account is not a live measurement.
+
+The updated queue runtime automatically requests native compaction when context blocks a pending task, then checks the new usage before sending the original prompt once. It does not treat a compaction request as completion. If compression fails or no fresh usage arrives, inspect `chat show` and the task error; do not repeatedly add copies or blindly retry. When manually requested, `chat compact CHAT_ID` compresses the idle chat. Existing failed tasks require `queue retry CHAT_ID TASK_ID` and, if paused, `queue resume CHAT_ID`.
 
 ## Speed and statistics
 

@@ -4,7 +4,7 @@ import AppKit
 struct Budget: Decodable,Equatable { let window:Int;let compact:Int;let reserve:Int;let retainedFloor:Int;let revision:Int;let enabled:Bool? }
 struct Usage: Decodable,Equatable { let totalTokens:Int }
 struct QuotaActivationState:Decodable,Equatable {
-    struct Config:Decodable,Equatable {let notificationsEnabled:Bool?;let weeklyEnabled:Bool;let scheduledAt:Double?;let toleranceMinutes:Int}
+    struct Config:Decodable,Equatable {let notificationsEnabled:Bool?;let weeklyEnabled:Bool;let scheduledAt:Double?;let toleranceMinutes:Int;let scheduleMode:String?;let scheduleTime:String?}
     struct Job:Decodable,Equatable {let status:String;let attempts:Int;let message:String?}
     struct Recommendation:Decodable,Equatable {let sampleCount:Int;let leadHours:Double?;let consumptionHours:Double?;let leadMinHours:Double?;let leadMaxHours:Double?}
     let config:Config;let job:Job?;let busy:Bool;let recommendation:Recommendation?
@@ -22,7 +22,7 @@ struct CompensationDetails:Decodable,Equatable {let enabled:Bool;let status:Stri
 struct CompensationState:Decodable,Equatable {let enabled:Bool;let pending:Bool;let message:String}
 struct ResponseSpeed:Decodable,Equatable {let tokensPerSecond:Double;let direction:String?;let samples:[Double?]?}
 struct Chat: Identifiable, Decodable,Equatable {
-    let id:String;let name:String?;let model:String?;let cwd:String?;let status:String?
+    let id:String;let name:String?;let model:String?;var effort:String?=nil;let cwd:String?;let status:String?
     let connected:Bool;let ambiguous:Bool;let phase:String?;let message:String?
     let taskQueueSupported:Bool?;let taskQueueRestartRequired:Bool?
     var queueRestartRequired:Bool{taskQueueRestartRequired == true || (connected && taskQueueSupported == false)}
@@ -56,7 +56,7 @@ struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:
 struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPercent:Double;let windowDurationMins:Int?;let resetsAt:Int?}
 struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?;let creditBalance:String?}
 struct CreditBaseline:Decodable,Equatable {let last:Double;let baseline:Double}
-struct QuotaAccount:Decodable,Equatable,Identifiable {var id:String{scope};let scope:String;let label:String?;let current:Bool;let showQuota:Bool?;let buckets:[QuotaBucket];let updatedAt:Int?;let creditBaselines:[String:CreditBaseline?]?}
+struct QuotaAccount:Decodable,Equatable,Identifiable {var id:String{scope};let scope:String;let label:String?;let current:Bool;let showQuota:Bool?;let loginId:String?;let buckets:[QuotaBucket];let updatedAt:Int?;let creditBaselines:[String:CreditBaseline?]?}
 struct QuotaState:Decodable,Equatable {let accounts:[QuotaAccount]?;let resetNotification:QuotaResetEvent?;let creditBaselines:[String:CreditBaseline?]?;let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
 struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics:Bool?;let creditBaseline:Bool?}
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}

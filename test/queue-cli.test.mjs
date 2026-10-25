@@ -1,6 +1,12 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawnSync} from 'node:child_process';import {Readable} from 'node:stream';
 import {runQueueCLI,createQueueClient} from '../src/queue-cli.mjs';
 import {installQueueCLI,removeQueueCLI} from '../src/cli-launcher.mjs';
+
+test('global monitoring commands preserve chat switches and do not require a chat id',async()=>{
+ const calls=[],client=async(op,p)=>{calls.push({op,p});return {queues:[]};};
+ await runQueueCLI(['monitoring-off'],{client});await runQueueCLI(['monitoring-on'],{client});
+ assert.deepEqual(calls,[{op:'task-queue',p:{action:'monitoring',enabled:false}},{op:'task-queue',p:{action:'monitoring',enabled:true}}]);
+});
 test('queue CLI preserves literal input, supplies revisions, and distinguishes pause from interruption',async()=>{
  const calls=[],client=async(op,p)=>{calls.push({op,p});return op==='state'?{capabilities:{taskQueues:true},taskQueues:{queues:[{id:'chat',revision:7,tasks:[]}]},threads:[],queueModels:[]}:{queues:[]};};
  const prompt='Read $(not-a-command) and `literal`\nThen test 中文.';
