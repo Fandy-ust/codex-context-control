@@ -12,6 +12,7 @@ test('statistics endpoint requires authentication and a known chat, returns no r
  fs.writeFileSync(file,[{type:'session_meta',payload:{}},{type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'PRIVATE_BODY_NOT_FOR_API'}]}}].map(x=>JSON.stringify(x)).join('\n')+'\n');
  const db=new DatabaseSync(path.join(home,'state_5.sqlite'));db.exec('CREATE TABLE threads(id TEXT,rollout_path TEXT)');db.prepare('INSERT INTO threads VALUES(?,?)').run(id,file);db.close();
  const {startDaemon}=await import('../src/daemon.mjs');const daemon=await startDaemon();daemon.store.data.threads[id]={id};
+ assert.equal(fs.existsSync(path.join(root,'control/quota-history.sqlite')),false,'starting without saved accounts keeps the quota ledger lazy');
  try{
   const connection=JSON.parse(fs.readFileSync(path.join(root,'control/connection.json'),'utf8'));
   const url=`http://127.0.0.1:${connection.port}/context-stats`;

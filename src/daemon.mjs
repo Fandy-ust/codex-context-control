@@ -65,7 +65,8 @@ export async function startDaemon() {
   const quotaActivation=createQuotaActivation({load:()=>{try{return JSON.parse(fs.readFileSync(activationFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(activationFile,value),quota,probe:runQuotaProbe,recommend:()=>quotaAnalytics.activationRecommendation()});
   const activationTimer=setInterval(()=>quotaActivation.tick().catch(()=>{}),10000);activationTimer.unref();
   const cloudSync=createCloudSync({home:root,analytics:quotaAnalytics,prepare:()=>quota.refresh(true),removeQuotaAccounts:scopes=>quota.removeAccounts(scopes)});
-  void cloudSync.command({action:'status'}).catch(()=>{});
+  // Hydrate saved accounts without opening a new ledger in an empty installation.
+  if(fs.existsSync(path.join(root,'quota-history.sqlite')))void cloudSync.command({action:'status'}).catch(()=>{});
   function accountQuotaState(){
     const value=quota.state(),profiles=cloudSync.state().accounts,result=new Map();
     for(const profile of profiles){const candidates=value.accounts.filter(a=>profile.scopes?.includes(a.scope));if(profile.quota)candidates.push(profile.quota);candidates.sort((a,b)=>b.updatedAt-a.updatedAt);const account=candidates[0]||{scope:profile.scopes?.[0]||'cloud:'+profile.id,buckets:[],updatedAt:null};if(account)result.set(profile.id,{...account,current:profile.scopes?.includes(value.accountScope)||false,label:profile.customName||profile.label||account.label,showQuota:profile.showQuota!==false,creditBaselines:value.accounts.find(a=>a.scope===account.scope)?.creditBaselines||{}});}
