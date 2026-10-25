@@ -1148,9 +1148,16 @@ window.__contextActivationSmoke=async()=>{
   root.querySelector('[data-action="activation-save"]').click();
   for(let i=0;i<100&&!state?.quotaActivation?.config.weeklyEnabled;i++)await new Promise(r=>setTimeout(r,20));
   const saved=state?.quotaActivation?.config;
-  const toggle=document.getElementById('activation-weekly'),onStyle=getComputedStyle(toggle,'::before').transform;
-  toggle.checked=false;toggle.classList.add('no-motion');await new Promise(r=>setTimeout(r,220));const offStyle=getComputedStyle(toggle,'::before').transform;toggle.checked=true;
-  const slidingSwitch=toggle.getAttribute('role')==='switch'&&getComputedStyle(toggle).appearance==='none'&&onStyle!==offStyle;
+  const toggle=document.getElementById('activation-weekly');
+  // Sample the actual transition endpoints even when CI throttles a hidden window.
+  const switchPosition=checked=>{
+    toggle.checked=checked;getComputedStyle(toggle,'::before').transform;
+    for(const animation of toggle.getAnimations({subtree:true}))animation.finish();
+    const transform=getComputedStyle(toggle,'::before').transform;
+    return transform==='none'?0:new DOMMatrixReadOnly(transform).m41;
+  };
+  const onPosition=switchPosition(true),offPosition=switchPosition(false);toggle.checked=true;
+  const slidingSwitch=toggle.getAttribute('role')==='switch'&&getComputedStyle(toggle).appearance==='none'&&Math.abs(onPosition-16)<.1&&Math.abs(offPosition)<.1;
   const ok=saved?.weeklyEnabled===true&&saved?.scheduledAt===new Date(local).getTime()&&!!root.querySelector('[data-activation-recommendation]')&&slidingSwitch;
-  return {ok,saved,slidingSwitch};
+  return {ok,saved,slidingSwitch,onPosition,offPosition};
 };
