@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
 
-test('the actual native settings view switches English and Chinese without changing a chat budget',{skip:process.platform!=='darwin',timeout:120000},()=>{
+test('the actual native settings view switches English and Chinese without changing a chat budget',{skip:process.platform!=='darwin',timeout:300000},()=>{
  const repo=fileURLToPath(new URL('../',import.meta.url)),temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-language-ui-'));
  try{
   fs.mkdirSync(path.join(repo,'build'),{recursive:true});
@@ -52,7 +52,10 @@ import Vision
 }
 `);
   const sources=fs.readdirSync(path.join(repo,'macos')).filter(name=>name.endsWith('.swift')&&name!=='ContextControl.swift'&&name!=='ContextApplication.swift').map(name=>path.join(repo,'macos',name));
-  const binary=path.join(temp,'check');let r=spawnSync('xcrun',['swiftc','-parse-as-library',...sources,path.join(temp,'Control.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit','-framework','Vision'],{encoding:'utf8',timeout:95000});assert.equal(r.status,0,r.stderr);
+  // This harness compiles the full native UI again. Account and queue views now
+  // take longer than the old 95-second ceiling on hosted runners; keep a
+  // bounded compile budget and retain the separate 30-second UI/OCR check.
+  const binary=path.join(temp,'check');let r=spawnSync('xcrun',['swiftc','-parse-as-library',...sources,path.join(temp,'Control.swift'),path.join(temp,'Main.swift'),'-o',binary,'-framework','SwiftUI','-framework','AppKit','-framework','Vision'],{encoding:'utf8',timeout:240000});assert.ifError(r.error);assert.equal(r.status,0,r.stderr);
   const env={...process.env,CONTEXT_CONTROL_HOME:path.join(temp,'home'),CONTEXT_CONTROL_LOCALIZATION_FILE:path.join(repo,'src/locales/en.json')};
   r=spawnSync(binary,[path.join(repo,'build')],{env,encoding:'utf8',timeout:30000});assert.equal(r.status,0,r.stderr+r.stdout);assert.match(r.stdout,/unchanged budget passed/);
  }finally{fs.rmSync(temp,{recursive:true,force:true});}
