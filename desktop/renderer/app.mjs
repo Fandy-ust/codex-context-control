@@ -540,7 +540,9 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       if(params.action==='configure'){
         params={...params,notificationsEnabled:document.getElementById('activation-notifications').checked,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:Number(document.getElementById('activation-tolerance').value),scheduleMode:document.getElementById('activation-mode').value,scheduleTime:document.getElementById('activation-time').value};
       }
-      await api.invoke('quota-activation',params);activationDraft=null;await refresh();render();return;
+      const submittedDraft=activationDraft,result=await api.invoke('quota-activation',params);
+      state={...state,quotaActivation:result};if(activationDraft===submittedDraft)activationDraft=null;
+      render(true);return;
     }
     if(action==='quota-refresh'){await run('quota-refresh');await refresh();if(settingsOpen)render();return;}
     if(action==='integration-toggle'){
