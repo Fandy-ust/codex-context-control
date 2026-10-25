@@ -78,6 +78,7 @@ export function createQuotaAnalyticsService({home = root, historyHome = codexHom
       });
     },
     activationRecommendation:()=>call('activation-recommendation'),
+    deleteAccount:params=>call('delete-account',params),
     syncSettings:params=>call('sync-settings',params),
     syncExport:params=>call('sync-export',params),
     syncImport:params=>call('sync-import',params),

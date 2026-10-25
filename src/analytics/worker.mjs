@@ -21,6 +21,7 @@ parentPort.on('message', ({id, action, params = {}}) => {
     else if (action === 'sync-export') result=ledger.syncExport(params);
     else if (action === 'sync-import') result=ledger.syncImport(params);
     else if (action === 'sync-profiles') result=ledger.syncProfiles();
+    else if (action === 'delete-account') result=ledger.deleteAccount(params);
     else if (action === 'sync-settings') result=ledger.syncSettings(params);
     else if (action === 'activation-recommendation') {const currentScope=ledger.metadata('currentScope');result=activationRecommendation({...ledger.localRead(Date.now()-21*86400000),currentScope});}
     else if (action === 'report') {

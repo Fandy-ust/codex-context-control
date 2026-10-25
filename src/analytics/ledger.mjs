@@ -84,6 +84,7 @@ export class QuotaLedger {
   setMetadata(key, value) {this.db.prepare('INSERT OR REPLACE INTO meta VALUES (?,?)').run(key, JSON.stringify(value));}
   snapshot(value, source = 'live') {
     if (!value || !Number.isFinite(value.at) || value.at < this.now() - RETENTION || value.at > this.now() + 60000) return;
+    if(value.at<=(this.metadata('deletedAccountScopes')?.[value.scope]??0))return;
     // Preserve every distinct observed reading within a minute. Only identical
     // readings coalesce; do not overwrite a 1 pp change or a credit change.
     const id = snapshotId(value);
@@ -98,7 +99,7 @@ export class QuotaLedger {
     if(typeof accountGroup==='string'&&/^[a-f0-9]{32}$/.test(accountGroup))this.setMetadata('accountGroups',{...(this.metadata('accountGroups')||{}),[scope]:accountGroup});
     if(accountGroup&&typeof identity==='string'&&identity.length<=4096){
       const profiles=this.metadata('accountProfiles')||{};
-      profiles[accountGroup]={identity,label:text(label,160)||scope.slice(-8)};
+      profiles[accountGroup]={...profiles[accountGroup],identity,label:text(label,160)||scope.slice(-8),...(buckets?.length?{quota:{scope,buckets,updatedAt:at}}:{})};
       this.setMetadata('accountProfiles',profiles);
     }
     for (const bucket of buckets || []) this.snapshot(projectQuota(bucket, {scope, at, bucketId: bucket.id}));
@@ -120,6 +121,7 @@ export class QuotaLedger {
       const rawCached = count(usage.cached_input_tokens), cached = rawCached != null && rawCached <= input ? rawCached : null;
       const record = {id, at, thread: source.id, model: source.model || null, project: source.project, name: source.name,
         input, output, cached, written:count(usage.cache_write_input_tokens),scope:this.scopeAt(at)};
+      if(at<=(this.metadata('deletedAccountScopes')?.[record.scope]??0))return;
       this.putRequest.run(id, source.id, at, JSON.stringify(record));
     }
     if (event.type === 'event_msg' && p.type === 'token_count') {
@@ -194,7 +196,36 @@ export class QuotaLedger {
   }
   syncProfiles(){
     const profiles=this.metadata('accountProfiles')||{},groups=this.metadata('accountGroups')||{},current=this.metadata('currentScope');
-    return Object.entries(profiles).map(([group,p])=>({...p,group,scopes:Object.keys(groups).filter(s=>groups[s]===group),current:groups[current]===group}));
+    return Object.entries(profiles).map(([group,p])=>{
+      const scopes=Object.keys(groups).filter(s=>groups[s]===group);let quota=p.quota;
+      if(!quota&&scopes.length){
+        const rows=this.db.prepare('SELECT data FROM snapshots WHERE scope IN ('+scopes.map(()=>'?').join(',')+') ORDER BY at DESC').all(...scopes).map(r=>JSON.parse(r.data));
+        const latest=new Map();for(const row of rows)if(!latest.has(row.bucket))latest.set(row.bucket,row);
+        if(rows.length){const window=(used,reset,minutes)=>used==null?null:{usedPercent:used,remainingPercent:100-used,resetsAt:reset,windowDurationMins:minutes};quota={scope:rows[0].scope,updatedAt:rows[0].at,buckets:[...latest.values()].map(r=>({id:r.bucket,name:r.bucket,primary:window(r.fiveUsed,r.fiveReset,300),secondary:window(r.weeklyUsed,r.weeklyReset,10080),creditBalance:r.credits==null?null:String(r.credits)}))};}
+      }
+      return {...p,quota,group,scopes,current:groups[current]===group};
+    });
+  }
+  deleteAccount({id,scopes=[]}){
+    if(!/^[a-f0-9]{32}$/.test(id)||!Array.isArray(scopes)||scopes.some(s=>!/^account:[a-f0-9]{32}$/.test(s)))throw Error('Invalid account');
+    const groups=this.metadata('accountGroups')||{},groupIds=new Set(scopes.map(s=>groups[s]).filter(Boolean));
+    scopes=[...new Set([...scopes,...Object.keys(groups).filter(s=>groupIds.has(groups[s]))])];
+    this.db.exec('BEGIN IMMEDIATE');
+    try{
+      const deleted=this.metadata('deletedAccountScopes')||{},profiles=this.metadata('accountProfiles')||{};
+      for(const scope of scopes){
+        this.db.prepare("DELETE FROM requests WHERE json_extract(data,'$.scope')=?").run(scope);
+        this.db.prepare('DELETE FROM snapshots WHERE scope=?').run(scope);deleted[scope]=this.now();
+        if(groups[scope])delete profiles[groups[scope]];
+      }
+      const bindings=this.metadata('cloudBindings')||{},related=new Set([id,...Object.keys(bindings).filter(key=>scopes.includes(bindings[key].scope))]);
+      for(const account of related){this.db.prepare('DELETE FROM cloud_shards WHERE account=?').run(account);delete bindings[account];}
+      this.setMetadata('cloudBindings',bindings);
+      if(related.has(this.metadata('cloudBinding')?.account))this.setMetadata('cloudBinding',null);
+      this.setMetadata('deletedAccountScopes',deleted);this.setMetadata('accountProfiles',profiles);
+      this.setMetadata('deletedCloudAccounts',{...(this.metadata('deletedCloudAccounts')||{}),...Object.fromEntries([...related].map(account=>[account,this.now()]))});
+      this.db.exec('COMMIT');return {scopes};
+    }catch(error){this.db.exec('ROLLBACK');throw error;}
   }
   syncSettings({enabled=false,deviceId,statisticsMode='current',includeUnassigned=false,excludedAccounts=[],excludedDevices=[],accounts=[]}){
     // Account labels and encrypted identity envelopes are not report metadata.
@@ -252,7 +283,8 @@ export class QuotaLedger {
   syncImport({account,scope,shards,enabled=true}){
     if(!enabled){this.setMetadata('cloudBinding',null);this.setMetadata('cloudSyncEnabled',false);return;}
     if(!/^[a-f0-9]{32}$/.test(account)||!/^(account:[a-f0-9]{32}|cloud:[a-f0-9]{32})$/.test(scope)||!Array.isArray(shards)||shards.length>5000)throw Error('Invalid sync import');
-    const checked=shards.map(s=>{if(typeof s.id!=='string'||s.id.length>240)throw Error('Invalid shard');return {...s,data:numericRecords(s.data,this.now())};});
+    const cutoff=this.metadata('deletedCloudAccounts')?.[account]??0;
+    const checked=shards.map(s=>{if(typeof s.id!=='string'||s.id.length>240)throw Error('Invalid shard');const data=numericRecords(s.data,this.now());return {...s,data:{...data,requests:data.requests.filter(r=>r.at>cutoff),snapshots:data.snapshots.filter(r=>r.at>cutoff)}};});
     const retained=this.db.prepare("SELECT COALESCE(SUM(json_array_length(data,'$.requests')+json_array_length(data,'$.snapshots')),0) AS n FROM cloud_shards WHERE account<>?").get(account).n;
     if(retained+checked.reduce((n,s)=>n+s.data.requests.length+s.data.snapshots.length,0)>500000)throw Error('Sync history exceeds local record limit');
     this.db.exec('BEGIN');try{

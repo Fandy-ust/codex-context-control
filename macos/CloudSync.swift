@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-struct CloudSyncAccount:Decodable,Identifiable {var id:String;var label:String?;var current:Bool?}
+struct CloudSyncAccount:Decodable,Identifiable {var id:String;var label:String?;var customName:String?;var current:Bool?;var showQuota:Bool?}
 struct CloudSyncDevice:Decodable,Identifiable {var id:String;var name:String?;var lastSync:Double?}
 struct CloudSyncState:Decodable {
     var enabled:Bool;var provider:String;var repository:String;var gistId:String
@@ -16,6 +16,8 @@ struct CloudSyncState:Decodable {
 struct CloudSyncView:View {
     @ObservedObject var model:Controller
     @State private var state:CloudSyncState?
+    @State private var accountNames:[String:String]=[:]
+    @State private var deletingAccount:CloudSyncAccount?
     @State private var deviceName=""
     @State private var statisticsMode="current"
     @State private var includeUnassigned=false
@@ -88,6 +90,10 @@ struct CloudSyncView:View {
             }
             Text(L("各设备保留独立设备 ID，请勿复制整份应用数据目录。关闭同步恢复本机统计，不删除云端历史。")).font(.caption).foregroundStyle(.secondary)
         }.textFieldStyle(.roundedBorder).padding(20).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
+        .alert(L("删除账号及统计"),isPresented:Binding(get:{deletingAccount != nil},set:{if !$0{deletingAccount=nil}})){
+            Button(L("取消"),role:.cancel){deletingAccount=nil}
+            Button(L("删除账号及统计"),role:.destructive){if let account=deletingAccount{Task{await run(["action":"delete-account","id":account.id])}};deletingAccount=nil}
+        } message:{Text(L("清除该账号的本机缓存及全部本机统计，无法撤销。不会退出 Codex，其他设备和云端原始数据保留；当前账号再次检测后会记录新数据。"))}
         .task{await refresh();while !Task.isCancelled{do{try await Task.sleep(nanoseconds:2_000_000_000)}catch{return};if !busy{await refresh()}}}
     }
     private func included(_ id:String,in values:Binding<Set<String>>) -> Binding<Bool> {
@@ -103,8 +109,14 @@ struct CloudSyncView:View {
             Text(L("账号自动识别，套餐或模型变化不会新建账号。勾选仅在本机生效；取消统计不删除历史。")).font(.caption).foregroundStyle(.secondary)
             ForEach(state?.accounts ?? []){account in
                 VStack(alignment:.leading,spacing:6){
-                    Text((account.label ?? String(account.id.prefix(8)))+(account.current==true ? " · "+L("当前登录"):"" )).font(.subheadline.bold())
+                    Text((account.customName?.isEmpty==false ? account.customName!:account.label ?? String(account.id.prefix(8)))+(account.current==true ? " · "+L("当前登录"):"" )).font(.subheadline.bold())
                     Text(account.id).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+                    HStack{
+                        TextField(account.label ?? L("账号简称"),text:Binding(get:{accountNames[account.id] ?? account.customName ?? ""},set:{accountNames[account.id]=String($0.prefix(40))}))
+                        Button(L("保存名称")){Task{await run(["action":"rename-account","id":account.id,"name":accountNames[account.id] ?? account.customName ?? ""]);accountNames.removeValue(forKey:account.id)}}.disabled(busy || state?.running==true)
+                        Button(L("删除账号及统计"),role:.destructive){deletingAccount=account}.disabled(busy || state?.running==true)
+                    }
+                    Toggle(L("在侧栏显示额度"),isOn:Binding(get:{account.showQuota != false},set:{visible in Task{await run(["action":"set-account-visibility","id":account.id,"visible":visible])}})).disabled(busy || state?.running==true)
                     Toggle(L("纳入统计（所选账号模式）"),isOn:included(account.id,in:$excludedAccounts))
                     Toggle(L("参与同步"),isOn:included(account.id,in:$excludedSyncAccounts))
                 }.padding(10).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:8))

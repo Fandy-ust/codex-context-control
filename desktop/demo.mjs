@@ -7,5 +7,6 @@ demoState.sidebar={projects:[{id:'demo-project',name:'Context Manager',roots:['C
 
 // Synthetic quota never reads an account during preview.
 demoState.quota={updatedAt:Date.now(),loading:false,stale:false,error:null,buckets:[{id:'codex',name:'Codex',primary:{usedPercent:28,remainingPercent:72,windowDurationMins:300,resetsAt:Math.floor(Date.now()/1000)+7200},secondary:{usedPercent:45,remainingPercent:55,windowDurationMins:10080,resetsAt:Math.floor(Date.now()/1000)+172800},creditBalance:"30240",hasCredits:true,unlimitedCredits:false}]};
+demoState.quota.accounts=[{scope:'account:'+'a'.repeat(32),label:'Work',current:true,buckets:structuredClone(demoState.quota.buckets),updatedAt:Date.now()},{scope:'account:'+'b'.repeat(32),label:'personal@example.com',current:false,buckets:structuredClone(demoState.quota.buckets).map(b=>({...b,creditBalance:'0',primary:{...b.primary,usedPercent:2,remainingPercent:98},secondary:{...b.secondary,usedPercent:0,remainingPercent:100}})),updatedAt:Date.now()-3600000}];
 
 demoState.queueModels=[{id:'gpt-6.1-sol',name:'GPT-6.1 Sol',efforts:['low','medium','high','xhigh'],defaultEffort:'medium'}];

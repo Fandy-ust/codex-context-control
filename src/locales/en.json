@@ -1242,5 +1242,11 @@
   "5 小时、每周额度重置时提醒；同时重置合并通知。需保持管理器在后台运行，并允许系统通知。无需开启自动发消息。": "Notify when 5-hour or weekly quotas reset; simultaneous resets are combined. Keep the manager running and allow system notifications. Automatic messages are not required.",
   "5 小时和每周额度都已重置": "Your 5-hour and weekly quotas have both reset.",
   "每周额度已重置": "Your weekly quota has reset.",
-  "5 小时额度已重置": "Your 5-hour quota has reset."
+  "5 小时额度已重置": "Your 5-hour quota has reset.",
+  "账号简称": "Account name",
+  "保存名称": "Save name",
+  "删除账号及统计": "Delete account and statistics",
+  "清除该账号的本机缓存及全部本机统计，无法撤销。不会退出 Codex，其他设备和云端原始数据保留；当前账号再次检测后会记录新数据。": "Clears this account’s local cache and all local statistics. This cannot be undone. Codex stays signed in. Original data on other devices and in the cloud remains; the signed-in account will collect new data when detected again.",
+  "重置时间暂不可用": "Reset time unavailable",
+  "在侧栏显示额度": "Show quota in sidebar"
 }

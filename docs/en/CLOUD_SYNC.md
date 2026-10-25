@@ -129,3 +129,12 @@ Official references: [Gist API](https://docs.github.com/en/rest/gists/gists), [r
 One repository/Gist and sync key can serve multiple Codex accounts. Account IDs take precedence over email; model and plan changes remain the same account. An encrypted discovery directory shares anonymous account identifiers and device names, without account email or login credentials.
 
 In Cloud sync, name this device, choose Current account (default), All accounts, or Selected accounts, and check the devices included in cost/token totals. Participate in sync pauses future uploads/downloads per account while keeping imported history available. Preferences apply to this device only and never delete cloud history. The displayed device timestamp is the last snapshot publication, not a heartbeat. Unassigned history stays hidden until explicitly enabled; only claim legacy history if its ownership is certain. Update every device to 0.24.2 for account discovery.
+
+## Account names, sidebar quota and deletion
+
+Use **Settings → Cloud sync → Accounts and devices** to manage remembered accounts, even with cloud sync disabled.
+
+- Save an optional account name (up to 40 characters). Clear it to use the email label. Names stay on this device.
+- **Show quota in sidebar** saves immediately and is independent of statistics and sync selections. Show any number of accounts or hide them all. The signed-in account appears first; inactive components use muted colors.
+- Inactive accounts retain their last observed quota, Credits and exact reset timestamps across switches and restarts. Countdowns continue, then show “Waiting for quota refresh”; future reset cycles are never inferred.
+- **Delete account and statistics** asks for confirmation and clears this account’s local quota cache, credit baselines, quota history, token/cost statistics and downloaded sync statistics. Other accounts remain intact. Deleted historical data is suppressed on rescan and reimport. Codex stays signed in; original cloud files, other devices and Codex chat logs remain. A signed-in account is detected again and can collect new data.

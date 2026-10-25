@@ -1,5 +1,12 @@
 # Changes
 
+## 0.26.7 — Manage accounts and stack saved quota
+
+- Rename remembered accounts, with the account email as the default label. Add a per-account sidebar visibility switch independent of statistics and cloud sync selections.
+- Stack quota rows with the signed-in account first. Preserve each account’s last observed balances and exact reset timestamps across switches and restarts; mute inactive component colors without an overlay or extra card borders.
+- Delete an account’s local quota cache, credit baselines, quota history, token/cost statistics and downloaded sync statistics after confirmation. Keep other accounts intact and suppress deleted history during rescans and subsequent imports. The signed-in account may collect new observations after deletion; original cloud and other-device data remains.
+- Apply the shared behavior to Windows and macOS, with native account controls and quota rows on macOS.
+
 ## 0.26.6 — Revalidate Codex enhancements after runtime updates
 
 - Only wrap recognized direct stdio commands. Pass startup configuration reads, sign-out, help, unknown commands/options and other transports through unchanged.

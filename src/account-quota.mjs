@@ -50,8 +50,9 @@ export function createQuotaManager({read=()=>readAccountQuota({includeAccount:tr
  let resetState;try{resetState=resetFile?readJSON(resetFile,null):null;}catch{resetState=null;}
  let creditBaselines=preferences?.creditBaselines??{},creditScope=preferences?.creditScope??null;
  const creditAccounts=preferences?.creditAccounts??{};
- const saveBaselines=()=>{if(creditScope)creditAccounts[creditScope]=creditBaselines;if(preferencesFile)atomicJSON(preferencesFile,{...preferences,creditScope,creditAccounts,creditBaselines});};
- function state(){return {buckets,resetNotification:resetState?.scope===creditScope?resetState?.event??null:null,accountScope:creditScope,creditBaselines,updatedAt,loading:!!pending,stale:!!error||!!updatedAt&&now()-updatedAt>interval*2,error};}
+ const accounts=preferences?.accounts??{};
+ const saveBaselines=()=>{if(creditScope)creditAccounts[creditScope]=creditBaselines;if(preferencesFile)atomicJSON(preferencesFile,{...preferences,accounts,creditScope,creditAccounts,creditBaselines});};
+ function state(){return {accounts:Object.entries(accounts).map(([scope,value])=>({...value,scope,current:scope===creditScope,creditBaselines:creditAccounts[scope]??{}})).sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt),buckets,resetNotification:resetState?.scope===creditScope?resetState?.event??null:null,accountScope:creditScope,creditBaselines,updatedAt,loading:!!pending,stale:!!error||!!updatedAt&&now()-updatedAt>interval*2,error};}
  async function refresh(force=false){
   if(pending){await pending;return state();}if(checkedAt&&now()-checkedAt<(force?10000:interval))return state();checkedAt=now();
   pending=(async()=>{try{
@@ -61,6 +62,7 @@ export function createQuotaManager({read=()=>readAccountQuota({includeAccount:tr
     if(JSON.stringify(next)!==JSON.stringify(creditBaselines)){creditBaselines=next;saveBaselines();}
     try{const nextReset=observeQuotaResets(resetState,{buckets:observed,scope:resetScope,at:observedAt});if(nextReset!==resetState){resetState=nextReset;if(resetFile)atomicJSON(resetFile,resetState);}}catch{/* Notification persistence must not hide quota. */}
     buckets=observed;updatedAt=observedAt;error=buckets.length?null:'当前账户暂无额度数据';
+    if(resetScope&&resetScope!=='unidentified'&&buckets.length){accounts[resetScope]={label:response.account?.email||response.account?.id||resetScope.slice(-8),buckets,updatedAt};saveBaselines();}
   }catch{error='暂时无法读取额度';}return state();})().finally(()=>{pending=null;});
   await pending;return state();
  }
@@ -72,5 +74,6 @@ export function createQuotaManager({read=()=>readAccountQuota({includeAccount:tr
   else{creditBaselines={...creditBaselines,[id]:observeCreditBalance(null,bucket.creditBalance)};preferences.creditSources[originKey]='manual';}
   saveBaselines();return state();
  }
- return {state,refresh,resetCredits};
+ function removeAccounts(scopes){for(const scope of scopes){delete accounts[scope];delete creditAccounts[scope];for(const key of Object.keys(preferences.creditSources??{}))if(key.startsWith(scope+':'))delete preferences.creditSources[key];}if(scopes.includes(creditScope)){creditBaselines={};buckets=[];updatedAt=null;}if(scopes.includes(resetState?.scope)){resetState=null;if(resetFile)atomicJSON(resetFile,null);}saveBaselines();}
+ return {state,refresh,resetCredits,removeAccounts};
 }

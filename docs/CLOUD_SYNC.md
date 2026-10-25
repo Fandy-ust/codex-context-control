@@ -148,3 +148,12 @@ Accounts are identified from the Codex account ID, falling back to email only wh
 Choose Current account (default), All accounts, or Selected accounts for numeric cost/token totals. Device checkboxes also filter totals. Per-account Participate in sync controls future uploads/downloads independently of visibility; cached history remains available. These choices apply locally. They do not delete cloud data or turn off Codex's own history collection. The per-chat cost panel continues to describe that local chat.
 
 账号自动识别；所有设备使用同一仓库与密钥。统计范围与参与同步分别设置，取消勾选不删除历史。未归属的旧记录默认隐藏，可选择仅显示，或明确确认归属后一次性纳入当前账号同步。其他设备首次发现的账号使用匿名编号；本机登录后显示本机账号信息。设备时间是最近发布快照时间，无新增数据时不会为刷新时间制造提交。建议全部设备升级到 0.24.2。
+
+## 账号命名、额度显示与删除
+
+在 **设置 → 云同步 → 账号与设备** 管理每个已识别账号，无需启用云同步即可使用本机账号管理。
+
+- 填写简称并点击“保存名称”；留空恢复邮箱标签，最长 40 个字符。简称仅在本机使用。
+- “在侧栏显示额度”立即保存，独立于“纳入统计”和“参与同步”。可选择显示任意多个账号，也可全部关闭。当前登录账号排在已显示账号的最上面，其他账号的组件颜色略淡。
+- 未登录账号保留最近一次观察的额度、Credits 和实际重置时间；倒计时继续更新，过期显示等待刷新，不推算下一轮重置时间。恢复登录并读取成功后更新。
+- “删除账号及统计”需要确认，清理该账号在本机的额度缓存、Credits 基准、额度历史、Token/费用统计及已下载的同步统计，不影响其他账号，也不退出 Codex。删除后的旧统计在日志重扫及再次导入时不会恢复。其他设备、云端原始文件和 Codex 聊天日志保留；删除当前登录账号后，后续检测会重新识别账号并记录新数据。

@@ -18,7 +18,7 @@ export function unseal(raw,key,aad){
   try{const p=JSON.parse(raw);if(p.v!==1||p.zip!=='gzip')throw Error();const d=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(p.iv,'base64'));d.setAAD(Buffer.from(aad));d.setAuthTag(Buffer.from(p.tag,'base64'));return JSON.parse(gunzipSync(Buffer.concat([d.update(Buffer.from(p.data,'base64')),d.final()]),{maxOutputLength:4*1024*1024}).toString());}
   catch{throw Error('同步密钥错误或云端数据损坏');}
 }
-export function createCloudSync({home,analytics,secrets=syncSecrets(home),transport=githubSync,prepare=async()=>{},now=Date.now}={}){
+export function createCloudSync({home,analytics,secrets=syncSecrets(home),transport=githubSync,prepare=async()=>{},removeQuotaAccounts=()=>{},now=Date.now}={}){
   const file=path.join(home,'cloud-sync.json'),cacheFile=path.join(home,'cloud-sync-cache.json');
   let config={version:1,enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:crypto.randomBytes(16).toString('hex'),deviceName:os.hostname(),statisticsMode:'current',includeUnassigned:false,excludedAccounts:[],excludedSyncAccounts:[],excludedDevices:[],accounts:[],deviceList:[],...readJSON(file,{})};
   let cache=readJSON(cacheFile,{target:null,shards:{},uploaded:{}}),pending,timer,closed=false,controller,failures=0,derivedKey;
@@ -27,7 +27,16 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
   const selection=()=>({enabled:config.enabled,deviceId:config.deviceId,statisticsMode:config.statisticsMode,includeUnassigned:config.includeUnassigned,excludedAccounts:config.excludedAccounts,excludedDevices:config.excludedDevices,accounts:config.accounts});
   async function refreshProfiles(key){
     const profiles=await analytics.syncProfiles?.(key);
-    if(profiles){const old=new Map(config.accounts.map(p=>[p.id,p]));for(const p of profiles)old.set(p.id,{...old.get(p.id),...p});config.accounts=[...old.values()].map(p=>({...p,current:p.id===analytics.syncAccount(key)}));}
+    if(profiles){
+      const before=JSON.stringify([config.accounts,config.deletedAccounts]),old=new Map(config.accounts.map(p=>[p.id,p]));
+      for(const p of profiles){
+        if(config.deletedAccounts?.includes(p.id)&&!p.current)continue;
+        if(p.current)config.deletedAccounts=config.deletedAccounts?.filter(id=>id!==p.id);
+        old.set(p.id,{...old.get(p.id),...p});
+      }
+      config.accounts=[...old.values()].map(p=>({...p,customName:config.accountNames?.[p.group||p.id]??config.accountNames?.[p.id]??'',showQuota:config.accountVisibility?.[p.group||p.id]??config.accountVisibility?.[p.id]??true,current:p.id===analytics.syncAccount(key)}));
+      if(before!==JSON.stringify([config.accounts,config.deletedAccounts]))save();
+    }
     await analytics.syncSettings?.(selection());
   }
   async function directory(key,token){
@@ -39,7 +48,7 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
       const doc=unseal(await remote.read(m.name),key,`${group}/${m.device}/manifest`);
       if(doc.version!==2||!Array.isArray(doc.accounts)||doc.accounts.length>100||!/^.{1,80}$/u.test(doc.name||''))throw Error('Invalid sync directory');
       const devices=new Map(config.deviceList.map(d=>[d.id,d]));devices.set(m.device,{...devices.get(m.device),id:m.device,name:doc.name});config.deviceList=[...devices.values()];
-      for(const p of doc.accounts){if(!/^[a-f0-9]{32}$/.test(p.id))throw Error('Invalid sync account');if(!known.has(p.id))known.set(p.id,{id:p.id,label:'账号 '+p.id.slice(0,8),scopes:[],current:false});}
+      for(const p of doc.accounts){if(!/^[a-f0-9]{32}$/.test(p.id))throw Error('Invalid sync account');if(config.deletedAccounts?.includes(p.id))continue;if(!known.has(p.id))known.set(p.id,{id:p.id,label:'账号 '+p.id.slice(0,8),customName:config.accountNames?.[p.id]||'',showQuota:config.accountVisibility?.[p.id]!==false,scopes:[],current:false});}
     }
     if(known.size>100)throw Error('同步账号超过 100 个');
     config.accounts=[...known.values()];
@@ -144,6 +153,27 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
     }
     if(params.action==='sync'){void sync().catch(()=>{});return state();}
     if(pending)throw Error('同步正在进行，请完成后修改配置');
+    if(['rename-account','delete-account','set-account-visibility'].includes(params.action)){
+      const profile=config.accounts.find(p=>p.id===params.id);if(!profile)throw Error('Account not found');
+      if(params.action==='set-account-visibility'){
+        if(typeof params.visible!=='boolean')throw Error('Invalid account visibility');
+        config.accountVisibility={...config.accountVisibility,[profile.group||profile.id]:params.visible};profile.showQuota=params.visible;
+      }else if(params.action==='rename-account'){
+        if(typeof params.name!=='string'||params.name.length>40||/[\x00-\x1f\x7f]/.test(params.name))throw Error('Invalid account name');
+        config.accountNames={...config.accountNames,[profile.group||profile.id]:params.name.trim()};profile.customName=params.name.trim();
+      }else{
+        const result=await analytics.deleteAccount({id:profile.id,scopes:profile.scopes||[]});
+        removeQuotaAccounts(result?.scopes||profile.scopes||[]);
+        config.deletedAccounts=[...new Set([...(config.deletedAccounts||[]),profile.id])];
+        config.accounts=config.accounts.filter(p=>p.id!==profile.id);
+        delete config.accountNames?.[profile.group||profile.id];delete config.accountNames?.[profile.id];
+        delete config.accountVisibility?.[profile.group||profile.id];delete config.accountVisibility?.[profile.id];
+        for(const field of ['excludedAccounts','excludedSyncAccounts'])config[field]=config[field].filter(id=>id!==profile.id);
+        // Drop cached downloads and upload hashes so deleted statistics cannot be restored locally.
+        cache={target:null,shards:{},uploaded:{}};atomicJSON(cacheFile,cache);
+      }
+      save();await analytics.syncSettings?.(selection());return state();
+    }
     if(params.action==='create-gist'){
       const token=params.token||secrets.get().token;if(typeof token!=='string'||!token||token.length>512||/[\x00-\x20]/.test(token))throw Error('请先填写 GitHub Token');
       const id=await transport({provider:'gist'},token,{signal:AbortSignal.timeout(30000)}).createGist();config.gistId=id;save();return state();

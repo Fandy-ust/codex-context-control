@@ -60,11 +60,18 @@ export async function startDaemon() {
   store.save();
   const bridges=new Map();const owners=new Map();
   const quotaAnalytics=createQuotaAnalyticsService();
-  const quota=createQuotaManager({home:root,onObservation:observation=>quotaAnalytics.record(observation)});
+  const quota=createQuotaManager({home:root,onObservation:async observation=>{const scope=await quotaAnalytics.record(observation);await cloudSync.command({action:'status'}).catch(()=>{});return scope;}});
   const activationFile=path.join(root,'quota-activation.json');
   const quotaActivation=createQuotaActivation({load:()=>{try{return JSON.parse(fs.readFileSync(activationFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(activationFile,value),quota,probe:runQuotaProbe,recommend:()=>quotaAnalytics.activationRecommendation()});
   const activationTimer=setInterval(()=>quotaActivation.tick().catch(()=>{}),10000);activationTimer.unref();
-  const cloudSync=createCloudSync({home:root,analytics:quotaAnalytics,prepare:()=>quota.refresh(true)});
+  const cloudSync=createCloudSync({home:root,analytics:quotaAnalytics,prepare:()=>quota.refresh(true),removeQuotaAccounts:scopes=>quota.removeAccounts(scopes)});
+  void cloudSync.command({action:'status'}).catch(()=>{});
+  function accountQuotaState(){
+    const value=quota.state(),profiles=cloudSync.state().accounts,result=new Map();
+    for(const profile of profiles){const candidates=value.accounts.filter(a=>profile.scopes?.includes(a.scope));if(profile.quota)candidates.push(profile.quota);candidates.sort((a,b)=>b.updatedAt-a.updatedAt);const account=candidates[0]||{scope:profile.scopes?.[0]||'cloud:'+profile.id,buckets:[],updatedAt:null};if(account)result.set(profile.id,{...account,current:profile.scopes?.includes(value.accountScope)||false,label:profile.customName||profile.label||account.label,showQuota:profile.showQuota!==false,creditBaselines:value.accounts.find(a=>a.scope===account.scope)?.creditBaselines||{}});}
+    for(const account of value.accounts)if(!profiles.some(p=>p.scopes?.includes(account.scope)))result.set(account.scope,account);
+    return {...value,accounts:[...result.values()].sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt)};
+  }
   const queueFile=path.join(root,'task-queues.json');
   function queuePeers(id){const ownersForThread=owners.get(id)||[];return ownersForThread.length?ownersForThread:[...bridges.keys()].filter(peer=>supportsTaskQueues(bridges.get(peer)));}
   function queueSupported(id){const peers=queuePeers(id);return peers.length===1&&supportsTaskQueues(bridges.get(peers[0]));}
@@ -96,7 +103,7 @@ export async function startDaemon() {
     const threads=Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity);
     // Keep background monitoring light: speed sampling is needed only while the tray menu is visible.
     try{if(JSON.parse(fs.readFileSync(path.join(root,'ui-status.json'),'utf8')).menuWindowVisible===true)responseSpeeds.observe(threads);}catch{}
-    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueues.list(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:quota.state(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
+    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueues.list(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:accountQuotaState(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
   }
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version,buildId};
