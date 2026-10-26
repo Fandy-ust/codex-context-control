@@ -3,6 +3,12 @@ export function activationView(value,draft,{e,t}){
   const s=value??{},c=draft??s.config??{},r=s.recommendation,j=s.job;
   const mode=c.scheduleMode??(c.scheduledAt?'once':'off'),time=c.scheduleTime??(c.scheduledAt?localActivationTime(c.scheduledAt):'08:00');
   return `<section class="card stack"><h2>${e(t('额度启动','Quota activation'))}</h2>
+    <h3>${e(t('Credits 使用保护','Credits protection'))}</h3>
+    <label class="row between">${e(t('套餐额度耗尽时通知','Notify when plan quota is exhausted'))}<input id="activation-credits-notifications" class="switch" role="switch" type="checkbox" ${c.creditsNotificationsEnabled!==false?'checked':''}></label>
+    <label class="stack">${e(t('触发条件','Trigger'))}<select id="activation-credits-trigger"><option value="both" ${c.creditsTrigger!=='either'?'selected':''}>${e(t('5 小时和每周额度都为 0','Both 5-hour and weekly quotas reach 0'))}</option><option value="either" ${c.creditsTrigger==='either'?'selected':''}>${e(t('任意一项额度为 0','Either quota reaches 0'))}</option></select></label>
+    <label class="row between">${e(t('触发时停止全部当前任务（每轮一次）','Stop all current tasks once per exhaustion episode'))}<input id="activation-credits-stop" class="switch" role="switch" type="checkbox" ${c.stopOnCreditsEnabled?'checked':''}></label>
+    <p class="tiny muted">${e(t('仅对已接入管理器的会话生效；暂停所有队列并请求中断当前任务。额度恢复后重新启用下一轮保护。额度为 0 不代表已实际扣除 Credits。','Applies to connected sessions only. Pause all queues and request interruption of current tasks once; quota recovery rearms protection. Zero quota does not prove a Credits charge.'))}</p>
+    <p data-activation-credits-status class="tiny" role="status">${e(t(s.creditsProtection?.result?.message??''))}</p><hr>
     <label class="row between">${e(t('额度重置系统通知','Quota reset notifications'))}<input id="activation-notifications" class="switch" role="switch" type="checkbox" ${c.notificationsEnabled!==false?'checked':''}></label>
     <p class="tiny muted">${e(t('5 小时、每周额度重置时提醒；同时重置合并通知。需保持管理器在后台运行，并允许系统通知。无需开启自动发消息。','Notify when 5-hour or weekly quotas reset; simultaneous resets are combined. Keep the manager running and allow system notifications. Automatic messages are not required.'))}</p>
     <p class="tiny muted">${e(t('使用 GPT-6 Luna 发送独立短消息，收到回复即停止，每次最多尝试 3 次。','Send an isolated short message with GPT-6 Luna, stop on the first reply, and try at most 3 times.'))}</p>

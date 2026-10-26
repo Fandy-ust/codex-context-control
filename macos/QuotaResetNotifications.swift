@@ -3,7 +3,8 @@ import UserNotifications
 
 @MainActor final class QuotaResetNotifier:NSObject,UNUserNotificationCenterDelegate {
     private var notificationCenter:UNUserNotificationCenter?
-    private let key="quota-reset-notification-delivered"
+    private let key:String
+    init(key:String="quota-reset-notification-delivered"){self.key=key;super.init()}
     private var authorizationTask:Task<Bool,Never>?
     func observe(_ event:QuotaResetEvent?,enabled:Bool,stale:Bool){
         guard Bundle.main.bundleIdentifier != nil else{return}
@@ -21,7 +22,7 @@ import UserNotifications
         let both=event.roles.contains("five") && event.roles.contains("weekly")
         let content=UNMutableNotificationContent()
         content.title="Context Manager"
-        content.body=L(both ? "5 小时和每周额度都已重置":event.roles.contains("weekly") ? "每周额度已重置":"5 小时额度已重置")
+        content.body=L(event.roles.contains("credits") ? "套餐额度已耗尽，后续请求可能使用 Credits。":both ? "5 小时和每周额度都已重置":event.roles.contains("weekly") ? "每周额度已重置":"5 小时额度已重置")
         content.sound = .default
         Task{
             if let authorizationTask{_ = await authorizationTask.value}

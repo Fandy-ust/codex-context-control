@@ -1,5 +1,11 @@
 # Changes
 
+## 0.27.11 — Credits exhaustion alerts and one-shot task protection
+
+- Notify when fresh current-account Codex quota reaches zero. Default to both 5-hour and weekly windows being exhausted, with an optional either-window trigger. Exhaustion indicates potential Credits use, not a confirmed charge.
+- Add an optional one-shot interruption of all current turns in connected sessions and pause all task queues. Default off; persist each account exhaustion episode so service restarts and account switches do not repeat stops. Fresh recovered quota rearms protection.
+- Add matching macOS and Windows settings, notification delivery, and interruption results. Reopen Codex after updating to load the new runtime capability. Unconnected CLI sessions cannot be interrupted.
+
 ## 0.27.10 — One-click switching with background runtime recovery
 
 - Switch saved accounts directly from settings or the quota sidebar on macOS and Windows, pausing queues and closing Codex/CLI sessions without additional dialogs.

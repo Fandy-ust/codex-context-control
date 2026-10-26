@@ -458,7 +458,7 @@ function selectChat(id){
 function loadDraft(){if(editingDefaults()){const d=state?.newChatDefaults;draft=d?{window:d.usableWindow,compact:d.compact,reserve:16000,retainedFloor:0,expectedRevision:d.revision}:null;}else{const next=threadDraft(current());if(draft?.expectedRevision!==next?.expectedRevision){budgetText={};budgetInputError='';}draft=next;}dirty=false;}
 async function refresh(){if(refreshing||dragging||queueDrag)return;refreshing=true;try{preferences=await api.invoke('preferences');if(settingsOpen&&!shortcutDirty&&!shortcutRecording){shortcutDraft=preferences.shortcut?.accelerator??DEFAULT_SHORTCUT;shortcutEnabled=shortcutDraft!==''&&preferences.shortcut?.enabled!==false;}document.documentElement.lang=preferences.language==='zh'?'zh-CN':'en';const next=await api.invoke('state');observeCredits(next.quota);state=next;serviceAvailable=true;if(view==='quota'&&!settingsOpen){if(!document.activeElement?.closest('.compact-date-range')&&!qaLoading&&Date.now()-qaLastLoad>(qaReport?.quality?.progress?.pending?1500:5000))await loadQuotaAnalytics();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}}return;}if(!selected||!current()){const id=state.threads[0]?.id??null;if(detailsOpen&&id!==selected)selectChat(id);else selected=id;}if(!dirty)loadDraft();updateTrayAvailability();if(mode==='main'&&!settingsOpen){if(!detailsOpen&&view==='chat'&&current()){openDetails();}refreshBudgetValidity();}if(settingsOpen&&settingsTab==='activation'){
 const holder=document.createElement('div');holder.innerHTML=activationView(state?.quotaActivation,activationDraft,{e,t});
-for(const selector of ['[data-activation-status]','[data-activation-recommendation]','[data-activation-schedule]']){const a=root.querySelector(selector),b=holder.querySelector(selector);if(a&&b)a.replaceWith(b);}
+for(const selector of ['[data-activation-status]','[data-activation-recommendation]','[data-activation-schedule]','[data-activation-credits-status]']){const a=root.querySelector(selector),b=holder.querySelector(selector);if(a&&b)a.replaceWith(b);}
 const run=root.querySelector('[data-action="activation-run"]');if(run)run.disabled=!!state?.quotaActivation?.busy||['waiting','running','verifying'].includes(state?.quotaActivation?.job?.status);return;
 }if(settingsOpen&&settingsTab==='accounts'){void pollLogins();return;}if(settingsOpen&&settingsTab==='cloud'){void pollCloudSync();return;}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select,textarea')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
@@ -538,7 +538,7 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action.startsWith('activation-')){
       let params={action:action==='activation-run'?'run':action==='activation-cancel'?'cancel':'configure'};
       if(params.action==='configure'){
-        params={...params,notificationsEnabled:document.getElementById('activation-notifications').checked,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:Number(document.getElementById('activation-tolerance').value),scheduleMode:document.getElementById('activation-mode').value,scheduleTime:document.getElementById('activation-time').value};
+        params={...params,notificationsEnabled:document.getElementById('activation-notifications').checked,creditsNotificationsEnabled:document.getElementById('activation-credits-notifications').checked,stopOnCreditsEnabled:document.getElementById('activation-credits-stop').checked,creditsTrigger:document.getElementById('activation-credits-trigger').value,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:Number(document.getElementById('activation-tolerance').value),scheduleMode:document.getElementById('activation-mode').value,scheduleTime:document.getElementById('activation-time').value};
       }
       const submittedDraft=activationDraft,result=await api.invoke('quota-activation',params);
       state={...state,quotaActivation:result};if(activationDraft===submittedDraft)activationDraft=null;
@@ -1178,12 +1178,15 @@ window.__contextCloudSmoke=async({preview=false}={})=>{
 
 root.addEventListener('input',event=>{
   if(!event.target.id.startsWith('activation-'))return;
-  activationDraft={notificationsEnabled:document.getElementById('activation-notifications').checked,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:document.getElementById('activation-tolerance').value,scheduleMode:document.getElementById('activation-mode').value,scheduleTime:document.getElementById('activation-time').value};
+  activationDraft={notificationsEnabled:document.getElementById('activation-notifications').checked,creditsNotificationsEnabled:document.getElementById('activation-credits-notifications').checked,stopOnCreditsEnabled:document.getElementById('activation-credits-stop').checked,creditsTrigger:document.getElementById('activation-credits-trigger').value,weeklyEnabled:document.getElementById('activation-weekly').checked,toleranceMinutes:document.getElementById('activation-tolerance').value,scheduleMode:document.getElementById('activation-mode').value,scheduleTime:document.getElementById('activation-time').value};
   if(event.target.id==='activation-mode')render(true);
 });
 window.__contextActivationSmoke=async()=>{
   openSettings('activation');
   document.getElementById('activation-weekly').checked=true;
+  document.getElementById('activation-credits-stop').checked=true;
+  document.getElementById('activation-credits-trigger').value='either';
+  document.getElementById('activation-credits-notifications').checked=false;
   document.getElementById('activation-mode').value='once';
   document.getElementById('activation-mode').dispatchEvent(new Event('input',{bubbles:true}));
   document.getElementById('activation-time').value='06:35';
@@ -1208,8 +1211,9 @@ window.__contextActivationSmoke=async()=>{
   };
   const onPosition=switchPosition(true),offPosition=switchPosition(false);toggle.checked=true;
   const slidingSwitch=toggle.getAttribute('role')==='switch'&&getComputedStyle(toggle).appearance==='none'&&Math.abs(onPosition-16)<.1&&Math.abs(offPosition)<.1;
-  const ok=saved?.weeklyEnabled===true&&saved?.scheduledAt===nextActivationAt('06:35',Date.now())&&tomorrowOnly&&persisted&&!!root.querySelector('[data-activation-recommendation]')&&slidingSwitch;
-  return {ok,saved,tomorrowOnly,persisted,slidingSwitch,onPosition,offPosition};
+  const creditsPersisted=saved?.stopOnCreditsEnabled===true&&saved?.creditsTrigger==='either'&&saved?.creditsNotificationsEnabled===false&&document.getElementById('activation-credits-stop').checked&&document.getElementById('activation-credits-trigger').value==='either'&&!document.getElementById('activation-credits-notifications').checked;
+  const ok=creditsPersisted&&saved?.weeklyEnabled===true&&saved?.scheduledAt===nextActivationAt('06:35',Date.now())&&tomorrowOnly&&persisted&&!!root.querySelector('[data-activation-recommendation]')&&slidingSwitch;
+  return {ok,saved,tomorrowOnly,persisted,creditsPersisted,slidingSwitch,onPosition,offPosition};
 };
 
 async function pollLogins(){try{const next=await api.invoke('account-switch',{action:'status'}),changed=JSON.stringify(next)!==loginRendered;loginState=next;if(changed&&settingsOpen&&settingsTab==='accounts'&&!document.activeElement?.matches('input'))render();}catch(error){notify(error.message);}}

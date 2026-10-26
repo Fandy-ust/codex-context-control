@@ -1,3 +1,5 @@
+import {stopForCredits} from './credits-stop.mjs';
+import {createCreditsProtection} from './credits-protection.mjs';
 import {integrationLog} from './diagnostic-log.mjs';
 import net from 'node:net';
 import {createAccountSwitcher} from './account-switch.mjs';
@@ -69,8 +71,9 @@ export async function startDaemon() {
   const bridges=new Map();const owners=new Map();
   const quotaAnalytics=createQuotaAnalyticsService();
   const quota=createQuotaManager({home:root,onObservation:async observation=>{const scope=await quotaAnalytics.record(observation);await cloudSync.command({action:'status'}).catch(()=>{});return scope;}});
+  let creditsProtection=null;
   const activationFile=path.join(root,'quota-activation.json');
-  const quotaActivation=createQuotaActivation({load:()=>{try{return JSON.parse(fs.readFileSync(activationFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(activationFile,value),quota,probe:runQuotaProbe,recommend:()=>quotaAnalytics.activationRecommendation()});
+  const quotaActivation=createQuotaActivation({load:()=>{try{return JSON.parse(fs.readFileSync(activationFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(activationFile,value),quota,probe:runQuotaProbe,protection:()=>creditsProtection?.state()??null,recommend:()=>quotaAnalytics.activationRecommendation()});
   let accountTransition=false,queueAccountAuto=null,autoPrepared=[];
   const activationTimer=setInterval(()=>{if(!accountTransition&&!queueAccountAuto?.state().busy)void quotaActivation.tick().catch(()=>{});},10000);activationTimer.unref();
   const cloudSync=createCloudSync({home:root,analytics:quotaAnalytics,quotaAccounts:()=>quota.state().accounts,prepare:()=>quota.refresh(true),removeQuotaAccounts:scopes=>quota.removeAccounts(scopes)});
@@ -88,7 +91,11 @@ export async function startDaemon() {
   function queueSupported(id){const peers=queuePeers(id);return peers.length===1&&supportsTaskQueues(bridges.get(peers[0]));}
   function queueRestartRequired(id){const peers=(owners.get(id)||[]).length?owners.get(id):[...bridges.keys()];return peers.length===1&&!supportsTaskQueues(bridges.get(peers[0]));}
   const queueCall=(id,op,params)=>{const peers=queuePeers(id);if(peers.length!==1)throw Error('需要唯一的已接入运行时');if(!queueSupported(id))throw Error(QUEUE_RUNTIME_RESTART);return peers[0].call(op,{id,...params},30000);};
-  const taskQueues=createTaskQueues({load:()=>{try{return JSON.parse(fs.readFileSync(queueFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(queueFile,value),quota,thread:id=>Object.hasOwn(store.data.threads,id)?{...store.publicThread(id,owners),taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!(owners.get(id)||[]).length&&queueSupported(id)}:null,prepare:id=>queueCall(id,'queue-prepare',{}),canDispatch:()=>queueAccountAuto?.dispatchAllowed()??true,canSwitchAccounts:()=>queueAccountAuto?.state().enabled===true,start:(id,task)=>queueCall(id,'queue-start',{task}),interrupt:(id,executionId)=>queueCall(id,'queue-interrupt',{executionId}),inhibit:createQueueSleepInhibitor()});
+  const taskQueues=createTaskQueues({load:()=>{try{return JSON.parse(fs.readFileSync(queueFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(queueFile,value),quota,thread:id=>Object.hasOwn(store.data.threads,id)?{...store.publicThread(id,owners),taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!(owners.get(id)||[]).length&&queueSupported(id)}:null,prepare:id=>queueCall(id,'queue-prepare',{}),canDispatch:()=>!creditsProtection?.state().busy&&(queueAccountAuto?.dispatchAllowed()??true),canSwitchAccounts:()=>queueAccountAuto?.state().enabled===true,start:(id,task)=>queueCall(id,'queue-start',{task}),interrupt:(id,executionId)=>queueCall(id,'queue-interrupt',{executionId}),inhibit:createQueueSleepInhibitor()});
+  const creditsFile=path.join(root,'credits-protection.json');
+  creditsProtection=createCreditsProtection({load:()=>readJSON(creditsFile,{}),save:value=>atomicJSON(creditsFile,value),quota,config:()=>quotaActivation.state().config,
+    stop:({scope})=>stopForCredits({queues:taskQueues,quota,bridges},scope)});
+  const creditsTimer=setInterval(()=>{if(!accountTransition&&!queueAccountAuto?.state().busy)void creditsProtection.tick().catch(()=>{});},3000);creditsTimer.unref();
   let analyticsTimer;
   function switchBlockers({automatic=false}={}){
     for(const [peer,bridge]of bridges){if(Number.isSafeInteger(bridge.pid)&&bridge.pid>0)try{process.kill(bridge.pid,0);}catch(error){if(error.code==='ESRCH'){bridges.delete(peer);peer.socket.destroy();}}}
@@ -184,7 +191,7 @@ export async function startDaemon() {
       }catch(error){store.data.policies=oldPolicies;store.data.newChatDefaults=oldDefaults;store.data.extensionRestore=oldRestore;extension.setEnabled(previous);throw error;}
       return extensionState();
     }
-    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,nativePid:Number.isSafeInteger(p.nativePid)&&p.nativePid>0?p.nativePid:null,accountSwitchVersion:p.accountSwitchVersion===1?1:null,compensationVersion:[1,2,3].includes(p.compensationVersion)?p.compensationVersion:null,taskQueueVersion:p.taskQueueVersion==null?null:p.taskQueueVersion===4?4:0,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
+    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,creditsStopVersion:p.creditsStopVersion===1?1:null,nativePid:Number.isSafeInteger(p.nativePid)&&p.nativePid>0?p.nativePid:null,accountSwitchVersion:p.accountSwitchVersion===1?1:null,compensationVersion:[1,2,3].includes(p.compensationVersion)?p.compensationVersion:null,taskQueueVersion:p.taskQueueVersion==null?null:p.taskQueueVersion===4?4:0,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180||['__proto__','constructor','prototype'].includes(p.id))throw new Error('聊天 ID 无效');
@@ -321,7 +328,7 @@ export async function startDaemon() {
   const cleanupStart=setTimeout(cleanup,30000);cleanupStart.unref();
   const cleanupTimer=setInterval(cleanup,5*60*1000);cleanupTimer.unref();
   const scanTimer=setInterval(()=>store.refreshMetadata(),15000);scanTimer.unref();
-  web.once('close',()=>{queueAccountAuto.close();clearInterval(accountAutoTimer);accountSwitcher.close();clearInterval(activationTimer);quotaActivation.close();cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
+  web.once('close',()=>{clearInterval(creditsTimer);queueAccountAuto.close();clearInterval(accountAutoTimer);accountSwitcher.close();clearInterval(activationTimer);quotaActivation.close();cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
   const shutdown=()=>{responseSpeeds.close();contextStatistics.close();try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};

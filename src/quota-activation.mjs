@@ -3,18 +3,20 @@ import {validActivationTime,localActivationTime,nextActivationAt,latestActivatio
 
 // Attempts and due dates are saved before model dispatch. An interrupted process
 // never replays an uncertain send. All triggers share one serialized runner.
-export function createQuotaActivation({load=()=>({}),save=()=>{},quota,probe,recommend=async()=>null,now=Date.now}={}){
-  const saved=load();let config={notificationsEnabled:true,weeklyEnabled:false,scheduledAt:null,toleranceMinutes:10,...saved.config};
+export function createQuotaActivation({load=()=>({}),save=()=>{},quota,probe,recommend=async()=>null,protection=()=>null,now=Date.now}={}){
+  const saved=load();let config={notificationsEnabled:true,creditsNotificationsEnabled:true,stopOnCreditsEnabled:false,creditsTrigger:"both",weeklyEnabled:false,scheduledAt:null,toleranceMinutes:10,...saved.config};
   config.scheduleMode??=config.scheduledAt?'once':'off';
   config.scheduleTime??=config.scheduledAt?localActivationTime(config.scheduledAt):'08:00';
   let job=saved.job??null,lastWeekly=saved.lastWeekly??null,lastWindow=saved.lastWindow??null,scope=saved.scope??null;
   let busy=false,closed=false,abort=null,recommendation=null,recommendedAt=0;
   if(job?.status==='running')job={...job,status:'uncertain',message:'上次探测中断，未自动重发；请检查额度后再手动触发。'};
   const persist=()=>save({config,job,lastWeekly,lastWindow,scope});
-  const state=()=>({config,job,busy,recommendation,model:'gpt-6-luna',maxAttempts:3});
+  const state=()=>({config,job,busy,recommendation,creditsProtection:protection(),model:'gpt-6-luna',maxAttempts:3});
   function command(p){
     if(p.action==='configure'){
       const next={...config};
+      for(const key of ['creditsNotificationsEnabled','stopOnCreditsEnabled'])if(p[key]!==undefined){if(typeof p[key]!=='boolean')throw Error('Invalid Credits protection switch');next[key]=p[key];}
+      if(p.creditsTrigger!==undefined){if(!['both','either'].includes(p.creditsTrigger))throw Error('Invalid Credits trigger');next.creditsTrigger=p.creditsTrigger;}
       if(p.notificationsEnabled!==undefined){if(typeof p.notificationsEnabled!=='boolean')throw Error('Invalid notification switch');next.notificationsEnabled=p.notificationsEnabled;}
       if(p.weeklyEnabled!==undefined){if(typeof p.weeklyEnabled!=='boolean')throw Error('Invalid weekly switch');next.weeklyEnabled=p.weeklyEnabled;}
       if(p.scheduleMode!==undefined||p.scheduleTime!==undefined){

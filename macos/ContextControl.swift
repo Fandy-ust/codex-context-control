@@ -4,10 +4,14 @@ import AppKit
 struct Budget: Decodable,Equatable { let window:Int;let compact:Int;let reserve:Int;let retainedFloor:Int;let revision:Int;let enabled:Bool? }
 struct Usage: Decodable,Equatable { let totalTokens:Int }
 struct QuotaActivationState:Decodable,Equatable {
-    struct Config:Decodable,Equatable {let notificationsEnabled:Bool?;let weeklyEnabled:Bool;let scheduledAt:Double?;let toleranceMinutes:Int;let scheduleMode:String?;let scheduleTime:String?}
+    struct Config:Decodable,Equatable {let notificationsEnabled:Bool?;let creditsNotificationsEnabled:Bool?;let stopOnCreditsEnabled:Bool?;let creditsTrigger:String?;let weeklyEnabled:Bool;let scheduledAt:Double?;let toleranceMinutes:Int;let scheduleMode:String?;let scheduleTime:String?}
     struct Job:Decodable,Equatable {let status:String;let attempts:Int;let message:String?}
     struct Recommendation:Decodable,Equatable {let sampleCount:Int;let leadHours:Double?;let consumptionHours:Double?;let leadMinHours:Double?;let leadMaxHours:Double?}
-    let config:Config;let job:Job?;let busy:Bool;let recommendation:Recommendation?
+    struct CreditsProtection:Decodable,Equatable {
+        struct Result:Decodable,Equatable {let status:String;let message:String;let targeted:Int?;let failed:Int?}
+        let event:QuotaResetEvent?;let result:Result?;let busy:Bool
+    }
+    let config:Config;let job:Job?;let busy:Bool;let recommendation:Recommendation?;let creditsProtection:CreditsProtection?
 }
 
 struct QuotaResetEvent:Decodable,Equatable {
@@ -115,6 +119,7 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var queueModels:[QueueModel]=[]
     @Published var queueTaskEditID:String?
     let quotaResetNotifier=QuotaResetNotifier()
+    let creditsNotifier=QuotaResetNotifier(key:"credits-notification-delivered")
     @Published var quotaActivation:QuotaActivationState?
     @Published var taskQueues:TaskQueuesState?
     @Published var queueDetailID:String?
@@ -187,6 +192,7 @@ struct ServiceSettings: Decodable {let node:String}
             if updateState != desktopUpdate{updateState=desktopUpdate;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}
             if quotaActivation != state.quotaActivation{quotaActivation=state.quotaActivation}
             quotaResetNotifier.observe(state.quota?.resetNotification,enabled:state.quotaActivation?.config.notificationsEnabled != false,stale:state.quota?.stale != false)
+            creditsNotifier.observe(state.quotaActivation?.creditsProtection?.event,enabled:state.quotaActivation?.config.creditsNotificationsEnabled != false,stale:state.quota?.stale != false)
             if taskQueues != state.taskQueues{taskQueues=state.taskQueues}
             if queueModels != (state.queueModels ?? []){queueModels=state.queueModels ?? []}
             if chats != state.threads{chats=state.threads}

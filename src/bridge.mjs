@@ -307,6 +307,16 @@ export class Bridge {
     catch(error){if(turnSubmitted&&!error.confirmed&&r.automaticTask.turnId&&r.status==='active')throw error;r.automaticTask.status='error';r.automaticTask.error=error.message;r.automaticTask.errorConfirmed=!turnSubmitted||error.confirmed===true;r.automaticTask.errorCode=error.errorCode??null;await this.notify(r);throw error;}
     finally{const queued=r.queue.splice(0);r.queueBytes=0;for(const line of queued)this.fromClient(line);}
   }
+  async interruptCurrentTurns(){
+    const active=[...this.records.values()].filter(r=>['active','inProgress'].includes(r.status));
+    const targets=active.filter(r=>r.turnId).map(r=>({id:r.id,turnId:r.turnId}));
+    const results=await Promise.allSettled(targets.map(async target=>{
+      const current=this.records.get(target.id);
+      if(!['active','inProgress'].includes(current?.status)||current.turnId!==target.turnId)return;
+      await this.rpc('turn/interrupt',{threadId:target.id,turnId:target.turnId});
+    }));
+    return {targeted:active.length,failed:active.length-targets.length+results.filter(r=>r.status==='rejected').length};
+  }
   async interruptAutomatic(id,executionId){const r=this.records.get(id),task=r?.automaticTask;
     if(task?.executionId===executionId&&task.preparingContext&&task.status==='starting'){task.status='interrupted';if(r.status==='active'&&r.turnId)await this.rpc('turn/interrupt',{threadId:id,turnId:r.turnId});await this.notify(r);return {ok:true};}
     if(task?.executionId!==executionId||task.status!=='running'||r.status!=='active'||r.turnId!==task.turnId)throw Error('队列轮次已变化，未中断其他任务');await this.rpc('turn/interrupt',{threadId:id,turnId:task.turnId});return {ok:true};}

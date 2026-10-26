@@ -25,6 +25,7 @@ export function observeQuotaResets(saved,{buckets,scope,at}){
 }
 
 export function resetNotificationText(roles){
+  if(roles.includes("credits"))return ["套餐额度已耗尽，后续请求可能使用 Credits。","Plan quota is exhausted. Further requests may use Credits."];
   if(roles.includes('five')&&roles.includes('weekly'))return ['5 小时和每周额度都已重置','Your 5-hour and weekly quotas have both reset.'];
   if(roles.includes('weekly'))return ['每周额度已重置','Your weekly quota has reset.'];
   return ['5 小时额度已重置','Your 5-hour quota has reset.'];
