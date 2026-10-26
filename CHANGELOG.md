@@ -1,5 +1,29 @@
 # Changes
 
+## 0.27.8 — Launch Windows Codex through its registered app
+
+- Reopen the Microsoft Store Codex app through its registered Windows application ID after account switching, using a single activation. Keep the macOS app launch behavior unchanged.
+
+## 0.27.7 — Keep inherited Windows launchers current
+
+- Redirect owned Windows launchers left in a running Codex process to the newly installed manager code for subsequent subprocess launches. Keep active subprocesses intact and clean up redirected launchers after Codex exits.
+- Start Codex from account switching with the current integration path even when the manager inherited an older environment. macOS continues to use its updated in-place launcher; active subprocesses on either platform still require a restart to load new code.
+
+## 0.27.6 — Repeat Windows desktop activation
+
+- Remove the three-second delay before manager-initiated Windows Codex desktop launches. Open immediately, then request the same application once more after one second to exercise its existing-instance activation path. Repeat only the application-open request, never credentials or queued tasks; skip the second request if the first launch fails. macOS keeps its existing single launch.
+
+## 0.27.5 — Desktop launch timing and account process checks
+
+- Reuse windows created during early activation instead of leaving an unmanaged duplicate.
+- Experimentally delay manager-initiated Windows Codex desktop launches by three seconds and remove Electron node-mode inheritance. Direct system-icon launches are unaffected.
+- Restrict account-switch blockers to Codex/ChatGPT and the known CLI wrapper; exclude auxiliary codex-* tools and zombie processes, including on macOS. Live CLI sessions remain blockers.
+
+## 0.27.4 — Visible Windows startup and reload recovery
+
+- Show a startup placeholder before loading the Windows interface and connecting to the local service. After ten seconds, offer a manual interface reload; module-load failures show a reload action immediately. Reloading the interface does not create or replay queued tasks.
+- Keep the native macOS startup/status interface unchanged; both platforms retain the shared version. This does not establish the cause of the reported transient blank window.
+
 ## 0.27.3 — Queue account handoff, quota sync and bounded retries
 
 - Add opt-in automatic account switching for quota-paused queues. Check fresh quota using saved local logins, wait for managed chats to be idle, reopen Codex and verify the account before continuing. Preserve manual pauses and uncertain submissions.

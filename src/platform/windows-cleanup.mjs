@@ -35,7 +35,10 @@ export function cleanupWindowsInstallations({home,processes=windowsProcesses(),c
   const target=path.join(bin,entry.name);if(busy(target)||configuration.shim&&inside(canonical(target),canonical(configuration.shim)))continue;
   try{const launcher=readJSON(path.join(target,'launcher.json'));if(!launcher?.codeRoot||canonical(launcher.controlHome??'')!==canonical(home))continue;
    const relative=path.relative(versions,path.resolve(launcher.codeRoot));const parts=relative.split(path.sep);
-   if(parts.length!==3||!versionDirectory.test(parts[0])||parts[1]!=='resources'||parts[2]!=='app'||fs.existsSync(path.join(versions,parts[0])))continue;
+   if(parts.length!==3||!versionDirectory.test(parts[0])||parts[1]!=='resources'||parts[2]!=='app')continue;
+   // An old shim may have been redirected to current code while Codex ran.
+   // Once Codex exits, the old shim is unused even though its codeRoot exists.
+   if(fs.existsSync(path.join(versions,parts[0]))&&canonical(launcher.codeRoot)!==canonical(configuration.codeRoot||''))continue;
    removeInstallationTree(home,target);result.removed.push(target);
   }catch{}
  }

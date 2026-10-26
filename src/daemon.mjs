@@ -3,6 +3,7 @@ import {createAccountSwitcher} from './account-switch.mjs';
 import {createQueueAccountSwitch} from './queue-account-switch.mjs';
 import {accountQuotaViews} from './core/account-quota-link.mjs';
 import {accountProcessBlocker,automaticAccountProcesses,stopAccountProcesses,openAccountDesktop} from './account-processes.mjs';
+import {codexLaunchEnvironment} from './windows-integration.mjs';
 import {accountTaskBlockers} from './core/account-switch-blockers.mjs';
 import {createQuotaActivation} from './quota-activation.mjs';
 import {runQuotaProbe} from './quota-probe.mjs';
@@ -46,6 +47,7 @@ import {initialNewChatDefaults,nativeNewChatDefaults,newChatDefaultLimits,clampN
 import {createContextStatisticsService} from './context-statistics-service.mjs';
 
 export async function startDaemon() {
+  const launchDesktop=()=>openAccountDesktop({environment:windows?codexLaunchEnvironment():process.env});
   ensureRoot();
   try {await request('ping');return null;}catch{}
   const lockFile=path.join(root,'service.lock');
@@ -100,7 +102,7 @@ export async function startDaemon() {
     if(quotaActivation.state().busy)throw Error('等待额度探测结束后再自动切换');
     return automaticAccountProcesses({bridges:[...bridges.values()]});
   }
-  const accountSwitcher=createAccountSwitcher({home:root,codexHome,openDesktop:openAccountDesktop,
+  const accountSwitcher=createAccountSwitcher({home:root,codexHome,openDesktop:launchDesktop,
     quiesce:async()=>{accountTransition=true;let resumeQueues;try{resumeQueues=await taskQueues.suspend();const resume=await quota.suspend();return async()=>{try{for(const peer of autoPrepared)await peer.call('account-release',{},2000).catch(()=>{});}finally{autoPrepared=[];resume();resumeQueues();accountTransition=false;}};}catch(error){resumeQueues?.();accountTransition=false;throw error;}},
     prepareSwitch:async context=>{
       if(context?.automatic){
@@ -126,7 +128,7 @@ export async function startDaemon() {
   function currentQueueAccount(){const q=accountQuotaState();return {id:q.accounts.find(a=>a.current)?.loginId??null,quota:q};}
   const autoSwitchFile=path.join(root,'queue-account-switch.json');
   queueAccountAuto=createQueueAccountSwitch({load:()=>{try{return readJSON(autoSwitchFile,{});}catch{return {};}},save:value=>atomicJSON(autoSwitchFile,value),queues:taskQueues,current:currentQueueAccount,profiles:()=>accountSwitcher.state().profiles,
-    inspect:id=>accountSwitcher.inspect(id),ready:readyForAutoSwitch,openDesktop:async()=>{await openAccountDesktop();accountSwitcher.opened(accountSwitcher.state().activeId);},
+    inspect:id=>accountSwitcher.inspect(id),ready:readyForAutoSwitch,openDesktop:async()=>{await launchDesktop();accountSwitcher.opened(accountSwitcher.state().activeId);},
     switchAccount:async(id,context)=>{try{return await accountSwitcher.command({action:'switch',id,confirmed:true,open:false},context);}finally{quota.invalidate();}},
     refreshCurrent:async()=>{await quota.refresh(true);return currentQueueAccount();}});
   const accountAutoTimer=setInterval(()=>void queueAccountAuto.tick().catch(()=>{}),3000);accountAutoTimer.unref();

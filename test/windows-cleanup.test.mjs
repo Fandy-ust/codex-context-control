@@ -12,3 +12,14 @@ test('Windows cleanup retains live/current versions and removes only verified in
  r=cleanupWindowsInstallations({home,configuration:config,processes:[]});assert.ok(r.removed.includes(active));assert.ok(fs.existsSync(current)&&fs.existsSync(path.join(home,'state.json'))&&fs.existsSync(path.join(base,'versions','user-backup')));
  }finally{fs.rmSync(home,{recursive:true,force:true});}
 });
+
+test('Windows cleanup removes redirected old shim only after Codex exits',()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-win-retarget-clean-')),base=path.join(home,'apps');try{
+  const current=payload(base,'0.19.6'),codeRoot=path.join(current,'resources','app');
+  const bin=path.join(home,'bin'),old=path.join(bin,'aaaaaaaaaaaa-bbbbbbbbbbbb'),active=path.join(bin,'cccccccccccc-dddddddddddd');
+  for(const folder of [old,active]){fs.mkdirSync(folder,{recursive:true});fs.writeFileSync(path.join(folder,'codex-context.exe'),'fixture');fs.writeFileSync(path.join(folder,'launcher.json'),JSON.stringify({controlHome:home,codeRoot}));}
+  const config={installBase:base,installedApp:path.join(current,'ContextManager.exe'),desktopExecutable:path.join(home,'Codex.exe'),codeRoot,shim:path.join(active,'codex-context.exe')};
+  cleanupWindowsInstallations({home,configuration:config,processes:[{executable:config.desktopExecutable}]});assert.ok(fs.existsSync(old));
+  cleanupWindowsInstallations({home,configuration:config,processes:[]});assert.equal(fs.existsSync(old),false);assert.ok(fs.existsSync(active));
+ }finally{fs.rmSync(home,{recursive:true,force:true});}
+});

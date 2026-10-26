@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createAccountSwitcher,credentialProfile,fileStoreConfig} from '../src/account-switch.mjs';
 import {accountVault} from '../src/account-vault.mjs';
-import {accountProcessBlocker,accountProcesses,automaticAccountProcesses,stopAccountProcesses} from '../src/account-processes.mjs';
+import {openAccountDesktop,windowsStoreAppId,accountProcessBlocker,accountProcesses,automaticAccountProcesses,stopAccountProcesses} from '../src/account-processes.mjs';
 import {accountTaskBlockers} from '../src/core/account-switch-blockers.mjs';
 import {allowedLoginNavigation} from '../src/core/account-login-navigation.mjs';
 
@@ -127,4 +127,55 @@ test('embedded login permits official identity providers and only the assigned l
   const url='https://auth.openai.com/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback';
   for(const target of ['https://auth.openai.com/login','https://accounts.google.com/signin','http://localhost:1455/auth/callback?code=secret'])assert.equal(allowedLoginNavigation(target,url),true);
   for(const target of ['https://accounts.google.com.evil.test','http://localhost:9999/','file:///private','javascript:alert(1)','https://user:secret@chatgpt.com/','http://192.168.1.1/'])assert.equal(allowedLoginNavigation(target,url),false);
+});
+
+
+test('account guards exclude helpers and zombies but retain live CLI and wrapper processes',()=>{
+  const inventory=[{pid:201,executable:'/App/codex-computer-use-swift'},{pid:202,executable:'/App/codex-windows-sandbox-service.exe'},{pid:203,executable:'/App/codex',state:'Z+'},{pid:204,executable:'/App/Codex',state:'S'},{pid:205,executable:'/App/codex-context',state:'S'}];
+  assert.deepEqual(accountProcesses({platform:'darwin',list:()=>inventory}).map(p=>p.pid),[204,205]);
+});
+
+test('Windows desktop launch starts once without changing environment',async()=>{
+  const order=[];
+  await openAccountDesktop({platform:'win32',configured:process.execPath,environment:{ELECTRON_RUN_AS_NODE:'1',CODEX_CLI_PATH:'owned-shim'},launch:(command,args,options)=>{
+    assert.equal(command,process.execPath);assert.equal(options.env.ELECTRON_RUN_AS_NODE,undefined);assert.equal(options.env.CODEX_CLI_PATH,'owned-shim');order.push('spawn');
+    const child={once(event,callback){if(event==='spawn')queueMicrotask(callback);return child;},unref(){order.push('unref');}};return child;
+  }});
+  assert.deepEqual(order,['spawn','unref']);
+});
+
+
+test('Windows Store application ID is derived only from its package path',()=>{
+  assert.equal(windowsStoreAppId('C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe'),'OpenAI.Codex_2p2nqsd0c76g0!App');
+  assert.equal(windowsStoreAppId('C:\\Other\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe'),null);
+});
+
+test('Windows Store desktop launch activates the registered application once',async()=>{
+  const configured='C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe';
+  let calls=0;
+  await openAccountDesktop({platform:'win32',configured,exists:()=>true,launch:(command,args,options)=>{
+    assert.equal(command,'explorer.exe');
+    assert.deepEqual(args,['shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App']);
+    assert.equal(options.cwd,undefined);
+    assert.equal(options.windowsHide,false);
+    calls++;
+    const child={once(event,callback){if(event==='spawn')queueMicrotask(callback);return child;},unref(){}};return child;
+  }});
+  assert.equal(calls,1);
+});
+
+test('failed Windows desktop launch propagates its error',async()=>{
+  let calls=0;
+  await assert.rejects(openAccountDesktop({platform:'win32',configured:process.execPath,launch:()=>{
+    calls++;const child={once(event,callback){if(event==='error')queueMicrotask(()=>callback(Object.assign(Error('launch failed'),{code:'ENOENT'})));return child;}};return child;
+  }}),/launch failed/);
+  assert.equal(calls,1);
+});
+
+test('macOS desktop launch retains one launch with no additional activation delay',async()=>{
+  let calls=0;
+  await openAccountDesktop({platform:'darwin',configured:process.execPath,launch:()=>{
+    calls++;const child={once(event,callback){if(event==='spawn')queueMicrotask(callback);return child;},unref(){}};return child;
+  }});
+  assert.equal(calls,1);
 });

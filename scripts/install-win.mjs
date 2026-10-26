@@ -9,6 +9,7 @@ import {root,codexHome,ensureRoot,atomicJSON,readJSON} from '../src/paths.mjs';
 import {request} from '../src/ipc.mjs';
 import {desktopInstallation,windows,powershell} from '../src/platform/index.mjs';
 import {verifyWindowsPayload,sha,removeInstallationTree} from '../src/platform/windows-install.mjs';
+import {retargetWindowsLaunchers,restoreWindowsLaunchers} from '../src/platform/windows-launcher-retarget.mjs';
 import {enableAutomaticStartup,disableAutomaticStartup} from '../src/automatic-startup.mjs';
 import {inheritedSettings,prepareUpgrade,completeUpgrade} from '../src/upgrade-state.mjs';
 import {editOwnedHook} from '../src/hooks.mjs';
@@ -76,7 +77,7 @@ const beforeStartup=readJSON(path.join(root,'automatic-startup.json'));
 const upgrade=prepareUpgrade({home:root,version:pkg.version,previousVersion:previous.productVersion});
 createCompensationManager({home:root}).setEnabled(false);
 const installedApp=path.join(target,'ContextManager.exe'),hookCommand=`"${shim}" --hook`;
-let integrationWarning=null;
+let integrationWarning=null,retargetedLaunchers=[];
 try{
   await stopMenuBarEntry();
   atomicJSON(path.join(root,'settings.json'),inheritedSettings(previous,{version:1,productVersion:pkg.version,platform:'win32',arch:manifest.arch,realBinary:binary,desktopExecutable:installation?.executable||previous.desktopExecutable,node,codeRoot:code,installedApp,installBase:base,shim,hookCommand:previous.hookCommand||null,uninstalled:false,pendingUninstall:false}));
@@ -98,8 +99,12 @@ try{
     atomicJSON(path.join(root,'settings.json'),{...readJSON(path.join(root,'settings.json')),hookCommand:null});
     atomicJSON(path.join(root,'integration.json'),{...readJSON(path.join(root,'integration.json'),{}),enabled:false});
   }
+  // Existing Codex processes can keep an old CODEX_CLI_PATH. Their next
+  // launcher invocation should use this installation without restarting Codex.
+  if(readJSON(path.join(root,'integration.json'),{}).enabled===true)retargetedLaunchers=retargetWindowsLaunchers({home:root,node,codeRoot:code,activeShim:shim});
   completeUpgrade({home:root,...upgrade});
 }catch(error){
+  restoreWindowsLaunchers(retargetedLaunchers);
   atomicJSON(path.join(root,'settings.json'),previous);
   if(beforeHooks)fs.writeFileSync(hooksFile,beforeHooks);else fs.rmSync(hooksFile,{force:true});
   if(oldLauncher)atomicJSON(path.join(bin,'launcher.json'),oldLauncher);

@@ -1,13 +1,14 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
 import {windowsProcesses} from './platform/windows-system.mjs';
 import {settings,realBinary} from './paths.mjs';
 
 export function accountProcesses({platform=process.platform,list}={}){
   let processes=list?.();
-  if(!list){if(platform==='win32')processes=windowsProcesses();else{const result=spawnSync('/bin/ps',['-axo','pid=,comm='],{encoding:'utf8',timeout:5000});if(result.status===0)processes=result.stdout.split('\n').map(line=>{const match=line.trim().match(/^(\d+)\s+(.+)$/);return match?{pid:Number(match[1]),executable:match[2]}:null;}).filter(Boolean);}}
+  if(!list){if(platform==='win32')processes=windowsProcesses();else{const result=spawnSync('/bin/ps',['-axo','pid=,stat=,comm='],{encoding:'utf8',timeout:5000});if(result.status===0)processes=result.stdout.split('\n').map(line=>{const match=line.trim().match(/^(\d+)\s+(\S+)\s+(.+)$/);return match?{pid:Number(match[1]),state:match[2],executable:match[3]}:null;}).filter(Boolean);}}
   if(!Array.isArray(processes))throw Error('无法检查 Codex 进程，请稍后重试');
-  return processes.filter(p=>Number.isSafeInteger(p.pid)&&p.pid>0&&p.pid!==process.pid&&/(?:^|[\\/])(?:codex(?:-[\w-]+)?|chatgpt)(?:\.exe)?$/i.test(p.executable||''));
+  return processes.filter(p=>Number.isSafeInteger(p.pid)&&p.pid>0&&p.pid!==process.pid&&!/^Z/.test(p.state||'')&&/(?:^|[\\/])(?:codex|codex-context|chatgpt)(?:\.exe)?$/i.test(p.executable||''));
 }
 export const accountProcessBlocker=options=>accountProcesses(options).length>0;
 export function automaticAccountProcesses({list=accountProcesses,bridges=[],desktop=settings().desktopExecutable,platform=process.platform}={}){
@@ -31,11 +32,18 @@ export async function stopAccountProcesses({list=accountProcesses,kill=(pid,sign
   }
   throw Error('Codex 仍在运行，未切换账号，请手动退出后重试');
 }
-export function openAccountDesktop(){
-  let command,args=[];const configured=settings().desktopExecutable;
-  if(configured&&fs.existsSync(configured))command=configured;
-  else if(process.platform==='darwin'){const binary=realBinary(),app=binary.match(/^(.+?\.app)\//)?.[1];if(app){command='/usr/bin/open';args=['-a',app];}}
+export function windowsStoreAppId(executable){
+  const packageDirectory=path.win32.basename(path.win32.dirname(path.win32.dirname(executable)));
+  const packageFamily=packageDirectory.match(/^OpenAI\.Codex_.+__([a-z0-9]+)$/i)?.[1];
+  return packageFamily&&path.win32.basename(path.win32.dirname(path.win32.dirname(path.win32.dirname(executable)))).toLowerCase()==='windowsapps'?`OpenAI.Codex_${packageFamily}!App`:null;
+}
+export async function openAccountDesktop({platform=process.platform,configured=settings().desktopExecutable,exists=fs.existsSync,launch=spawn,environment=process.env}={}){
+  let command,args=[];
+  if(configured&&exists(configured))command=configured;
+  else if(platform==='darwin'){const binary=realBinary(),app=binary.match(/^(.+?\.app)\//)?.[1];if(app){command='/usr/bin/open';args=['-a',app];}}
   if(!command)throw Error('请手动打开 Codex');
-  const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
-  return new Promise((resolve,reject)=>{const child=spawn(command,args,{env,detached:true,stdio:'ignore',windowsHide:true});child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});});
+  const appId=platform==='win32'?windowsStoreAppId(command):null;
+  if(appId){command='explorer.exe';args=[`shell:AppsFolder\\${appId}`];}
+  const env={...environment};delete env.ELECTRON_RUN_AS_NODE;
+  await new Promise((resolve,reject)=>{const child=launch(command,args,{cwd:command==='/usr/bin/open'||appId?undefined:path.dirname(command),env,detached:true,stdio:'ignore',windowsHide:!appId});child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});});
 }
