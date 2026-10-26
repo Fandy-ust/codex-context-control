@@ -26,17 +26,6 @@ struct ChatTaskQueue:Decodable,Equatable,Identifiable {let id:String;let enabled
 struct QueueAccountSwitchState:Decodable,Equatable {let enabled:Bool;let busy:Bool;let phase:String;let message:String}
 struct TaskQueuesState:Decodable,Equatable {var monitoringEnabled:Bool?=nil;let sleepPrevented:Bool;let queues:[ChatTaskQueue];var accountSwitch:QueueAccountSwitchState?=nil}
 
-struct QueueAccountSwitchControls:View {
-    @ObservedObject var model:Controller
-    var body:some View{
-        VStack(alignment:.leading,spacing:8){
-            Toggle(L("额度不足时自动切换账号并继续队列"),isOn:Binding(get:{model.taskQueues?.accountSwitch?.enabled==true},set:{enabled in Task{await model.queueCommand(nil,"account-switch",values:["enabled":enabled])}})).toggleStyle(.switch).disabled(model.working)
-            Text(L("使用已保存登录的账号，实时确认额度后切换。仅在全部聊天空闲时重新打开 Codex；无可用账号时保留队列等待。默认关闭。")).font(.caption).foregroundStyle(.secondary)
-            if let state=model.taskQueues?.accountSwitch,state.enabled || state.phase=="awaiting-account"{Text(L(state.message)).font(.caption).foregroundStyle(.secondary)}
-        }
-    }
-}
-
 extension Controller {
     func queueHasFiveHour(_ pool:String)->Bool{guard let b=quota?.buckets.first(where:{$0.id==pool}) else{return false};return [b.primary,b.secondary].contains{$0?.windowDurationMins==300}}
     func queueRestartRequired(_ id:String)->Bool{chats.first{$0.id==id}?.queueRestartRequired == true}
@@ -50,6 +39,17 @@ extension Controller {
         catch{notice=error.localizedDescription;return false}
     }
 }
+struct QueueAccountSwitchControls:View {
+    @ObservedObject var model:Controller
+    var body:some View{
+        VStack(alignment:.leading,spacing:8){
+            Toggle(L("额度不足时自动切换账号并继续队列"),isOn:Binding(get:{model.taskQueues?.accountSwitch?.enabled==true},set:{enabled in Task{await model.queueCommand(nil,"account-switch",values:["enabled":enabled])}})).toggleStyle(.switch).disabled(model.working)
+            Text(L("使用已保存登录的账号，实时确认额度后切换。仅在全部聊天空闲时重新打开 Codex；无可用账号时保留队列等待。默认关闭。")).font(.caption).foregroundStyle(.secondary)
+            if let state=model.taskQueues?.accountSwitch,state.enabled || state.phase=="awaiting-account"{Text(L(state.message)).font(.caption).foregroundStyle(.secondary)}
+        }
+    }
+}
+
 private func queueTaskStatus(_ status:String)->String{L(["waiting":"等待中","running":"执行中","completed":"已完成","interrupted":"已中断","error":"失败"][status] ?? status)}
 private func quotaText(_ config:QueueConfig)->String{"5h \(config.fiveHour.reserve.formatted())%   ·   Weekly \(config.weekly.reserve.formatted())%"}
 private func stageText(_ config:QueueConfig)->String{
