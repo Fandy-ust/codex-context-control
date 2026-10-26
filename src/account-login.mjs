@@ -24,7 +24,7 @@ export function nativeAccountSession({home,binary=realBinary(),launcherArgs=[],t
   });
   const ready=call('initialize',{clientInfo:{name:'context_manager_accounts',version:'1'}}).then(()=>{child.stdin.write(JSON.stringify({method:'initialized'})+'\n');});
   ready.catch(()=>{});
-  return {close,async read({refresh=false,quota=false}={}){await ready;const value=await call('account/read',{refreshToken:refresh});if(quota)await call('account/rateLimits/read');return value?.account;},
+  return {close,async rateLimits(){await ready;return call('account/rateLimits/read');},async read({refresh=false,quota=false}={}){await ready;const value=await call('account/read',{refreshToken:refresh});if(quota)await call('account/rateLimits/read');return value?.account;},
     async login(onURL){await ready;
       let timer;const completed=new Promise((resolve,reject)=>{login={resolve,reject,id:null};timer=setTimeout(()=>{login?.reject(Error('账号授权超时，请重试'));login=null;close();},loginTimeout);});completed.catch(()=>{});
       try{const result=await call('account/login/start',{type:'chatgpt'});if(login)login.id=result.loginId;

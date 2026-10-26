@@ -16,6 +16,7 @@ test('queue API authenticates, persists complete prompts and config, validates r
   const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json'))),base=`http://127.0.0.1:${c.port}`,headers={authorization:`Bearer ${c.token}`};
   const post=body=>fetch(base+'/task-queue',{method:'POST',headers,body:JSON.stringify(body)});
   assert.equal((await fetch(base+'/task-queue',{method:'POST',body:'{}'})).status,403);
+  for(const enabled of [true,false]){const response=await post({action:'account-switch',enabled});assert.equal(response.status,200);assert.equal((await response.json()).accountSwitch.enabled,enabled);}
   let response=await post({id:'chat',action:'add',prompt:'完整提示词\n验收：测试通过',expectedRevision:0});assert.equal(response.status,200);let state=await response.json();assert.equal(state.queues[0].enabled,false);assert.equal(state.sleepPrevented,false);
   assert.equal((await post({id:'chat',action:'add',prompt:'过时修改',expectedRevision:0})).status,400);
   assert.equal((await post({id:'__proto__',action:'add',prompt:'bad'})).status,400);

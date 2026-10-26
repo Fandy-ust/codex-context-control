@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createAccountSwitcher,credentialProfile,fileStoreConfig} from '../src/account-switch.mjs';
 import {accountVault} from '../src/account-vault.mjs';
-import {accountProcessBlocker,accountProcesses,stopAccountProcesses} from '../src/account-processes.mjs';
+import {accountProcessBlocker,accountProcesses,automaticAccountProcesses,stopAccountProcesses} from '../src/account-processes.mjs';
 import {accountTaskBlockers} from '../src/core/account-switch-blockers.mjs';
 import {allowedLoginNavigation} from '../src/core/account-login-navigation.mjs';
 
@@ -16,7 +16,7 @@ function fixture(t,extra={}){
   const home=fs.mkdtempSync(path.join(os.tmpdir(),'account-switch-')),codexHome=path.join(home,'codex');fs.mkdirSync(codexHome);let stored={profiles:{}},opened=0,blocked=false,mismatch=false,denied=false,finishLogin,rejectLogin;
   const vault={get:()=>structuredClone(stored),set:value=>{if(denied)throw Error('vault locked');stored=structuredClone(value);}};
   const session=({home:folder})=>({async read({refresh=false}={}){const file=path.join(folder,'auth.json'),value=JSON.parse(fs.readFileSync(file));if(refresh){value.tokens.refresh_token='new-rotated-secret';fs.writeFileSync(file,JSON.stringify(value));}return mismatch&&refresh?{type:'chatgpt',email:'wrong@example.test'}:info(value);},
-    async login(onURL){await onURL('https://auth.openai.com/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback');return new Promise((resolve,reject)=>{rejectLogin=reject;finishLogin=()=>{const value=auth('second');fs.writeFileSync(path.join(folder,'auth.json'),JSON.stringify(value));resolve(info(value));};});},close(){rejectLogin?.(Error('cancelled'));rejectLogin=null;}});
+    async rateLimits(){return {rateLimits:{primary:{usedPercent:10,windowDurationMins:300,resetsAt:1800001800}}};},async login(onURL){await onURL('https://auth.openai.com/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback');return new Promise((resolve,reject)=>{rejectLogin=reject;finishLogin=()=>{const value=auth('second');fs.writeFileSync(path.join(folder,'auth.json'),JSON.stringify(value));resolve(info(value));};});},close(){rejectLogin?.(Error('cancelled'));rejectLogin=null;}});
   const manager=createAccountSwitcher({home,codexHome,secrets:vault,session,secure:directory=>fs.mkdirSync(directory,{recursive:true}),guard:async()=>{if(blocked)throw Error('running');},openDesktop:async()=>{opened++;},...extra});
   fs.writeFileSync(path.join(codexHome,'auth.json'),JSON.stringify(auth('first',2)));
   t.after(async()=>{manager.close();await wait(()=>!manager.state().busy);fs.rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:100});});
@@ -38,6 +38,24 @@ test('switch validates identity, retains the latest outgoing auth, writes refres
   assert.equal(Object.values(f.stored.profiles).find(p=>p.auth.tokens.account_id==='first').auth.tokens.refresh_token,'refresh-2');
   assert.match(fs.readFileSync(path.join(f.codexHome,'config.toml'),'utf8'),/^cli_auth_credentials_store = "file"\nmodel = "Sol"/);assert.equal(f.opened,1);assert.equal(f.manager.state().activeId,id);assert.equal(f.manager.state().busy,false);
   assert.doesNotMatch(fs.readFileSync(path.join(f.home,'account-switch.json'),'utf8'),/new-rotated-secret|access_token/);
+});
+
+test('candidate inspection refreshes only isolated credentials and exposes quota without tokens',async t=>{
+ const f=fixture(t),second=auth('second');f.setProfiles([second]);const id=credentialProfile(second,info(second)).id,before=fs.readFileSync(path.join(f.codexHome,'auth.json'),'utf8');
+ const result=await f.manager.inspect(id);assert.equal(result.buckets[0].primary.remainingPercent,90);assert.equal(f.stored.profiles[id].auth.tokens.refresh_token,'new-rotated-secret');assert.equal(fs.readFileSync(path.join(f.codexHome,'auth.json'),'utf8'),before);assert.doesNotMatch(JSON.stringify(result),/access_token|refresh_token|id_token/);assert.deepEqual(fs.readdirSync(path.join(f.home,'account-login')),[]);
+});
+
+test('quota read failure after refresh retains rotated candidate credentials without touching the live login',async t=>{
+ const session=({home})=>({async read(){const file=path.join(home,'auth.json'),value=JSON.parse(fs.readFileSync(file));value.tokens.refresh_token='rotated-before-quota-error';fs.writeFileSync(file,JSON.stringify(value));return info(value);},async rateLimits(){throw Error('quota offline');},close(){}});
+ const f=fixture(t,{session}),second=auth('second');f.setProfiles([second]);const id=credentialProfile(second,info(second)).id,before=fs.readFileSync(path.join(f.codexHome,'auth.json'),'utf8');
+ await assert.rejects(f.manager.inspect(id),/quota offline/);assert.equal(f.stored.profiles[id].auth.tokens.refresh_token,'rotated-before-quota-error');assert.equal(fs.readFileSync(path.join(f.codexHome,'auth.json'),'utf8'),before);
+});
+
+test('automatic process selection permits managed native runtimes but refuses unrelated sessions and old bridges',()=>{
+ const managed={pid:123,executable:'/fixture/codex'},desktop={pid:456,executable:process.execPath},bridges=[{pid:99,nativePid:123,accountSwitchVersion:1}];
+ assert.deepEqual(automaticAccountProcesses({desktop:process.execPath,bridges,list:()=>[managed,desktop]}),[managed,desktop]);
+ assert.throws(()=>automaticAccountProcesses({desktop:process.execPath,bridges,list:()=>[managed,{pid:999,executable:'/other/codex'}]}),/未接入/);
+ assert.throws(()=>automaticAccountProcesses({desktop:process.execPath,bridges:[{pid:99}],list:()=>[]}),/重新打开/);
 });
 test('guards, confirmation, vault failures and account mismatch leave the live auth unchanged',async t=>{
   const f=fixture(t),second=auth('second');f.setProfiles([second]);const id=credentialProfile(second,info(second)).id,before=fs.readFileSync(path.join(f.codexHome,'auth.json'),'utf8');

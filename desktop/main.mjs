@@ -70,6 +70,8 @@ app.on('second-instance',(_event,argv)=>{if(argv.includes('--quit'))app.quit();e
 app.on('before-quit',()=>{quitting=true;clearTimeout(timer);});
 app.on('window-all-closed',()=>{});
 app.on('activate',()=>showMain());
+let demoAccountAuto={enabled:false,busy:false,phase:'idle',message:'',lastSwitchAt:0};
+const demoQueueState=()=>({...demoQueues.list(),accountSwitch:demoAccountAuto});
 async function api(action,params={}){
   if(demo){
     if(action==='account-switch'){
@@ -85,9 +87,9 @@ async function api(action,params={}){
       if(params.action==='rename-account'){const p=demoCloud.accounts.find(p=>p.id===params.id);p.customName=params.name.trim();demoState.quota.accounts.find(a=>a.scope==='account:'+p.id).label=p.customName||p.label;}
       if(params.action==='delete-account'){demoCloud.accounts=demoCloud.accounts.filter(p=>p.id!==params.id);demoState.quota.accounts=demoState.quota.accounts.filter(p=>p.scope!=='account:'+params.id);}
       if(params.action==='credential')return {value:demoCloudCredentials[params.field]||''};if(['configure','save-and-sync'].includes(params.action)){const {token,key,action,claimLegacy,...value}=params;if(token)demoCloudCredentials.token=token;if(key)demoCloudCredentials.key=key;demoCloud={...demoCloud,...value,hasToken:!!token||demoCloud.hasToken,hasKey:!!key||demoCloud.hasKey};}if(params.action==='create-gist')demoCloud.gistId='a'.repeat(32);if(['sync','save-and-sync'].includes(params.action)){demoCloud.enabled=true;demoCloud.lastSuccess=Date.now();demoCloud.devices=5;}return structuredClone(demoCloud);}
-    if(action==='state')return structuredClone({...demoState,quota:accountQuotaViews(demoLogins,demoState.quota).quota,quotaActivation:demoActivation.state(),taskQueues:demoQueues.list()});
+    if(action==='state')return structuredClone({...demoState,quota:accountQuotaViews(demoLogins,demoState.quota).quota,quotaActivation:demoActivation.state(),taskQueues:demoQueueState()});
     if(action==='quota-activation')return demoActivation.command(params);
-    if(action==='task-queue')return demoQueues.command(params);
+    if(action==='task-queue'){if(params.action==='account-switch')demoAccountAuto={...demoAccountAuto,enabled:params.enabled};else demoQueues.command(params);return demoQueueState();}
     if(action==='statistics')return structuredClone({...demoStatistics,threadId:params.id});
     if(action==='quota-refresh')return structuredClone(demoState.quota);
     if(action==='quota-analytics')return demoQuotaAnalytics(params);

@@ -2,7 +2,7 @@ export function cloudSyncView(s,{e,t}){
   if(!s)return `<div class="content"><p>${e(t('正在读取同步设置…','Loading sync settings…'))}</p></div>`;
   const label=(zh,en)=>e(t(zh,en));
   return `<div class="content"><section class="card stack"><h2>${label('多设备云同步','Multi-device cloud sync')}</h2>
-  <p class="muted">${label('将数值统计加密后同步到你自己的 GitHub，支持 Windows 与 macOS 多设备合并。聊天正文、标题及密钥不会上传。','Sync encrypted numeric statistics to your own GitHub across Windows and macOS. Messages, titles and credentials stay local.')}</p>
+  <p class="muted">${label('同步加密的数值统计、账号名称或邮箱、Credits 与额度重置时间，可显示其他设备登录账号的缓存。聊天正文、标题和登录凭据不会上传。','Sync encrypted statistics, account names or emails, Credits and quota reset times. View cached quota from accounts signed in on other devices. Messages, titles and sign-in credentials stay local.')}</p>
   <label class="row between">${label('启用云同步','Enable cloud sync')}<input id="cloud-enabled" type="checkbox" ${s.enabled?'checked':''}></label>
   <h3>${label('账号与设备','Accounts and devices')}</h3>
   <label class="stack">${label('本机名称','This device')}<input id="cloud-device-name" value="${e(s.deviceName||'')}" maxlength="80"></label>

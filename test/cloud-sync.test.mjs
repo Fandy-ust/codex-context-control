@@ -24,16 +24,33 @@ function cloud(){
     write:async(name,data)=>{writes.push(name);files.set(config.group+'/'+name,data);}
   });return {transport,files,writes,setOffline:value=>{offline=value;}};
 }
-function fixture(t,remote){
+function fixture(t,remote,extra={}){
   const home=fs.mkdtempSync(path.join(os.tmpdir(),'cloud-sync-')),ledger=new QuotaLedger({file:path.join(home,'ledger.sqlite'),home,now:()=>now});
   let identity='same-account',credentials={token:'test-token-never-upload',key};
   ledger.recordLive({scope,at:now-10000,buckets:[],accountGroup:'a'.repeat(32),identity,label:'Local account'});
   const analytics={syncAccount:k=>identity?crypto.createHmac('sha256',k).update(identity).digest('hex').slice(0,32):null,syncExport:async p=>ledger.syncExport(p),syncImport:async p=>ledger.syncImport(p),syncSettings:async p=>ledger.syncSettings(p),syncProfiles:async k=>ledger.syncProfiles().map(({identity,...p})=>({...p,id:crypto.createHmac('sha256',k).update(identity).digest('hex').slice(0,32)}))};
-  const service=createCloudSync({home,analytics,secrets:{get:()=>credentials,set:v=>{credentials=v;}},transport:remote.transport,now:()=>now});
+  const service=createCloudSync({home,analytics,secrets:{get:()=>credentials,set:v=>{credentials=v;}},transport:remote.transport,now:()=>now,...extra});
   t.after(()=>{service.close();ledger.close();fs.rmSync(home,{recursive:true,force:true});});
   const add=(id,extra={})=>ledger.consume({type:'token_usage_record',timestamp:new Date(now-1000).toISOString(),payload:{response_id:id,usage:{input_tokens:100,output_tokens:20,cached_input_tokens:80,...extra}}},{id:'thread',model:'model',name:'PRIVATE TITLE',project:'PRIVATE PATH'});
   return {service,ledger,home,add,setAccount:value=>{identity=value;if(value){const group=value==='same-account'?'a'.repeat(32):crypto.createHash('sha256').update(value).digest('hex').slice(0,32);ledger.recordLive({scope:'account:'+group,at:now-5000,buckets:[],accountGroup:group,identity,label:'Local account'});}},configure:params=>service.command({action:'configure',enabled:true,repository:'owner/private',intervalMinutes:0,...params})};
 }
+
+test('different signed-in accounts share encrypted sidebar quota summaries without sharing credentials',async t=>{
+ const remote=cloud(),snapshot={scope,updatedAt:now-1000,buckets:[{id:'codex',name:'Codex',creditBalance:'43',primary:{remainingPercent:95,windowDurationMins:300,resetsAt:Math.floor(now/1000)+18000},secondary:{remainingPercent:70,windowDurationMins:10080,resetsAt:Math.floor(now/1000)+604800}}],creditBaselines:{codex:{last:43,baseline:50}}};
+ const a=fixture(t,remote,{quotaAccounts:()=>[snapshot]}),b=fixture(t,remote);
+ a.ledger.recordLive({scope,at:now-1000,buckets:snapshot.buckets,accountGroup:'a'.repeat(32),identity:'same-account',label:'alpha@example.test'});
+ b.ledger.deleteAccount({id:'a'.repeat(32),scopes:[scope]});b.setAccount('other-account');
+ await a.configure({deviceName:'Device A'});const id=a.service.state().accounts.find(p=>p.current).id;
+ await a.service.command({action:'rename-account',id,name:'Work'});await a.service.sync();
+ await b.configure({deviceName:'Device B'});await b.service.sync();
+ const imported=b.service.state().accounts.find(p=>p.id===id);assert.equal(imported.label,'alpha@example.test');assert.equal(imported.customName,'Work');assert.equal(imported.current,false);
+ assert.equal(imported.remoteQuota.remote,true);assert.equal(imported.remoteQuota.buckets[0].creditBalance,'43');assert.equal(imported.remoteQuota.buckets[0].primary.resetsAt,snapshot.buckets[0].primary.resetsAt);assert.deepEqual(imported.remoteQuota.creditBaselines.codex,{last:43,baseline:50});
+ await b.service.command({action:'status'});assert.equal(b.service.state().accounts.find(p=>p.id===id).customName,'Work','local profile refresh retains the synced name');
+ const raw=[...remote.files.values()].join('');assert.equal(raw.includes('alpha@example.test'),false);assert.equal(raw.includes('test-token-never-upload'),false);
+ const group=crypto.createHmac('sha256',syncKey(key)).update('context-manager-account-directory-v1').digest('hex').slice(0,32);
+ const manifest=unseal(remote.files.get(group+'/manifest-'+a.service.state().deviceId+'.json'),syncKey(key),group+'/'+a.service.state().deviceId+'/manifest');
+ assert.deepEqual(Object.keys(manifest.accounts[0]).sort(),['customName','id','label','quota','updatedAt']);assert.equal(JSON.stringify(manifest).includes('refresh_token'),false);
+});
 
 test('AES-GCM authenticates content, key and file/device context',()=>{
   const k=syncKey(key),raw=seal(records([request()]),k,'device/chunk');assert.deepEqual(unseal(raw,k,'device/chunk'),records([request()]));

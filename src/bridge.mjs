@@ -34,6 +34,7 @@ export class Bridge {
   fromClient(line,preparedFork=null,guarded=false,compensationPrepared=false) {
     let m;try{m=JSON.parse(line);}catch{this.writeBackend(line);return;}
     if(!m||typeof m!=='object'||Array.isArray(m)){this.writeBackend(line);return;}
+    if(this.accountTransition&&(blockedMethods.has(m.method)||m.method==='thread/start'||m.method==='thread/compact/start')){this.rejectTurn(m,'账号切换正在进行，请稍后重试');return;}
     if(this.resolveNewChatBudget&&m.method==='thread/start'&&m.id!=null&&isNewUserChat(m.params)&&!preparedFork?.newChat){this.prepareNewChat(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if((this.contextCeiling||this.nativeBudgetSupport)&&m.method==='thread/resume'&&m.id!=null&&m.params?.threadId&&!m.params?.path&&!m.params?.ephemeral&&!preparedFork?.resume){this.prepareResume(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if(this.contextCeiling&&['thread/start','thread/resume'].includes(m.method)&&!m.params?.ephemeral){m.params={...m.params,config:ceilingConfig(m.params?.config)};line=JSON.stringify(m);}
@@ -152,7 +153,7 @@ export class Bridge {
   fromServer(line) {
     let m;try{m=JSON.parse(line);}catch{this.writeFrontend(line);return;}
     if(!m||typeof m!=='object'||Array.isArray(m)){this.writeFrontend(line);return;}
-    if(!m.method&&this.internal.has(key(m.id))){const item=this.internal.get(key(m.id));this.internal.delete(key(m.id));clearTimeout(item.timer);m.error?item.reject(new Error(m.error.message)):item.resolve(m.result);return;}
+    if(!m.method&&this.internal.has(key(m.id))){const item=this.internal.get(key(m.id));this.internal.delete(key(m.id));clearTimeout(item.timer);m.error?item.reject(Object.assign(new Error(m.error.message),{confirmed:true,errorCode:m.error.data?.codexErrorInfo==='usageLimitExceeded'?'usageLimitExceeded':null})):item.resolve(m.result);return;}
     if(!m.method&&m.id!=null){
       const pending=this.external.get(key(m.id));this.external.delete(key(m.id));
       if(pending?.method==='initialize'&&m.result&&!m.error)this.initialized=true;
@@ -198,7 +199,7 @@ export class Bridge {
         if(m.method==='thread/status/changed'){record.status=p.status.type;this.notify(record);if(record.status==='idle')this.schedule(record);}
         if(m.method==='turn/started'){record.lastStartedAt=timestampMs(p.turn?.startedAt)??Date.now();record.status='active';record.turnId=p.turn.id;if(record.automaticTask?.status==='starting'&&!record.automaticTask.preparingContext){record.automaticTask.turnId=p.turn.id;record.automaticTask.status='running';}record.usageFresh=false;this.notify(record);}
         if(m.method==='error'&&record.compactionWait)record.compactionWait.reject(new Error(p.error?.message||'原生压缩失败'));
-        if(m.method==='turn/completed'){record.compensationTurnPending=false;record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error||['failed','interrupted'].includes(p.turn?.status)?record.compactionWait.reject(new Error(p.turn?.error?.message||'原生压缩未完成')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.scheduleCompensatedCompaction(record);this.schedule(record);}
+        if(m.method==='turn/completed'){record.compensationTurnPending=false;record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error||['failed','interrupted'].includes(p.turn?.status)?record.compactionWait.reject(new Error(p.turn?.error?.message||'原生压缩未完成')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;record.automaticTask.errorConfirmed=true;record.automaticTask.errorCode=p.turn.error?.codexErrorInfo==='usageLimitExceeded'||p.turn.error?.code==='usageLimitExceeded'?'usageLimitExceeded':null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.scheduleCompensatedCompaction(record);this.schedule(record);}
         if(m.method==='thread/name/updated'){record.name=p.name;this.notify(record);}
       }
     }
@@ -222,7 +223,14 @@ export class Bridge {
     const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
   }
   publicRecord(record){return {...pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask','compensation']),effort:inheritedTaskEffort(record)};}
+  prepareAccountSwitch(){
+    if(this.accountTransition)throw Error('账号切换正在进行，请稍后重试');
+    if(this.internal.size||this.external.size||[...this.records.values()].some(r=>r.status!=='idle'||r.locked||r.initializing||['starting','running'].includes(r.automaticTask?.status)))throw Error('等待所有聊天空闲后再自动切换账号');
+    this.accountTransition=true;return {ok:true};
+  }
+  releaseAccountSwitch(){this.accountTransition=false;return {ok:true};}
   async prepareAutomatic(id){
+    if(this.accountTransition)throw Error('账号切换正在进行，请稍后重试');
     if(this.records.has(id)){await this.notify(this.records.get(id));return {ok:true};}
     const resolved=await this.resolveFork(id),policy=resolved?.policy?.enabled?(this.contextCeiling?migrateCeilingPolicy(resolved.policy,resolved.model):policyForModel(resolved.policy,resolved.model)):null;
     let config=policy?{model_context_window:policy.window,model_auto_compact_token_limit:policy.compact}:undefined;
@@ -241,11 +249,12 @@ export class Bridge {
     try{await this.compact(id,(success,error)=>{void (async()=>{
       if(r.automaticTask?.executionId!==task.executionId||r.automaticTask.status!=='starting')return;
       try{if(!success)throw error||Error('原生压缩失败');if((r.usageGeneration??0)<=generation)throw Error('压缩后尚无用量记录，已暂停发送新输入。');await this.startAutomatic(id,task,true);}
-      catch(failure){if(r.automaticTask?.executionId===task.executionId){r.automaticTask.status='error';r.automaticTask.error=failure.message;await this.notify(r);}}
+      catch(failure){if(r.automaticTask?.executionId===task.executionId){r.automaticTask.status='error';r.automaticTask.error=failure.message;r.automaticTask.errorConfirmed=true;await this.notify(r);}}
     })();},true);return r.automaticTask;}
     catch(error){r.automaticTask.status='error';r.automaticTask.error=error.message;await this.notify(r);throw error;}
   }
   async startAutomatic(id,task,contextPrepared=false){
+    if(this.accountTransition)throw Error('账号切换正在进行，请稍后重试');
     const r=this.records.get(id);if(!r||r.ephemeral||r.canAcceptDirectInput===false)throw Error('聊天不支持直接输入');
     if(r.automaticTask?.executionId===task.executionId&&!contextPrepared)return r.automaticTask;
     if(task.adoptTurnId){if(r.status!=='active'||r.turnId!==task.adoptTurnId)throw Error('当前轮次已经变化');r.automaticTask={executionId:task.executionId,taskId:task.taskId,turnId:r.turnId,status:'running'};await this.notify(r);return r.automaticTask;}
@@ -290,12 +299,12 @@ export class Bridge {
     if(settings.model)params.model=selectedModel;
     if(selectedEffort)params.effort=selectedEffort;
     if(params.collaborationMode&&(settings.model||selectedEffort))params.collaborationMode={...params.collaborationMode,settings:{...params.collaborationMode.settings,...(settings.model?{model:selectedModel}:{}),...(selectedEffort?{reasoning_effort:selectedEffort}:{})}};
-    r.automaticTask={executionId:task.executionId,taskId:task.taskId,status:'starting'};await this.notify(r);
+    r.automaticTask={executionId:task.executionId,taskId:task.taskId,status:'starting'};await this.notify(r);let turnSubmitted=false;
     try{
       if(this.resolveCompensation&&r.policy){r.locked=true;try{await this.syncCompensation(r,selectedModel);}finally{r.locked=false;}}
       if(this.contextCeiling||r.compensation?.enabled){const logical=r.policy&&Number.isInteger(r.modelInfo?.effective_context_window_percent)?Math.floor(r.policy.window*r.modelInfo.effective_context_window_percent/100):null;const incoming=incomingTokens(input),cap=Math.min(logical??r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,this.contextCeiling?MAX_CONTEXT_INPUT:Number.MAX_SAFE_INTEGER),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if(incoming==null||incoming+reserve>=cap)throw Error('新输入本身已接近上下文上限，请拆分输入。');if((r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve)){if(!contextPrepared)return this.prepareAutomaticContext(id,task);throw Error('压缩后上下文仍接近上限，已暂停任务');}}
-      const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
-    catch(error){r.automaticTask.status='error';r.automaticTask.error=error.message;await this.notify(r);throw error;}
+      turnSubmitted=true;const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
+    catch(error){if(turnSubmitted&&!error.confirmed&&r.automaticTask.turnId&&r.status==='active')throw error;r.automaticTask.status='error';r.automaticTask.error=error.message;r.automaticTask.errorConfirmed=!turnSubmitted||error.confirmed===true;r.automaticTask.errorCode=error.errorCode??null;await this.notify(r);throw error;}
     finally{const queued=r.queue.splice(0);r.queueBytes=0;for(const line of queued)this.fromClient(line);}
   }
   async interruptAutomatic(id,executionId){const r=this.records.get(id),task=r?.automaticTask;
@@ -346,6 +355,7 @@ export class Bridge {
     });
   }
   async compact(id,onFinished,automatic=false){
+    if(this.accountTransition)throw Error('账号切换正在进行，请稍后重试');
     const r=this.records.get(id);
     if(!r||r.status!=='idle'||r.locked||r.initializing||r.ephemeral||r.canAcceptDirectInput===false||[...this.external.values()].some(p=>p.threadId===id&&['turn/start','thread/compact/start'].includes(p.method)))throw new Error('请等待当前轮次结束后再压缩');
     r.locked=true;r.freshUsage=false;r.usageFresh=false;r.phase='compacting';r.message=automatic?'实际用量达到阈值，正在原生压缩':'正在手动压缩上下文';this.notify(r);
@@ -368,6 +378,7 @@ export class Bridge {
     return {started:true,message:'已请求原生压缩；完成后请等待下一轮用量记录。'};
   }
   async apply(record){
+    if(this.accountTransition)return;
     if(record.locked||!record.policy||record.appliedRevision===record.policy.revision||record.status!=='idle')return;
     record.usageFresh??=record.freshUsage;
     record.locked=true;

@@ -1,8 +1,9 @@
-export const defaultQueueConfig=()=>({pool:'codex',resume:'auto',fiveHour:{reserve:20,stages:[]},weekly:{reserve:10,stages:[]}});
+export const defaultQueueConfig=()=>({pool:'codex',resume:'auto',retryEnabled:true,fiveHour:{reserve:20,stages:[]},weekly:{reserve:10,stages:[]}});
 function percentage(value){if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>100)throw Error('保留比例必须在 0–100% 之间');return value;}
 export function validateQueueConfig(value){
   if(!value||!['auto','manual'].includes(value.resume)||typeof value.pool!=='string'||!value.pool.length||value.pool.length>160)throw Error('队列设置无效');
-  const out={pool:value.pool,resume:value.resume};
+  if(value.retryEnabled!==undefined&&typeof value.retryEnabled!=='boolean')throw Error('自动重试开关无效');
+  const out={pool:value.pool,resume:value.resume,retryEnabled:value.retryEnabled!==false};
   for(const name of ['fiveHour','weekly']){
     const item=value[name];if(!item||!Array.isArray(item.stages)||item.stages.length>3)throw Error('每种额度最多设置三个释放梯度');
     const reserve=percentage(item.reserve);let previousMinutes=Infinity,previousReserve=reserve;

@@ -1,5 +1,12 @@
 # Changes
 
+## 0.27.3 — Queue account handoff, quota sync and bounded retries
+
+- Add opt-in automatic account switching for quota-paused queues. Check fresh quota using saved local logins, wait for managed chats to be idle, reopen Codex and verify the account before continuing. Preserve manual pauses and uncertain submissions.
+- Sync encrypted account labels, Credits and quota/reset snapshots across devices signed into different accounts. Mark remote observations with their source and original timestamp; credentials remain local.
+- Retry confirmed failures or quota checks at cumulative minutes 1, 3, 5, 10, 15, 30, 45 and 60 after the first failure. Persist the schedule, skip missed slots without bursts, preserve task order and stop after eight attempts. Per-task and default settings can disable retries; manual stops and unknown submissions require manual handling.
+- Update Windows, native macOS controls and the context-manager skill together.
+
 ## 0.27.2 — Daily quota activation schedules
 
 - Replace the date-time reservation with local time selection and Off, Every day, or Tomorrow only modes on Windows and macOS. Display the saved next occurrence.

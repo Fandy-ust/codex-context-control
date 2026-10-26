@@ -11,16 +11,27 @@ import {movedQueueOrder} from '../src/core/queue-order.mjs';
 import {supportsTaskQueues} from '../src/core/queue-runtime.mjs';
 import {Bridge} from '../src/bridge.mjs';
 
-function fixture(saved){
+function fixture(saved,extra={}){
  let clock=1700000000000,serial=0,document=saved??{},blocked=false;
  const chat={id:'chat',connected:true,status:'idle'},calls=[],sleep=[];
  const bucket={id:'codex',primary:{remainingPercent:80,windowDurationMins:300,resetsAt:clock/1000+3600},secondary:{remainingPercent:80,windowDurationMins:10080,resetsAt:clock/1000+86400}};
  const quota={state:()=>({buckets:[bucket],updatedAt:clock,stale:blocked}),refresh:async()=>{}};
- const engine=createTaskQueues({load:()=>structuredClone(document),save:d=>{document=structuredClone(d);},quota,thread:()=>chat,now:()=>clock,id:()=>String(++serial),inhibit:value=>sleep.push(value),start:async(id,t)=>{calls.push(t);chat.status='active';chat.automaticTask={executionId:t.executionId,status:'running'};},interrupt:async()=>calls.push('interrupt')});
+ const engine=createTaskQueues({load:()=>structuredClone(document),save:d=>{document=structuredClone(d);},quota,thread:()=>chat,now:()=>clock,id:()=>String(++serial),inhibit:value=>sleep.push(value),start:async(id,t)=>{calls.push(t);chat.status='active';chat.automaticTask={executionId:t.executionId,status:'running'};},interrupt:async()=>calls.push('interrupt'),...extra});
  const command=p=>engine.command({id:'chat',...p});
  const settle=async()=>{for(let n=0;n<5;n++)await new Promise(r=>setImmediate(r));};
- return {engine,command,chat,bucket,calls,sleep,settle,get document(){return document;},advance:n=>clock+=n,stale:v=>blocked=v,done(status='completed'){chat.status='idle';chat.automaticTask.status=status;}};
+ return {engine,command,chat,bucket,quota,calls,sleep,settle,get document(){return document;},advance:n=>clock+=n,stale:v=>blocked=v,done(status='completed'){chat.status='idle';chat.automaticTask.status=status;}};
 }
+
+test('explicit quota errors wait for account handoff and continue the same task after scope confirmation',async t=>{
+ let scope='a';const f=fixture(undefined,{canSwitchAccounts:()=>true});t.after(()=>f.engine.close());const read=f.quota.state;f.quota.state=()=>({...read(),accountScope:scope});
+ f.command({action:'add',prompt:'one task'});f.command({action:'enable',enabled:true});await f.settle();f.chat.automaticTask.errorCode='usageLimitExceeded';f.done('error');await f.engine.tick();
+ assert.equal(f.engine.get('chat').pause.kind,'account-quota');assert.equal(f.calls.length,1);assert.equal(f.engine.get('chat').tasks[0].status,'interrupted');await f.engine.tick();assert.equal(f.calls.length,1);
+ f.advance(60000);await f.engine.tick();assert.equal(f.calls.length,1);scope='b';await f.engine.tick();assert.equal(f.calls.length,2);assert.match(f.calls[1].prompt,/继续上次/);assert.equal(f.calls[0].taskId,f.calls[1].taskId);assert.notEqual(f.calls[0].executionId,f.calls[1].executionId);
+});
+
+test('identity handoff hold prevents dispatch even with healthy quota',async t=>{
+ let ready=false;const f=fixture(undefined,{canDispatch:()=>ready});t.after(()=>f.engine.close());f.command({action:'add',prompt:'task'});f.command({action:'enable',enabled:true});await f.settle();assert.equal(f.calls.length,0);ready=true;await f.engine.tick();assert.equal(f.calls.length,1);
+});
 test('guard supports two ordered release stages, returns to base after reset, and never uses expired quota',()=>{
  const c=defaultQueueConfig();c.fiveHour.stages=[{minutes:30,reserve:10},{minutes:15,reserve:3}];validateQueueConfig(c);
  assert.equal(effectiveReserve(c.fiveHour,{resetsAt:3600},0),20);assert.equal(effectiveReserve(c.fiveHour,{resetsAt:1200},0),10);assert.equal(effectiveReserve(c.fiveHour,{resetsAt:600},0),3);assert.equal(effectiveReserve(c.fiveHour,{resetsAt:0},0),20);
@@ -42,10 +53,10 @@ test('account switching suspension prevents dispatch until explicitly released',
 test('soft threshold finishes current turn; hard threshold interrupts exact queue execution; fresh reset resumes',async t=>{
  const f=fixture();t.after(()=>f.engine.close());f.command({action:'add',prompt:'任务'});f.command({action:'enable',enabled:true});await f.settle();f.bucket.primary.remainingPercent=20;await f.engine.tick();assert.equal(f.calls.length,1);
  f.bucket.primary.remainingPercent=18;await f.engine.tick();assert.equal(f.calls[1],'interrupt');await f.engine.tick();assert.equal(f.calls.length,2);
- f.done('interrupted');await f.engine.tick();assert.equal(f.engine.get('chat').state,'paused');f.bucket.primary.remainingPercent=90;await f.engine.tick();assert.equal(f.calls.length,2,'a higher percentage alone is not proof of reset');f.bucket.primary.resetsAt+=18000;await f.engine.tick();assert.match(f.calls[2].prompt,/继续上次/);
+ f.done('interrupted');await f.engine.tick();assert.equal(f.engine.get('chat').state,'retry-wait');f.bucket.primary.remainingPercent=90;await f.engine.tick();assert.equal(f.calls.length,2,'a higher percentage alone is not proof of reset');f.bucket.primary.resetsAt+=18000;f.advance(60000);await f.engine.tick();assert.match(f.calls[2].prompt,/继续上次/);
 });
 test('Weekly independently blocks starts, and stale quota cannot start queued tasks',async t=>{
- const f=fixture();t.after(()=>f.engine.close());f.bucket.secondary.remainingPercent=10;f.command({action:'add',prompt:'任务'});f.command({action:'enable',enabled:true});await f.settle();assert.equal(f.calls.length,0);f.bucket.secondary.resetsAt+=604800;f.bucket.secondary.remainingPercent=100;f.stale(true);await f.engine.tick();assert.equal(f.calls.length,0);f.stale(false);await f.engine.tick();assert.equal(f.calls.length,1);
+ const f=fixture();t.after(()=>f.engine.close());f.bucket.secondary.remainingPercent=10;f.command({action:'add',prompt:'任务'});f.command({action:'enable',enabled:true});await f.settle();assert.equal(f.calls.length,0);f.bucket.secondary.resetsAt+=604800;f.bucket.secondary.remainingPercent=100;f.advance(60000);f.stale(true);await f.engine.tick();assert.equal(f.calls.length,0);f.stale(false);await f.engine.tick();assert.equal(f.calls.length,0);f.advance(120000);await f.engine.tick();assert.equal(f.calls.length,1);
 });
 test('manual resume and pause current cycle are distinct; later cycles retain the configured policy',async t=>{
  const f=fixture();t.after(()=>f.engine.close());f.command({action:'config',config:{...defaultQueueConfig(),resume:'manual'}});f.command({action:'add',prompt:'任务'});f.bucket.primary.remainingPercent=20;f.command({action:'enable',enabled:true});await f.settle();f.bucket.primary.resetsAt+=18000;f.bucket.primary.remainingPercent=100;await f.engine.tick();assert.equal(f.calls.length,0);f.command({action:'enable',enabled:true});await f.settle();assert.equal(f.calls.length,1);
@@ -123,6 +134,13 @@ function bridgeFixture(t,resolve=async()=>null){
  const child=new EventEmitter();child.stdin=new PassThrough();child.stdout=new PassThrough();const input=new PassThrough(),output=new PassThrough(),b=new Bridge(child,input,output,async()=>({}),resolve);
  t.after(()=>{b.frontLines.close();b.backLines.close();for(const stream of [input,output,child.stdin,child.stdout])stream.destroy();});return b;
 }
+
+test('runtime account preparation refuses active work and rejects new input until released',async t=>{
+ const b=bridgeFixture(t),r=b.record('chat'),front=[],back=[];b.writeFrontend=line=>front.push(JSON.parse(line));b.writeBackend=line=>back.push(JSON.parse(line));
+ r.status='active';assert.throws(()=>b.prepareAccountSwitch(),/空闲/);r.status='idle';b.prepareAccountSwitch();
+ b.fromClient(JSON.stringify({id:'manual',method:'turn/start',params:{threadId:'chat',input:[]}}));assert.equal(back.length,0);assert.match(front[0].error.message,/账号切换/);
+ await assert.rejects(b.startAutomatic('chat',{executionId:'a',prompt:'task'}),/账号切换/);b.releaseAccountSwitch();b.fromClient(JSON.stringify({id:'manual-2',method:'turn/start',params:{threadId:'chat',input:[]}}));assert.equal(back.length,1);
+});
 
 test('task defaults inherit the observed reasoning effort and fall back to medium rather than catalog low',async t=>{
  const b=bridgeFixture(t),r=b.record('chat'),turns=[];r.model='fixture';

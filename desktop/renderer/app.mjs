@@ -967,7 +967,7 @@ window.__contextScrollSmoke=async function(action){
 };
 
 async function queueCommand(params){const q=state?.taskQueues?.queues.find(q=>q.id===params.id);const result=await run('task-queue',{expectedRevision:q?.revision??0,...params});if(result){state.taskQueues=result;render();}return result;}
-function quotaFromForm(form){const values=new FormData(form),quota={pool:values.get('pool'),resume:values.get('resume')};for(const key of ['fiveHour','weekly'])quota[key]={reserve:Number(values.get(key+'-reserve')),stages:[0,1,2].filter(i=>values.has(`${key}-${i}-enabled`)).map(i=>({minutes:Number(values.get(`${key}-${i}-minutes`)),reserve:Number(values.get(`${key}-${i}-reserve`))}))};return quota;}
+function quotaFromForm(form){const values=new FormData(form),quota={pool:values.get('pool'),resume:values.get('resume'),retryEnabled:values.has('retry-enabled')};for(const key of ['fiveHour','weekly'])quota[key]={reserve:Number(values.get(key+'-reserve')),stages:[0,1,2].filter(i=>values.has(`${key}-${i}-enabled`)).map(i=>({minutes:Number(values.get(`${key}-${i}-minutes`)),reserve:Number(values.get(`${key}-${i}-reserve`))}))};return quota;}
 function openQueueTask(taskId){const q=state?.taskQueues?.queues.find(q=>q.id===queueID),task=q?.tasks.find(t=>t.id===taskId);queueTaskDraft={id:task?.id??null,status:task?.status??'draft',prompt:task?.prompt??'',settings:normalizeTaskSettings(task?.settings,q?.config)};queueTaskTab='prompt';queueExpanded=false;queueModelOpen=false;queuePreviews.clear();view='queue-task';render(true);void loadQueuePreviews(queueTaskDraft.settings.attachments);}
 function captureQueueTask(){const form=document.getElementById('queue-task-editor');if(!form||!queueTaskDraft)return;const values=new FormData(form);queueTaskDraft.prompt=values.get('prompt')??queueTaskDraft.prompt;queueTaskDraft.settings={...queueTaskDraft.settings,quota:quotaFromForm(form),model:values.get('model')??queueTaskDraft.settings.model,effort:values.get('effort')??queueTaskDraft.settings.effort};for(const control of form.querySelectorAll('[data-queue-prompt-options]'))control.hidden=queueTaskDraft.prompt.trim().toLowerCase()==='/compact';}
 function mergeQueueAttachments(files){const found=new Set(queueTaskDraft.settings.attachments.map(f=>f.path));for(const file of files??[])if(file.path&&!found.has(file.path)&&queueTaskDraft.settings.attachments.length<20){found.add(file.path);queueTaskDraft.settings.attachments.push(file);}render(true);void loadQueuePreviews(files);}
@@ -980,6 +980,7 @@ root.addEventListener('submit',async event=>{
 });
 root.addEventListener('input',event=>{if(event.target.closest('#queue-task-editor'))captureQueueTask();});
 root.addEventListener('change',async event=>{
+ if(event.target.matches('[data-queue-account-switch-toggle]')){try{await queueCommand({action:'account-switch',enabled:event.target.checked});}catch(error){render();notify(error.message);}return;}
  if(event.target.matches('[data-queue-global-toggle]')){try{await queueCommand({action:'monitoring',enabled:event.target.checked});}catch(error){render();notify(error.message);}return;}
  if(event.target.matches('[data-queue-toggle]')){try{await queueCommand({id:event.target.dataset.queueToggle,action:'enable',enabled:event.target.checked});}catch(error){render();notify(error.message);}return;}
  if(event.target.closest('#queue-task-editor')&&event.target.name==='model'){captureQueueTask();queueTaskDraft.settings.effort='';render();}
@@ -1018,8 +1019,10 @@ window.__contextQueueSmoke=async()=>{
   const until=Date.now()+3000;while((state.taskQueues.monitoringEnabled!==enabled||busy)&&Date.now()<until)await new Promise(resolve=>setTimeout(resolve,20));
   manager=manager&&state.taskQueues.monitoringEnabled===enabled&&document.querySelector('[data-queue-global-toggle]').checked===enabled;
  }
+ let accountSwitch=!!document.querySelector('.settings-dialog [data-queue-account-switch-toggle]')&&!document.querySelector('.settings-dialog [data-queue-account-switch-toggle]').checked;
+ for(const enabled of [true,false]){document.querySelector('.settings-dialog [data-queue-account-switch-toggle]').click();const until=Date.now()+3000;while((state.taskQueues.accountSwitch?.enabled!==enabled||busy)&&Date.now()<until)await new Promise(r=>setTimeout(r,20));accountSwitch=accountSwitch&&state.taskQueues.accountSwitch?.enabled===enabled&&document.querySelector('.settings-dialog [data-queue-account-switch-toggle]').checked===enabled;}
  closeSettings();view='queue';render();
- return {ok:ordered&&controls&&sticky&&off&&manager,ordered,controls,sticky,off,manager,stickyGeometry:{top:back.top,bottom:back.bottom,parentTop:parent.top,parentBottom:parent.bottom}};
+ return {ok:ordered&&controls&&sticky&&off&&manager&&accountSwitch,ordered,controls,sticky,off,manager,accountSwitch,stickyGeometry:{top:back.top,bottom:back.bottom,parentTop:parent.top,parentBottom:parent.bottom}};
 };
 
 root.addEventListener('input',event=>{const form=event.target.closest('#queue-add,#queue-config');if(form){const values={};for(const input of form.querySelectorAll('[name]'))values[input.name]=input.type==='checkbox'?input.checked:input.value;queueFormDrafts.set(queueID+':'+form.id,values);}});

@@ -27,6 +27,12 @@ struct QuotaSidebarView:View {
     var open:()->Void
     @State private var switching:QuotaAccount?
     @State private var switchError:String?
+    private func accountHint(_ account:QuotaAccount)->String{
+        var hint=(account.label ?? "")+" · "+L(account.current ? "当前登录":account.remote==true ? "其他设备同步缓存":"上次记录，待刷新")
+        if let source=account.sourceName{hint+=" · "+source}
+        if let at=account.updatedAt{hint+=" · "+Date(timeIntervalSince1970:Double(at)/1000).formatted(date:.abbreviated,time:.shortened)}
+        return hint
+    }
     var body:some View {
         let accounts=(model.quota?.accounts ?? []).filter{$0.showQuota != false}.sorted{ $0.current && !$1.current }
         Group{if model.quota?.accounts?.isEmpty != false {QuotaSidebarAccountRow(model:model,open:open)}
@@ -34,7 +40,7 @@ struct QuotaSidebarView:View {
             VStack(alignment:.leading,spacing:9){
                 ForEach(accounts){account in
                     VStack(alignment:.leading,spacing:3){
-                        HStack(spacing:4){if account.current{Circle().fill(PanelStyle.blue).frame(width:4,height:4)};Text(account.label ?? String(account.scope.suffix(8))).lineLimit(1).truncationMode(.middle);Spacer(minLength:4);if account.loginId != nil && !account.current{Button{switching=account} label:{Image(systemName:"arrow.left.arrow.right").font(.system(size:10,weight:.medium))}.buttonStyle(.plain).help(L("快速切换"))}}.font(.system(size:10,weight:.semibold)).frame(minHeight:18).foregroundStyle(.secondary).help((account.label ?? "")+(account.current ? " · "+L("当前登录"):" · "+L("上次记录，待刷新")))
+                        HStack(spacing:4){if account.current{Circle().fill(PanelStyle.blue).frame(width:4,height:4)};Text(account.label ?? String(account.scope.suffix(8))).lineLimit(1).truncationMode(.middle);if account.remote==true{Image(systemName:"icloud").font(.system(size:9)).help(L("其他设备同步缓存"))};Spacer(minLength:4);if account.loginId != nil && !account.current{Button{switching=account} label:{Image(systemName:"arrow.left.arrow.right").font(.system(size:10,weight:.medium))}.buttonStyle(.plain).help(L("快速切换"))}}.font(.system(size:10,weight:.semibold)).frame(minHeight:18).foregroundStyle(.secondary).help(accountHint(account))
                         QuotaSidebarAccountRow(model:model,account:account,open:open)
                             .saturation(account.current ? 1:0.3)
                             .foregroundStyle(account.current ? Color.primary:Color.secondary)

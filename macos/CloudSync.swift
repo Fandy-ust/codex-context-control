@@ -42,7 +42,7 @@ struct CloudSyncView:View {
     var body:some View {
         VStack(alignment:.leading,spacing:16){
             Text(L("多设备云同步")).font(.headline)
-            Text(L("将数值统计加密后同步到你自己的 GitHub，支持 Windows 与 macOS 多设备合并。聊天正文、标题及密钥不会上传。")).font(.caption).foregroundStyle(.secondary)
+            Text(L("同步加密的数值统计、账号名称或邮箱、Credits 与额度重置时间，可显示其他设备登录账号的缓存。聊天正文、标题和登录凭据不会上传。")).font(.caption).foregroundStyle(.secondary)
             Toggle(L("启用云同步"),isOn:$enabled).toggleStyle(.switch)
             accountDeviceSettings
             Picker(L("同步方式"),selection:$provider){Text(L("GitHub 私有仓库（推荐）")).tag("repository");Text("GitHub Secret Gist").tag("gist")}.pickerStyle(.menu)

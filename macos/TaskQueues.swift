@@ -9,6 +9,7 @@ struct QueueConfig:Codable,Equatable {
     var pool="codex";var resume="auto"
     var fiveHour=QueuePeriod(reserve:20,stages:[])
     var weekly=QueuePeriod(reserve:10,stages:[])
+    var retryEnabled:Bool?=nil
 }
 struct QueueAttachment:Codable,Equatable,Identifiable {var path:String;var kind:String;var name:String;var id:String{path}}
 struct QueueTaskSettings:Codable,Equatable {var quota=QueueConfig();var model="";var effort="";var attachments:[QueueAttachment]=[];var approval:String?=nil}
@@ -17,10 +18,24 @@ struct QueueTask:Decodable,Equatable,Identifiable {
     let id:String;let prompt:String;let status:String;let error:String?
     var settings:QueueTaskSettings?=nil
     var archivedAt:Double?=nil
+    var retry:QueueTaskRetry?=nil
     var pending:Bool{["waiting","running","interrupted","error"].contains(status)}
 }
+struct QueueTaskRetry:Decodable,Equatable {let firstFailedAt:Double;let attempts:Int;let nextAt:Double?}
 struct ChatTaskQueue:Decodable,Equatable,Identifiable {let id:String;let enabled:Bool;let config:QueueConfig;let tasks:[QueueTask];let revision:Int;let state:String;let message:String?}
-struct TaskQueuesState:Decodable,Equatable {var monitoringEnabled:Bool?=nil;let sleepPrevented:Bool;let queues:[ChatTaskQueue]}
+struct QueueAccountSwitchState:Decodable,Equatable {let enabled:Bool;let busy:Bool;let phase:String;let message:String}
+struct TaskQueuesState:Decodable,Equatable {var monitoringEnabled:Bool?=nil;let sleepPrevented:Bool;let queues:[ChatTaskQueue];var accountSwitch:QueueAccountSwitchState?=nil}
+
+struct QueueAccountSwitchControls:View {
+    @ObservedObject var model:Controller
+    var body:some View{
+        VStack(alignment:.leading,spacing:8){
+            Toggle(L("额度不足时自动切换账号并继续队列"),isOn:Binding(get:{model.taskQueues?.accountSwitch?.enabled==true},set:{enabled in Task{await model.queueCommand(nil,"account-switch",values:["enabled":enabled])}})).toggleStyle(.switch).disabled(model.working)
+            Text(L("使用已保存登录的账号，实时确认额度后切换。仅在全部聊天空闲时重新打开 Codex；无可用账号时保留队列等待。默认关闭。")).font(.caption).foregroundStyle(.secondary)
+            if let state=model.taskQueues?.accountSwitch,state.enabled || state.phase=="awaiting-account"{Text(L(state.message)).font(.caption).foregroundStyle(.secondary)}
+        }
+    }
+}
 
 extension Controller {
     func queueHasFiveHour(_ pool:String)->Bool{guard let b=quota?.buckets.first(where:{$0.id==pool}) else{return false};return [b.primary,b.secondary].contains{$0?.windowDurationMins==300}}
@@ -61,6 +76,7 @@ struct QueueTaskCard:View {
                 Button{Task{await model.queueCommand(chatID,"delete",values:["taskId":task.id])}}label:{Image(systemName:"xmark")}.buttonStyle(.bordered).controlSize(.small).help(L("删除任务")).disabled(task.status=="running")
             }
             if let error=task.error{Text(L(error)).font(.caption).foregroundStyle(.orange)}
+            if let retry=task.retry{if let next=retry.nextAt{Text(L("自动重试 {0}/8 · 下次检查 {1}",String(retry.attempts),Date(timeIntervalSince1970:next/1000).formatted(date:.omitted,time:.shortened))).font(.caption).foregroundStyle(.secondary)}else{Text(L("自动重试已用尽，等待本次结果或手动处理")).font(.caption).foregroundStyle(.secondary)}}
             if task.status=="running"{Button(L("停止当前任务")){Task{await model.queueCommand(chatID,"stop",values:["taskId":task.id])}}.buttonStyle(.bordered)}
             if ["error","interrupted"].contains(task.status){Button(L("重试")){Task{await model.queueCommand(chatID,"retry",values:["taskId":task.id])}}.buttonStyle(.bordered)}
         }.padding(compact ? 12:16).background(Color.white.opacity(0.035),in:RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).strokeBorder(.white.opacity(0.07)))
@@ -79,6 +95,7 @@ struct TaskQueueManagerView:View {
     @ObservedObject var model:Controller;var open:(String)->Void
     var body:some View{
         VStack(alignment:.leading,spacing:18){
+            QueueAccountSwitchControls(model:model)
             Toggle(L("全局额度监视"),isOn:Binding(get:{model.taskQueues?.monitoringEnabled != false},set:{value in Task{await model.queueCommand(nil,"monitoring",values:["enabled":value])}})).toggleStyle(.switch).disabled(model.working)
             Text(L("控制已开启监视的聊天；关闭后保留各聊天的开关和限额。监视持续生效，队列结束后不会自动关闭。")).font(.caption).foregroundStyle(.secondary)
             HStack{Text(L("所有任务队列")).font(.headline);Spacer();Button(L("关闭全部监视")){Task{await model.queueCommand(nil,"disable-all")}}.buttonStyle(.bordered).disabled(model.working)}
@@ -117,6 +134,8 @@ struct QueueQuotaEditor:View {
     var body:some View{
         VStack(alignment:.leading,spacing:18){
             Picker(L("重置后"),selection:$config.resume){Text(L("自动恢复")).tag("auto");Text(L("手动恢复")).tag("manual")}.pickerStyle(.segmented)
+            Toggle(L("失败后自动重试"),isOn:Binding(get:{config.retryEnabled != false},set:{config.retryEnabled=$0})).toggleStyle(.switch)
+            Text(L("按首次失败后的累计分钟重试：1、3、5、10、15、30、45、60。每个时点一次，仍需满足额度和空闲条件；提交结果不明时不自动重发。")).font(.caption).foregroundStyle(.secondary)
             if showFiveHour{QueuePeriodEditor(title:L("5 小时"),period:$config.fiveHour)}
             QueuePeriodEditor(title:"Weekly",period:$config.weekly)
         }
@@ -136,6 +155,7 @@ struct TaskQueueDetailView:View {
             ScrollView{VStack(alignment:.leading,spacing:20){
                 Text(model.chats.first{$0.id==chatID}?.title ?? chatID).font(.title3)
                 Text(L(model.queueMessage(chatID))).foregroundStyle(.secondary)
+                QueueAccountSwitchControls(model:model)
                 HStack{Text(L("任务")).font(.headline);Spacer();Button(L("添加任务"),systemImage:"plus"){editor=QueueTask(id:UUID().uuidString,prompt:"",status:"draft",error:nil,settings:QueueTaskSettings(quota:queue?.config ?? QueueConfig()))}.buttonStyle(.borderedProminent)}
                 taskList
                 DisclosureGroup(L("当前聊天的默认限额")){

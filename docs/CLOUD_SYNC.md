@@ -111,7 +111,7 @@ macOS 对应创建命令为 `printf '%s\n' 'Context Manager encrypted statistics
 ## 5. 合并与数据边界
 
 - 同步 response ID、时间、模型、输入／缓存读取／缓存写入／输出 Token，以及有效额度观测。只使用明确列出的数值字段；不上传聊天正文、标题、项目路径、完整日志、Codex 登录凭据或 GitHub Token。费用依据合并后的 Token 及软件现有价格表重新估算。
-- 账号分组由“同步密钥 + Codex 账号标识”生成不可逆 HMAC，真实账号标识不上传；设备本机加盐指纹不直接用于跨设备关联。同一账号升级订阅方案不会变成另一云端账号。运行中切换账号会阻止继续同步，需关闭并为新账号重新配置。
+- 账号分组由“同步密钥 + Codex 账号标识”生成不可逆 HMAC，认证用的 account_id 和 Token 不上传；显示用的邮箱、简称与额度摘要会加密同步；设备本机加盐指纹不直接用于跨设备关联。同一账号升级订阅方案不会变成另一云端账号。运行中切换账号会阻止继续同步，需关闭并为新账号重新配置。
 - 相同 response ID 只计一次；缓存写入等字段更完整的记录优先，字段同样完整但冲突时使用固定规则选取一条，绝不将两条相加。无法识别 response ID 的请求不会伪造 ID 纳入统计。
 - 5 小时／每周百分比是账号观测，**不会把设备的百分比加起来**；相同观测去重后进入已有周期归一化和预测核心。数据缺失和采样差异仍会影响估算，并不保证与官方账单一致。
 - 本机 SQLite 保留独立，导入记录放在独立表，不回传导入的数据。关闭同步后报告只使用本机记录；再次同步可恢复远端来源。关闭不删除 GitHub 历史。
@@ -134,7 +134,7 @@ macOS 对应创建命令为 `printf '%s\n' 'Context Manager encrypted statistics
 | 统计仍少于所有聊天总量 | 只有有 response ID 的账本请求能统计；旧未归属记录须显式确认，缺失日志不能推算补齐 |
 | 刚删除云端分片后短暂同步失败 | 另一设备可能正在读取旧索引；下一轮会重试，不会部分覆盖统计 |
 
-本功能同步数值统计；聊天列表、正文、任务队列、上下文预算和技能不在同步范围。当前通过共享密钥及 GitHub Token 配置，不包含 GitHub OAuth 登录流程。
+本功能同步数值统计及账号额度摘要；聊天列表、正文、任务队列、上下文预算和技能不在同步范围。当前通过共享密钥及 GitHub Token 配置，不包含 GitHub OAuth 登录流程。
 
 ## 官方资料
 
@@ -143,7 +143,7 @@ macOS 对应创建命令为 `printf '%s\n' 'Context Manager encrypted statistics
 
 ## 0.24.2: accounts and devices / 账号与设备
 
-Accounts are identified from the Codex account ID, falling back to email only when no ID is available. Plans and models do not create a new account. Use the same sync key and destination on every device. An encrypted directory shares anonymous account identifiers; raw account IDs and emails stay local. Name each device in settings.
+Accounts are identified from the Codex account ID, falling back to email only when no ID is available. Plans and models do not create a new account. Use the same sync key and destination on every device. An encrypted directory shares anonymous account identifiers; raw authentication account IDs stay local; display emails and quota summaries are encrypted from 0.27.3. Name each device in settings.
 
 Choose Current account (default), All accounts, or Selected accounts for numeric cost/token totals. Device checkboxes also filter totals. Per-account Participate in sync controls future uploads/downloads independently of visibility; cached history remains available. These choices apply locally. They do not delete cloud data or turn off Codex's own history collection. The per-chat cost panel continues to describe that local chat.
 
@@ -153,7 +153,12 @@ Choose Current account (default), All accounts, or Selected accounts for numeric
 
 在 **设置 → 云同步 → 账号与设备** 管理每个已识别账号，无需启用云同步即可使用本机账号管理。
 
-- 填写简称并点击“保存名称”；留空恢复邮箱标签，最长 40 个字符。简称仅在本机使用。
+- 填写简称并点击“保存名称”；留空恢复邮箱标签，最长 40 个字符。简称随加密摘要同步，接收设备的本机自定义名称优先。
 - “在侧栏显示额度”立即保存，独立于“纳入统计”和“参与同步”。可选择显示任意多个账号，也可全部关闭。当前登录账号排在已显示账号的最上面，其他账号的组件颜色略淡。
 - 未登录账号保留最近一次观察的额度、Credits 和实际重置时间；倒计时继续更新，过期显示等待刷新，不推算下一轮重置时间。恢复登录并读取成功后更新。
 - “删除账号及统计”需要确认，清理该账号在本机的额度缓存、Credits 基准、额度历史、Token/费用统计及已下载的同步统计，不影响其他账号，也不退出 Codex。删除后的旧统计在日志重扫及再次导入时不会恢复。其他设备、云端原始文件和 Codex 聊天日志保留；删除当前登录账号后，后续检测会重新识别账号并记录新数据。
+
+
+## 跨账号的侧栏额度
+
+使用相同同步位置和同步密钥的设备，即使登录不同的 Codex 账号，也可同步各账号的名称或邮箱、Credits、5 小时与每周额度和重置时间。只取较新的原始观测，不将同步时间伪装成额度更新时间。其他设备缓存显示云图标，悬停可看来源与观测时间；本机当前账号优先显示本机实时值。不会同步登录凭据或赋予另一台设备切换账号的能力。

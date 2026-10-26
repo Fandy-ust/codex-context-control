@@ -7,6 +7,12 @@ test('global monitoring commands preserve chat switches and do not require a cha
  await runQueueCLI(['monitoring-off'],{client});await runQueueCLI(['monitoring-on'],{client});
  assert.deepEqual(calls,[{op:'task-queue',p:{action:'monitoring',enabled:false}},{op:'task-queue',p:{action:'monitoring',enabled:true}}]);
 });
+
+test('automatic account switching is an explicit global queue setting',async()=>{
+ const calls=[],client=async(op,p)=>{calls.push({op,p});return {queues:[]};};
+ await runQueueCLI(['account-switch-on'],{client});await runQueueCLI(['account-switch-off'],{client});
+ assert.deepEqual(calls,[{op:'task-queue',p:{action:'account-switch',enabled:true}},{op:'task-queue',p:{action:'account-switch',enabled:false}}]);
+});
 test('queue CLI preserves literal input, supplies revisions, and distinguishes pause from interruption',async()=>{
  const calls=[],client=async(op,p)=>{calls.push({op,p});return op==='state'?{capabilities:{taskQueues:true},taskQueues:{queues:[{id:'chat',revision:7,tasks:[]}]},threads:[],queueModels:[]}:{queues:[]};};
  const prompt='Read $(not-a-command) and `literal`\nThen test 中文.';

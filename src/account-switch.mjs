@@ -5,6 +5,7 @@ import {atomicJSON,readJSON} from './paths.mjs';
 import {privateDirectory} from './platform/index.mjs';
 import {accountVault} from './account-vault.mjs';
 import {nativeAccountSession} from './account-login.mjs';
+import {normalizeQuota} from './account-quota.mjs';
 
 const safeName=value=>typeof value==='string'&&value.length<=40&&!/[\x00-\x1f\x7f]/.test(value);
 const fileBacked=text=>!/^\s*cli_auth_credentials_store\s*=\s*["'](?:keyring|ephemeral)["']/m.test((text||'').split(/^\s*\[/m)[0]);
@@ -40,8 +41,8 @@ export function createAccountSwitcher({home,codexHome,secrets=accountVault(home)
     writable(folder);fs.rmSync(folder,{recursive:true,force:true,maxRetries:10,retryDelay:50});
   }
   function acquire(){secure(home);let fd;try{fd=fs.openSync(lockFile,'wx',0o600);fs.writeFileSync(fd,String(process.pid));}catch{if(fd!=null)fs.closeSync(fd);throw Error('另一个账号操作尚未结束；请重启管理服务后重试');}return ()=>{fs.closeSync(fd);fs.unlinkSync(lockFile);};}
-  async function exclusive(work,check=true,prepare=async()=>{}){if(busy||closed)throw Error('账号操作正在进行，请稍后重试');busy=true;let fd,release=()=>{};
-    try{secure(home);try{fd=fs.openSync(lockFile,'wx',0o600);fs.writeFileSync(fd,String(process.pid));}catch{throw Error('另一个账号操作尚未结束；请重启管理服务后重试');}if(check){release=await quiesce();await prepare();await guard();}return await work();}
+  async function exclusive(work,check=true,prepare=async()=>{},context={}){if(busy||closed)throw Error('账号操作正在进行，请稍后重试');busy=true;let fd,release=()=>{};
+    try{secure(home);try{fd=fs.openSync(lockFile,'wx',0o600);fs.writeFileSync(fd,String(process.pid));}catch{throw Error('另一个账号操作尚未结束；请重启管理服务后重试');}if(check){release=await quiesce();await prepare();await guard(context);}return await work();}
     finally{try{await release();}finally{if(fd!=null){fs.closeSync(fd);fs.unlinkSync(lockFile);}busy=false;}}
   }
   async function readProfile(folder,{refresh=false,quota=false}={}){const instance=session({home:folder});try{const account=await instance.read({refresh,quota}),auth=readJSON(path.join(folder,'auth.json'));return {profile:credentialProfile(auth,account),account,auth};}finally{await instance.close();}}
@@ -55,7 +56,14 @@ export function createAccountSwitcher({home,codexHome,secrets=accountVault(home)
       const authUrl=await urlReady;return {...state(),authUrl};
     }catch(error){if(!client&&busy){try{if(folder&&fs.existsSync(folder))cleanup(folder);}finally{unlock?.();busy=false;}}throw error;}
   }
-  async function command(params={}){
+  async function inspect(id){return exclusive(async()=>{
+    const value=vault(),selected=savedProfile(value,id);if(!selected)throw Error('找不到已授权账号');
+    const folder=staging();atomicJSON(path.join(folder,'auth.json'),selected.auth);const instance=session({home:folder});let account;
+    const retain=()=>{const auth=readJSON(path.join(folder,'auth.json')),profile=credentialProfile(auth,account||{type:'chatgpt',email:selected.email,planType:selected.plan});if(profile.id!==id)throw Error('账号身份不匹配，已取消切换');saveProfile(value,auth,account||{type:'chatgpt',email:selected.email,planType:selected.plan});saveVault(value);};
+    try{account=await instance.read({refresh:true});retain();const response=await instance.rateLimits();return {id,buckets:normalizeQuota(response),updatedAt:now(),stale:false};}
+    finally{try{retain();}finally{await instance.close();cleanup(folder);}}
+  },false);}
+  async function command(params={},context={}){
     const action=params.action||'status';if(action==='status')return state();
     if(action==='login')return login(params.name||'');
     if(action==='cancel'){if(client){client.close();}return state();}
@@ -77,24 +85,25 @@ export function createAccountSwitcher({home,codexHome,secrets=accountVault(home)
       const before=fs.existsSync(authFile)?fs.readFileSync(authFile):null;
       const folder=staging();let committed=false;
       try{
-        if(before&&fileBacked(config)){const source=await readProfile(codexHome);saveProfile(value,source.auth,source.account);}
+        if(context.automatic&&(!before||!fileBacked(config)))throw Error('自动切换需要文件登录模式，请先手动切换一次账号');
+        if(before&&fileBacked(config)){const source=await readProfile(codexHome);if(context.automatic&&source.profile.id!==context.expectedSourceId)throw Error('当前账号已变化，自动切换已取消');saveProfile(value,source.auth,source.account);}
         atomicJSON(path.join(folder,'auth.json'),value.profiles[params.id].auth);
         // Save a refreshed login before checking quota: quota availability is not
         // permission to discard a newly rotated refresh token.
         const verified=await readProfile(folder,{refresh:true});if(verified.profile.id!==selected.id)throw Error('账号身份不匹配，已取消切换');
         saveProfile(value,verified.auth,verified.account);saveVault(value);
-        await guard();if((fs.existsSync(authFile)?fs.readFileSync(authFile):null)?.toString()!==before?.toString())throw Error('登录状态已变化，请重试');
+        await guard(context);if((fs.existsSync(authFile)?fs.readFileSync(authFile):null)?.toString()!==before?.toString())throw Error('登录状态已变化，请重试');
         const latestConfig=fs.existsSync(configFile)?fs.readFileSync(configFile,'utf8'):null;if(latestConfig!==config)throw Error('登录配置已变化，请重试');
         secure(codexHome);atomicJSON(authFile,verified.auth);
         const previousActive=metadata.activeId,previousRestart=metadata.restartRequired;
-        try{atomicText(configFile,fileStoreConfig(config||''));metadata.activeId=selected.id;metadata.restartRequired=true;persist();committed=true;}
+        try{atomicText(configFile,fileStoreConfig(config||''));metadata.activeId=selected.id;metadata.restartRequired=true;persist();committed=true;context.committed=true;}
         catch(error){metadata.activeId=previousActive;metadata.restartRequired=previousRestart;if(before)atomicText(authFile,before);else fs.unlinkSync(authFile);if(config!=null)atomicText(configFile,config);else if(fs.existsSync(configFile))fs.unlinkSync(configFile);throw error;}
         job={status:'switched'};
       }finally{cleanup(folder);}
       if(committed&&params.open!==false){try{await openDesktop();metadata.restartRequired=false;persist();}catch{job={status:'switched',error:'账号已切换，请手动打开 Codex'};}}
       return state();
-    },true,async()=>{if(!savedProfile(vault(),params.id))throw Error('找不到已授权账号');if(params.force===true)await prepareSwitch();});
+    },true,async()=>{if(!savedProfile(vault(),params.id))throw Error('找不到已授权账号');if(params.force===true||context.automatic===true)await prepareSwitch(context);},context);
   }
-  return {state,command,close(){closed=true;client?.close();}};
+  return {state,command,inspect,opened(id){if(id&&metadata.activeId===id){metadata.restartRequired=false;persist();}},close(){closed=true;client?.close();}};
 }
 function atomicText(file,text){const temp=file+'.'+crypto.randomBytes(8).toString('hex')+'.tmp';try{fs.writeFileSync(temp,text,{flag:'wx',mode:0o600});fs.renameSync(temp,file);}finally{try{fs.unlinkSync(temp);}catch{}}}

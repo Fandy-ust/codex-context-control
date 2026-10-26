@@ -97,7 +97,7 @@ Use the final component of the returned URL as `gistId`, and change the configur
 ## Data semantics
 
 - Only allowlisted fields are shared: response IDs, timestamps, model and token counts (input, cached read, cache write, output), plus valid quota observations. No messages, titles, project paths, raw logs or credentials are uploaded. Cost is recalculated from merged token records and the app's price table.
-- A keyed HMAC of Codex account identity separates accounts without uploading the actual identity. Plan changes do not create another cloud account. An account change during a session blocks sync until you disable and reconfigure it for the new account.
+- A keyed HMAC of Codex account identity separates accounts without uploading authentication account IDs or tokens (display emails and quota summaries are encrypted in the directory). Plan changes do not create another cloud account. An account change during a session blocks sync until you disable and reconfigure it for the new account.
 - Identical response IDs count once. A more complete record wins; equally complete conflicting records use a deterministic tie-breaker, never addition. Requests missing response IDs are not invented.
 - Account quota percentages are observations and are **never summed across devices**. Observations feed the existing cycle normalization and forecast logic. Missing logs and sampling differences remain limitations.
 - Each device owns independent encrypted shards and publishes its manifest only after its files are uploaded. Changes are partitioned by month and type, at most 2000 records per shard. Unchanged shards are not uploaded. Repository writes check SHA and retry conflicts. Reads must all validate before a local import transaction commits; failure retains the previous successful import and triggers backoff.
@@ -119,14 +119,14 @@ Use the final component of the returned URL as `gistId`, and change the configur
 | No increase in totals | Check both devices' successful sync times, account, key and date filters; duplicate IDs should not increase totals |
 | Transient missing file during pruning | Retry with the latest manifest; partial imports are not committed |
 
-This feature synchronizes numeric analytics, not chats, queues, context budgets or skills. OAuth login is not part of this implementation.
+This feature synchronizes numeric analytics and account display/quota summaries, not chats, queues, context budgets or skills. OAuth login is not part of this implementation.
 
 Official references: [Gist API](https://docs.github.com/en/rest/gists/gists), [repository Contents API](https://docs.github.com/en/rest/repos/contents), [token permissions](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens), [gh repo create](https://cli.github.com/manual/gh_repo_create), [gh gist create](https://cli.github.com/manual/gh_gist_create).
 
 
 ## Accounts and devices (0.24.2)
 
-One repository/Gist and sync key can serve multiple Codex accounts. Account IDs take precedence over email; model and plan changes remain the same account. An encrypted discovery directory shares anonymous account identifiers and device names, without account email or login credentials.
+One repository/Gist and sync key can serve multiple Codex accounts. Account IDs take precedence over email; model and plan changes remain the same account. An encrypted discovery directory shares anonymous account identifiers and device names, with encrypted display emails and quota summaries from 0.27.3; login credentials stay local.
 
 In Cloud sync, name this device, choose Current account (default), All accounts, or Selected accounts, and check the devices included in cost/token totals. Participate in sync pauses future uploads/downloads per account while keeping imported history available. Preferences apply to this device only and never delete cloud history. The displayed device timestamp is the last snapshot publication, not a heartbeat. Unassigned history stays hidden until explicitly enabled; only claim legacy history if its ownership is certain. Update every device to 0.24.2 for account discovery.
 
@@ -134,7 +134,7 @@ In Cloud sync, name this device, choose Current account (default), All accounts,
 
 Use **Settings → Cloud sync → Accounts and devices** to manage remembered accounts, even with cloud sync disabled.
 
-- Save an optional account name (up to 40 characters). Clear it to use the email label. Names stay on this device.
+- Save an optional account name (up to 40 characters). Clear it to use the email label. Names are shared in encrypted summaries; an explicit name on the receiving device takes precedence.
 - **Show quota in sidebar** saves immediately and is independent of statistics and sync selections. Show any number of accounts or hide them all. The signed-in account appears first; inactive components use muted colors.
 - Inactive accounts retain their last observed quota, Credits and exact reset timestamps across switches and restarts. Countdowns continue, then show “Waiting for quota refresh”; future reset cycles are never inferred.
 - **Delete account and statistics** asks for confirmation and clears this account’s local quota cache, credit baselines, quota history, token/cost statistics and downloaded sync statistics. Other accounts remain intact. Deleted historical data is suppressed on rescan and reimport. Codex stays signed in; original cloud files, other devices and Codex chat logs remain. A signed-in account is detected again and can collect new data.

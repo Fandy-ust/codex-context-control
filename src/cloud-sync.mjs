@@ -6,6 +6,7 @@ import {readJSON,atomicJSON} from './paths.mjs';
 import {syncSecrets} from './sync-secrets.mjs';
 import {githubSync} from './github-sync.mjs';
 import {digest,numericRecords,partitionRecords} from './analytics/sync-records.mjs';
+import {accountSummary} from './core/account-summary.mjs';
 
 export function syncKey(secret){return crypto.scryptSync(secret,'context-manager-sync-v1',32);}
 export function seal(value,key,aad){
@@ -18,7 +19,7 @@ export function unseal(raw,key,aad){
   try{const p=JSON.parse(raw);if(p.v!==1||p.zip!=='gzip')throw Error();const d=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(p.iv,'base64'));d.setAAD(Buffer.from(aad));d.setAuthTag(Buffer.from(p.tag,'base64'));return JSON.parse(gunzipSync(Buffer.concat([d.update(Buffer.from(p.data,'base64')),d.final()]),{maxOutputLength:4*1024*1024}).toString());}
   catch{throw Error('同步密钥错误或云端数据损坏');}
 }
-export function createCloudSync({home,analytics,secrets=syncSecrets(home),transport=githubSync,prepare=async()=>{},removeQuotaAccounts=()=>{},now=Date.now}={}){
+export function createCloudSync({home,analytics,secrets=syncSecrets(home),transport=githubSync,prepare=async()=>{},removeQuotaAccounts=()=>{},quotaAccounts=()=>[],now=Date.now}={}){
   const file=path.join(home,'cloud-sync.json'),cacheFile=path.join(home,'cloud-sync-cache.json');
   let config={version:1,enabled:false,provider:'repository',repository:'',gistId:'',intervalMinutes:15,startup:true,deviceId:crypto.randomBytes(16).toString('hex'),deviceName:os.hostname(),statisticsMode:'current',includeUnassigned:false,excludedAccounts:[],excludedSyncAccounts:[],excludedDevices:[],accounts:[],deviceList:[],...readJSON(file,{})};
   let cache=readJSON(cacheFile,{target:null,shards:{},uploaded:{}}),pending,timer,closed=false,controller,failures=0,derivedKey;
@@ -34,7 +35,7 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
         if(p.current)config.deletedAccounts=config.deletedAccounts?.filter(id=>id!==p.id);
         old.set(p.id,{...old.get(p.id),...p});
       }
-      config.accounts=[...old.values()].map(p=>({...p,customName:config.accountNames?.[p.group||p.id]??config.accountNames?.[p.id]??'',showQuota:config.accountVisibility?.[p.group||p.id]??config.accountVisibility?.[p.id]??true,current:p.id===analytics.syncAccount(key)}));
+      config.accounts=[...old.values()].map(p=>({...p,customName:config.accountNames?.[p.group||p.id]??config.accountNames?.[p.id]??p.remoteCustomName??'',showQuota:config.accountVisibility?.[p.group||p.id]??config.accountVisibility?.[p.id]??true,current:p.id===analytics.syncAccount(key)}));
       if(before!==JSON.stringify([config.accounts,config.deletedAccounts]))save();
     }
     await analytics.syncSettings?.(selection());
@@ -48,11 +49,28 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
       const doc=unseal(await remote.read(m.name),key,`${group}/${m.device}/manifest`);
       if(doc.version!==2||!Array.isArray(doc.accounts)||doc.accounts.length>100||!/^.{1,80}$/u.test(doc.name||''))throw Error('Invalid sync directory');
       const devices=new Map(config.deviceList.map(d=>[d.id,d]));devices.set(m.device,{...devices.get(m.device),id:m.device,name:doc.name});config.deviceList=[...devices.values()];
-      for(const p of doc.accounts){if(!/^[a-f0-9]{32}$/.test(p.id))throw Error('Invalid sync account');if(config.deletedAccounts?.includes(p.id))continue;if(!known.has(p.id))known.set(p.id,{id:p.id,label:'账号 '+p.id.slice(0,8),customName:config.accountNames?.[p.id]||'',showQuota:config.accountVisibility?.[p.id]!==false,scopes:[],current:false});}
+      for(const p of doc.accounts){
+        const summary=accountSummary(p,now());if(!summary)throw Error('Invalid sync account');
+        if(config.deletedAccounts?.includes(p.id)||config.excludedDevices.includes(m.device))continue;
+        const profile=known.get(p.id)||{id:p.id,label:'账号 '+p.id.slice(0,8),customName:config.accountNames?.[p.id]||'',showQuota:config.accountVisibility?.[p.id]!==false,scopes:[],current:false};
+        if(m.device!==config.deviceId){
+          if(!profile.scopes?.length&&summary.label)profile.label=summary.label;
+          if(summary.updatedAt>=(profile.remoteSummaryAt??0)&&summary.customName!==undefined){profile.remoteCustomName=summary.customName;profile.remoteSummaryAt=summary.updatedAt;profile.customName=config.accountNames?.[profile.group||profile.id]??config.accountNames?.[profile.id]??summary.customName;}
+          if(summary.quota&&summary.quota.updatedAt>(profile.remoteQuota?.updatedAt??0))profile.remoteQuota={...summary.quota,scope:'cloud:'+p.id,remote:true,sourceDevice:summary.quota.sourceDevice||m.device};
+        }
+        known.set(p.id,profile);
+      }
     }
     if(known.size>100)throw Error('同步账号超过 100 个');
     config.accounts=[...known.values()];
-    const doc={version:2,name:config.deviceName,accounts:config.accounts.map(p=>({id:p.id}))};
+    const localQuotas=quotaAccounts();
+    const doc={version:2,name:config.deviceName,accounts:config.accounts.map(p=>{
+      if(config.excludedSyncAccounts.includes(p.id))return {id:p.id};
+      const observations=localQuotas.filter(q=>p.scopes?.includes(q.scope));if(p.quota)observations.push(p.quota);
+      const local=observations.sort((a,b)=>b.updatedAt-a.updatedAt)[0];
+      const quota=local&&local.updatedAt>=(p.remoteQuota?.updatedAt??0)?{...local,creditBaselines:localQuotas.find(q=>q.scope===local.scope)?.creditBaselines??local.creditBaselines,sourceDevice:config.deviceId}:p.remoteQuota;
+      return accountSummary({id:p.id,label:p.label,customName:p.customName,updatedAt:p.summaryUpdatedAt??quota?.updatedAt??p.remoteSummaryAt??0,quota},now());
+    })};
     const name=remote.manifestName(config.deviceId),hash=digest(doc);
     if(cache.directory!==group+hash||!manifests.some(m=>m.device===config.deviceId)){await remote.write(name,seal(doc,key,`${group}/${config.deviceId}/manifest`));cache.directory=group+hash;}
   }
@@ -160,7 +178,7 @@ export function createCloudSync({home,analytics,secrets=syncSecrets(home),transp
         config.accountVisibility={...config.accountVisibility,[profile.group||profile.id]:params.visible};profile.showQuota=params.visible;
       }else if(params.action==='rename-account'){
         if(typeof params.name!=='string'||params.name.length>40||/[\x00-\x1f\x7f]/.test(params.name))throw Error('Invalid account name');
-        config.accountNames={...config.accountNames,[profile.group||profile.id]:params.name.trim()};profile.customName=params.name.trim();
+        config.accountNames={...config.accountNames,[profile.group||profile.id]:params.name.trim()};profile.customName=params.name.trim();profile.summaryUpdatedAt=now();
       }else{
         const result=await analytics.deleteAccount({id:profile.id,scopes:profile.scopes||[]});
         removeQuotaAccounts(result?.scopes||profile.scopes||[]);

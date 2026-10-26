@@ -10,6 +10,14 @@ export function accountProcesses({platform=process.platform,list}={}){
   return processes.filter(p=>Number.isSafeInteger(p.pid)&&p.pid>0&&p.pid!==process.pid&&/(?:^|[\\/])(?:codex(?:-[\w-]+)?|chatgpt)(?:\.exe)?$/i.test(p.executable||''));
 }
 export const accountProcessBlocker=options=>accountProcesses(options).length>0;
+export function automaticAccountProcesses({list=accountProcesses,bridges=[],desktop=settings().desktopExecutable,platform=process.platform}={}){
+  if(!desktop||!fs.existsSync(desktop))throw Error('请先配置可重新打开的 Codex 桌面应用');
+  if(bridges.some(b=>b.accountSwitchVersion!==1||!Number.isSafeInteger(b.nativePid)))throw Error('请重新打开 Codex 以启用队列自动切换账号');
+  const same=(a,b)=>platform==='win32'?a?.toLowerCase()===b?.toLowerCase():a===b;
+  const processes=list();
+  if(processes.some(p=>!same(p.executable,desktop)&&!bridges.some(b=>p.pid===b.nativePid||p.pid===b.pid)))throw Error('检测到未接入的 Codex 会话，请退出该会话后再自动切换');
+  return processes;
+}
 
 // Only called after explicit confirmation. Never kill an IDE or the manager.
 export async function stopAccountProcesses({list=accountProcesses,kill=(pid,signal)=>process.kill(pid,signal),wait=ms=>new Promise(r=>setTimeout(r,ms))}={}){

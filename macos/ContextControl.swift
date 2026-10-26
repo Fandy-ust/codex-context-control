@@ -56,7 +56,7 @@ struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:
 struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPercent:Double;let windowDurationMins:Int?;let resetsAt:Int?}
 struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?;let creditBalance:String?}
 struct CreditBaseline:Decodable,Equatable {let last:Double;let baseline:Double}
-struct QuotaAccount:Decodable,Equatable,Identifiable {var id:String{scope};let scope:String;let label:String?;let current:Bool;let showQuota:Bool?;let loginId:String?;let buckets:[QuotaBucket];let updatedAt:Int?;let creditBaselines:[String:CreditBaseline?]?}
+struct QuotaAccount:Decodable,Equatable,Identifiable {var id:String{scope};let scope:String;let label:String?;let current:Bool;let showQuota:Bool?;let loginId:String?;let remote:Bool?;let sourceName:String?;let buckets:[QuotaBucket];let updatedAt:Int?;let creditBaselines:[String:CreditBaseline?]?}
 struct QuotaState:Decodable,Equatable {let accounts:[QuotaAccount]?;let resetNotification:QuotaResetEvent?;let creditBaselines:[String:CreditBaseline?]?;let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let error:String?}
 struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics:Bool?;let creditBaseline:Bool?}
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}

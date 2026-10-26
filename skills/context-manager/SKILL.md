@@ -48,6 +48,10 @@ queue monitoring-on
 
 `queue monitoring-off/on` controls the global quota monitor while preserving per-chat switches and reserves. `queue pause-all` disables every chat's switch. Neither is a request to interrupt a live turn. Use `queue stop CHAT_ID TASK_ID` when the user asks to stop the running task, then inspect its status.
 
+`queue account-switch-on/off` controls automatic account switching for quota-paused queues. Enable it only when the user requests automatic switching: it can close and reopen Codex once all managed chats are idle. It uses saved local logins and fresh candidate quotas, preserves task order and quota reserves, and verifies the new account before dispatch. It does not override manual pauses, interrupt unrelated chats or replay uncertain submissions. Old runtimes require reopening Codex. Inspect `queue list` → `accountSwitch` for progress or a reason it is waiting.
+
+Cloud sync can include encrypted account display names/emails, Credits and quota/reset snapshots from another device's signed-in account. A cloud badge denotes cached remote observations. Those snapshots are display data, not proof of current quota or authorization to switch; sign-in credentials remain local.
+
 To add work, put the full task and acceptance criteria in a UTF-8 prompt file; supply a stable request ID. Add multiple tasks separately in the requested order. Omit model and effort overrides by default: empty values follow the target chat's current model and observed reasoning effort at dispatch; missing effort falls back to `medium` (not `median`). Explicit user choices take precedence. Inspect `queue models` before specifying a model or effort it may not support. Keep inherited permissions unless the user requests a change.
 
 Use `queue config` or `queue task-config` with `--input config.json` to set 5-hour and weekly reserves, optional release stages near a reset, and automatic or manual resumption. Read `queue schema` for the current format. Task settings, including model, effort, inherited permissions, and attachments, can be supplied through `--settings-file`.
@@ -59,6 +63,8 @@ To reorder tasks, read the latest queue and send the **complete** task-ID array 
 Quota monitoring defaults to 20% five-hour and 10% weekly reserves; read the actual saved configuration instead of resetting existing settings. `global quota --refresh` shows observed balances and reset timestamps; cached data from an inactive account is not a live measurement.
 
 The updated queue runtime automatically requests native compaction when context blocks a pending task, then checks the new usage before sending the original prompt once. It does not treat a compaction request as completion. If compression fails or no fresh usage arrives, inspect `chat show` and the task error; do not repeatedly add copies or blindly retry. When manually requested, `chat compact CHAT_ID` compresses the idle chat. Existing failed tasks require `queue retry CHAT_ID TASK_ID` and, if paused, `queue resume CHAT_ID`.
+
+Confirmed task failures and quota waits can retry at cumulative minutes 1, 3, 5, 10, 15, 30, 45 and 60 after the first failure. The controller persists this schedule, checks quota and idle state, skips missed slots without bursts, and preserves task order. `retryEnabled` defaults to true; set it false in task/default quota config to disable it. Automatic resumption must also be enabled. Manual stops, unknown submission outcomes and exhausted retries require inspection and explicit manual handling; do not create duplicate tasks or reset the retry clock.
 
 ## Speed and statistics
 
