@@ -3,17 +3,7 @@ import AppKit
 import WebKit
 
 @MainActor func switchSavedLogin(_ model:Controller,id:String) async throws -> Data? {
-    struct Preflight:Decodable{let blockers:[String]}
-    let check=try JSONDecoder().decode(Preflight.self,from:await model.api(ControlAPI.accountSwitch,body:["action":"preflight"]))
-    var force=false
-    if !check.blockers.isEmpty{
-        let alert=NSAlert();alert.alertStyle = .warning;alert.messageText=L("仍有会话或队列正在运行")
-        alert.informativeText=check.blockers.map{L($0)}.joined(separator:"；")+"\n"+L("强制停止将暂停所有队列并关闭 Codex 和 CLI 会话，中断运行中的任务，然后切换账号。")
-        alert.addButton(withTitle:L("强制停止并切换"));alert.addButton(withTitle:L("取消"))
-        alert.buttons.first?.keyEquivalent="";alert.buttons.last?.keyEquivalent="\r";alert.buttons.last?.keyEquivalentModifierMask=[]
-        guard alert.runModal() == .alertFirstButtonReturn else{return nil};force=true
-    }
-    return try await model.api(ControlAPI.accountSwitch,body:["action":"switch","id":id,"confirmed":true,"force":force])
+    return try await model.api(ControlAPI.accountSwitch,body:["action":"switch","id":id,"confirmed":true,"force":true])
 }
 
 private struct SavedLogin:Decodable,Identifiable {let id:String;let email:String;let workspace:String;let name:String;let plan:String?;let quota:QuotaAccount?}
@@ -28,12 +18,11 @@ struct AccountSwitcherView:View {
     @State private var busy=false
     @State private var feedback:String?
     @State private var pending:SavedLogin?
-    @State private var removing=false
     private var disabled:Bool{busy || state?.busy==true}
     var body:some View {
         VStack(alignment:.leading,spacing:14){
             Text(L("账号切换")).font(.headline)
-            Text(L("每个账号首次通过官方网页授权，登录状态仅在本机加密保存。切换前请暂停队列并退出 Codex、CLI 和 IDE 会话；切换后可重新打开 Codex。")).font(.caption).foregroundStyle(.secondary)
+            Text(L("点击切换将自动暂停所有队列、关闭 Codex 和 CLI 会话，切换账号后重新打开 Codex。")).font(.caption).foregroundStyle(.secondary)
             TextField(L("账号简称（可选）"),text:$name)
             HStack{
                 Button(L("浏览器授权添加")){Task{await login(embedded:false)}}.buttonStyle(.borderedProminent).disabled(disabled)
@@ -58,17 +47,17 @@ struct AccountSwitcherView:View {
                     HStack{
                         TextField(profile.email,text:Binding(get:{names[profile.id] ?? profile.name},set:{names[profile.id]=String($0.prefix(40))}))
                         Button(L("保存名称")){Task{await run(["action":"rename","id":profile.id,"name":names[profile.id] ?? profile.name])}}
-                        Button(L("切换并打开 Codex")){pending=profile;removing=false}
-                        Button(L("移除保存的登录"),role:.destructive){pending=profile;removing=true}
+                        Button(L("切换并打开 Codex")){Task{await run(["action":"switch","id":profile.id])}}
+                        Button(L("移除保存的登录"),role:.destructive){pending=profile}
                     }.disabled(disabled)
                 }.padding(12).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:10))
             }
             if state?.profiles.isEmpty != false{Text(L("尚未保存可切换的登录账号")).font(.caption).foregroundStyle(.secondary)}
         }.textFieldStyle(.roundedBorder)
-        .alert(L(removing ? "移除保存的登录":"切换账号"),isPresented:Binding(get:{pending != nil},set:{if !$0{pending=nil}})){
+        .alert(L("移除保存的登录"),isPresented:Binding(get:{pending != nil},set:{if !$0{pending=nil}})){
             Button(L("取消"),role:.cancel){pending=nil}
-            Button(L(removing ? "移除":"切换")){if let profile=pending{let action=removing ? "remove":"switch";Task{await run(["action":action,"id":profile.id,"confirmed":true])}};pending=nil}
-        } message:{Text(L(removing ? "不会退出当前账号，也不会删除该账号的统计数据。":"切换前将检查运行状态；如仍有任务，将提示是否强制停止。"))}
+            Button(L("移除")){if let profile=pending{Task{await run(["action":"remove","id":profile.id])}};pending=nil}
+        } message:{Text(L("不会退出当前账号，也不会删除该账号的统计数据。"))}
         .task{while !Task.isCancelled{if !busy{await refresh()};do{try await Task.sleep(nanoseconds:2_000_000_000)}catch{return}}}
     }
     private func jobMessage(_ status:String)->String{switch status{case "starting":return "正在准备官方授权…";case "waiting":return "请在浏览器中完成授权";case "completed":return "账号已安全保存";case "switched":return "账号已切换";default:return "账号授权未完成，请重试"}}

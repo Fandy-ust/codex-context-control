@@ -1,5 +1,11 @@
 # Changes
 
+## 0.27.10 — One-click switching with background runtime recovery
+
+- Switch saved accounts directly from settings or the quota sidebar on macOS and Windows, pausing queues and closing Codex/CLI sessions without additional dialogs.
+- Stop sessions restarted by background supervisors during shutdown and repeat shutdown after account validation before committing credentials. Preserve active credentials when shutdown fails; automatic handoffs still refuse newly appeared sessions.
+- Display the version in the macOS installer and split a large native cloud-sync view to avoid compiler type-check timeouts.
+
 ## 0.27.8 — Launch Windows Codex through its registered app
 
 - Reopen the Microsoft Store Codex app through its registered Windows application ID after account switching, using a single activation. Keep the macOS app launch behavior unchanged.

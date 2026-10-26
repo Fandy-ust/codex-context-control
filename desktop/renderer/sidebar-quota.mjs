@@ -71,7 +71,7 @@ export function sidebarAccounts(options){
     const current=account.current, value=current?{...quota,buckets:quota.buckets?.length?quota.buckets:account.buckets,creditBaselines:account.creditBaselines}: {...account,stale:false,loading:false};
     const label=account.label||account.scope.slice(-8),observed=account.updatedAt?new Date(account.updatedAt).toLocaleString():'';
     const switchLabel=t('快速切换到 {0}','Quick switch to {0}',label);
-    const quick=account.loginId&&!current?`<button class="sidebar-account-switch" data-action="login-switch" data-id="${e(account.loginId)}" data-name="${e(label)}" ${quota.accountSwitchBusy?'disabled':''} aria-haspopup="dialog" aria-label="${e(switchLabel)}" title="${e(switchLabel)}">⇄</button>`:'';
+    const quick=account.loginId&&!current?`<button class="sidebar-account-switch" data-action="login-switch" data-id="${e(account.loginId)}" data-name="${e(label)}" ${quota.accountSwitchBusy?'disabled':''} aria-label="${e(switchLabel)}" title="${e(switchLabel)}">⇄</button>`:'';
     return `<div class="sidebar-account ${current?'current':'inactive'}"><div class="sidebar-account-name" title="${e(label+(current?' · '+t('当前登录','Signed in'):' · '+t(account.remote?'其他设备同步缓存':'上次记录，待刷新',account.remote?'Cached observation from another device':'Cached observation; refresh needed')+' '+(account.sourceName||'')+' '+observed))}">${current?'<i aria-hidden="true"></i>':''}<span>${e(label)}${account.remote?' <small aria-hidden="true">☁</small>':''}</span>${quick}</div><div class="sidebar-footer-row">${row(value,!current)}</div></div>`;
   }).join('')}</div>`;
 }

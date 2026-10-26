@@ -1354,5 +1354,6 @@
   "失败后自动重试": "Automatically retry after failure",
   "按首次失败后的累计分钟重试：1、3、5、10、15、30、45、60。每个时点一次，仍需满足额度和空闲条件；提交结果不明时不自动重发。": "Retry at 1, 3, 5, 10, 15, 30, 45 and 60 minutes after the first failure. Once per scheduled time, subject to quota and idle checks. Uncertain submissions are not resent.",
   "自动重试 {0}/8 · 下次检查 {1}": "Automatic retry {0}/8 · Next check {1}",
-  "自动重试已用尽，等待本次结果或手动处理": "Automatic retries exhausted; waiting for this result or manual action"
+  "自动重试已用尽，等待本次结果或手动处理": "Automatic retries exhausted; waiting for this result or manual action",
+  "点击切换将自动暂停所有队列、关闭 Codex 和 CLI 会话，切换账号后重新打开 Codex。": "Switching automatically pauses all queues, closes Codex and CLI sessions, switches accounts, and reopens Codex."
 }

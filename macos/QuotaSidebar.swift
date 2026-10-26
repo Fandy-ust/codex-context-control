@@ -25,7 +25,7 @@ struct QuotaProgressBorder:View {
 struct QuotaSidebarView:View {
     @ObservedObject var model:Controller
     var open:()->Void
-    @State private var switching:QuotaAccount?
+    @State private var switching=false
     @State private var switchError:String?
     private func accountHint(_ account:QuotaAccount)->String{
         var hint=(account.label ?? "")+" · "+L(account.current ? "当前登录":account.remote==true ? "其他设备同步缓存":"上次记录，待刷新")
@@ -40,7 +40,7 @@ struct QuotaSidebarView:View {
             VStack(alignment:.leading,spacing:9){
                 ForEach(accounts){account in
                     VStack(alignment:.leading,spacing:3){
-                        HStack(spacing:4){if account.current{Circle().fill(PanelStyle.blue).frame(width:4,height:4)};Text(account.label ?? String(account.scope.suffix(8))).lineLimit(1).truncationMode(.middle);if account.remote==true{Image(systemName:"icloud").font(.system(size:9)).help(L("其他设备同步缓存"))};Spacer(minLength:4);if account.loginId != nil && !account.current{Button{switching=account} label:{Image(systemName:"arrow.left.arrow.right").font(.system(size:10,weight:.medium))}.buttonStyle(.plain).help(L("快速切换"))}}.font(.system(size:10,weight:.semibold)).frame(minHeight:18).foregroundStyle(.secondary).help(accountHint(account))
+                        HStack(spacing:4){if account.current{Circle().fill(PanelStyle.blue).frame(width:4,height:4)};Text(account.label ?? String(account.scope.suffix(8))).lineLimit(1).truncationMode(.middle);if account.remote==true{Image(systemName:"icloud").font(.system(size:9)).help(L("其他设备同步缓存"))};Spacer(minLength:4);if account.loginId != nil && !account.current{Button{switching=true;Task{defer{switching=false};do{_ = try await switchSavedLogin(model,id:account.loginId ?? "")}catch{switchError=error.localizedDescription}}} label:{Image(systemName:"arrow.left.arrow.right").font(.system(size:10,weight:.medium))}.buttonStyle(.plain).disabled(switching).help(L("快速切换"))}}.font(.system(size:10,weight:.semibold)).frame(minHeight:18).foregroundStyle(.secondary).help(accountHint(account))
                         QuotaSidebarAccountRow(model:model,account:account,open:open)
                             .saturation(account.current ? 1:0.3)
                             .foregroundStyle(account.current ? Color.primary:Color.secondary)
@@ -48,10 +48,9 @@ struct QuotaSidebarView:View {
                 }
             }
         }.scrollIndicators(.hidden).frame(height:CGFloat(min(280,accounts.count*74)))}}
-        .alert(L("切换账号"),isPresented:Binding(get:{switching != nil || switchError != nil},set:{if !$0{switching=nil;switchError=nil}})){
-            if let account=switching{Button(L("取消"),role:.cancel){switching=nil};Button(L("切换")){switching=nil;Task{do{_ = try await switchSavedLogin(model,id:account.loginId ?? "")}catch{switchError=error.localizedDescription}}}}
-            else{Button(L("确定")){switchError=nil}}
-        } message:{if let error=switchError{Text(L(error))}else{Text((switching?.label ?? "")+"\n"+L("切换前将检查运行状态；如仍有任务，将提示是否强制停止。"))}}
+        .alert(L("切换账号"),isPresented:Binding(get:{switchError != nil},set:{if !$0{switchError=nil}})){
+            Button(L("确定")){switchError=nil}
+        } message:{Text(L(switchError ?? ""))}
     }
 }
 struct QuotaSidebarAccountRow:View {

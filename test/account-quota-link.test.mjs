@@ -28,13 +28,14 @@ test('cards reuse the compact quota and Credits UI and sidebars expose only link
   const sidebar=sidebarAccounts({quota,t,escape:e});assert.equal((sidebar.match(/class="sidebar-account-switch"/g)||[]).length,1);assert.match(sidebar,/data-id="second"/);assert.doesNotMatch(sidebar,/data-id="first"/);
   quota.accountSwitchBusy=true;assert.match(sidebarAccounts({quota,t,escape:e}),/data-id="second"[^>]*disabled/);
 });
-test('quick switch waits for explicit confirmation and cancel never invokes the switch API',async()=>{
-  let confirmed=false;const calls=[],api={invoke:async(action,params)=>{calls.push({action,params});return action==='confirm-account-switch'?{confirmed}:{ok:true};}};
-  assert.equal(await switchSavedAccount(api,{id:'second',name:'Personal'}),null);assert.deepEqual(calls.map(c=>c.action),['confirm-account-switch']);
-  confirmed=true;calls.length=0;assert.deepEqual(await switchSavedAccount(api,{id:'second',name:'Personal'}),{ok:true});assert.deepEqual(calls.map(c=>c.action),['confirm-account-switch','account-switch']);assert.equal(calls[0].params.name,'Personal');assert.equal(calls[1].params.confirmed,true);
+test('one click switches directly and requests automatic process shutdown',async()=>{
+  const calls=[],api={invoke:async(action,params)=>{calls.push({action,params});return {ok:true};}};
+  assert.deepEqual(await switchSavedAccount(api,{id:'second',name:'Personal'}),{ok:true});
+  assert.deepEqual(calls,[{action:'account-switch',params:{action:'switch',id:'second',confirmed:true,force:true}}]);
 });
 
-test('quick switch forwards force only after the force-stop confirmation',async()=>{
- const calls=[],api={invoke:async(action,params)=>{calls.push({action,params});return action==='confirm-account-switch'?{confirmed:true,force:true}:{ok:true};}};
- await switchSavedAccount(api,{id:'second',name:'Personal'});assert.deepEqual(calls[1].params,{action:'switch',id:'second',confirmed:true,force:true});
+test('one click switch surfaces a failed shutdown without retrying',async()=>{
+  let calls=0;const api={invoke:async()=>{calls++;throw Error('stop denied');}};
+  await assert.rejects(switchSavedAccount(api,{id:'second'}),/stop denied/);
+  assert.equal(calls,1);
 });

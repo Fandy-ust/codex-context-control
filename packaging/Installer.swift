@@ -64,7 +64,7 @@ struct InstallerView:View {
     @StateObject private var model=InstallerModel()
     var body:some View {
         VStack(alignment:.leading,spacing:22){
-            Label("Context Manager",systemImage:"slider.horizontal.3").font(.largeTitle.weight(.semibold))
+            Label("Context Manager "+(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? ""),systemImage:"slider.horizontal.3").font(.largeTitle.weight(.semibold))
             Text(L("Apple Silicon · macOS 14 或更新版本")).foregroundStyle(.secondary)
             VStack(alignment:.leading,spacing:10){Text(L(model.status)).font(.headline);Text(L(model.detail)).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)}.frame(maxWidth:.infinity,alignment:.leading).padding(20).background(.quaternary,in:RoundedRectangle(cornerRadius:16))
             Picker(L("语言"),selection:Binding(get:{model.languageSelection},set:{model.setLanguage($0)})){

@@ -1,8 +1,7 @@
 import {accountQuotaSummary} from './sidebar-quota.mjs';
 
-export async function switchSavedAccount(api,{id,name}){
-  const reply=await api.invoke('confirm-account-switch',{name});if(!reply?.confirmed)return null;
-  return api.invoke('account-switch',{action:'switch',id,confirmed:true,...(reply.force===true?{force:true}:{})});
+export async function switchSavedAccount(api,{id}){
+  return api.invoke('account-switch',{action:'switch',id,confirmed:true,force:true});
 }
 
 export function accountSwitchView(s,{e,t,pool,language='zh'}){
@@ -10,7 +9,7 @@ export function accountSwitchView(s,{e,t,pool,language='zh'}){
   const disabled=s.busy?'disabled':'';
   const status={starting:t('正在准备官方授权…','Preparing official sign-in…'),waiting:t('请在浏览器中完成授权','Complete sign-in in your browser'),completed:t('账号已安全保存','Account saved securely'),failed:t('账号授权未完成，请重试','Sign-in did not complete; please retry'),switched:t('账号已切换','Account switched')};
   return `<div class="content"><section class="card stack"><h2>${text('账号切换','Account switching')}</h2>
-  <p class="muted">${text('每个账号首次通过官方网页授权，登录状态仅在本机加密保存。切换前请暂停队列并退出 Codex、CLI 和 IDE 会话；切换后可重新打开 Codex。','Authorize each account on the official sign-in page. Credentials are encrypted on this device. Pause queues and exit Codex, CLI and IDE sessions before switching, then reopen Codex.')}</p>
+  <p class="muted">${text('点击切换将自动暂停所有队列、关闭 Codex 和 CLI 会话，切换账号后重新打开 Codex。','Switching automatically pauses all queues, closes Codex and CLI sessions, switches accounts, and reopens Codex.')}</p>
   <label class="stack">${text('账号简称（可选）','Account name (optional)')}<input id="login-name" maxlength="40" placeholder="${text('例如：工作账号','For example: Work')}"></label>
   <div class="row wrap"><button class="primary" data-action="login-add" ${disabled}>${text('浏览器授权添加','Add with browser sign-in')}</button><button data-action="login-embedded" ${disabled}>${text('应用内授权（实验）','In-app sign-in (experimental)')}</button><button data-action="login-capture" ${disabled}>${text('保存当前登录','Save current sign-in')}</button>${s.busy?`<button data-action="login-cancel">${text('取消授权','Cancel sign-in')}</button>`:''}</div>
   <p class="tiny muted">${text('切换将启用 Codex 文件登录模式，并保留现有配置与聊天历史。应用内登录不兼容时，请改用系统浏览器。','Switching enables Codex file-based sign-in and preserves configuration and chat history. Use the system browser if in-app sign-in is incompatible.')}</p>

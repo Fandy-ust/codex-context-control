@@ -52,6 +52,52 @@ struct CloudSyncView:View {
                 Button(L("创建 Secret Gist")){Task{await createGist()}}.disabled(busy)
                 Text(L("其他设备填写同一个 Gist ID。Secret Gist 可被知道链接的人读取，因此统计始终加密。")).font(.caption).foregroundStyle(.secondary)
             }
+            credentialSettings
+            syncSettings
+            syncStatus
+            Text(L("各设备保留独立设备 ID，请勿复制整份应用数据目录。关闭同步恢复本机统计，不删除云端历史。")).font(.caption).foregroundStyle(.secondary)
+        }.textFieldStyle(.roundedBorder).padding(20).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
+        .alert(L("删除账号及统计"),isPresented:Binding(get:{deletingAccount != nil},set:{if !$0{deletingAccount=nil}})){
+            Button(L("取消"),role:.cancel){deletingAccount=nil}
+            Button(L("删除账号及统计"),role:.destructive){if let account=deletingAccount{Task{await run(["action":"delete-account","id":account.id])}};deletingAccount=nil}
+        } message:{Text(L("清除该账号的本机缓存及全部本机统计，无法撤销。不会退出 Codex，其他设备和云端原始数据保留；当前账号再次检测后会记录新数据。"))}
+        .task{await refresh();while !Task.isCancelled{do{try await Task.sleep(nanoseconds:2_000_000_000)}catch{return};if !busy{await refresh()}}}
+    }
+    private func lastSyncDescription(_ at:Double,devices:Int)->String {
+        let date=Date(timeIntervalSince1970:at/1000).formatted(date:.numeric,time:.standard)
+        return L("最近同步")+": "+date+" · "+String(devices)+" "+L("台设备")
+    }
+    private var syncSettings:some View {
+        VStack(alignment:.leading,spacing:16){
+            Picker(L("同步间隔"),selection:$interval){
+                Text(L("仅手动")).tag(0);Text(L("每 5 分钟")).tag(5);Text(L("每 15 分钟")).tag(15);Text(L("每 30 分钟")).tag(30);Text(L("每小时")).tag(60);Text(L("自定义")).tag(-1)
+            }.pickerStyle(.menu)
+            if interval == -1{TextField(L("自定义分钟数（5–1440）"),text:$custom)}
+            Toggle(L("启动后同步（仅手动模式除外）"),isOn:$startup)
+            Toggle(L("确认本机未归属的历史 Token 都属于当前账号，并纳入同步（一次性）"),isOn:$claim)
+            Text(L("不确定历史账号时请勿勾选。新请求自动归属当前账号；Token 和密钥使用 macOS 钥匙串保存。")).font(.caption).foregroundStyle(.secondary)
+            HStack{
+                Button(L("保存同步设置")){Task{await save()}}.buttonStyle(.borderedProminent).disabled(busy || state?.running==true)
+                Button(L(state?.running==true ? "正在同步…":state?.enabled==true ? "保存并同步":"启用并同步")){Task{await save(sync:true)}}.disabled(busy || state==nil || state?.running==true)
+                Button(L("刷新状态")){Task{await refresh()}}.disabled(busy)
+                Link(L("配置文档"),destination:URL(string:"https://github.com/Fandy-ust/codex-context-control/blob/main/docs/CLOUD_SYNC.md")!)
+            }
+        }
+    }
+    private var syncStatus:some View {
+        VStack(alignment:.leading,spacing:16){
+            if let feedback{Text(L(feedback)).font(.caption).foregroundStyle(.secondary)}
+            if let s=state{
+                if let error=s.error{Text(L(error)).font(.caption).foregroundStyle(.orange)}
+                else if s.running{Text(L("正在同步，关闭设置不影响后台同步。")).font(.caption).foregroundStyle(.secondary)}
+                else if let at=s.lastSuccess{Text(lastSyncDescription(at,devices:s.devices ?? 1)).font(.caption).foregroundStyle(.secondary)}
+                else{Text(L("尚未同步")).font(.caption).foregroundStyle(.secondary)}
+                Text("Device ID: "+s.deviceId).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+        }
+    }
+    private var credentialSettings:some View {
+        VStack(alignment:.leading,spacing:16){
             VStack(alignment:.leading,spacing:6){
                 HStack{Text("GitHub Token");if state?.hasToken==true{Text(L("已保存")).font(.caption).foregroundStyle(.secondary)}}
                 SecureField("GitHub Token",text:$token,prompt:Text(state?.hasToken==true ? "••••••••••••••••":"GitHub Token"))
@@ -67,34 +113,7 @@ struct CloudSyncView:View {
                 Button(L("复制密钥")){Task{await copyCredential("key")}}.disabled(busy)
             }
             Text(L("保存后仍可复制 Token 和密钥；输入框留空会复制已保存的值。")).font(.caption).foregroundStyle(.secondary)
-            Picker(L("同步间隔"),selection:$interval){
-                Text(L("仅手动")).tag(0);Text(L("每 5 分钟")).tag(5);Text(L("每 15 分钟")).tag(15);Text(L("每 30 分钟")).tag(30);Text(L("每小时")).tag(60);Text(L("自定义")).tag(-1)
-            }.pickerStyle(.menu)
-            if interval == -1{TextField(L("自定义分钟数（5–1440）"),text:$custom)}
-            Toggle(L("启动后同步（仅手动模式除外）"),isOn:$startup)
-            Toggle(L("确认本机未归属的历史 Token 都属于当前账号，并纳入同步（一次性）"),isOn:$claim)
-            Text(L("不确定历史账号时请勿勾选。新请求自动归属当前账号；Token 和密钥使用 macOS 钥匙串保存。")).font(.caption).foregroundStyle(.secondary)
-            HStack{
-                Button(L("保存同步设置")){Task{await save()}}.buttonStyle(.borderedProminent).disabled(busy || state?.running==true)
-                Button(L(state?.running==true ? "正在同步…":state?.enabled==true ? "保存并同步":"启用并同步")){Task{await save(sync:true)}}.disabled(busy || state==nil || state?.running==true)
-                Button(L("刷新状态")){Task{await refresh()}}.disabled(busy)
-                Link(L("配置文档"),destination:URL(string:"https://github.com/Fandy-ust/codex-context-control/blob/main/docs/CLOUD_SYNC.md")!)
-            }
-            if let feedback{Text(L(feedback)).font(.caption).foregroundStyle(.secondary)}
-            if let s=state{
-                if let error=s.error{Text(L(error)).font(.caption).foregroundStyle(.orange)}
-                else if s.running{Text(L("正在同步，关闭设置不影响后台同步。")).font(.caption).foregroundStyle(.secondary)}
-                else if let at=s.lastSuccess{Text(L("最近同步")+": "+Date(timeIntervalSince1970:at/1000).formatted(date:.numeric,time:.standard)+" · "+String(s.devices ?? 1)+" "+L("台设备")).font(.caption).foregroundStyle(.secondary)}
-                else{Text(L("尚未同步")).font(.caption).foregroundStyle(.secondary)}
-                Text("Device ID: "+s.deviceId).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
-            }
-            Text(L("各设备保留独立设备 ID，请勿复制整份应用数据目录。关闭同步恢复本机统计，不删除云端历史。")).font(.caption).foregroundStyle(.secondary)
-        }.textFieldStyle(.roundedBorder).padding(20).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
-        .alert(L("删除账号及统计"),isPresented:Binding(get:{deletingAccount != nil},set:{if !$0{deletingAccount=nil}})){
-            Button(L("取消"),role:.cancel){deletingAccount=nil}
-            Button(L("删除账号及统计"),role:.destructive){if let account=deletingAccount{Task{await run(["action":"delete-account","id":account.id])}};deletingAccount=nil}
-        } message:{Text(L("清除该账号的本机缓存及全部本机统计，无法撤销。不会退出 Codex，其他设备和云端原始数据保留；当前账号再次检测后会记录新数据。"))}
-        .task{await refresh();while !Task.isCancelled{do{try await Task.sleep(nanoseconds:2_000_000_000)}catch{return};if !busy{await refresh()}}}
+        }
     }
     private func included(_ id:String,in values:Binding<Set<String>>) -> Binding<Bool> {
         Binding(get:{!values.wrappedValue.contains(id)},set:{checked in

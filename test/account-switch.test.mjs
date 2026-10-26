@@ -107,7 +107,7 @@ test('force stopping is explicit, validates the selected account first and reche
   f.blocked=true;await assert.rejects(f.manager.command({action:'switch',id,force:true}),/确认/);assert.equal(stops,0);
   await assert.rejects(f.manager.command({action:'switch',id:'invalid',confirmed:true,force:true}),/找不到/);assert.equal(stops,0);
   await assert.rejects(f.manager.command({action:'switch',id,confirmed:true}),/running/);assert.equal(stops,0);
-  await f.manager.command({action:'switch',id,confirmed:true,force:true});assert.equal(stops,1);assert.equal(f.opened,1);
+  await f.manager.command({action:'switch',id,confirmed:true,force:true});assert.equal(stops,2);assert.equal(f.opened,1);
 });
 
 test('failure to stop a runtime never overwrites live credentials',async t=>{
@@ -178,4 +178,47 @@ test('macOS desktop launch retains one launch with no additional activation dela
     calls++;const child={once(event,callback){if(event==='spawn')queueMicrotask(callback);return child;},unref(){}};return child;
   }});
   assert.equal(calls,1);
+});
+
+test('force switch stops a supervisor-restarted runtime again after account validation',async t=>{
+  let alive=true,stops=0;
+  const f=fixture(t,{
+    prepareSwitch:async()=>{stops++;alive=false;},
+    guard:async()=>{if(alive)throw Error('Codex 或 CLI 会话仍在运行');},
+    session:({home})=>({async read(){alive=true;return info(JSON.parse(fs.readFileSync(path.join(home,'auth.json'))));},async close(){}})
+  });
+  const second=auth('second');f.setProfiles([second]);
+  await f.manager.command({action:'switch',id:credentialProfile(second,info(second)).id,confirmed:true,force:true});
+  assert.equal(stops,2);assert.equal(f.opened,1);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(f.codexHome,'auth.json'))).tokens.account_id,'second');
+});
+
+test('a restarted runtime that cannot be stopped leaves active credentials unchanged',async t=>{
+  let stops=0;const f=fixture(t,{prepareSwitch:async()=>{if(++stops===2)throw Error('stop denied');}});
+  const second=auth('second');f.setProfiles([second]);const before=fs.readFileSync(path.join(f.codexHome,'auth.json'),'utf8');
+  await assert.rejects(f.manager.command({action:'switch',id:credentialProfile(second,info(second)).id,confirmed:true,force:true}),/stop denied/);
+  assert.equal(fs.readFileSync(path.join(f.codexHome,'auth.json'),'utf8'),before);assert.equal(f.opened,0);
+});
+
+test('force stop also terminates new Codex processes appearing during shutdown',async()=>{
+  const first={pid:123,executable:'/App/codex'},restarted={pid:124,executable:'/App/codex'},calls=[];
+  let current=[first];
+  await stopAccountProcesses({list:()=>current,wait:async()=>{},kill:(pid,signal)=>{
+    calls.push([pid,signal]);if(pid===first.pid)current=[restarted];else if(pid===restarted.pid)current=[];
+  }});
+  assert.deepEqual(calls,[[123,'SIGTERM'],[124,'SIGTERM']]);
+});
+
+test('automatic handoff refuses a restarted session instead of stopping it after validation',async t=>{
+  let alive=true,stops=0;
+  const f=fixture(t,{
+    prepareSwitch:async()=>{stops++;alive=false;},
+    guard:async()=>{if(alive)throw Error('new session');},
+    session:({home})=>({async read(){alive=true;return info(JSON.parse(fs.readFileSync(path.join(home,'auth.json'))));},async close(){}})
+  });
+  const first=auth('first'),second=auth('second');f.setProfiles([second]);
+  fs.writeFileSync(path.join(f.codexHome,'config.toml'),'cli_auth_credentials_store = "file"\n');
+  const before=fs.readFileSync(path.join(f.codexHome,'auth.json'),'utf8');
+  await assert.rejects(f.manager.command({action:'switch',id:credentialProfile(second,info(second)).id,confirmed:true},{automatic:true,expectedSourceId:credentialProfile(first,info(first)).id}),/new session/);
+  assert.equal(stops,1);assert.equal(fs.readFileSync(path.join(f.codexHome,'auth.json'),'utf8'),before);assert.equal(f.opened,0);
 });

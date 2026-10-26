@@ -1,8 +1,9 @@
+import {integrationLog} from './diagnostic-log.mjs';
 import net from 'node:net';
 import {createAccountSwitcher} from './account-switch.mjs';
 import {createQueueAccountSwitch} from './queue-account-switch.mjs';
 import {accountQuotaViews} from './core/account-quota-link.mjs';
-import {accountProcessBlocker,automaticAccountProcesses,stopAccountProcesses,openAccountDesktop} from './account-processes.mjs';
+import {accountProcessBlocker,accountProcesses,automaticAccountProcesses,stopAccountProcesses,openAccountDesktop} from './account-processes.mjs';
 import {codexLaunchEnvironment} from './windows-integration.mjs';
 import {accountTaskBlockers} from './core/account-switch-blockers.mjs';
 import {createQuotaActivation} from './quota-activation.mjs';
@@ -105,6 +106,8 @@ export async function startDaemon() {
   const accountSwitcher=createAccountSwitcher({home:root,codexHome,openDesktop:launchDesktop,
     quiesce:async()=>{accountTransition=true;let resumeQueues;try{resumeQueues=await taskQueues.suspend();const resume=await quota.suspend();return async()=>{try{for(const peer of autoPrepared)await peer.call('account-release',{},2000).catch(()=>{});}finally{autoPrepared=[];resume();resumeQueues();accountTransition=false;}};}catch(error){resumeQueues?.();accountTransition=false;throw error;}},
     prepareSwitch:async context=>{
+      context.shutdownPass=(context.shutdownPass??0)+1;
+      integrationLog('account_switch.shutdown',{pass:context.shutdownPass,automatic:context.automatic===true});
       if(context?.automatic){
         if(!context.authorized?.())throw Error('队列状态已变化，自动切换已取消');
         const initial=await readyForAutoSwitch(),registered=[...bridges.values()];
@@ -123,7 +126,7 @@ export async function startDaemon() {
     },
     guard:async context=>{
       if(context?.automatic&&!context.authorized?.())throw Error('队列状态已变化，自动切换已取消');
-      const blockers=switchBlockers(context);if(blockers.length)throw Error(blockers.join('；'));
+      const blockers=switchBlockers(context);if(blockers.length){integrationLog('account_switch.blocked',{pass:context?.shutdownPass??0,automatic:context?.automatic===true,bridgeCount:bridges.size,processes:accountProcesses().map(({pid,executable})=>({pid,executable})),blockers});throw Error(blockers.join('；'));}
     }});
   function currentQueueAccount(){const q=accountQuotaState();return {id:q.accounts.find(a=>a.current)?.loginId??null,quota:q};}
   const autoSwitchFile=path.join(root,'queue-account-switch.json');

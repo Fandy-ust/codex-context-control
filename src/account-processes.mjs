@@ -22,12 +22,17 @@ export function automaticAccountProcesses({list=accountProcesses,bridges=[],desk
 
 // Only called after explicit confirmation. Never kill an IDE or the manager.
 export async function stopAccountProcesses({list=accountProcesses,kill=(pid,signal)=>process.kill(pid,signal),wait=ms=>new Promise(r=>setTimeout(r,ms))}={}){
-  const targets=list();
-  for(const target of targets){try{kill(target.pid,'SIGTERM');}catch(error){if(error.code!=='ESRCH')throw Error('无法停止 Codex 进程，请手动退出后重试');}}
+  const targets=new Map();
+  const terminate=(target,signal)=>{try{kill(target.pid,signal);}catch(error){if(error.code!=='ESRCH')throw Error('无法停止 Codex 进程，请手动退出后重试');}};
   for(let attempt=0;attempt<40;attempt++){
     const remaining=list();if(!remaining.length)return;
-    // Recheck both PID and executable before escalating; do not kill a reused PID.
-    if(attempt===10)for(const target of remaining){if(targets.some(p=>p.pid===target.pid&&p.executable===target.executable))try{kill(target.pid,'SIGKILL');}catch(error){if(error.code!=='ESRCH')throw Error('无法停止 Codex 进程，请手动退出后重试');}}
+    for(const target of remaining){
+      const key=JSON.stringify([target.pid,target.executable]),seen=targets.get(key);
+      // A supervisor may start a replacement after the initial inventory. Stop
+      // every currently matched Codex process, without signalling its supervisor.
+      if(!seen){targets.set(key,{attempt,escalated:false});terminate(target,'SIGTERM');}
+      else if(!seen.escalated&&attempt-seen.attempt>=10){seen.escalated=true;terminate(target,'SIGKILL');}
+    }
     await wait(100);
   }
   throw Error('Codex 仍在运行，未切换账号，请手动退出后重试');

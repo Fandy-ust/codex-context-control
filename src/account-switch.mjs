@@ -92,6 +92,11 @@ export function createAccountSwitcher({home,codexHome,secrets=accountVault(home)
         // permission to discard a newly rotated refresh token.
         const verified=await readProfile(folder,{refresh:true});if(verified.profile.id!==selected.id)throw Error('账号身份不匹配，已取消切换');
         saveProfile(value,verified.auth,verified.account);saveVault(value);
+        // Background supervisors can restart Codex while OAuth validation is in
+        // flight. A manual force switch also stops these new sessions immediately
+        // before the final guard and atomic credential commit. Automatic handoffs
+        // keep their stricter rule: a newly appeared session cancels the switch.
+        if(params.force===true&&context.automatic!==true)await prepareSwitch(context);
         await guard(context);if((fs.existsSync(authFile)?fs.readFileSync(authFile):null)?.toString()!==before?.toString())throw Error('登录状态已变化，请重试');
         const latestConfig=fs.existsSync(configFile)?fs.readFileSync(configFile,'utf8'):null;if(latestConfig!==config)throw Error('登录配置已变化，请重试');
         secure(codexHome);atomicJSON(authFile,verified.auth);
