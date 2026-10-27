@@ -2,8 +2,30 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {estimateResponse,estimateResponseWithWrites,estimateConversation,pricingTier} from '../src/cost-estimate.mjs';
 import {buildTimeline} from '../src/context-statistics.mjs';
+import {tokenCostCalendar} from '../src/core/token-cost-calendar.mjs';
 const row=(extra={})=>({id:'a',config:{model:'gpt-6-astra',serviceTier:'default'},inputTokens:100000,cachedInputTokens:80000,cacheWriteTokens:10000,outputTokens:2000,reasoningTokens:1500,...extra});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-10,`${a} != ${b}`);
+test('Terra prices cached reads, writes and output in each documented tier and context band',()=>{
+ for(const [inputTokens,expected] of [[100000,.0365],[272000,.2085],[272001,.412002]]){
+  for(const [serviceTier,multiplier] of [['standard',1],['priority',2],['fast',2],['flex',.5]]){
+   const result=estimateResponse(row({inputTokens,config:{model:'gpt-6.1-terra',serviceTier}}));
+   near(result.usd,expected*multiplier);
+   assert.equal(result.contextBand,inputTokens>272000?'long':'short');
+  }
+ }
+ assert.equal(estimateResponse(row({config:{model:'gpt-6.1-terra',serviceTier:'ultrafast'}})).reason,'unsupported_rate');
+});
+test('Terra history contributes to Standard conversation and calendar totals including estimated writes',()=>{
+ const terra=row({id:'terra',config:{model:'gpt-6.1-terra',serviceTier:'fast'},cacheWriteTokens:0});
+ const result=estimateConversation([terra,row(),terra]);
+ near(result.usd,.444);assert.equal(result.pricedRequests,2);assert.equal(result.unknownModel,0);
+ near(result.groups.find(g=>g.model==='gpt-6.1-terra').usd,.039);
+ assert.equal(terra.costEstimate.writeEstimated,true);
+ const now=Date.parse('2026-10-27T04:00:00Z');
+ const cost=estimateResponseWithWrites(terra,'standard');
+ const calendar=tokenCostCalendar([{id:terra.id,at:now,model:terra.config.model,input:terra.inputTokens,output:terra.outputTokens,usd:cost.usd}],{now,timeZone:'Asia/Taipei'});
+ near(calendar.daily.at(-1).usd,.039);assert.equal(calendar.daily.at(-1).unpriced,0);
+});
 test('input, cache reads/writes partition billing; reasoning is not charged twice',()=>{
  const result=estimateResponse(row());near(result.usd,.405);
  assert.deepEqual(result.breakdown.map(x=>x.tokens),[10000,80000,10000,2000]);

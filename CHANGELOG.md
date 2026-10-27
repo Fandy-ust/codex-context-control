@@ -1,5 +1,11 @@
 # Changes
 
+## 0.27.12 — GPT-6.1 Terra cost estimates
+
+- Add official GPT-6.1 Terra input, cached-read, 30-minute cache-write and output rates, including long-context, Fast and Flex pricing.
+- Include Terra requests in chat and historical API cost estimates on Windows and macOS through the shared price book. Displayed totals continue to use Standard base rates.
+- Prices checked against the official Terra model page on October 27, 2026; unsupported Ultrafast rates remain unpriced.
+
 ## 0.27.11 — Credits exhaustion alerts and one-shot task protection
 
 - Notify when fresh current-account Codex quota reaches zero. Default to both 5-hour and weekly windows being exhausted, with an optional either-window trigger. Exhaustion indicates potential Credits use, not a confirmed charge.

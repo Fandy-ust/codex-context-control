@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-16",
+  "checkedAt": "2026-10-27",
   "currency": "USD",
   "unitTokens": 1000000,
   "longContextAbove": 272000,
@@ -7,7 +7,8 @@
   "sources": [
     "https://developers.openai.com/api/docs/pricing",
     "https://developers.openai.com/api/docs/guides/fast-mode",
-    "https://developers.openai.com/api/docs/guides/prompt-caching"
+    "https://developers.openai.com/api/docs/guides/prompt-caching",
+    "https://developers.openai.com/api/docs/models/gpt-6.1-terra"
   ],
   "rateColumns": [
     "input",
@@ -130,6 +131,20 @@
           2.5,
           7.5
         ]
+      }
+    },
+    "gpt-6.1-terra": {
+      "standard": {
+        "short": [1.0, 0.05, 1.25, 5.0],
+        "long": [2.0, 0.1, 2.5, 7.5]
+      },
+      "fast": {
+        "short": [2.0, 0.1, 2.5, 10.0],
+        "long": [4.0, 0.2, 5.0, 15.0]
+      },
+      "flex": {
+        "short": [0.5, 0.025, 0.625, 2.5],
+        "long": [1.0, 0.05, 1.25, 3.75]
       }
     },
     "gpt-6-luna": {
