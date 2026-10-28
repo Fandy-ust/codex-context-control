@@ -150,8 +150,10 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
   if(![main?.webContents.id,trayWindow?.webContents.id].includes(event.sender.id)||event.senderFrame!==event.sender.mainFrame)throw Error('Unknown UI sender');
   if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>65536)throw Error('Invalid UI request');
   if(action==='account-switch'){
+    if(params.action==='login-link')throw Error('Unknown UI request');
+    if(params.action==='copy-login-link'){const result=await api(action,{action:'login-link'}),url=new URL(result.authUrl);if(url.protocol!=='https:'||!['auth.openai.com','chatgpt.com'].includes(url.hostname)||url.username||url.password)throw Error('Invalid sign-in URL');if(!smoke)clipboard.writeText(result.authUrl);return {ok:true};}
     const result=await api(action,params);
-    if(params.action==='login'&&result.authUrl){try{if(params.browser==='embedded')openAccountBrowser(result.authUrl,main);else if(!smoke)await shell.openExternal(result.authUrl);}catch{await api(action,{action:'cancel'});throw Error(label('无法打开授权窗口，请重试','Could not open sign-in; please retry'));}}
+    if(params.action==='login'&&result.authUrl){try{if(params.browser==='embedded')openAccountBrowser(result.authUrl,main);else if(!smoke)await shell.openExternal(result.authUrl);}catch{result.openError=label('无法打开浏览器，请复制授权链接后手动打开','Could not open browser; copy the sign-in link and open it manually');}}
     const {authUrl,...publicResult}=result;return publicResult;
   }
   if(['confirm-account-switch','confirm-login-remove'].includes(action)){

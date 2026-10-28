@@ -1,5 +1,16 @@
 # Changes
 
+## 0.27.14 — Embedded sign-in interaction fixes
+
+- Keep verification frames separate from top-level navigation so email sign-in can load its verification dependencies.
+- Preserve isolated popup sessions, opener callbacks and form submissions for third-party sign-in on macOS and Windows.
+- Add native JavaScript dialogs, explicit browser layout and recovery actions on macOS; show navigation/load failures and browser recovery actions on both platforms.
+
+## 0.27.13
+
+- macOS 和 Windows 在账号授权等待期间支持复制授权链接，方便在其他浏览器中完成登录。
+- 浏览器打开失败时保留授权流程，允许复制链接后继续；授权结束或取消后立即停用链接复制。
+
 ## 0.27.12 — GPT-6.1 Terra cost estimates
 
 - Add official GPT-6.1 Terra input, cached-read, 30-minute cache-write and output rates, including long-context, Fast and Flex pricing.

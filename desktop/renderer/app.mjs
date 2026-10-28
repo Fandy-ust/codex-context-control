@@ -492,8 +492,10 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       else if(action==='login-remove'){const reply=await api.invoke('confirm-login-remove');if(!reply.confirmed)return;loginState=await api.invoke('account-switch',{action:'remove',id});}
       else if(action==='login-rename'){const input=[...root.querySelectorAll('[data-login-name]')].find(n=>n.dataset.loginName===id);loginState=await api.invoke('account-switch',{action:'rename',id,name:input.value});}
       else if(action==='login-add'||action==='login-embedded'){loginState=await api.invoke('account-switch',{action:'login',name:root.querySelector('#login-name').value,browser:action==='login-embedded'?'embedded':'system'});}
+      else if(action==='login-copy-link'){await api.invoke('account-switch',{action:'copy-login-link'});notify('授权链接已复制');}
       else if(action==='login-capture')loginState=await api.invoke('account-switch',{action:'capture'});
       else if(action==='login-cancel')loginState=await api.invoke('account-switch',{action:'cancel'});
+      if(loginState?.openError)notify(loginState.openError);
       render();return;
     }
     if(action==='cloud-account-rename'){

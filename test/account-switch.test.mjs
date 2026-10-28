@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {createAccountSwitcher,credentialProfile,fileStoreConfig} from '../src/account-switch.mjs';
+import {accountSwitchView} from '../desktop/renderer/account-switch.mjs';
 import {accountVault} from '../src/account-vault.mjs';
 import {openAccountDesktop,windowsStoreAppId,accountProcessBlocker,accountProcesses,automaticAccountProcesses,stopAccountProcesses} from '../src/account-processes.mjs';
 import {accountTaskBlockers} from '../src/core/account-switch-blockers.mjs';
@@ -30,6 +31,34 @@ test('OAuth addition is isolated, encrypted by the vault, cancellable and never 
   assert.doesNotMatch(JSON.stringify(f.manager.state()),/access_token|refresh_token|id_token|authUrl/);
   assert.deepEqual(fs.readdirSync(path.join(f.home,'account-login')),[]);
   await f.manager.command({action:'login'});await f.manager.command({action:'cancel'});await wait(()=>!f.manager.state().busy);assert.equal(f.manager.state().job.status,'failed');
+});
+test('authorization link is available only during the active login and never persisted or in status',async t=>{
+  const f=fixture(t);
+  await assert.rejects(f.manager.command({action:'login-link'}),/已失效/);
+  const started=await f.manager.command({action:'login'});
+  assert.equal(f.manager.state().canCopyLoginLink,true);
+  assert.equal((await f.manager.command({action:'login-link'})).authUrl,started.authUrl);
+  assert.doesNotMatch(JSON.stringify(await f.manager.command({action:'status'})),/authorize|redirect_uri|authUrl/);
+  f.finish();await wait(()=>!f.manager.state().busy);
+  assert.equal(f.manager.state().canCopyLoginLink,false);
+  await assert.rejects(f.manager.command({action:'login-link'}),/已失效/);
+  assert.doesNotMatch(fs.readFileSync(path.join(f.home,'account-switch.json'),'utf8'),/authorize|redirect_uri|authUrl/);
+  await f.manager.command({action:'login'});
+  await f.manager.command({action:'cancel'});
+  assert.equal(f.manager.state().canCopyLoginLink,false);
+  await assert.rejects(f.manager.command({action:'login-link'}),/已失效/);
+  await wait(()=>!f.manager.state().busy);
+  await f.manager.command({action:'login'});f.manager.close();
+  assert.equal(f.manager.state().canCopyLoginLink,false);
+  await assert.rejects(f.manager.command({action:'login-link'}),/已失效/);
+});
+test('account sign-in renders copy action while waiting without putting the URL in HTML',()=>{
+  const options={e:value=>String(value),t:zh=>zh};
+  const state={profiles:[],busy:true,canCopyLoginLink:true,job:{status:'waiting'},authUrl:'https://auth.openai.com/authorize?state=private'};
+  const html=accountSwitchView(state,options);
+  assert.match(html,/data-action="login-copy-link"/);assert.match(html,/复制授权链接/);
+  assert.doesNotMatch(html,/authorize|state=private/);
+  assert.doesNotMatch(accountSwitchView({...state,busy:false,canCopyLoginLink:false},options),/login-copy-link/);
 });
 test('switch validates identity, retains the latest outgoing auth, writes refreshed target and opens desktop',async t=>{
   const f=fixture(t),second=auth('second');f.setProfiles([second]);fs.writeFileSync(path.join(f.codexHome,'config.toml'),'model = "Sol"\n[features]\nx = true\n');

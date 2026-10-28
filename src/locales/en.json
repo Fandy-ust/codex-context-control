@@ -1367,5 +1367,14 @@
   "正在停止当前任务并暂停队列": "Stopping current tasks and pausing queues",
   "已请求停止当前任务，队列已暂停": "Requested interruption of current tasks; queues are paused",
   "部分任务未能确认停止，请检查会话；本次不会自动重试": "Some interruptions are unconfirmed. Check sessions; this episode will not retry automatically.",
-  "部分会话未能停止，请重开 Codex 后检查；队列已暂停": "Some sessions could not be stopped. Reopen Codex and check; queues are paused."
+  "部分会话未能停止，请重开 Codex 后检查；队列已暂停": "Some sessions could not be stopped. Reopen Codex and check; queues are paused.",
+  "复制授权链接": "Copy sign-in link",
+  "可粘贴到其他浏览器中完成授权": "Paste into another browser to complete sign-in",
+  "授权链接已复制": "Sign-in link copied",
+  "授权链接已失效，请重新发起授权": "Sign-in link expired; start sign-in again",
+  "无法打开浏览器，请复制授权链接后手动打开": "Could not open browser; copy the sign-in link and open it manually",
+  "重新载入": "Reload",
+  "如验证或第三方登录不兼容，可复制链接到其他浏览器继续。": "If verification or third-party sign-in is incompatible, copy the link to continue in another browser.",
+  "登录页面跳转或验证被拦截，请复制授权链接到其他浏览器继续。": "Sign-in navigation or verification was blocked. Copy the sign-in link to continue in another browser.",
+  "登录页面加载失败，请重新载入或复制授权链接到其他浏览器继续。": "Sign-in failed to load. Reload or copy the sign-in link to continue in another browser."
 }

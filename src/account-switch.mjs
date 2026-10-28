@@ -24,11 +24,11 @@ export function fileStoreConfig(text){
 // The vault is local-only. Public state is built from metadata, never auth objects.
 export function createAccountSwitcher({home,codexHome,secrets=accountVault(home),session=nativeAccountSession,guard=async()=>{},prepareSwitch=async()=>{},quiesce=async()=>()=>{},openDesktop=async()=>{},secure=privateDirectory,now=Date.now}={}){
   const directory=path.join(home,'account-login'),authFile=path.join(codexHome,'auth.json'),configFile=path.join(codexHome,'config.toml');
-  const metadataFile=path.join(home,'account-switch.json');let metadata=readJSON(metadataFile,{profiles:[]}),job=null,busy=false,client=null,closed=false;
+  const metadataFile=path.join(home,'account-switch.json');let metadata=readJSON(metadataFile,{profiles:[]}),job=null,busy=false,client=null,closed=false,authorizationURL=null;
   const lockFile=path.join(home,'account-switch.lock');
   try{const pid=Number(fs.readFileSync(lockFile,'utf8'));if(Number.isSafeInteger(pid)&&pid>0){try{process.kill(pid,0);}catch(error){if(error.code==='ESRCH')fs.unlinkSync(lockFile);}}}catch{}
   if(!fs.existsSync(lockFile)&&fs.existsSync(directory))for(const entry of fs.readdirSync(directory,{withFileTypes:true})){if(entry.isDirectory()&&/^login-[\w-]+$/.test(entry.name))try{cleanup(path.join(directory,entry.name));}catch{}}
-  function state(){return {profiles:metadata.profiles||[],activeId:metadata.activeId??null,restartRequired:metadata.restartRequired===true,busy,job:job?{status:job.status,error:job.error??null}:null};}
+  function state(){return {profiles:metadata.profiles||[],activeId:metadata.activeId??null,restartRequired:metadata.restartRequired===true,busy,canCopyLoginLink:!!authorizationURL,job:job?{status:job.status,error:job.error??null}:null};}
   const persist=()=>atomicJSON(metadataFile,metadata);
   function vault(){const value=secrets.get();return {version:1,profiles:{},...value};}
   function saveProfile(value,auth,account,name){const profile=credentialProfile(auth,account),previous=value.profiles[profile.id];if(!previous&&Object.keys(value.profiles).length>=20)throw Error('最多保存 20 个登录账号');value.profiles[profile.id]={...previous,...profile,name:name??previous?.name??'',auth,updatedAt:now()};return value.profiles[profile.id];}
@@ -48,11 +48,11 @@ export function createAccountSwitcher({home,codexHome,secrets=accountVault(home)
   async function readProfile(folder,{refresh=false,quota=false}={}){const instance=session({home:folder});try{const account=await instance.read({refresh,quota}),auth=readJSON(path.join(folder,'auth.json'));return {profile:credentialProfile(auth,account),account,auth};}finally{await instance.close();}}
   async function login(name){
     if(!safeName(name))throw Error('账号名称无效');if(busy||closed)throw Error('账号操作正在进行，请稍后重试');busy=true;let folder,unlock;
-    try{unlock=acquire();folder=staging();client=session({home:folder});const instance=client;job={status:'starting'};
+    try{unlock=acquire();folder=staging();client=session({home:folder});const instance=client;authorizationURL=null;job={status:'starting'};
       let resolveURL,rejectURL;const urlReady=new Promise((resolve,reject)=>{resolveURL=resolve;rejectURL=reject;});
-      void (async()=>{try{const account=await instance.login(url=>{job={status:'waiting'};resolveURL(url);}),auth=readJSON(path.join(folder,'auth.json'));if(closed)throw Error();const value=vault();saveProfile(value,auth,account,name.trim());saveVault(value);job={status:'completed'};}
+      void (async()=>{try{const account=await instance.login(url=>{authorizationURL=url;job={status:'waiting'};resolveURL(url);}),auth=readJSON(path.join(folder,'auth.json'));if(closed)throw Error();const value=vault();saveProfile(value,auth,account,name.trim());saveVault(value);job={status:'completed'};}
         catch{job={status:'failed',error:'账号授权未完成，请重试'};rejectURL(Error('账号授权未完成，请重试'));}
-        finally{await instance.close();client=null;try{cleanup(folder);}catch{job={status:'failed',error:'无法清理临时登录文件，请重启管理服务'};}finally{unlock();busy=false;}}})();
+        finally{authorizationURL=null;await instance.close();client=null;try{cleanup(folder);}catch{job={status:'failed',error:'无法清理临时登录文件，请重启管理服务'};}finally{unlock();busy=false;}}})();
       const authUrl=await urlReady;return {...state(),authUrl};
     }catch(error){if(!client&&busy){try{if(folder&&fs.existsSync(folder))cleanup(folder);}finally{unlock?.();busy=false;}}throw error;}
   }
@@ -66,7 +66,8 @@ export function createAccountSwitcher({home,codexHome,secrets=accountVault(home)
   async function command(params={},context={}){
     const action=params.action||'status';if(action==='status')return state();
     if(action==='login')return login(params.name||'');
-    if(action==='cancel'){if(client){client.close();}return state();}
+    if(action==='login-link'){if(!authorizationURL||!busy||closed)throw Error('授权链接已失效，请重新发起授权');return {...state(),authUrl:authorizationURL};}
+    if(action==='cancel'){authorizationURL=null;if(client){client.close();}return state();}
     if(action==='rename'||action==='remove'){
       return exclusive(async()=>{const value=vault(),profile=savedProfile(value,params.id);if(!profile)throw Error('找不到已授权账号');
         if(action==='rename'){if(!safeName(params.name))throw Error('账号名称无效');profile.name=params.name.trim();}
@@ -109,6 +110,6 @@ export function createAccountSwitcher({home,codexHome,secrets=accountVault(home)
       return state();
     },true,async()=>{if(!savedProfile(vault(),params.id))throw Error('找不到已授权账号');if(params.force===true||context.automatic===true)await prepareSwitch(context);},context);
   }
-  return {state,command,inspect,opened(id){if(id&&metadata.activeId===id){metadata.restartRequired=false;persist();}},close(){closed=true;client?.close();}};
+  return {state,command,inspect,opened(id){if(id&&metadata.activeId===id){metadata.restartRequired=false;persist();}},close(){closed=true;authorizationURL=null;client?.close();}};
 }
 function atomicText(file,text){const temp=file+'.'+crypto.randomBytes(8).toString('hex')+'.tmp';try{fs.writeFileSync(temp,text,{flag:'wx',mode:0o600});fs.renameSync(temp,file);}finally{try{fs.unlinkSync(temp);}catch{}}}

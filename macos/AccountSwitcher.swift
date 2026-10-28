@@ -8,7 +8,7 @@ import WebKit
 
 private struct SavedLogin:Decodable,Identifiable {let id:String;let email:String;let workspace:String;let name:String;let plan:String?;let quota:QuotaAccount?}
 private struct LoginJob:Decodable {let status:String;let error:String?}
-private struct AccountSwitchState:Decodable {let profiles:[SavedLogin];let activeId:String?;let busy:Bool;let restartRequired:Bool;let job:LoginJob?;let authUrl:String?}
+private struct AccountSwitchState:Decodable {let profiles:[SavedLogin];let activeId:String?;let busy:Bool;let restartRequired:Bool;let job:LoginJob?;let authUrl:String?;let canCopyLoginLink:Bool?}
 
 struct AccountSwitcherView:View {
     @ObservedObject var model:Controller
@@ -30,6 +30,7 @@ struct AccountSwitcherView:View {
                 Button(L("保存当前登录")){Task{await run(["action":"capture"])}}.disabled(disabled)
                 if state?.busy==true{Button(L("取消授权")){Task{await run(["action":"cancel"])}}}
             }
+            if state?.canCopyLoginLink==true{HStack{Button(L("复制授权链接")){Task{await copyLoginLink()}};Text(L("可粘贴到其他浏览器中完成授权")).font(.caption).foregroundStyle(.secondary)}}
             Text(L("切换将启用 Codex 文件登录模式，并保留现有配置与聊天历史。应用内登录不兼容时，请改用系统浏览器。")).font(.caption).foregroundStyle(.secondary)
             if let feedback{Text(L(feedback)).font(.caption).foregroundStyle(.orange)}
             if let job=state?.job{Text(L(job.error ?? jobMessage(job.status))).font(.caption).foregroundStyle(.secondary)}
@@ -64,38 +65,20 @@ struct AccountSwitcherView:View {
     private func request(_ body:[String:Any]) async throws -> AccountSwitchState{try JSONDecoder().decode(AccountSwitchState.self,from:await model.api(ControlAPI.accountSwitch,body:body))}
     private func refresh() async {do{state=try await request(["action":"status"])}catch{feedback=error.localizedDescription}}
     private func run(_ body:[String:Any]) async {busy=true;defer{busy=false};do{if body["action"] as? String == "switch"{if let data=try await switchSavedLogin(model,id:body["id"] as? String ?? ""){state=try JSONDecoder().decode(AccountSwitchState.self,from:data)}}else{state=try await request(body)};feedback=nil}catch{feedback=error.localizedDescription}}
+    private func copyLoginLink() async {
+        do{let next=try await request(["action":"login-link"])
+            guard let raw=next.authUrl,let url=URL(string:raw),url.scheme=="https",["auth.openai.com","chatgpt.com"].contains(url.host ?? ""),url.user==nil,url.password==nil else{throw URLError(.badURL)}
+            NSPasteboard.general.clearContents()
+            guard NSPasteboard.general.setString(raw,forType:.string) else{throw URLError(.cannotWriteToFile)}
+            feedback="授权链接已复制";state=next
+        }catch{feedback=error.localizedDescription}
+    }
     private func login(embedded:Bool) async {
         busy=true;defer{busy=false}
         do{let next=try await request(["action":"login","name":name]);state=next
             guard let raw=next.authUrl,let url=URL(string:raw),url.scheme=="https",["auth.openai.com","chatgpt.com"].contains(url.host ?? "") else{throw URLError(.badURL)}
-            if embedded{AccountLoginBrowser.show(url)}else if !NSWorkspace.shared.open(url){_ = try? await request(["action":"cancel"]);throw URLError(.cannotConnectToHost)}
+            if embedded{AccountLoginBrowser.show(url)}else if !NSWorkspace.shared.open(url){feedback="无法打开浏览器，请复制授权链接后手动打开";name="";return}
             name="";feedback=nil
         }catch{feedback=error.localizedDescription}
     }
-}
-
-private final class AccountLoginBrowser:NSWindowController,WKNavigationDelegate,WKUIDelegate {
-    private static var active:AccountLoginBrowser?
-    private let authorization:URL
-    private let web:WKWebView
-    init(_ url:URL){
-        authorization=url
-        let config=WKWebViewConfiguration();config.websiteDataStore = .nonPersistent();web=WKWebView(frame:.zero,configuration:config)
-        let window=NSWindow(contentRect:NSRect(x:0,y:0,width:560,height:760),styleMask:[.titled,.closable,.resizable],backing:.buffered,defer:false)
-        super.init(window:window);window.title=L("请在浏览器中完成授权");window.center()
-        let fallback=NSButton(title:L("使用系统浏览器"),target:self,action:#selector(openSystem))
-        let stack=NSStackView(views:[fallback,web]);stack.orientation = .vertical;stack.alignment = .leading;stack.spacing=8;window.contentView=stack
-        web.translatesAutoresizingMaskIntoConstraints=false;web.widthAnchor.constraint(equalTo:stack.widthAnchor).isActive=true
-        web.navigationDelegate=self;web.uiDelegate=self;web.load(URLRequest(url:url))
-    }
-    required init?(coder:NSCoder){fatalError("init(coder:) has not been implemented")}
-    static func show(_ url:URL){active?.close();active=AccountLoginBrowser(url);active?.showWindow(nil);active?.window?.makeKeyAndOrderFront(nil)}
-    @objc private func openSystem(){NSWorkspace.shared.open(authorization);close()}
-    private func allowed(_ url:URL)->Bool {
-        if url.scheme=="https",let host=url.host{return ["auth.openai.com","chatgpt.com","accounts.google.com","login.microsoftonline.com","login.live.com","appleid.apple.com"].contains{host==$0 || host.hasSuffix("."+$0)}}
-        guard url.scheme=="http",let raw=URLComponents(url:authorization,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name=="redirect_uri"})?.value,let callback=URL(string:raw),["localhost","127.0.0.1"].contains(callback.host ?? "") else{return false}
-        return url.host==callback.host && url.port==callback.port
-    }
-    func webView(_ webView:WKWebView,decidePolicyFor navigationAction:WKNavigationAction,decisionHandler:@escaping (WKNavigationActionPolicy)->Void){decisionHandler(navigationAction.request.url.map(allowed)==true ? .allow:.cancel)}
-    func webView(_ webView:WKWebView,createWebViewWith configuration:WKWebViewConfiguration,for navigationAction:WKNavigationAction,windowFeatures:WKWindowFeatures)->WKWebView?{if let url=navigationAction.request.url,allowed(url){webView.load(navigationAction.request)};return nil}
 }
