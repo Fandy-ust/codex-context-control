@@ -3,6 +3,18 @@ import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
 import {windowsProcesses} from './platform/windows-system.mjs';
 import {settings,realBinary} from './paths.mjs';
+import {desktopInstallation} from './platform/index.mjs';
+
+// Store updates replace the versioned installation directory while the manager
+// may keep running with settings written for the previous package.
+export function accountDesktopExecutable({platform=process.platform,configured=settings().desktopExecutable,exists=fs.existsSync,discover=desktopInstallation}={}){
+  if(platform==='win32'&&(!configured||windowsStoreAppId(configured)||!exists(configured))){
+    const current=discover()?.executable;
+    if(current&&exists(current))return current;
+  }
+  if(configured&&exists(configured))return configured;
+  return null;
+}
 
 export function accountProcesses({platform=process.platform,list}={}){
   let processes=list?.();
@@ -11,8 +23,9 @@ export function accountProcesses({platform=process.platform,list}={}){
   return processes.filter(p=>Number.isSafeInteger(p.pid)&&p.pid>0&&p.pid!==process.pid&&!/^Z/.test(p.state||'')&&/(?:^|[\\/])(?:codex|codex-context|chatgpt)(?:\.exe)?$/i.test(p.executable||''));
 }
 export const accountProcessBlocker=options=>accountProcesses(options).length>0;
-export function automaticAccountProcesses({list=accountProcesses,bridges=[],desktop=settings().desktopExecutable,platform=process.platform}={}){
-  if(!desktop||!fs.existsSync(desktop))throw Error('请先配置可重新打开的 Codex 桌面应用');
+export function automaticAccountProcesses({list=accountProcesses,bridges=[],desktop=settings().desktopExecutable,platform=process.platform,exists=fs.existsSync,discover=desktopInstallation}={}){
+  desktop=accountDesktopExecutable({platform,configured:desktop,exists,discover});
+  if(!desktop)throw Error('请先配置可重新打开的 Codex 桌面应用');
   if(bridges.some(b=>b.accountSwitchVersion!==1||!Number.isSafeInteger(b.nativePid)))throw Error('请重新打开 Codex 以启用队列自动切换账号');
   const same=(a,b)=>platform==='win32'?a?.toLowerCase()===b?.toLowerCase():a===b;
   const processes=list();
@@ -42,10 +55,10 @@ export function windowsStoreAppId(executable){
   const packageFamily=packageDirectory.match(/^OpenAI\.Codex_.+__([a-z0-9]+)$/i)?.[1];
   return packageFamily&&path.win32.basename(path.win32.dirname(path.win32.dirname(path.win32.dirname(executable)))).toLowerCase()==='windowsapps'?`OpenAI.Codex_${packageFamily}!App`:null;
 }
-export async function openAccountDesktop({platform=process.platform,configured=settings().desktopExecutable,exists=fs.existsSync,launch=spawn,environment=process.env}={}){
+export async function openAccountDesktop({platform=process.platform,configured=settings().desktopExecutable,exists=fs.existsSync,discover=desktopInstallation,launch=spawn,environment=process.env}={}){
   let command,args=[];
-  if(configured&&exists(configured))command=configured;
-  else if(platform==='darwin'){const binary=realBinary(),app=binary.match(/^(.+?\.app)\//)?.[1];if(app){command='/usr/bin/open';args=['-a',app];}}
+  command=accountDesktopExecutable({platform,configured,exists,discover});
+  if(!command&&platform==='darwin'){const binary=realBinary(),app=binary.match(/^(.+?\.app)\//)?.[1];if(app){command='/usr/bin/open';args=['-a',app];}}
   if(!command)throw Error('请手动打开 Codex');
   const appId=platform==='win32'?windowsStoreAppId(command):null;
   if(appId){command='explorer.exe';args=[`shell:AppsFolder\\${appId}`];}

@@ -6,7 +6,7 @@ import path from 'node:path';
 import {createAccountSwitcher,credentialProfile,fileStoreConfig} from '../src/account-switch.mjs';
 import {accountSwitchView} from '../desktop/renderer/account-switch.mjs';
 import {accountVault} from '../src/account-vault.mjs';
-import {openAccountDesktop,windowsStoreAppId,accountProcessBlocker,accountProcesses,automaticAccountProcesses,stopAccountProcesses} from '../src/account-processes.mjs';
+import {accountDesktopExecutable,openAccountDesktop,windowsStoreAppId,accountProcessBlocker,accountProcesses,automaticAccountProcesses,stopAccountProcesses} from '../src/account-processes.mjs';
 import {accountTaskBlockers} from '../src/core/account-switch-blockers.mjs';
 import {allowedLoginNavigation} from '../src/core/account-login-navigation.mjs';
 
@@ -177,6 +177,32 @@ test('Windows desktop launch starts once without changing environment',async()=>
 test('Windows Store application ID is derived only from its package path',()=>{
   assert.equal(windowsStoreAppId('C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe'),'OpenAI.Codex_2p2nqsd0c76g0!App');
   assert.equal(windowsStoreAppId('C:\\Other\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe'),null);
+});
+
+test('Store launch and automatic switching follow successive updates without rewriting saved paths',async()=>{
+  const packagePath=version=>`C:\\Program Files\\WindowsApps\\OpenAI.Codex_${version}_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe`;
+  const configured=packagePath('26.1021.3705.0');let current,launches=0;
+  const discover=()=>({executable:current});
+  // Also cover an update that leaves the previous package files on disk.
+  for(const retained of [false,true])for(const version of ['26.1023.6123.0','26.1029.1000.0']){
+    current=packagePath(version);const exists=file=>file===current||retained&&file===configured;
+    assert.equal(accountDesktopExecutable({platform:'win32',configured,exists,discover}),current);
+    const process={pid:123,executable:current};
+    assert.deepEqual(automaticAccountProcesses({platform:'win32',desktop:configured,exists,discover,list:()=>[process]}),[process]);
+    await openAccountDesktop({platform:'win32',configured,exists,discover,launch:(command,args)=>{
+      assert.equal(command,'explorer.exe');assert.deepEqual(args,['shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App']);launches++;
+      const child={once(event,callback){if(event==='spawn')queueMicrotask(callback);return child;},unref(){}};return child;
+    }});
+  }
+  assert.equal(launches,4);
+});
+
+test('desktop discovery preserves custom Windows and macOS installations and fails safely when absent',async()=>{
+  const discover=()=>{throw Error('should not query Store');};
+  for(const platform of ['win32','darwin'])assert.equal(accountDesktopExecutable({platform,configured:'/custom/app',exists:()=>true,discover}),'/custom/app');
+  assert.equal(accountDesktopExecutable({platform:'win32',configured:'old.exe',exists:()=>false,discover:()=>null}),null);
+  await assert.rejects(openAccountDesktop({platform:'win32',configured:'old.exe',exists:()=>false,discover:()=>null,launch:()=>{throw Error('must not launch');}}),/请手动打开/);
+  assert.throws(()=>automaticAccountProcesses({platform:'win32',desktop:'old.exe',exists:()=>false,discover:()=>null,list:()=>[]}),/配置可重新打开/);
 });
 
 test('Windows Store desktop launch activates the registered application once',async()=>{

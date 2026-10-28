@@ -1,5 +1,10 @@
 # Changes
 
+## 0.27.15 — Reopen Windows Codex after Store updates
+
+- Discover the currently registered Windows Codex installation when reopening after account switching, using Open Codex, and checking automatic account handoffs. Resolve the current package even if a previous version directory still exists.
+- Preserve 0.27.14 authorization link copying and embedded sign-in fixes. Keep macOS launch behavior unchanged and retain the existing update feeds and installation format for upgrades from 0.27.14.
+
 ## 0.27.14 — Embedded sign-in interaction fixes
 
 - Keep verification frames separate from top-level navigation so email sign-in can load its verification dependencies.

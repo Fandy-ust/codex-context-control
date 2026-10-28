@@ -221,7 +221,7 @@ ipcMain.handle('context-manager',async(event,action,params)=>{
   if(action==='hide'){BrowserWindow.fromWebContents(event.sender)?.hide();return {ok:true};}
   if(action==='interaction'){if(event.sender===trayWindow?.webContents){menuDragging=params.dragging===true;if(!menuDragging&&!trayWindow.isFocused())trayWindow.hide();}return {ok:true};}
   if(action==='quit'){app.quit();return {ok:true};}
-  if(action==='open-codex'){const executable=settings().desktopExecutable;if(!executable||!fs.existsSync(executable))throw Error(label('请先安装或运行诊断以识别 Codex','Install first to discover the Codex application'));await openAccountDesktop({configured:executable,environment:codexLaunchEnvironment()});return {ok:true};}
+  if(action==='open-codex'){await openAccountDesktop({environment:codexLaunchEnvironment()});return {ok:true};}
   if(action==='diagnostics')return {version:pkg.version,platform:process.platform,arch:process.arch,serviceVersion:lastState?.version??null,loadedBridgeVersions:lastState?.bridges?.map(b=>b.version)??[],connectedBridges:lastState?.bridgeCount??0,logDirectory:integrationLogDirectory};
   const result=await api(action,params);if(action==='state'){lastState=result;serviceOnline=true;updateTray();}if(action==='quota-refresh'){lastState={...lastState,quota:result};updateTray();}return result;
 });
