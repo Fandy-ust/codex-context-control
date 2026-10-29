@@ -26,7 +26,6 @@ func quotaCreditLabel(_ raw:String?)->String? {
 
 struct AccountQuotaSection:View {
     @ObservedObject var model:Controller
-    private var stale:Bool {!model.serviceAvailable || model.quota?.presentationStale != false}
     private var windows:[QuotaWindow] {[model.selectedQuota?.primary,model.selectedQuota?.secondary].compactMap{$0}.sorted{($0.windowDurationMins ?? Int.max)<($1.windowDurationMins ?? Int.max)}}
     var body:some View {
         TimelineView(.periodic(from:.now,by:1)){timeline in content(now:timeline.date)}
@@ -53,7 +52,6 @@ struct AccountQuotaSection:View {
             if model.selectedQuota?.unlimitedCredits == true{Text(L("额外额度不限量")).font(.system(size:11)).foregroundStyle(.secondary)}
             else if model.selectedQuota?.hasCredits == true && model.selectedQuota?.creditBalance == nil{Text(L("额外额度可用")).font(.system(size:11)).foregroundStyle(.secondary)}
             if let credit=quotaCreditLabel(model.selectedQuota?.creditBalance){Text(credit).font(.system(size:11)).monospacedDigit().foregroundStyle(.secondary)}
-            if stale{Text(L("上次记录，待刷新")).font(.system(size:11)).foregroundStyle(.orange)}
         }.padding(10).frame(maxWidth:.infinity,alignment:.leading).background(.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:9)).padding(.horizontal,4)
     }
 }

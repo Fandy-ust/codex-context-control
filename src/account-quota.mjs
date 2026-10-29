@@ -59,9 +59,9 @@ export function createQuotaManager({read=async()=>{throw Error('等待 ChatGPT �
   const displayStale=isConnected?!!error||!updatedAt||!isConnected(updatedAt):stale;
   return {accounts:Object.entries(accounts).map(([scope,value])=>({...value,scope,current:scope===creditScope,creditBaselines:creditAccounts[scope]??{}})).sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt),buckets,resetNotification:resetState?.scope===creditScope?resetState?.event??null:null,accountScope:creditScope,creditBaselines,updatedAt,loading:!!pending,stale,displayStale,error};
  }
- async function refresh(force=false){
+ async function refresh(force=false,fromObservation=false){
   if(paused)return state();
-  if(pending){await pending;return state();}if(checkedAt&&now()-checkedAt<(force?10000:interval))return state();checkedAt=now();
+  if(pending){await pending;return fromObservation?refresh(false,true):state();}if(!fromObservation&&checkedAt&&now()-checkedAt<(force?10000:interval))return state();checkedAt=now();
   pending=(async()=>{try{
     const response=await read(),observed=normalizeQuota(response),observedAt=Number.isFinite(response.observedAt)?Math.min(response.observedAt,now()):now();if(updatedAt===observedAt)return state();let resetScope=null;
     if(onObservation)try{const scope=await onObservation({buckets:observed,at:observedAt,account:response.account??null});if(typeof scope==='string')resetScope=scope;if(typeof scope==='string'&&scope!==creditScope){creditScope=scope;creditBaselines=creditAccounts[scope]??{};}}catch{/* History failure does not hide current quota. */}
@@ -82,5 +82,5 @@ export function createQuotaManager({read=async()=>{throw Error('等待 ChatGPT �
   saveBaselines();return state();
  }
  function removeAccounts(scopes){for(const scope of scopes){delete accounts[scope];delete creditAccounts[scope];for(const key of Object.keys(preferences.creditSources??{}))if(key.startsWith(scope+':'))delete preferences.creditSources[key];}if(scopes.includes(creditScope)){creditBaselines={};buckets=[];updatedAt=null;}if(scopes.includes(resetState?.scope)){resetState=null;if(resetFile)atomicJSON(resetFile,null);}saveBaselines();}
- return {state,refresh,resetCredits,removeAccounts,async suspend(){paused=true;await pending;return ()=>{paused=false;};},invalidate(){buckets=[];updatedAt=null;checkedAt=0;creditScope=null;creditBaselines={};error=null;saveBaselines();}};
+ return {state,refresh,sync:()=>refresh(false,true),resetCredits,removeAccounts,async suspend(){paused=true;await pending;return ()=>{paused=false;};},invalidate(){buckets=[];updatedAt=null;checkedAt=0;creditScope=null;creditBaselines={};error=null;saveBaselines();}};
 }

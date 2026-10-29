@@ -25,7 +25,7 @@ test('a connected client reading stays current in the UI while automation still 
  assert.doesNotMatch(sidebarCredits(options),/Cached observation/);
  assert.equal(quotaStale(state,false),true,'a service outage still warns');
  connectedAt=null;assert.equal(quotaStale(manager.state()),true,'a client disconnect still warns');
- assert.match(sidebarQuota({...options,quota:manager.state()}),/Cached observation/);
+ assert.doesNotMatch(sidebarQuota({...options,quota:manager.state()}),/Cached observation/);
  connectedAt=1000000;fail=true;await manager.refresh();assert.equal(quotaStale(manager.state()),true,'read failures still warn even with a connected client');
  manager.invalidate();assert.equal(quotaStale(manager.state()),true,'account invalidation cannot inherit the old display status');
 });

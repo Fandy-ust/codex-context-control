@@ -1,3 +1,8 @@
+## 0.27.18
+
+- Remove cached-reading and refresh-needed text from quota displays and tooltips on Windows and macOS.
+- Apply existing client quota notifications immediately instead of waiting for the ten-second local refresh timer. Refresh the visible Windows interface every second using the local service only.
+
 ## 0.27.17
 
 - Keep quota displays current while the client connection that supplied the displayed reading remains connected. Quiet periods no longer show a refresh warning after 20 seconds on Windows or macOS.

@@ -22,10 +22,16 @@ test('only the connected source of the displayed quota suppresses the refresh wa
   await source.call('observeQuota',{...observation,account:null});assert.equal((await request('state')).quota.displayStale,true,'rejected snapshots cannot confirm synchronization');
   await source.call('observeQuota',observation);
   let state=await request('state');assert.equal(state.quota.updatedAt,observation.observedAt);assert.equal(state.quota.stale,true);assert.equal(state.quota.displayStale,false);
+  const next={...observation,observedAt:Date.now(),rateLimitsByLimitId:{codex:{...observation.rateLimitsByLimitId.codex,primary:{...observation.rateLimitsByLimitId.codex.primary,usedPercent:59}}}};
+  await source.call('observeQuota',next);state=await request('state');
+  assert.equal(state.quota.buckets[0].primary.remainingPercent,41,'client notifications must bypass the ten-second local refresh throttle');
+  await source.call('observeQuota',{...next,observedAt:next.observedAt+1,rateLimitsByLimitId:{codex:{...next.rateLimitsByLimitId.codex,primary:{...next.rateLimitsByLimitId.codex.primary,usedPercent:60}}}});
+  state=await request('state');assert.equal(state.quota.buckets[0].primary.remainingPercent,40,'consecutive notifications update without waiting for a polling tick');
+  const latest={...next,observedAt:next.observedAt+1,rateLimitsByLimitId:{codex:{...next.rateLimitsByLimitId.codex,primary:{...next.rateLimitsByLimitId.codex.primary,usedPercent:60}}}};
   const closed=once(source.socket,'close');source.socket.destroy();await closed;
   for(let i=0;i<20;i++){state=await request('state');if(state.bridgeCount===1)break;await new Promise(r=>setTimeout(r,10));}
   assert.equal(state.bridgeCount,1);assert.equal(state.quota.displayStale,true,'an unrelated remaining bridge cannot hide a source disconnect');
-  await other.call('observeQuota',observation);assert.equal((await request('state')).quota.displayStale,false,'reconnected sources may replay their latest snapshot');
+  await other.call('observeQuota',latest);assert.equal((await request('state')).quota.displayStale,false,'reconnected sources may replay their latest snapshot');
   await other.call('observeQuota',{invalidated:true});state=await request('state');assert.equal(state.quota.displayStale,true);assert.deepEqual(state.quota.buckets,[]);
  }finally{
   for(const peer of [source,other])if(peer&&!peer.socket.destroyed){const closed=once(peer.socket,'close');peer.socket.destroy();await closed;}

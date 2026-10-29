@@ -12,7 +12,7 @@ test('credit badge abbreviates large balances, retains exact tooltip and disting
  assert.match(badge({balance:'30240.123456'}),/30\.2K/);assert.match(badge({balance:'30240.123456'}),/30,240\.123456/);
  assert.match(badge({balance:'0'}),/>0<\/strong>/);assert.equal(badge({hasCredits:true}),'');assert.equal(badge({balance:'invalid'}),'');
  assert.match(badge({balance:'1250000'}),/1\.3M/);assert.match(badge({unlimited:true}),/∞/);
- assert.match(badge({balance:'23'},true),/Cached observation/);assert.match(badge({balance:'23'}),/data-action="quota-details"/);
+ assert.doesNotMatch(badge({balance:'23'},true),/Cached observation/);assert.match(badge({balance:'23'}),/data-action="quota-details"/);
 });
 test('quota thresholds use strict comparisons, including zero and unknown',()=>{
  for(const [value,level] of [[100,''],[20,''],[19.9,'warning'],[5,'warning'],[4.9,'critical'],[0,'critical'],[null,''],[NaN,'']])assert.equal(quotaLevel(value),level);
@@ -28,7 +28,7 @@ test('missing quota is unavailable; explicit credits-only accounts survive norma
  assert.match(render({rateLimits:{credits:{unlimited:true}}}),/Unlimited extra credits/);
  assert.match(render({rateLimits:{credits:{balance:'23'}}}),/Extra credits: 23/);
  assert.match(render({rateLimits:{credits:{hasCredits:true}}}),/Extra credits available/);
- const cached=sidebarQuota({quota:{buckets:normalizeQuota({rateLimits:{primary:{usedPercent:98}}}),stale:false},available:false,t,escape});assert.match(cached,/Cached observation/);assert.match(cached,/critical/);
+ const cached=sidebarQuota({quota:{buckets:normalizeQuota({rateLimits:{primary:{usedPercent:98}}}),stale:false},available:false,t,escape});assert.doesNotMatch(cached,/Cached observation/);assert.match(cached,/critical/);
 });
 test('countdown crosses days, hours, seconds and expiry without negative values',()=>{
  const now=2000000000000,reset=seconds=>quotaCountdown(now/1000+seconds,t,now);

@@ -28,7 +28,8 @@ struct QuotaSidebarView:View {
     @State private var switching=false
     @State private var switchError:String?
     private func accountHint(_ account:QuotaAccount)->String{
-        var hint=(account.label ?? "")+" · "+L(account.current ? "当前登录":account.remote==true ? "其他设备同步缓存":"上次记录，待刷新")
+        var hint=(account.label ?? "")
+        if account.current{hint+=" · "+L("当前登录")}else if account.remote==true{hint+=" · "+L("其他设备同步缓存")}
         if let source=account.sourceName{hint+=" · "+source}
         if let at=account.updatedAt{hint+=" · "+Date(timeIntervalSince1970:Double(at)/1000).formatted(date:.abbreviated,time:.shortened)}
         return hint

@@ -2,9 +2,9 @@
 
 ## 保留范围
 
-- 保留最新 5 个公开普通版本的完整安装包、自动更新包、校验文件和更新清单。
+- 0.27 系列保留现有 Release；其他系列仅保留该系列最新的现有 Release，并将较早版本的更新说明整合到保留版本。
 - 额外保留关键回退版本：0.23.5（旧文档引用与历史回退）、0.19.6（共用核心与双平台基线）、0.16.2（早期 Mac 轻量版），以及演示视频 Release。
-- `latest` 始终指向当前推荐版本。删除历史 Release 不删除 Git 标签；原发布说明先归档到 [历史索引](releases/archive/index.md)。
+- `latest` 始终指向当前推荐版本。删除历史 Release 不删除 Git 标签；更新内容整合在对应系列保留版本和 CHANGELOG。
 - 过期草稿可以清理。草稿完整元数据仅备份在维护者本机的 `build/release-backups/`，不会自动公开。
 - 不自动定期删除 Release。维护前先检查保留计划和文档引用；最新版本、自动更新文件与关键回退包不能拆开清理。
 
@@ -28,4 +28,4 @@ node scripts/maintain-releases.mjs --apply    # 重新读取计划、备份后�
 
 ## English summary
 
-Keep the latest five normal public builds, the explicitly pinned fallback milestones, and the demo release. Preserve Git tags and archive historical notes before deleting retired releases. Development artifacts expire after seven days; public releases require an explicit publish action and successful builds on both platforms. Cleanup is manual and defaults to a read-only plan. Never remove the current update feeds or split a retained release's installer/checksum/update assets.
+Keep the 0.27 releases, the latest existing release of each other series, and the demo release. Consolidate earlier changes into the retained release and preserve Git tags. Development artifacts expire after seven days; public releases require an explicit publish action and successful builds on both platforms. Cleanup is manual and defaults to a read-only plan. Never remove the current update feeds or split a retained release's installer/checksum/update assets.

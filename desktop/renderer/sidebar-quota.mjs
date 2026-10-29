@@ -9,7 +9,7 @@ export function sidebarCredits({quota,pool,available=true,observation,t,escape:e
   const [integer,fraction]=String(raw).split('.');
   const full=unlimited?t('不限量','Unlimited'):integer.replace(/\B(?=(\d{3})+(?!\d))/g,',')+(fraction?'.'+fraction:'');
   const short=unlimited?'∞':new Intl.NumberFormat('en-US',{notation:'compact',maximumFractionDigits:1}).format(Number(raw));
-  const stale=quotaStale(quota,available),label=`Credits: ${full}${stale?' · '+t('上次记录，待刷新','Cached observation; refresh needed'):''}`;
+  const stale=quotaStale(quota,available),label=`Credits: ${full}`;
   const remaining=unlimited?100:creditRemaining(raw,observation);
   const outline=quotaOutlinePath(44,44);
   const ring=`<svg class="quota-outline" data-remaining="${remaining}" viewBox="0 0 44 44" aria-hidden="true"><path class="quota-outline-track" d="${outline}"/><path class="quota-outline-value" d="${outline}" pathLength="100" stroke-dasharray="${remaining} 100" ${remaining===0?'visibility="hidden"':''}/><circle class="quota-outline-dot" r="2.5" ${remaining===0?'visibility="hidden"':''}/></svg>`;
@@ -54,7 +54,7 @@ export function sidebarQuota({quota,pool,available=true,t,escape:e,language='zh'
   }).join('');
   const empty=quota?.loading?t('正在读取额度…','Reading quota…'):bucket?.unlimitedCredits?t('额外额度不限量','Unlimited extra credits'):bucket?.creditBalance!=null?t('额外额度：{0}','Extra credits: {0}',bucket.creditBalance):bucket?.hasCredits?t('额外额度可用','Extra credits available'):t('额度暂不可用','Quota unavailable');
   const tag=readOnly?'div':'button';
-  return `<${tag} class="sidebar-quota ${windows.length>1?'multiple':'single'} ${stale&&!cached?'stale':''}" ${readOnly?'role="group"':'data-action="quota-details" aria-haspopup="dialog"'} aria-label="${e(label)}" title="${e(bucket?.name||label)}">${rows||`<span class="sidebar-quota-empty">${e(empty)}</span>`}${stale&&bucket&&!cached?`<span class="sidebar-quota-stale">${e(t('上次记录，待刷新','Cached observation; refresh needed'))}</span>`:''}</${tag}>`;
+  return `<${tag} class="sidebar-quota ${windows.length>1?'multiple':'single'} ${stale&&!cached?'stale':''}" ${readOnly?'role="group"':'data-action="quota-details" aria-haspopup="dialog"'} aria-label="${e(label)}" title="${e(bucket?.name||label)}">${rows||`<span class="sidebar-quota-empty">${e(empty)}</span>`}</${tag}>`;
 }
 
 export function accountQuotaSummary(options){
@@ -72,6 +72,6 @@ export function sidebarAccounts(options){
     const label=account.label||account.scope.slice(-8),observed=account.updatedAt?new Date(account.updatedAt).toLocaleString():'';
     const switchLabel=t('快速切换到 {0}','Quick switch to {0}',label);
     const quick=account.loginId&&!current?`<button class="sidebar-account-switch" data-action="login-switch" data-id="${e(account.loginId)}" data-name="${e(label)}" ${quota.accountSwitchBusy?'disabled':''} aria-label="${e(switchLabel)}" title="${e(switchLabel)}">⇄</button>`:'';
-    return `<div class="sidebar-account ${current?'current':'inactive'}"><div class="sidebar-account-name" title="${e(label+(current?' · '+t('当前登录','Signed in'):' · '+t(account.remote?'其他设备同步缓存':'上次记录，待刷新',account.remote?'Cached observation from another device':'Cached observation; refresh needed')+' '+(account.sourceName||'')+' '+observed))}">${current?'<i aria-hidden="true"></i>':''}<span>${e(label)}${account.remote?' <small aria-hidden="true">☁</small>':''}</span>${quick}</div><div class="sidebar-footer-row">${row(value,!current)}</div></div>`;
+    return `<div class="sidebar-account ${current?'current':'inactive'}"><div class="sidebar-account-name" title="${e(label+(current?' · '+t('当前登录','Signed in'):' · '+(account.remote?t('其他设备同步缓存','Cached observation from another device'):'')+' '+(account.sourceName||'')+' '+observed))}">${current?'<i aria-hidden="true"></i>':''}<span>${e(label)}${account.remote?' <small aria-hidden="true">☁</small>':''}</span>${quick}</div><div class="sidebar-footer-row">${row(value,!current)}</div></div>`;
   }).join('')}</div>`;
 }

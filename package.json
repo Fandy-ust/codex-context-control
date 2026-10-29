@@ -1,6 +1,6 @@
 {
   "name": "codex-context-control",
-  "version": "0.27.17",
+  "version": "0.27.18",
   "private": true,
   "type": "module",
   "description": "Local Codex extension for context control and quota-aware task queues",

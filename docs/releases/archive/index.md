@@ -6,11 +6,8 @@
 
 ## 保留的下载版本 / Retained downloads
 
-- [v0.26.3-preview.1](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.26.3-preview.1)
+- [v0.26.7-preview.1](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.26.7-preview.1)
 - [v0.25.3-preview.1](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.25.3-preview.1)
-- [v0.25.2-preview.1](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.25.2-preview.1)
-- [v0.25.1-preview.1](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.25.1-preview.1)
-- [v0.25.0-preview.1](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.25.0-preview.1)
 - [v0.23.5-preview.1](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.23.5-preview.1)
 - [v0.19.6-preview.1](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.19.6-preview.1)
 - [v0.16.2-preview.1](https://github.com/Fandy-ust/codex-context-control/releases/tag/v0.16.2-preview.1)

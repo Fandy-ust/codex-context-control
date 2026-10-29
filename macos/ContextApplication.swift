@@ -89,7 +89,7 @@ import AppKit
     private func updateStatusIcon(){
         let quotaSummary=model.selectedQuota.map{bucket in [bucket.primary,bucket.secondary].compactMap{$0}.map{L("{0}剩余 {1}%",quotaPeriod($0),Int($0.remainingPercent.rounded()))}.joined(separator:" · ")} ?? L("额度暂不可用")
         let quotaStale = !model.serviceAvailable || model.quota?.presentationStale != false
-        let quotaTooltip=quotaStale ? L("上次记录，待刷新")+" · "+quotaSummary:quotaSummary
+        let quotaTooltip=quotaSummary
         let busiest=model.busiestContext
         let summary=model.runningChats.isEmpty ? (model.serviceAvailable ? L("暂无运行中的聊天"):L("等待连接")) : L("{0} 个运行中 · {1}", model.runningChats.count, busiest.map{L("最高占用 {0}", $0.contextPercentage)} ?? L("等待用量读回"))
         statusController.update(bucket:model.selectedQuota,stale:quotaStale,tooltip:L("Codex 额度 · {0}",quotaTooltip)+"\nContext Manager · \(summary)")
