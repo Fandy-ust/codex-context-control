@@ -1,7 +1,7 @@
 export function selectedQuota(quota,id){return quota?.buckets?.find(bucket=>bucket.id===id)||quota?.buckets?.[0]||null;}
 export function quotaWindows(bucket){return [bucket?.primary,bucket?.secondary].filter(window=>window&&Number.isFinite(window.remainingPercent)).sort((a,b)=>(a.windowDurationMins??Infinity)-(b.windowDurationMins??Infinity));}
 export function quotaRemaining(bucket){const windows=quotaWindows(bucket);return windows.length?Math.max(0,Math.min(100,Math.min(...windows.map(window=>window.remainingPercent)))):null;}
-export function quotaStale(quota,available=true){return !available||quota?.stale!==false;}
+export function quotaStale(quota,available=true){return !available||(quota?.displayStale??quota?.stale)!==false;}
 export function quotaLevel(remaining){return !Number.isFinite(remaining)?'':remaining<5?'critical':remaining<20?'warning':'';}
 export function quotaCountdown(resetsAt,t,now=Date.now(),compact=false){
  if(!Number.isFinite(resetsAt)||resetsAt<=0)return t('重置时间暂不可用','Reset time unavailable');

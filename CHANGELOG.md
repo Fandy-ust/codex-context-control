@@ -1,3 +1,9 @@
+## 0.27.17
+
+- Keep quota displays current while the client connection that supplied the displayed reading remains connected. Quiet periods no longer show a refresh warning after 20 seconds on Windows or macOS.
+- Retain warnings for disconnected clients, missing observations and read failures. Preserve observation timestamps and age checks for task queues, Credits protection and baseline resets.
+- Clarify that quota refresh reads existing client observations locally and does not trigger an extra server request.
+
 ## 0.27.16
 
 - Replace quota polling runtimes with passive synchronization of existing ChatGPT/Codex account responses and rate-limit updates on macOS and Windows.

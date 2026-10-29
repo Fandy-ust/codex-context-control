@@ -9,9 +9,27 @@ import {createQuotaObserver} from '../src/passive-quota.mjs';
 import {createPassiveQuotaStore} from '../src/passive-quota-store.mjs';
 import {createQuotaManager} from '../src/account-quota.mjs';
 import {Bridge} from '../src/bridge.mjs';
+import {quotaStale} from '../src/quota-display.mjs';
+import {sidebarQuota,sidebarCredits} from '../desktop/renderer/sidebar-quota.mjs';
 
 const account={type:'chatgpt',email:'test@example.test',planType:'plus'};
 const limits={codex:{primary:{usedPercent:20,windowDurationMins:300,resetsAt:1900000000}}};
+test('a connected client reading stays current in the UI while automation still requires recent data',async()=>{
+ let now=1000000,connectedAt=null,fail=false;
+ const manager=createQuotaManager({now:()=>now,isConnected:at=>at===connectedAt,read:async()=>{if(fail)throw Error('offline');return {observedAt:1000000,rateLimits:{primary:{usedPercent:20},credits:{balance:'6.9'}}};}});
+ await manager.refresh();assert.equal(quotaStale(manager.state()),true,'disk cache alone does not confirm client synchronization');
+ connectedAt=1000000;now+=120000;
+ const state=manager.state();assert.equal(state.stale,true,'automation must still reject old readings');assert.equal(state.updatedAt,1000000);assert.equal(quotaStale(state),false);
+ const options={quota:state,t:(zh,en)=>en,escape:String};
+ assert.doesNotMatch(sidebarQuota(options),/Cached observation|sidebar-quota-stale/);
+ assert.doesNotMatch(sidebarCredits(options),/Cached observation/);
+ assert.equal(quotaStale(state,false),true,'a service outage still warns');
+ connectedAt=null;assert.equal(quotaStale(manager.state()),true,'a client disconnect still warns');
+ assert.match(sidebarQuota({...options,quota:manager.state()}),/Cached observation/);
+ connectedAt=1000000;fail=true;await manager.refresh();assert.equal(quotaStale(manager.state()),true,'read failures still warn even with a connected client');
+ manager.invalidate();assert.equal(quotaStale(manager.state()),true,'account invalidation cannot inherit the old display status');
+});
+
 test('passive snapshots merge sparse limit notifications, retain original time and clear on account changes',async()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'passive-quota-'));let now=1000000;
  try{

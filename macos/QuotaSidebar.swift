@@ -59,7 +59,7 @@ struct QuotaSidebarAccountRow:View {
     var open:()->Void
     private var bucket:QuotaBucket?{guard let account else{return model.selectedQuota};if account.current,let selected=model.selectedQuota{return selected};return account.buckets.first{$0.id==model.selectedQuotaID} ?? account.buckets.first}
     private var baseline:CreditBaseline?{guard let account,!account.current else{return model.selectedCreditBaseline};guard let id=bucket?.id else{return nil};return account.creditBaselines?[id] ?? nil}
-    private var stale:Bool{account?.current==false ? false:!model.serviceAvailable || model.quota?.stale==true}
+    private var stale:Bool{account?.current==false ? false:!model.serviceAvailable || model.quota?.presentationStale != false}
     private var windows:[QuotaWindow]{[bucket?.primary,bucket?.secondary].compactMap{$0}.sorted{($0.windowDurationMins ?? 0)<($1.windowDurationMins ?? 0)}}
     private var credits:Double?{bucket?.creditBalance.flatMap(Double.init)}
     private var shortCredits:String{guard let value=credits else{return "—"};let scale:Double=value>=1e12 ? 1e12:value>=1e9 ? 1e9:value>=1e6 ? 1e6:value>=1e3 ? 1e3:1;let suffix=scale==1e12 ? "T":scale==1e9 ? "B":scale==1e6 ? "M":scale==1e3 ? "K":"";return (value/scale).formatted(.number.precision(.fractionLength(0...1)).locale(Locale(identifier:"en_US")))+suffix}

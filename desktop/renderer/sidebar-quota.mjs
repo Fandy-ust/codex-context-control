@@ -58,7 +58,7 @@ export function sidebarQuota({quota,pool,available=true,t,escape:e,language='zh'
 }
 
 export function accountQuotaSummary(options){
-  const value={...options,quota:{...options.quota,stale:false,loading:false},readOnly:true,cached:true};
+  const value={...options,quota:{...options.quota,stale:false,displayStale:false,loading:false},readOnly:true,cached:true};
   return `<div class="sidebar-footer-row">${sidebarCredits({...value,observation:options.quota?.creditBaselines?.[selectedQuota(options.quota,options.pool)?.id]})}${sidebarQuota(value)}</div>`;
 }
 

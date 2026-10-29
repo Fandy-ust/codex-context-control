@@ -1376,5 +1376,6 @@
   "重新载入": "Reload",
   "如验证或第三方登录不兼容，可复制链接到其他浏览器继续。": "If verification or third-party sign-in is incompatible, copy the link to continue in another browser.",
   "登录页面跳转或验证被拦截，请复制授权链接到其他浏览器继续。": "Sign-in navigation or verification was blocked. Copy the sign-in link to continue in another browser.",
-  "登录页面加载失败，请重新载入或复制授权链接到其他浏览器继续。": "Sign-in failed to load. Reload or copy the sign-in link to continue in another browser."
+  "登录页面加载失败，请重新载入或复制授权链接到其他浏览器继续。": "Sign-in failed to load. Reload or copy the sign-in link to continue in another browser.",
+  "同步 Codex 客户端已有额度数据；刷新只读取本地记录。": "Sync existing Codex client quota data; refresh only reads local observations."
 }

@@ -72,7 +72,7 @@ export async function startDaemon() {
   const bridges=new Map();const owners=new Map();
   const quotaAnalytics=createQuotaAnalyticsService();
   const passiveQuota=createPassiveQuotaStore({home:root});
-  const quota=createQuotaManager({read:()=>passiveQuota.read(),home:root,onObservation:async observation=>{const scope=await quotaAnalytics.record(observation);await cloudSync.command({action:'status'}).catch(()=>{});return scope;}});
+  const quota=createQuotaManager({read:()=>passiveQuota.read(),home:root,isConnected:at=>[...bridges.values()].some(b=>b.quotaObservedAt===at),onObservation:async observation=>{const scope=await quotaAnalytics.record(observation);await cloudSync.command({action:'status'}).catch(()=>{});return scope;}});
   let creditsProtection=null;
   const activationFile=path.join(root,'quota-activation.json');
   const quotaActivation=createQuotaActivation({load:()=>{try{return JSON.parse(fs.readFileSync(activationFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(activationFile,value),quota,probe:runQuotaProbe,protection:()=>creditsProtection?.state()??null,recommend:()=>quotaAnalytics.activationRecommendation()});
@@ -194,7 +194,7 @@ export async function startDaemon() {
       return extensionState();
     }
     if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,creditsStopVersion:p.creditsStopVersion===1?1:null,nativePid:Number.isSafeInteger(p.nativePid)&&p.nativePid>0?p.nativePid:null,accountSwitchVersion:p.accountSwitchVersion===1?1:null,compensationVersion:[1,2,3].includes(p.compensationVersion)?p.compensationVersion:null,taskQueueVersion:p.taskQueueVersion==null?null:p.taskQueueVersion===4?4:0,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
-    if(op==='observeQuota'){if(!bridges.has(peer))throw Error('未注册运行时连接');if(!accountTransition&&!queueAccountAuto?.state().busy){if(p.invalidated===true){passiveQuota.invalidate();quota.invalidate();}else passiveQuota.observe(p);}return {ok:true};}
+    if(op==='observeQuota'){if(!bridges.has(peer))throw Error('未注册运行时连接');if(!accountTransition&&!queueAccountAuto?.state().busy){if(p.invalidated===true){passiveQuota.invalidate();quota.invalidate();}else if(passiveQuota.observe(p))bridges.get(peer).quotaObservedAt=p.observedAt;}return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180||['__proto__','constructor','prototype'].includes(p.id))throw new Error('聊天 ID 无效');

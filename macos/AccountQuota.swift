@@ -26,7 +26,7 @@ func quotaCreditLabel(_ raw:String?)->String? {
 
 struct AccountQuotaSection:View {
     @ObservedObject var model:Controller
-    private var stale:Bool {!model.serviceAvailable || model.quota?.stale == true}
+    private var stale:Bool {!model.serviceAvailable || model.quota?.presentationStale != false}
     private var windows:[QuotaWindow] {[model.selectedQuota?.primary,model.selectedQuota?.secondary].compactMap{$0}.sorted{($0.windowDurationMins ?? Int.max)<($1.windowDurationMins ?? Int.max)}}
     var body:some View {
         TimelineView(.periodic(from:.now,by:1)){timeline in content(now:timeline.date)}

@@ -42,7 +42,7 @@ export function normalizeQuota(response){
  const entries=source&&typeof source==='object'&&Object.keys(source).length?Object.entries(source):response?.rateLimits?[['codex',response.rateLimits]]:[];
  return entries.map(([id,value])=>({id,name:typeof value?.limitName==='string'?value.limitName.slice(0,100):id,primary:window(value?.primary),secondary:window(value?.secondary),creditBalance:creditBalance(value?.credits),hasCredits:value?.credits?.hasCredits===true,unlimitedCredits:value?.credits?.unlimited===true})).filter(v=>v.primary||v.secondary||v.creditBalance!=null||v.hasCredits||v.unlimitedCredits).sort((a,b)=>(a.id==='codex'?-1:b.id==='codex'?1:a.id.localeCompare(b.id)));
 }
-export function createQuotaManager({read=async()=>{throw Error('等待 ChatGPT 同步额度');},now=Date.now,interval=10000,home=null,onObservation=null}={}){
+export function createQuotaManager({read=async()=>{throw Error('等待 ChatGPT 同步额度');},now=Date.now,interval=10000,home=null,onObservation=null,isConnected=null}={}){
  let buckets=[],updatedAt=null,checkedAt=0,error=null,pending,paused=false;
  const preferencesFile=home?path.join(home,'quota-preferences.json'):null;
  let preferences;try{preferences=preferencesFile?readJSON(preferencesFile,{}):{};}catch{preferences={};}
@@ -52,7 +52,13 @@ export function createQuotaManager({read=async()=>{throw Error('等待 ChatGPT �
  const creditAccounts=preferences?.creditAccounts??{};
  const accounts=preferences?.accounts??{};
  const saveBaselines=()=>{if(creditScope)creditAccounts[creditScope]=creditBaselines;if(preferencesFile)atomicJSON(preferencesFile,{...preferences,accounts,creditScope,creditAccounts,creditBaselines});};
- function state(){return {accounts:Object.entries(accounts).map(([scope,value])=>({...value,scope,current:scope===creditScope,creditBaselines:creditAccounts[scope]??{}})).sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt),buckets,resetNotification:resetState?.scope===creditScope?resetState?.event??null:null,accountScope:creditScope,creditBaselines,updatedAt,loading:!!pending,stale:!!error||!!updatedAt&&now()-updatedAt>interval*2,error};}
+ function state(){
+  const stale=!!error||!!updatedAt&&now()-updatedAt>interval*2;
+  // A quiet connected client still has the same last reading. Keep age-based
+  // freshness for automation, independently of the quota display warning.
+  const displayStale=isConnected?!!error||!updatedAt||!isConnected(updatedAt):stale;
+  return {accounts:Object.entries(accounts).map(([scope,value])=>({...value,scope,current:scope===creditScope,creditBaselines:creditAccounts[scope]??{}})).sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt),buckets,resetNotification:resetState?.scope===creditScope?resetState?.event??null:null,accountScope:creditScope,creditBaselines,updatedAt,loading:!!pending,stale,displayStale,error};
+ }
  async function refresh(force=false){
   if(paused)return state();
   if(pending){await pending;return state();}if(checkedAt&&now()-checkedAt<(force?10000:interval))return state();checkedAt=now();
