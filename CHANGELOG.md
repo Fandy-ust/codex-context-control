@@ -1,3 +1,9 @@
+## 0.27.16
+
+- Replace quota polling runtimes with passive synchronization of existing ChatGPT/Codex account responses and rate-limit updates on macOS and Windows.
+- Preserve original observation timestamps, merge sparse quota buckets, and clear cached observations on account changes.
+- Automatic and manual quota refresh no longer initialize a new Codex runtime or fetch model/plugin catalogs. Restart the client once after upgrading to attach the new observer.
+
 # Changes
 
 ## 0.27.15 — Reopen Windows Codex after Store updates

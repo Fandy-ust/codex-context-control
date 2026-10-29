@@ -42,7 +42,7 @@ export function normalizeQuota(response){
  const entries=source&&typeof source==='object'&&Object.keys(source).length?Object.entries(source):response?.rateLimits?[['codex',response.rateLimits]]:[];
  return entries.map(([id,value])=>({id,name:typeof value?.limitName==='string'?value.limitName.slice(0,100):id,primary:window(value?.primary),secondary:window(value?.secondary),creditBalance:creditBalance(value?.credits),hasCredits:value?.credits?.hasCredits===true,unlimitedCredits:value?.credits?.unlimited===true})).filter(v=>v.primary||v.secondary||v.creditBalance!=null||v.hasCredits||v.unlimitedCredits).sort((a,b)=>(a.id==='codex'?-1:b.id==='codex'?1:a.id.localeCompare(b.id)));
 }
-export function createQuotaManager({read=()=>readAccountQuota({includeAccount:true}),now=Date.now,interval=10000,home=null,onObservation=null}={}){
+export function createQuotaManager({read=async()=>{throw Error('等待 ChatGPT 同步额度');},now=Date.now,interval=10000,home=null,onObservation=null}={}){
  let buckets=[],updatedAt=null,checkedAt=0,error=null,pending,paused=false;
  const preferencesFile=home?path.join(home,'quota-preferences.json'):null;
  let preferences;try{preferences=preferencesFile?readJSON(preferencesFile,{}):{};}catch{preferences={};}
@@ -57,7 +57,7 @@ export function createQuotaManager({read=()=>readAccountQuota({includeAccount:tr
   if(paused)return state();
   if(pending){await pending;return state();}if(checkedAt&&now()-checkedAt<(force?10000:interval))return state();checkedAt=now();
   pending=(async()=>{try{
-    const response=await read(),observed=normalizeQuota(response),observedAt=now();let resetScope=null;
+    const response=await read(),observed=normalizeQuota(response),observedAt=Number.isFinite(response.observedAt)?Math.min(response.observedAt,now()):now();if(updatedAt===observedAt)return state();let resetScope=null;
     if(onObservation)try{const scope=await onObservation({buckets:observed,at:observedAt,account:response.account??null});if(typeof scope==='string')resetScope=scope;if(typeof scope==='string'&&scope!==creditScope){creditScope=scope;creditBaselines=creditAccounts[scope]??{};}}catch{/* History failure does not hide current quota. */}
     const next={...creditBaselines};for(const bucket of observed)if(!['__proto__','constructor','prototype'].includes(bucket.id))next[bucket.id]=observeCreditBalance(next[bucket.id],bucket.creditBalance);
     if(JSON.stringify(next)!==JSON.stringify(creditBaselines)){creditBaselines=next;saveBaselines();}

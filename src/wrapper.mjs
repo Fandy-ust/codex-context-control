@@ -42,7 +42,7 @@ if(!enhanced){
   let peer,closed=false,bridge;
   bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{
     await ensureDaemon();return request('forkBudget',{id,model,contextCeiling:!!ceiling?.version});
-  },{resolveCompensation:createCompensationResolver(),accountingWindowLimit:ceiling?.accountingWindowLimit,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling?.version});}});
+  },{observeQuota:value=>peer?.call('observeQuota',value),resolveCompensation:createCompensationResolver(),accountingWindowLimit:ceiling?.accountingWindowLimit,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling?.version});}});
   async function attach(){
     if(closed)return;
     try{
@@ -61,6 +61,7 @@ if(!enhanced){
       if(closed){peer.close();return;}
       await peer.call('registerBridge',{pid:process.pid,nativePid:child.pid,accountSwitchVersion:1,creditsStopVersion:1,version:bridgeVersion,taskQueueVersion:4,compensationVersion:ceiling?.accountingWindowLimit?3:2,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
       if(closed){peer.close();return;}
+      if(bridge.quotaObserver.snapshot)await peer.call('observeQuota',bridge.quotaObserver.snapshot);
       for(const record of bridge.records.values())bridge.notify(record);
       peer.socket.once('close',()=>{peer=null;if(!closed)setTimeout(attach,1000).unref();});
     }catch(error){integrationLog('wrapper.service_attach_failed',{message:error.message});if(!closed)setTimeout(attach,1500).unref();}

@@ -1,3 +1,4 @@
+import {createQuotaObserver} from './passive-quota.mjs';
 import readline from 'node:readline';
 import {taskCommand} from './core/task-command.mjs';
 import fs from 'node:fs';
@@ -24,6 +25,7 @@ export class Bridge {
   constructor(child,input,output,publish=async()=>({}),resolveFork=async()=>null,options={}) {
     this.child=child;this.input=input;this.output=output;this.publish=publish;this.records=new Map();this.internal=new Map();this.external=new Map();this.sequence=0;this.prefix=`context-control:${randomUUID()}:`;
     this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;this.resolveNewChatBudget=options.resolveNewChatBudget;this.nativeBudgetSupport=options.nativeBudgetSupport===true;
+    this.quotaObserver=createQuotaObserver(options.observeQuota);
     this.resolveCompensation=options.resolveCompensation;this.accountingWindowLimit=options.accountingWindowLimit;
     this.frontLines=readline.createInterface({input,crlfDelay:Infinity});this.backLines=readline.createInterface({input:child.stdout,crlfDelay:Infinity});
     this.frontLines.on('line',line=>this.fromClient(line));this.backLines.on('line',line=>this.fromServer(line));
@@ -153,12 +155,14 @@ export class Bridge {
   fromServer(line) {
     let m;try{m=JSON.parse(line);}catch{this.writeFrontend(line);return;}
     if(!m||typeof m!=='object'||Array.isArray(m)){this.writeFrontend(line);return;}
+    if(m.method)this.quotaObserver.observe(m.method,m.params);
     if(!m.method&&this.internal.has(key(m.id))){const item=this.internal.get(key(m.id));this.internal.delete(key(m.id));clearTimeout(item.timer);m.error?item.reject(Object.assign(new Error(m.error.message),{confirmed:true,errorCode:m.error.data?.codexErrorInfo==='usageLimitExceeded'?'usageLimitExceeded':null})):item.resolve(m.result);return;}
     if(!m.method&&m.id!=null){
       const pending=this.external.get(key(m.id));this.external.delete(key(m.id));
       if(pending?.method==='initialize'&&m.result&&!m.error)this.initialized=true;
       if(pending?.method==='turn/start'&&m.error){const r=this.records.get(pending.threadId);if(r)r.compensationTurnPending=false;}
       if(pending&&!m.error){
+        this.quotaObserver.observe(pending.method,m.result);
         const t=m.result?.thread;
         if(t?.id&&['thread/start','thread/resume','thread/fork'].includes(pending.method)) {
           // Resuming an already loaded thread does not necessarily apply its

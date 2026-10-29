@@ -30,3 +30,7 @@ These detailed historical reports remain in their original Chinese; the English 
 - [Validation history](../VALIDATION.md)
 - [Cache writes](../CACHE-WRITE-RESEARCH.md)
 - [Cache and speed](../CACHE-SPEED-RESEARCH.md)
+
+### Passive quota sync
+
+Quota displays now reuse account and rate-limit responses or notifications already produced by the connected ChatGPT/Codex client. Context Manager does not launch a separate runtime or send a quota request for automatic or manual quota refresh. When the client is closed, disconnected, or has not supplied a recent reading, the last observation remains cached and is marked stale. Restart ChatGPT/Codex after upgrading the bridge. Explicit quota activation probes and account sign-in remain separate actions. This shared service behavior applies on macOS and Windows.

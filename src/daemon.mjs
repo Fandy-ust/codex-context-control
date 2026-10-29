@@ -1,3 +1,4 @@
+import {createPassiveQuotaStore} from './passive-quota-store.mjs';
 import {stopForCredits} from './credits-stop.mjs';
 import {createCreditsProtection} from './credits-protection.mjs';
 import {integrationLog} from './diagnostic-log.mjs';
@@ -70,7 +71,8 @@ export async function startDaemon() {
   store.save();
   const bridges=new Map();const owners=new Map();
   const quotaAnalytics=createQuotaAnalyticsService();
-  const quota=createQuotaManager({home:root,onObservation:async observation=>{const scope=await quotaAnalytics.record(observation);await cloudSync.command({action:'status'}).catch(()=>{});return scope;}});
+  const passiveQuota=createPassiveQuotaStore({home:root});
+  const quota=createQuotaManager({read:()=>passiveQuota.read(),home:root,onObservation:async observation=>{const scope=await quotaAnalytics.record(observation);await cloudSync.command({action:'status'}).catch(()=>{});return scope;}});
   let creditsProtection=null;
   const activationFile=path.join(root,'quota-activation.json');
   const quotaActivation=createQuotaActivation({load:()=>{try{return JSON.parse(fs.readFileSync(activationFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(activationFile,value),quota,probe:runQuotaProbe,protection:()=>creditsProtection?.state()??null,recommend:()=>quotaAnalytics.activationRecommendation()});
@@ -139,7 +141,7 @@ export async function startDaemon() {
   const autoSwitchFile=path.join(root,'queue-account-switch.json');
   queueAccountAuto=createQueueAccountSwitch({load:()=>{try{return readJSON(autoSwitchFile,{});}catch{return {};}},save:value=>atomicJSON(autoSwitchFile,value),queues:taskQueues,current:currentQueueAccount,profiles:()=>accountSwitcher.state().profiles,
     inspect:id=>accountSwitcher.inspect(id),ready:readyForAutoSwitch,openDesktop:async()=>{await launchDesktop();accountSwitcher.opened(accountSwitcher.state().activeId);},
-    switchAccount:async(id,context)=>{try{return await accountSwitcher.command({action:'switch',id,confirmed:true,open:false},context);}finally{quota.invalidate();}},
+    switchAccount:async(id,context)=>{try{return await accountSwitcher.command({action:'switch',id,confirmed:true,open:false},context);}finally{passiveQuota.invalidate();quota.invalidate();}},
     refreshCurrent:async()=>{await quota.refresh(true);return currentQueueAccount();}});
   const accountAutoTimer=setInterval(()=>void queueAccountAuto.tick().catch(()=>{}),3000);accountAutoTimer.unref();
   function taskQueueState(){return {...taskQueues.list(),accountSwitch:queueAccountAuto.state()};}
@@ -192,6 +194,7 @@ export async function startDaemon() {
       return extensionState();
     }
     if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,creditsStopVersion:p.creditsStopVersion===1?1:null,nativePid:Number.isSafeInteger(p.nativePid)&&p.nativePid>0?p.nativePid:null,accountSwitchVersion:p.accountSwitchVersion===1?1:null,compensationVersion:[1,2,3].includes(p.compensationVersion)?p.compensationVersion:null,taskQueueVersion:p.taskQueueVersion==null?null:p.taskQueueVersion===4?4:0,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
+    if(op==='observeQuota'){if(!bridges.has(peer))throw Error('未注册运行时连接');if(!accountTransition&&!queueAccountAuto?.state().busy){if(p.invalidated===true){passiveQuota.invalidate();quota.invalidate();}else passiveQuota.observe(p);}return {ok:true};}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');
       if(typeof p.id!=='string'||p.id.length>180||['__proto__','constructor','prototype'].includes(p.id))throw new Error('聊天 ID 无效');
@@ -278,7 +281,7 @@ export async function startDaemon() {
       const params=body?JSON.parse(body):{};const route=req.url;
       let answer;const operation=controlOperation(req.method,route);
       if(operation==='state')answer=state();
-      else if(operation==='account-switch'){if(queueAccountAuto.state().busy&&params.action!=='status')throw Error('自动切换正在进行，请稍后重试');if(params.action==='preflight')answer={blockers:switchBlockers()};else{const result=await accountSwitcher.command(params);if(params.action==='switch'){quota.invalidate();queueAccountAuto.retarget(params.id);}answer=accountQuotaViews(result,accountQuotaState()).login;}}
+      else if(operation==='account-switch'){if(queueAccountAuto.state().busy&&params.action!=='status')throw Error('自动切换正在进行，请稍后重试');if(params.action==='preflight')answer={blockers:switchBlockers()};else{const result=await accountSwitcher.command(params);if(params.action==='switch'){passiveQuota.invalidate();quota.invalidate();queueAccountAuto.retarget(params.id);}answer=accountQuotaViews(result,accountQuotaState()).login;}}
       else if((accountTransition||queueAccountAuto.state().busy)&&['cloud-sync','quota-activation','task-queue','quota-refresh','quota-credit-baseline'].includes(operation)&&!(operation==='task-queue'&&(params.enabled===false&&['monitoring','enable','account-switch'].includes(params.action)||['stop','disable-all'].includes(params.action))))throw Error('账号切换正在进行，请稍后重试');
       else if(operation==='cloud-sync')answer=await cloudSync.command(params);
       else if(operation==='task-queue'){if(params.action==='account-switch'){queueAccountAuto.configure(params.enabled);}else{if(params.action==='enable'&&params.enabled&&typeof params.id==='string'&&Object.hasOwn(store.data.threads,params.id)&&!(owners.get(params.id)||[]).length&&queueSupported(params.id))await queueCall(params.id,'queue-prepare',{});taskQueues.command(params);}answer=taskQueueState();}
