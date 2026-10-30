@@ -1,3 +1,20 @@
+## 0.27.21
+
+- Add Codex backup history and restore controls in Windows and macOS Settings. Show timestamps, protected files and storage use, with manual backup and restore cancellation.
+- Add one-click close, restore and reopen. Pause manager queues and scheduled activation, close Codex/CLI, wait for a stable exit, restore and verify files, then reopen. Manual-exit mode remains available.
+- Stage and validate recovery points before queueing, preserve current files for journaled rollback, and recover interrupted restores offline. Never write restoration data while Codex still has cached state in a running process.
+
+## 0.27.20
+
+- Replace fixed recovery-point counts with calendar retention on Windows and macOS: daily for the last seven days, weekly up to one month, and monthly up to three months, plus the latest working point. Keep the newest successful snapshot in each local calendar bucket.
+- Preserve compressed incremental blocks, independent historical storage and the 200 MiB capacity limit.
+
+## 0.27.19
+
+- Harden manager writes with file flushes, atomic replacement and two validated recovery copies. Recover corrupted JSON without discarding the damaged original; runtime patch opt-ins continue to fail closed.
+- Add local Codex protection on Windows and macOS: check every five minutes, capture changes using consistent SQLite backups and compressed, deduplicated 64 KiB blocks. Daily backups use a separate block pool.
+- Keep up to eight recent and seven daily recovery points within a 200 MiB storage budget. Restore corrupt/missing protected files only after Codex processes exit; valid empty project lists are preserved.
+
 ## 0.27.18
 
 - Remove cached-reading and refresh-needed text from quota displays and tooltips on Windows and macOS.

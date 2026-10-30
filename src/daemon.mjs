@@ -1,3 +1,5 @@
+import {CodexRestore} from './codex-restore.mjs';
+import {CodexPowerProtection} from './codex-power-protection.mjs';
 import {createPassiveQuotaStore} from './passive-quota-store.mjs';
 import {stopForCredits} from './credits-stop.mjs';
 import {createCreditsProtection} from './credits-protection.mjs';
@@ -65,6 +67,10 @@ export async function startDaemon() {
     fs.unlinkSync(lockFile);fs.writeFileSync(lockFile,JSON.stringify({pid:process.pid}),{flag:'wx',mode:0o600});
   }
   process.once('exit',()=>{try{if(JSON.parse(fs.readFileSync(lockFile,'utf8')).pid===process.pid)fs.unlinkSync(lockFile);}catch{}});
+  const powerProtection=new CodexPowerProtection({home:codexHome,directory:path.join(root,'power-protection','codex'),isRunning:()=>accountProcesses().length>0});
+  const codexRestore=new CodexRestore({home:codexHome,directory:powerProtection.directory,isRunning:()=>accountProcesses().length>0,reopen:launchDesktop,close:()=>stopAccountProcesses(),prepareClose:()=>{taskQueues.command({action:'monitoring',enabled:false});quotaActivation.command({action:'cancel'});}});
+  powerProtection.hold=()=>codexRestore.active;
+  codexRestore.start();powerProtection.start();
   prepareEndpoint(socketPath);
   const store=new Store();await store.seedRecentMetadata();
   for(const t of Object.values(store.data.threads)){t.freshUsage=false;t.usageFresh=false;t.phase='disconnected';}
@@ -75,7 +81,7 @@ export async function startDaemon() {
   const quota=createQuotaManager({read:()=>passiveQuota.read(),home:root,isConnected:at=>[...bridges.values()].some(b=>b.quotaObservedAt===at),onObservation:async observation=>{const scope=await quotaAnalytics.record(observation);await cloudSync.command({action:'status'}).catch(()=>{});return scope;}});
   let creditsProtection=null;
   const activationFile=path.join(root,'quota-activation.json');
-  const quotaActivation=createQuotaActivation({load:()=>{try{return JSON.parse(fs.readFileSync(activationFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(activationFile,value),quota,probe:runQuotaProbe,protection:()=>creditsProtection?.state()??null,recommend:()=>quotaAnalytics.activationRecommendation()});
+  const quotaActivation=createQuotaActivation({load:()=>{try{return readJSON(activationFile,{});}catch{return {};}},save:value=>atomicJSON(activationFile,value),quota,probe:runQuotaProbe,protection:()=>creditsProtection?.state()??null,recommend:()=>quotaAnalytics.activationRecommendation()});
   let accountTransition=false,queueAccountAuto=null,autoPrepared=[];
   const activationTimer=setInterval(()=>{if(!accountTransition&&!queueAccountAuto?.state().busy)void quotaActivation.tick().catch(()=>{});},10000);activationTimer.unref();
   const cloudSync=createCloudSync({home:root,analytics:quotaAnalytics,quotaAccounts:()=>quota.state().accounts,prepare:()=>quota.refresh(true),removeQuotaAccounts:scopes=>quota.removeAccounts(scopes)});
@@ -93,7 +99,7 @@ export async function startDaemon() {
   function queueSupported(id){const peers=queuePeers(id);return peers.length===1&&supportsTaskQueues(bridges.get(peers[0]));}
   function queueRestartRequired(id){const peers=(owners.get(id)||[]).length?owners.get(id):[...bridges.keys()];return peers.length===1&&!supportsTaskQueues(bridges.get(peers[0]));}
   const queueCall=(id,op,params)=>{const peers=queuePeers(id);if(peers.length!==1)throw Error('需要唯一的已接入运行时');if(!queueSupported(id))throw Error(QUEUE_RUNTIME_RESTART);return peers[0].call(op,{id,...params},30000);};
-  const taskQueues=createTaskQueues({load:()=>{try{return JSON.parse(fs.readFileSync(queueFile,'utf8'));}catch{return {};}},save:value=>atomicJSON(queueFile,value),quota,thread:id=>Object.hasOwn(store.data.threads,id)?{...store.publicThread(id,owners),taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!(owners.get(id)||[]).length&&queueSupported(id)}:null,prepare:id=>queueCall(id,'queue-prepare',{}),canDispatch:()=>!creditsProtection?.state().busy&&(queueAccountAuto?.dispatchAllowed()??true),canSwitchAccounts:()=>queueAccountAuto?.state().enabled===true,start:(id,task)=>queueCall(id,'queue-start',{task}),interrupt:(id,executionId)=>queueCall(id,'queue-interrupt',{executionId}),inhibit:createQueueSleepInhibitor()});
+  const taskQueues=createTaskQueues({load:()=>{try{return readJSON(queueFile,{});}catch{return {};}},save:value=>atomicJSON(queueFile,value),quota,thread:id=>Object.hasOwn(store.data.threads,id)?{...store.publicThread(id,owners),taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!(owners.get(id)||[]).length&&queueSupported(id)}:null,prepare:id=>queueCall(id,'queue-prepare',{}),canDispatch:()=>!creditsProtection?.state().busy&&(queueAccountAuto?.dispatchAllowed()??true),canSwitchAccounts:()=>queueAccountAuto?.state().enabled===true,start:(id,task)=>queueCall(id,'queue-start',{task}),interrupt:(id,executionId)=>queueCall(id,'queue-interrupt',{executionId}),inhibit:createQueueSleepInhibitor()});
   const creditsFile=path.join(root,'credits-protection.json');
   creditsProtection=createCreditsProtection({load:()=>readJSON(creditsFile,{}),save:value=>atomicJSON(creditsFile,value),quota,config:()=>quotaActivation.state().config,
     stop:({scope})=>stopForCredits({queues:taskQueues,quota,bridges},scope)});
@@ -281,8 +287,10 @@ export async function startDaemon() {
       const params=body?JSON.parse(body):{};const route=req.url;
       let answer;const operation=controlOperation(req.method,route);
       if(operation==='state')answer=state();
+      else if(codexRestore.active&&['account-switch','install-update','task-queue','quota-activation'].includes(operation)&&params.action!=='status')throw Error('请先完成或取消 Codex 恢复');
       else if(operation==='account-switch'){if(queueAccountAuto.state().busy&&params.action!=='status')throw Error('自动切换正在进行，请稍后重试');if(params.action==='preflight')answer={blockers:switchBlockers()};else{const result=await accountSwitcher.command(params);if(params.action==='switch'){passiveQuota.invalidate();quota.invalidate();queueAccountAuto.retarget(params.id);}answer=accountQuotaViews(result,accountQuotaState()).login;}}
       else if((accountTransition||queueAccountAuto.state().busy)&&['cloud-sync','quota-activation','task-queue','quota-refresh','quota-credit-baseline'].includes(operation)&&!(operation==='task-queue'&&(params.enabled===false&&['monitoring','enable','account-switch'].includes(params.action)||['stop','disable-all'].includes(params.action))))throw Error('账号切换正在进行，请稍后重试');
+      else if(operation==='codex-backups'){if(accountTransition||queueAccountAuto.state().busy)throw Error('请等待账号切换完成');if(powerProtection.busy&&params.action!=='list')throw Error('正在备份，请稍后重试');if(params.action==='capture'){if(codexRestore.active)throw Error('请先完成或取消恢复');const result=await powerProtection.tick();if(result?.errors?.length)throw Error(result.errors[0].error||'备份失败');answer=codexRestore.list();}else answer=await codexRestore.command(params);}
       else if(operation==='cloud-sync')answer=await cloudSync.command(params);
       else if(operation==='task-queue'){if(params.action==='account-switch'){queueAccountAuto.configure(params.enabled);}else{if(params.action==='enable'&&params.enabled&&typeof params.id==='string'&&Object.hasOwn(store.data.threads,params.id)&&!(owners.get(params.id)||[]).length&&queueSupported(params.id))await queueCall(params.id,'queue-prepare',{});taskQueues.command(params);}answer=taskQueueState();}
       else if(operation==='quota-activation'){answer=quotaActivation.command(params);void quotaActivation.tick().catch(()=>{});}

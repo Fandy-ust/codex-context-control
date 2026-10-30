@@ -1,3 +1,4 @@
+import {writeProtectedJSON,readProtectedJSON} from './durable-files.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -15,13 +16,8 @@ export function ipcKey(create=false){
   if(create){ensureRoot();try{fs.writeFileSync(file,crypto.randomBytes(32).toString('hex'),{flag:'wx',mode:0o600});}catch(e){if(e.code!=='EEXIST')throw e;}}
   const key=fs.readFileSync(file,'utf8');if(!/^[a-f0-9]{64}$/.test(key))throw Error('Invalid local IPC key');return key;
 }
-export function readJSON(file, fallback=null) { try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch(error){if(error.code==='ENOENT')return fallback;throw error;} }
-export function atomicJSON(file, data) {
-  fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});
-  const tmp=`${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  try {fs.writeFileSync(tmp,JSON.stringify(data,null,2)+'\n',{mode:0o600,flag:'wx'});fs.renameSync(tmp,file);}
-  finally {try{fs.unlinkSync(tmp);}catch{}}
-}
+export const readJSON=readProtectedJSON;
+export const atomicJSON=writeProtectedJSON;
 export function settings() {return readJSON(path.join(root,'settings.json'),{});}
 export function realBinary() {
   const explicit=process.env.CONTEXT_CONTROL_REAL_CODEX;if(explicit)return explicit;

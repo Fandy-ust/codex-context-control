@@ -1,3 +1,4 @@
+import {durableWrite} from './durable-files.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -112,4 +113,4 @@ export function createAccountSwitcher({home,codexHome,secrets=accountVault(home)
   }
   return {state,command,inspect,opened(id){if(id&&metadata.activeId===id){metadata.restartRequired=false;persist();}},close(){closed=true;authorizationURL=null;client?.close();}};
 }
-function atomicText(file,text){const temp=file+'.'+crypto.randomBytes(8).toString('hex')+'.tmp';try{fs.writeFileSync(temp,text,{flag:'wx',mode:0o600});fs.renameSync(temp,file);}finally{try{fs.unlinkSync(temp);}catch{}}}
+function atomicText(file,text){durableWrite(file,text);}

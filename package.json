@@ -1,6 +1,6 @@
 {
   "name": "codex-context-control",
-  "version": "0.27.18",
+  "version": "0.27.21",
   "private": true,
   "type": "module",
   "description": "Local Codex extension for context control and quota-aware task queues",
@@ -37,7 +37,8 @@
     "test:ci": "node --test --test-concurrency=2 test/*.test.mjs"
   },
   "dependencies": {
-    "js-tiktoken": "1.0.21"
+    "js-tiktoken": "1.0.21",
+    "smol-toml": "1.9.1"
   },
   "license": "MIT",
   "devDependencies": {

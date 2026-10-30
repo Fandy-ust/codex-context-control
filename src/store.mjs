@@ -9,7 +9,7 @@ import {ProjectCatalog} from './project-catalog.mjs';
 import {inheritedForkPolicy} from './fork-budget.mjs';
 
 export class Store {
-  constructor(){this.file=path.join(root,'state.json');let saved;try{saved=JSON.parse(fs.readFileSync(this.file,'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;saved={version:2,policies:{},threads:{}};}this.data=normalizeStateDocument(saved);this.metadata=new Map();this.metadataCheckedAt=0;this.threadCache=new ThreadCache({home:codexHome,file:path.join(root,'thread-cache.json')});this.projects=new ProjectCatalog(codexHome);}
+  constructor(){this.file=path.join(root,'state.json');const saved=readJSON(this.file,{version:2,policies:{},threads:{}});this.data=normalizeStateDocument(saved);this.metadata=new Map();this.metadataCheckedAt=0;this.threadCache=new ThreadCache({home:codexHome,file:path.join(root,'thread-cache.json')});this.projects=new ProjectCatalog(codexHome);}
   save(){clearTimeout(this.saveTimer);this.saveTimer=null;atomicJSON(this.file,this.data);this.dirty=false;this.writes=(this.writes??0)+1;}
   scheduleSave(delay=150){this.dirty=true;if(this.saveTimer)return;this.saveTimer=setTimeout(()=>{this.saveTimer=null;try{this.save();}catch(error){if(Date.now()-(this.lastSaveErrorAt??0)>15000){this.lastSaveErrorAt=Date.now();process.stderr.write('Context Control: 观测状态保存失败：'+error.message+'\n');}}},delay);this.saveTimer.unref();}
   flush(){if(this.dirty)this.save();}

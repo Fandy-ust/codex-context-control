@@ -84,6 +84,10 @@
     "quota-activation": {
       "method": "POST",
       "path": "/quota/activation"
+    },
+    "codex-backups": {
+      "method": "POST",
+      "path": "/codex/backups"
     }
   }
 }

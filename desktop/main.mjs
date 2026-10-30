@@ -72,10 +72,13 @@ app.on('second-instance',(_event,argv)=>{if(argv.includes('--quit'))app.quit();e
 app.on('before-quit',()=>{quitting=true;clearTimeout(timer);});
 app.on('window-all-closed',()=>{});
 app.on('activate',()=>showMain());
+let demoBackupJob=null;
+const demoBackupPoints=[{id:'recent:1793290000000-aabbccdd',at:new Date().toISOString(),tier:'recent',files:[{name:'config.toml',bytes:8511},{name:'.codex-global-state.json',bytes:123603},{name:'state_5.sqlite',bytes:3670016}],bytes:3802130}];
 let demoAccountAuto={enabled:false,busy:false,phase:'idle',message:'',lastSwitchAt:0};
 const demoQueueState=()=>({...demoQueues.list(),accountSwitch:demoAccountAuto});
 async function api(action,params={}){
   if(demo){
+    if(action==='codex-backups'){if(params.action==='restore')demoBackupJob={phase:'waiting_exit',message:'等待 Codex 和 CLI 完全退出；请勿手动重开'};if(params.action==='cancel')demoBackupJob={phase:'cancelled',message:'已取消，未修改 Codex'};return {points:demoBackupPoints,job:demoBackupJob,storedBytes:2095774};}
     if(action==='account-switch'){
       if(params.action==='preflight')return {blockers:[]};
       if(params.action==='rename'){demoLogins.profiles.find(p=>p.id===params.id).name=params.name;}
@@ -249,6 +252,13 @@ if(args.includes('--quit')){app.quit();}else{
     }
     const loaded=win=>new Promise((resolve,reject)=>{if(!win.webContents.isLoading())resolve();else{win.webContents.once('did-finish-load',resolve);win.webContents.once('did-fail-load',(_e,code,message)=>reject(Error(`${code}: ${message}`)));}});
     try{
+      if(args.includes('--backups-smoke')){
+        await loaded(main);await new Promise(r=>setTimeout(r,1000));
+        const result=await main.webContents.executeJavaScript('window.__contextBackupsSmoke()');if(!result.ok)throw Error(JSON.stringify(result));
+        main.showInactive();await new Promise(r=>setTimeout(r,200));
+        if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){const dir=path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'codex-backups.png'),(await main.webContents.capturePage()).toPNG());}
+        console.log('BACKUPS_UI_SMOKE '+JSON.stringify(result));app.quit();return;
+      }
       if(args.includes('--shortcut-probe')){
         const probe='Control+Alt+Shift+F24';
         try{if(!globalShortcut.register(probe,()=>{})||!globalShortcut.isRegistered(probe))throw Error('Native shortcut registration failed');globalShortcut.setSuspended(true);if(!globalShortcut.isSuspended())throw Error('Native shortcut suspension failed');globalShortcut.setSuspended(false);}finally{globalShortcut.setSuspended(false);globalShortcut.unregister(probe);}

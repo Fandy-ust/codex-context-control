@@ -58,7 +58,8 @@ export function createRuntimeFixManager({home=root,platform=process.platform,arc
       const activeCount=bridges.filter(b=>b.runtimeFixId===runtimeFixPin.id).length;
       return {enabled:false,available:false,compatible:false,baseVersion:runtimeFixPin.baseVersion,originalVersion:version(original),activeCount,pending:activeCount>0,message:activeCount?'已关闭，退出并重开 Codex 后恢复原版':'已关闭'};
     }
-    let enabled=false;try{enabled=readJSON(file,{})?.enabled===true;}catch{}
+    // Runtime opt-in must fail closed even when an older backup was enabled.
+    let enabled=false;try{enabled=JSON.parse(fs.readFileSync(file,'utf8'))?.enabled===true;}catch{}
     const pack=packageStatus(),originalVersion=version(original);
     const compatible=platform==='darwin'&&arch==='arm64'&&originalVersion===runtimeFixPin.baseVersion;
     const activeCount=bridges.filter(b=>b.runtimeFixId===runtimeFixPin.id).length;

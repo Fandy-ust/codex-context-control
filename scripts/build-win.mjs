@@ -52,7 +52,7 @@ for(const name of ['src','scripts','desktop','runtime-patches','windows','skills
 for(const name of ['LICENSE','THIRD_PARTY_NOTICES.md'])fs.copyFileSync(path.join(repo,name),path.join(app,name));
 fs.mkdirSync(path.join(app,'macos/Assets'),{recursive:true});fs.copyFileSync(path.join(repo,'macos/Assets/ContextManager.png'),path.join(app,'macos/Assets/ContextManager.png'));
 fs.mkdirSync(path.join(app,'node_modules'),{recursive:true});
-for(const name of ['js-tiktoken','base64-js'])fs.cpSync(path.join(repo,'node_modules',name),path.join(app,'node_modules',name),{recursive:true});
+for(const name of ['js-tiktoken','base64-js','smol-toml'])fs.cpSync(path.join(repo,'node_modules',name),path.join(app,'node_modules',name),{recursive:true});
 pruneTokenizer(path.join(app,'node_modules'));
 fs.mkdirSync(path.join(app,'vendor'),{recursive:true});fs.copyFileSync(process.execPath,path.join(app,'vendor/node.exe'));
 const licenseCache=path.join(repo,'build/licenses',`Node-${process.version}-LICENSE.txt`);fs.mkdirSync(path.dirname(licenseCache),{recursive:true});

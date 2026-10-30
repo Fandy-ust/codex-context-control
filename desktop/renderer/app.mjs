@@ -1,3 +1,4 @@
+import {codexBackupsView} from './codex-backups.mjs';
 import {nextActivationAt} from '../../src/core/activation-schedule.mjs';
 import {movedQueueOrder} from '../../src/core/queue-order.mjs';
 import {accountSwitchView,switchSavedAccount} from './account-switch.mjs';
@@ -34,6 +35,7 @@ let shortcutDraft=DEFAULT_SHORTCUT,shortcutEnabled=true,shortcutRecording=false,
 let queueDrag=null;
 let queueID=null,queueReturnSettings=false,queueTaskDraft=null,queueTaskTab='prompt',queueExpanded=false,queueModelOpen=false;
 const queueFormDrafts=new Map(),queuePreviews=new Map();
+let backupState=null,backupSelected=null,backupPolling=false;
 let cloudState=null,loginState=null,loginRendered="";
 let activationDraft=null;
 let settingsOpen=false,settingsTab='general',settingsSnapshot=null,settingsUnderlay='';
@@ -249,15 +251,15 @@ function generalSettings(){
 }
 function settingsDialog(){
   if(settingsTab==='accounts')loginRendered=JSON.stringify(loginState);
-  const tabs=[['accounts',t('账号切换','Account switching')],['activation',t('额度启动','Quota activation')],['general',t('通用','General')],['defaults',t('全局默认','Global defaults')],['queues',t('任务队列','Task queues')],['quota',t('账户额度','Account quota')],['cloud',t('云同步','Cloud sync')],['integration',t('Codex 接入','Codex integration')],['shortcut',t('快捷键','Shortcut')]];
-  const content=settingsTab==='accounts'?accountSwitchView(loginState,{e,t,pool:preferences.quotaPool,language:preferences.language}):settingsTab==='activation'?activationView(state?.quotaActivation,activationDraft,{e,t}):settingsTab==='cloud'?cloudSyncView(cloudState,{e,t}):settingsTab==='queues'?queueManager({queues:state?.taskQueues,chats:state?.threads??[],e,t}):settingsTab==='general'?generalSettings():settingsTab==='defaults'?(state?defaultsPage():''):settingsTab==='quota'?quotaPanel():settingsTab==='integration'?integrationSettings():shortcutSettings();
+  const tabs=[['accounts',t('账号切换','Account switching')],['activation',t('额度启动','Quota activation')],['general',t('通用','General')],['backups',t('备份与恢复','Backup and restore')],['defaults',t('全局默认','Global defaults')],['queues',t('任务队列','Task queues')],['quota',t('账户额度','Account quota')],['cloud',t('云同步','Cloud sync')],['integration',t('Codex 接入','Codex integration')],['shortcut',t('快捷键','Shortcut')]];
+  const content=settingsTab==='backups'?codexBackupsView(backupState,backupSelected,{e,t}):settingsTab==='accounts'?accountSwitchView(loginState,{e,t,pool:preferences.quotaPool,language:preferences.language}):settingsTab==='activation'?activationView(state?.quotaActivation,activationDraft,{e,t}):settingsTab==='cloud'?cloudSyncView(cloudState,{e,t}):settingsTab==='queues'?queueManager({queues:state?.taskQueues,chats:state?.threads??[],e,t}):settingsTab==='general'?generalSettings():settingsTab==='defaults'?(state?defaultsPage():''):settingsTab==='quota'?quotaPanel():settingsTab==='integration'?integrationSettings():shortcutSettings();
   return `<div class="settings-backdrop" data-action="settings-dismiss"><section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><header class="settings-header row between"><h1 id="settings-title">${e(t('设置','Settings'))}</h1><button class="settings-close flat" data-action="settings-close" aria-label="${e(t('关闭设置','Close settings'))}">×</button></header><nav class="settings-tabs" role="tablist" aria-label="${e(t('设置分类','Settings sections'))}">${tabs.map(([id,label])=>`<button role="tab" id="settings-tab-${id}" aria-controls="settings-panel" aria-selected="${id===settingsTab}" class="${id===settingsTab?'active':''}" data-action="settings-tab" data-tab="${id}">${e(label)}</button>`).join('')}</nav><div class="settings-body" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab-${settingsTab}">${content}</div></section></div>`;
 }
 function openSettings(tab='general'){
   for(const menu of root.querySelectorAll('.queue-permission-menu,.queue-attach-menu,.queue-model-menu'))menu.open=false;queueModelOpen=false;
   if(!settingsOpen){settingsSnapshot={draft:draft?{...draft}:null,dirty};settingsUnderlay=root.querySelector('.main')?.innerHTML||'';}
   if(shortcutRecording)finishShortcutRecording();
-  settingsOpen=true;settingsTab=tab;hover=pinned=null;if(tab==='cloud')void loadCloudSync();if(tab==='accounts')void pollLogins();
+  settingsOpen=true;settingsTab=tab;hover=pinned=null;if(tab==='backups')void loadBackups();if(tab==='cloud')void loadCloudSync();if(tab==='accounts')void pollLogins();
   shortcutDraft=preferences.shortcut?.accelerator??DEFAULT_SHORTCUT;shortcutEnabled=shortcutDraft!==''&&preferences.shortcut?.enabled!==false;shortcutDirty=false;
   if(tab==='defaults')loadDraft();render();root.querySelector('.settings-close')?.focus();
 }
@@ -267,9 +269,9 @@ function closeSettings(){
   settingsSnapshot=null;settingsUnderlay='';if(!dirty)loadDraft();render(true);root.querySelector('.settings-trigger')?.focus();
 }
 function switchSettingsTab(tab){
-  if(!['accounts','general','defaults','quota','queues','cloud','integration','shortcut','activation'].includes(tab))return;
+  if(!['backups','accounts','general','defaults','quota','queues','cloud','integration','shortcut','activation'].includes(tab))return;
   if(shortcutRecording)finishShortcutRecording();
-  settingsTab=tab;if(tab==='cloud')void loadCloudSync();if(tab==='accounts')void pollLogins();
+  settingsTab=tab;if(tab==='backups')void loadBackups();if(tab==='cloud')void loadCloudSync();if(tab==='accounts')void pollLogins();
   if(tab==='defaults')loadDraft();else if(settingsSnapshot){draft=settingsSnapshot.draft;dirty=settingsSnapshot.dirty;}
   render();root.querySelector('.settings-body').scrollTop=0;root.querySelector(`[data-tab="${tab}"]`)?.focus();
 }
@@ -460,7 +462,7 @@ async function refresh(){if(refreshing||dragging||queueDrag)return;refreshing=tr
 const holder=document.createElement('div');holder.innerHTML=activationView(state?.quotaActivation,activationDraft,{e,t});
 for(const selector of ['[data-activation-status]','[data-activation-recommendation]','[data-activation-schedule]','[data-activation-credits-status]']){const a=root.querySelector(selector),b=holder.querySelector(selector);if(a&&b)a.replaceWith(b);}
 const run=root.querySelector('[data-action="activation-run"]');if(run)run.disabled=!!state?.quotaActivation?.busy||['waiting','running','verifying'].includes(state?.quotaActivation?.job?.status);return;
-}if(settingsOpen&&settingsTab==='accounts'){void pollLogins();return;}if(settingsOpen&&settingsTab==='cloud'){void pollCloudSync();return;}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select,textarea')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true,displayStale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
+}if(settingsOpen&&settingsTab==='backups'){void loadBackups();return;}if(settingsOpen&&settingsTab==='accounts'){void pollLogins();return;}if(settingsOpen&&settingsTab==='cloud'){void pollCloudSync();return;}if(settingsOpen){if(!busy&&!shortcutRecording&&!document.activeElement?.closest('.settings-dialog'))render();return;}if(hover==null&&pinned==null&&!document.activeElement?.matches('input,select,textarea')){if(dirty&&mode==='main'&&root.querySelector('#stats-body')){root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();}else if(!dirty||mode==='tray')render();else{const side=root.querySelector('.sidebar');if(side){side.outerHTML=sidebar();bindSidebar();}document.querySelector('#phase')?.replaceChildren(document.createTextNode(phase(current())));const message=document.querySelector('#phase-message');if(message)message.textContent=t(current()?.message||'');}}if(detailsOpen&&auto&&Date.now()-lastStats>10000&&hover==null)await loadStats();}catch(error){serviceAvailable=false;if(state){state={...state,quota:state.quota?{...state.quota,stale:true,displayStale:true}:state.quota,bridgeCount:0,threads:state.threads.map(t=>({...t,connected:false,freshUsage:false,phase:'disconnected'}))};updateTrayAvailability();render();}if(!state)root.innerHTML=`<div class="empty"><h2>Context Manager</h2><p>${e(error.message)}</p><button data-action="retry">${e(t('重试','Retry'))}</button></div>`;}finally{refreshing=false;}}
 root.addEventListener('click',async event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(button.disabled)return;
   try{
     if(action.startsWith('queue-')&&view==='chat')queueID=selected;
@@ -516,6 +518,10 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action==='settings'){openSettings();return;}
     if(action==='settings-close'){closeSettings();return;}
     if(action==='settings-dismiss'){if(event.target===button)closeSettings();return;}
+    if(action==='backups-refresh'){await loadBackups();return;}
+    if(action==='backups-select'){backupSelected=button.dataset.id;render();return;}
+    if(action==='backups-dismiss'){backupSelected=null;render();return;}
+    if(['backups-confirm','backups-manual','backups-cancel','backups-capture'].includes(action)){backupState=await run('codex-backups',{action:['backups-confirm','backups-manual'].includes(action)?'restore':action==='backups-cancel'?'cancel':'capture',id:button.dataset.id,close:action==='backups-confirm'});backupSelected=null;render();return;}
     if(action==='settings-tab'){switchSettingsTab(button.dataset.tab);return;}
     if(action==='open-reference'){await api.invoke(action,{id:button.dataset.reference});return;}
     if(action==='quota-details'){openSettings('quota');return;}
@@ -1219,3 +1225,17 @@ window.__contextActivationSmoke=async()=>{
 };
 
 async function pollLogins(){try{const next=await api.invoke('account-switch',{action:'status'}),changed=JSON.stringify(next)!==loginRendered;loginState=next;if(changed&&settingsOpen&&settingsTab==='accounts'&&!document.activeElement?.matches('input'))render();}catch(error){notify(error.message);}}
+
+async function loadBackups(){if(backupPolling)return;backupPolling=true;try{const next=await api.invoke('codex-backups',{action:'list'}),changed=JSON.stringify(next)!==JSON.stringify(backupState);backupState=next;if(changed&&settingsOpen&&settingsTab==='backups')render();}catch(error){notify(error.message);}finally{backupPolling=false;}}
+
+window.__contextBackupsSmoke=async()=>{
+ openSettings('backups');await loadBackups();
+ const wait=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,20));}throw Error('Backup UI smoke timed out');};
+ await wait(()=>root.querySelector('[data-action="backups-select"]'));
+ root.querySelector('[data-action="backups-select"]').click();
+ const confirmation=!!root.querySelector('[data-action="backups-confirm"]')&&!!root.querySelector('[data-action="backups-manual"]');
+ root.querySelector('[data-action="backups-confirm"]').click();await wait(()=>root.querySelector('[data-action="backups-cancel"]'));
+ const queued=backupState.job.phase==='waiting_exit';root.querySelector('[data-action="backups-cancel"]').click();await wait(()=>backupState.job.phase==='cancelled');
+ root.querySelector('[data-action="backups-select"]').click();
+ return {ok:confirmation&&queued&&backupState.job.phase==='cancelled',confirmation,queued,cancelled:backupState.job.phase==='cancelled'};
+};
