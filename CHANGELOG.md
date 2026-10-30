@@ -1,3 +1,7 @@
+## 0.27.22
+
+- Keep existing macOS settings tabs visible in their original order when adding backup and restore.
+
 ## 0.27.21
 
 - Add Codex backup history and restore controls in Windows and macOS Settings. Show timestamps, protected files and storage use, with manual backup and restore cancellation.
