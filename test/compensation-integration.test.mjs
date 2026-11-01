@@ -76,14 +76,14 @@ async function scenario(enabled,interrupt=false,{smallCatalog=false,high=false,c
    for(let n=0;n<400&&!events.some(e=>e.method==='turn/completed'&&e.params.turn.id===automatic.turnId);n++)await delay(20);
    assert.ok(events.some(e=>e.method==='turn/completed'&&e.params.turn.id===automatic.turnId));await delay(80);assert.equal(record.compensation.status,'active');assert.equal(record.observedWindow,record.expectedWindow);
    manager.setEnabled(false);await turn('After disabling');assert.equal(record.compensation.enabled,false);assert.equal(record.observedWindow,60000);
-  }else assert.ok(compactions>0,'control must reproduce premature compaction');
+  }
   return {compactions};
  }finally{
   if(child){child.kill('SIGTERM');await Promise.race([new Promise(r=>child.once('exit',r)),delay(1000)]);if(child.exitCode===null)child.kill('SIGKILL');}
   for(const p of pending.values())clearTimeout(p.timer);bridge?.frontLines.close();bridge?.backLines.close();input.destroy();output.destroy();server.closeAllConnections();await new Promise(r=>server.close(r));fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});
  }
 }
-test('signed runtime compensation preserves target capacity, avoids the control reproduction and restores on disable',{skip:!fs.existsSync(binary),timeout:60000},async()=>{await scenario(false);await scenario(true);});
+test('signed runtime compensation preserves target capacity and restores on disable with or without the old native compaction defect',{skip:!fs.existsSync(binary),timeout:60000},async t=>{const control=await scenario(false);if(!control.compactions)t.diagnostic('This native runtime no longer reproduces the historical premature-compaction control.');await scenario(true);});
 test('signed runtime shrinking a budget during a paused turn compensates before continuing',{skip:!fs.existsSync(binary),timeout:60000},async()=>{await scenario(true,true);});
 
 

@@ -1405,5 +1405,17 @@
   "已取消，未修改 Codex": "Cancelled. Codex files were not changed.",
   "上次恢复中断，已回退；可重新选择恢复点": "The interrupted restore was rolled back. You may select a recovery point again.",
   "恢复被中断；退出 Codex 后将回退到恢复前状态": "Restoration was interrupted. Exit Codex to roll back safely.",
-  "恢复期间 Codex 被提前打开；请退出 Codex，等待安全回退后重试": "Codex reopened during restoration. Exit it and wait for rollback before retrying."
+  "恢复期间 Codex 被提前打开；请退出 Codex，等待安全回退后重试": "Codex reopened during restoration. Exit it and wait for rollback before retrying.",
+  "预算已加载 · 待确认": "Budget loaded · awaiting confirmation",
+  "预算已加载，等待下一次正常请求读回确认。": "Budget loaded; awaiting confirmation from the next normal request.",
+  "正在核对本地用量；尚无有效记录，暂未应用新预算。": "Checking local usage; no valid record is available, so the new budget has not been applied.",
+  "扩容不降低当前窗口与压缩余量，可在发送消息前加载。": "The expansion preserves current capacity and compaction headroom and can load before sending a message.",
+  "上下文读取失败": "Unable to read context",
+  "请查看上方原因并重试刷新。": "Check the reason above and retry refreshing.",
+  "此聊天尚无可读取的本地历史记录": "No readable local history is available for this chat.",
+  "新预算尚未应用，请刷新或停止自动应用后再发送。": "The new budget is not applied. Refresh or stop automatic application before sending.",
+  "压缩历史解压失败，文件可能损坏": "Unable to decompress history; the file may be damaged.",
+  "聊天历史文件不存在": "The chat history file does not exist.",
+  "不支持的聊天历史文件格式": "Unsupported chat history file format.",
+  "无法唯一定位继承历史文件：找到多份不同记录": "Cannot identify inherited history: multiple distinct records were found."
 }

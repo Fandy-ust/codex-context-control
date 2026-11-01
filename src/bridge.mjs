@@ -26,7 +26,7 @@ export class Bridge {
     this.child=child;this.input=input;this.output=output;this.publish=publish;this.records=new Map();this.internal=new Map();this.external=new Map();this.sequence=0;this.prefix=`context-control:${randomUUID()}:`;
     this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;this.resolveNewChatBudget=options.resolveNewChatBudget;this.nativeBudgetSupport=options.nativeBudgetSupport===true;
     this.quotaObserver=createQuotaObserver(options.observeQuota);
-    this.resolveCompensation=options.resolveCompensation;this.accountingWindowLimit=options.accountingWindowLimit;
+    this.resolveCompensation=options.resolveCompensation;this.accountingWindowLimit=options.accountingWindowLimit;this.resolveUsage=options.resolveUsage;
     this.frontLines=readline.createInterface({input,crlfDelay:Infinity});this.backLines=readline.createInterface({input:child.stdout,crlfDelay:Infinity});
     this.frontLines.on('line',line=>this.fromClient(line));this.backLines.on('line',line=>this.fromServer(line));
     child.once('exit',()=>{for(const item of this.internal.values()){clearTimeout(item.timer);item.reject(new Error('Codex 运行时已退出'));}this.internal.clear();});
@@ -41,11 +41,14 @@ export class Bridge {
     if((this.contextCeiling||this.nativeBudgetSupport)&&m.method==='thread/resume'&&m.id!=null&&m.params?.threadId&&!m.params?.path&&!m.params?.ephemeral&&!preparedFork?.resume){this.prepareResume(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if(this.contextCeiling&&['thread/start','thread/resume'].includes(m.method)&&!m.params?.ephemeral){m.params={...m.params,config:ceilingConfig(m.params?.config)};line=JSON.stringify(m);}
     const id=m.params?.threadId;const record=this.records.get(id);
+    if(m.method==='thread/rollback'&&record){record.usageFresh=false;record.freshUsage=false;}
     if(m.method==='turn/start'&&record?.automaticTask?.status==='starting'){this.rejectTurn(m,'队列正在提交任务，请稍后再发送。');return;}
     if(m.method==='turn/start'&&record&&!record.locked&&record.status==='idle'&&record.policy&&record.appliedRevision!==record.policy.revision){
+      if(['error','needs_compaction','needs_observation'].includes(record.phase)){this.rejectTurn(m,record.message||'新预算尚未应用，请刷新或停止自动应用后再发送。');return;}
       // Acquire the reload lock synchronously before letting a new turn use an
       // intermediate budget; apply() still performs the normal safety checks.
       this.apply(record).catch(()=>{});
+      if(!record.locked&&record.policy&&record.appliedRevision!==record.policy.revision){this.rejectTurn(m,record.message||'新预算尚未应用，请刷新或停止自动应用后再发送。');return;}
     }
     if((record?.locked||record?.initializing)&&blockedMethods.has(m.method)){
       if(record.queue.length>=128||record.queueBytes+line.length>128*1024*1024){if(m.id!=null)this.writeFrontend(JSON.stringify({id:m.id,error:{code:-32000,message:'Context Control is applying a change; retry this request.'}}));return;}
@@ -88,7 +91,7 @@ export class Bridge {
     const resolved=await this.resolveFork(message.params.threadId,message.params.model);
     const policy=resolved?.policy?.enabled?(this.contextCeiling?migrateCeilingPolicy(resolved.policy,resolved.model):policyForModel(resolved.policy,resolved.model)):null;
     const config=policy?{...message.params.config,model_context_window:policy.window,model_auto_compact_token_limit:policy.compact}:message.params.config;
-    this.fromClient(JSON.stringify({...message,params:{...message.params,config}}),{resume:true,resumePolicy:policy,preserveUsage});
+    this.fromClient(JSON.stringify({...message,params:{...message.params,config}}),{resume:true,resumePolicy:policy,preserveUsage,wasLoaded:!!existing});
   }
   async prepareFork(message){
     const params=message.params||{},parentId=params.threadId;
@@ -119,6 +122,10 @@ export class Bridge {
     if(!this.records.has(id))this.records.set(id,{id,status:'idle',freshUsage:false,seed:{},sticky:{},queue:[],queueBytes:0,locked:false});
     return this.records.get(id);
   }
+  rememberAppliedBudget(record,policy,model=record.modelInfo){
+    const percent=policy.effectivePercent??model?.effective_context_window_percent;
+    record.appliedBudget={model:record.model,window:policy.window,compact:Math.min(policy.compact,Math.floor(policy.window*.9)),reserve:policy.reserve??16000,scope:'total',effectivePercent:percent};
+  }
   async runtimeBudget(record,policy){
     let observation={enabled:false};
     if(this.resolveCompensation)observation=await this.resolveCompensation(record);
@@ -134,6 +141,9 @@ export class Bridge {
     const observed=!record.lastUsage&&record.inheritedUsage?{...record,lastUsage:record.inheritedUsage,usageFresh:true}:record;
     const plan=preflight(observed,policy,record.modelInfo);
     const windowMismatch=record.freshUsage===true&&Number.isSafeInteger(record.observedWindow)&&record.observedWindow!==budget.details.runtimeWindow;
+    if(record.appliedBudget?.model===record.model&&record.appliedBudget.window===budget.window&&record.appliedBudget.compact===Math.min(budget.compact,Math.floor(budget.window*.9))&&!windowMismatch){
+      record.compensation=budget.details;record.compensationKey=this.budgetKey(policy,budget);return;
+    }
     // A pending observation is not an applied budget. In particular, disabling
     // must still restore a previously enlarged runtime after a deferred reload.
     if(!budget.details.enabled&&!record.compensation?.enabled&&!record.compensationKey&&!windowMismatch){record.compensation=budget.details;record.compensationKey=this.budgetKey(policy,budget);}
@@ -167,27 +177,30 @@ export class Bridge {
         if(t?.id&&['thread/start','thread/resume','thread/fork'].includes(pending.method)) {
           // Resuming an already loaded thread does not necessarily apply its
           // config. Retain the last applied compensation until reload/readback.
-          const record=this.record(t.id);if(record.model&&m.result.model&&record.model!==m.result.model){record.compensation=null;record.compensationKey=null;}record.seed={...record.seed,...pending.seed,config:{...record.seed.config,...pending.seed.config}};
+          const record=this.record(t.id);if(record.model&&m.result.model&&record.model!==m.result.model){record.compensation=null;record.compensationKey=null;record.appliedBudget=null;record.appliedRevision=null;record.usageFresh=false;}const oldConfig=record.seed.config;record.seed={...record.seed,...pending.seed,config:pending.fork?.wasLoaded?oldConfig:{...oldConfig,...pending.seed.config}};
           Object.assign(record,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput','threadSource']));
           record.model=m.result.model||record.model;record.status=t.status?.type||'idle';record.snapshot=m.result;const activeTurn=t.turns?.findLast(turn=>['inProgress','in_progress'].includes(turn.status));if(activeTurn)record.turnId=activeTurn.id;
           if(pending.method==='thread/start'&&pending.fork?.newChatPolicy&&!t.ephemeral&&t.canAcceptDirectInput!==false&&!t.forkedFromId){const policy=pending.fork.newChatPolicy;Object.assign(record,{newChatPolicy:policy,policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已沿用新对话默认设置，等待首次窗口读回。'});}
-          if(pending.fork?.resumePolicy){const policy=pending.fork.resumePolicy;Object.assign(record,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:pending.fork.preserveUsage===true,phase:'awaiting_runtime_confirmation',message:'已保留原聊天预算，等待下一轮窗口读回。'});}
+          if(pending.fork?.resumePolicy&&!pending.fork.wasLoaded){const policy=pending.fork.resumePolicy;Object.assign(record,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'预算已加载，等待下一次正常请求读回确认。'});this.rememberAppliedBudget(record,policy);}
+          if(pending.fork?.wasLoaded&&!pending.fork.preserveUsage){record.usageFresh=false;record.freshUsage=false;}
+          if(pending.method==='thread/start'&&record.policy)this.rememberAppliedBudget(record,record.policy);
           if(pending.method==='thread/fork'&&pending.fork?.policy&&t.id!==pending.threadId&&!t.ephemeral&&t.canAcceptDirectInput!==false){
             const {policy,source,parentId,model}=pending.fork;
             record.forkedFromId=parentId;record.forkPolicy=source;record.inheritedUsage=pending.fork.inheritedUsage;
             record.policy=policy;record.policyVersion=policy.revision;record.appliedRevision=policy.revision;record.revision=policy.revision;
             record.configuredWindow=policy.window;record.modelInfo=model;
+            this.rememberAppliedBudget(record,policy,model);
             const percent=model?.effective_context_window_percent;
             record.expectedWindow=Number.isInteger(percent)?Math.floor(policy.window*percent/100):null;
             record.freshUsage=false;record.usageFresh=false;record.phase='awaiting_runtime_confirmation';
             record.message='已继承父对话预算；等待分支首次请求读回窗口。';
           }else if(t.forkedFromId){record.forkedFromId=t.forkedFromId;}
           record.initializing=true;
-          this.notify(record).finally(()=>{record.initializing=false;if(!record.locked){const queued=record.queue.splice(0);record.queueBytes=0;for(const line of queued)this.fromClient(line);}});
+          this.notify(record).finally(()=>{record.initializing=false;this.schedule(record);if(!record.locked){const queued=record.queue.splice(0);record.queueBytes=0;for(const line of queued)this.fromClient(line);}});
         }else if(pending.threadId&&['turn/start','thread/settings/update'].includes(pending.method)){
           const record=this.record(pending.threadId);Object.assign(record.sticky,pick(pending.seed,stickyFields));
           const nextModel=pending.seed.collaborationMode?.settings?.model||pending.seed.model;
-          if(nextModel&&nextModel!==record.model){record.model=nextModel;record.modelInfo=null;record.freshUsage=false;record.usageFresh=false;record.expectedWindow=null;record.compensation=null;record.compensationKey=null;record.appliedRevision=null;}this.notify(record);
+          if(nextModel&&nextModel!==record.model){record.model=nextModel;record.modelInfo=null;record.freshUsage=false;record.usageFresh=false;record.expectedWindow=null;record.compensation=null;record.compensationKey=null;record.appliedRevision=null;record.appliedBudget=null;}this.notify(record);
         }
       }
     }
@@ -196,6 +209,7 @@ export class Bridge {
       const record=this.records.get(id);
       if(record){
         if(m.method==='thread/tokenUsage/updated'){
+          if(record.appliedBudget&&p.tokenUsage.modelContextWindow!==Math.floor(record.appliedBudget.window*record.appliedBudget.effectivePercent/100))record.appliedBudget=null;
           record.usageGeneration=(record.usageGeneration??0)+1;record.observedWindow=p.tokenUsage.modelContextWindow;record.lastUsage=p.tokenUsage.last;record.inheritedUsage=null;record.freshUsage=true;record.usageFresh=true;
           if(record.expectedWindow!=null&&record.policy&&record.revision===record.policy.revision){record.phase=record.observedWindow===record.expectedWindow?'confirmed':'mismatch';record.message=record.phase==='confirmed'?(record.compensation?.status==='active'&&record.compensation.extraTokens>0?'运行时窗口已确认；目标容量以本 App 为准。':'下一轮窗口已读回确认。'):'实际窗口与目标不一致；请查看运行时或模型目录。';}
           this.notify(record);
@@ -226,7 +240,7 @@ export class Bridge {
     if(ready)this.fromClient(line,null,true);
     const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
   }
-  publicRecord(record){return {...pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask','compensation']),effort:inheritedTaskEffort(record)};}
+  publicRecord(record){return {...pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask','compensation','appliedBudget']),effort:inheritedTaskEffort(record)};}
   prepareAccountSwitch(){
     if(this.accountTransition)throw Error('账号切换正在进行，请稍后重试');
     if(this.internal.size||this.external.size||[...this.records.values()].some(r=>r.status!=='idle'||r.locked||r.initializing||['starting','running'].includes(r.automaticTask?.status)))throw Error('等待所有聊天空闲后再自动切换账号');
@@ -245,6 +259,7 @@ export class Bridge {
     const r=this.record(id);Object.assign(r,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput','threadSource']));r.seed=pick(result,resumeFields);r.seed.cwd??=t.cwd;r.model=result.model??t.model;r.status=t.status?.type??'idle';r.snapshot=result;
     const active=t.turns?.findLast(turn=>['inProgress','in_progress'].includes(turn.status));if(active)r.turnId=active.id;
     if(policy){Object.assign(r,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,phase:'awaiting_runtime_confirmation',modelInfo:resolved.model,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??resolved.model?.effective_context_window_percent??95)/100)});}
+    if(policy){r.seed.config=config;this.rememberAppliedBudget(r,policy,resolved.model);}
     await this.notify(r);return {ok:true};
   }
   async prepareAutomaticContext(id,task){
@@ -279,7 +294,7 @@ export class Bridge {
       // A fresh usage record can only arrive after the next turn. Like a manual
       // turn, allow that observation under the runtime's current configuration;
       // do not shrink/reload history without preflight or mark the task failed.
-      if(r.policy&&r.appliedRevision!==r.policy.revision&&r.phase!=='needs_observation')throw Error(r.message||'请先完成上下文预算应用');
+      if(r.policy&&r.appliedRevision!==r.policy.revision)throw Error(r.message||'请先完成上下文预算应用');
       if(r.status!=='idle'||r.locked||r.initializing)throw Error('请等待聊天空闲');
     }
     for(const file of settings.attachments){try{if(!fs.statSync(file.path).isFile())throw Error();}catch{throw Error('附件不存在或无法读取：'+file.name);}}
@@ -327,6 +342,7 @@ export class Bridge {
   notify(record){
     return Promise.resolve(this.publish(this.publicRecord(record))).then(reply=>{
       if(reply?.model?.slug===record.model)record.modelInfo=reply.model;
+      if(record.appliedBudget?.model===record.model&&record.appliedBudget.effectivePercent==null&&reply?.model?.slug===record.model)record.appliedBudget.effectivePercent=reply.model.effective_context_window_percent;
       if(reply?.policy&&reply.policy.revision>(record.policyVersion||0)){
         if(reply.policy.enabled)this.setPolicy(record.id,reply.policy,reply.model);
         else this.clearPolicy(record.id,reply.policy.revision);
@@ -399,7 +415,18 @@ export class Bridge {
     try{
       while(record.policy&&record.appliedRevision!==record.policy.revision){
         const policy={...record.policy};
-        const plan=preflight(record,policy,record.modelInfo);
+        let plan=preflight(record,policy,record.modelInfo);
+        if(plan.code==='needs_observation'&&this.resolveUsage){
+          const generation=record.usageGeneration??0,model=record.model;
+          try{
+            const local=await this.resolveUsage(record.id);
+            if(local?.known&&local.model===model&&record.model===model&&(record.usageGeneration??0)===generation&&record.status==='idle'){
+              record.lastUsage=local.lastUsage;record.usageFresh=true;
+              plan=preflight(record,policy,record.modelInfo);
+            }
+          }catch(error){record.localUsageError=error.message;}
+          if(record.policy?.revision!==policy.revision)continue;
+        }
         if(!plan.allowed){record.phase=plan.code;record.message=plan.message;break;}
         record.phase='reloading';record.message='正在重新加载当前聊天。';this.notify(record);
         if(!await this.reload(record,policy,plan))break;
@@ -435,7 +462,8 @@ export class Bridge {
       if(after.model!==before.model||after.modelProvider!==before.modelProvider)throw new Error('模型或提供方发生意外变化，已停止确认');
       record.seed={...record.seed,...resume};record.snapshot=after;record.appliedRevision=policy.revision;record.revision=policy.revision;
       record.configuredWindow=policy.window;record.expectedWindow=budget.details.runtimeWindow??plan.expectedWindow;record.compensation=budget.details;record.compensationKey=this.budgetKey(policy,budget);record.freshUsage=false;
-      record.phase='awaiting_runtime_confirmation';record.message='已重新加载；等待下一轮实际窗口读回。';
+      this.rememberAppliedBudget(record,{...policy,window:budget.window,compact:budget.compact});
+      record.phase='awaiting_runtime_confirmation';record.message='预算已加载，等待下一次正常请求读回确认。';
       return true;
     }catch(error){
       if(detached&&originalParams){try{await this.rpc('thread/resume',originalParams);}catch{}}

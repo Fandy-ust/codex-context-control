@@ -1,17 +1,32 @@
 import fs from 'node:fs';
 import {canonicalLocalPath,pathInside} from './local-path.mjs';
+import {resolveRolloutPath,readRolloutChunks,isRolloutPath} from './rollout-file.mjs';
 
 // Native session headers are immutable after creation. Read only the bounded
 // first record, never the conversation or the history_base ancestor (which can
 // differ from the actual fork parent after several forks).
-export function readForkParent(home,id,file,cache){
+export function readForkParent(home,id,file,cache,{includeCompressed=false}={}){
   if(typeof file!=='string')return null;
   try{
-    const real=canonicalLocalPath(file);
-    if(!pathInside(canonicalLocalPath(home),real)||!real.endsWith('.jsonl'))return null;
+    const real=canonicalLocalPath(resolveRolloutPath(file));
+    if(!pathInside(canonicalLocalPath(home),real)||!isRolloutPath(real))return null;
+    // Metadata discovery visits all chats. Cold headers are decoded only for
+    // an explicit selected-chat read, never as a startup-wide migration.
+    if(real.endsWith('.zst')&&!includeCompressed)return null;
     const stat=fs.statSync(real),key=`${real}:${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;
     const previous=cache.get(id);
     if(previous?.key===key&&stat.size>=previous.bytes)return previous.parent;
+    if(real.endsWith('.zst')){
+      let parts=[],bytes=0,parent=null;const done={};
+      try{readRolloutChunks(real,{maxBytes:1024*1024},chunk=>{
+        const end=chunk.indexOf(10),part=end<0?chunk:chunk.subarray(0,end);parts.push(part);bytes+=part.length;
+        if(end<0)return;
+        const event=JSON.parse(Buffer.concat(parts).toString('utf8')),p=event.payload;
+        if(event.type==='session_meta'&&p?.id===id&&(p.thread_source==null||p.thread_source==='user')&&typeof p.forked_from_id==='string'&&/^[a-f\d-]{36}$/i.test(p.forked_from_id)&&p.forked_from_id!==id)parent=p.forked_from_id;
+        throw done;
+      });}catch(error){if(error!==done)throw error;}
+      cache.set(id,{key,bytes:0,parent});if(cache.size>4096)cache.delete(cache.keys().next().value);return parent;
+    }
     const fd=fs.openSync(real,'r'),chunks=[];let offset=0;
     try{
       while(offset<Math.min(stat.size,1024*1024)){

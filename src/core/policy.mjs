@@ -33,7 +33,17 @@ export function preflight(thread,policy,model) {
   // Reloading identical history invalidates window confirmation, not its last
   // measured usage. Older bridges only provide freshUsage.
   const usage=(thread?.usageFresh??thread?.freshUsage)?thread?.lastUsage?.totalTokens:null;
-  if(!Number.isSafeInteger(usage))return {...result,code:'needs_observation',allowed:false,message:'等待本轮请求的用量记录，再判断能否安全调整。'};
+  if(!Number.isSafeInteger(usage)){
+    const old=thread?.appliedBudget;
+    // Only evidence captured when this runtime actually loaded the budget may
+    // authorize a no-measurement expansion. A saved target is never evidence.
+    if(old&&old.model===thread?.model&&old.effectivePercent===percent&&old.scope==='total'&&
+      [old.window,old.compact,old.reserve].every(Number.isSafeInteger)&&old.window>0&&old.compact>0&&old.reserve>=0&&
+      policy.window>=old.window&&compact>=old.compact&&
+      usable-policy.reserve>=Math.floor(old.window*percent/100)-old.reserve&&compact-policy.reserve>=old.compact-old.reserve)
+      return {...result,usageIsEstimate:false,expansionOnly:true,message:'扩容不降低当前窗口与压缩余量，可在发送消息前加载。'};
+    return {...result,code:'needs_observation',allowed:false,message:'正在核对本地用量；尚无有效记录，暂未应用新预算。'};
+  }
   result.estimatedUsage=usage;
   if(usage+policy.reserve>=Math.min(usable,compact))return {...result,code:'needs_compaction',allowed:false,message:'最近请求用量加预留已达到新阈值；请先在 Codex 压缩，再重新测量。'};
   result.message='预检通过；将在下一轮前重新加载该聊天。';return result;

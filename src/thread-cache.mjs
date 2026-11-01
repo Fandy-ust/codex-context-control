@@ -2,6 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {atomicJSON,readJSON} from './paths.mjs';
 import {normalizeLocalPath,pathInside} from './local-path.mjs';
+import {resolveRolloutPath} from './rollout-file.mjs';
+import {createReadStream} from 'node:fs';
+import {createZstdDecompress} from 'node:zlib';
 const stamp=s=>`${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
 const valid=n=>Number.isSafeInteger(n)&&n>=0;
 // Persist only numeric observations, never message bodies. Initial reads are
@@ -12,31 +15,46 @@ export class ThreadCache {
   try{const data=readJSON(file);this.entries=data?.version===1?data.entries??{}:{};}catch{this.entries={};}
  }
  get(id){return this.entries[id]?.summary??null;}
- async scan(rows){
+ async scan(rows,{includeCompressed=false}={}){
   if(this.running)return this.running;
-  this.running=this.run(rows).finally(()=>{this.running=null;});return this.running;
+  this.running=this.run(rows,includeCompressed).finally(()=>{this.running=null;});return this.running;
  }
- async run(rows){
+ async run(rows,includeCompressed){
   let changed=false;
   for(const row of rows){
    if(!row.rollout_path||row.archived||row.thread_source&&row.thread_source!=='user')continue;
-   try{changed=(await this.read(row))||changed;}catch{/* Missing or rotating logs do not block other chats. */}
+   try{
+    // Automatic discovery never decompresses every cold chat at startup.
+    // Selected-chat statistics/observations use the bounded on-demand worker.
+    if(!includeCompressed&&resolveRolloutPath(row.rollout_path).endsWith('.zst'))continue;
+    changed=(await this.read(row))||changed;
+   }catch{/* Missing or rotating logs do not block other chats. */}
   }
   if(changed)atomicJSON(this.file,{version:1,entries:this.entries});
   return this.metrics;
  }
  async read(row){
-  const [home,file]=(await Promise.all([fs.realpath(this.home),fs.realpath(row.rollout_path)])).map(normalizeLocalPath);
-  if(!pathInside(home,file)||!file.endsWith('.jsonl'))return false;
+  const [home,file]=(await Promise.all([fs.realpath(this.home),fs.realpath(resolveRolloutPath(row.rollout_path))])).map(normalizeLocalPath);
+  if(!pathInside(home,file)||! /\.jsonl(?:\.zst)?$/.test(file))return false;
   const stat=await fs.stat(file);if(!stat.isFile())return false;
   const previous=this.entries[row.id],fingerprint=stamp(stat);
   if(previous?.file===file&&previous.fingerprint===fingerprint){this.metrics.hits++;return false;}
-  const append=previous?.file===file&&previous.ino===stat.ino&&previous.dev===stat.dev&&stat.size>previous.size;
-  const start=append&&stat.size-previous.offset<=this.maxRead?previous.offset:Math.max(0,stat.size-this.maxRead);
+  const compressed=file.endsWith('.zst');
+  const append=!compressed&&previous?.file===file&&previous.ino===stat.ino&&previous.dev===stat.dev&&stat.size>previous.size;
+  let start=append&&stat.size-previous.offset<=this.maxRead?previous.offset:Math.max(0,stat.size-this.maxRead);
   const contiguous=append&&start===previous.offset;
   const summary=contiguous?{...previous.summary}:{};
-  const handle=await fs.open(file,'r');let buffer;
-  try{buffer=Buffer.alloc(stat.size-start);let n=0;while(n<buffer.length){const result=await handle.read(buffer,n,buffer.length-n,start+n);if(!result.bytesRead)break;n+=result.bytesRead;}buffer=buffer.subarray(0,n);}finally{await handle.close();}
+  let buffer;
+  if(compressed){
+   const source=createReadStream(file),decoder=createZstdDecompress();let total=0;buffer=Buffer.alloc(0);
+   source.on('error',error=>decoder.destroy(error));source.pipe(decoder);
+   try{for await(const chunk of decoder){total+=chunk.length;if(total>1024*1024*1024)throw Error('历史过大');buffer=Buffer.concat([buffer,chunk]);if(buffer.length>this.maxRead)buffer=buffer.subarray(buffer.length-this.maxRead);}}
+   finally{source.destroy();decoder.destroy();}
+   start=total-buffer.length;
+  }else{
+   const handle=await fs.open(file,'r');
+   try{buffer=Buffer.alloc(stat.size-start);let n=0;while(n<buffer.length){const result=await handle.read(buffer,n,buffer.length-n,start+n);if(!result.bytesRead)break;n+=result.bytesRead;}buffer=buffer.subarray(0,n);}finally{await handle.close();}
+  }
   this.metrics.bytesRead+=buffer.length;this.metrics.reads++;
   const complete=buffer.lastIndexOf(10)+1;
   // Starting in the middle of a long record must never import a partial value.

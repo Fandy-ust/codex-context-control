@@ -12,7 +12,7 @@ function fixture(){
 }
 test('compatibility evidence follows runtime files, manager version and enhancement settings',async()=>{
   const f=fixture();let count=0,clock=1000;
-  const options={...f,managerVersion:'test-1',now:()=>clock,versionOf:()=> 'codex-cli 99.0.0',probe:async({env,cwd,args})=>{
+  const options={...f,managerVersion:'test-1',successTtl:86400000,now:()=>clock,versionOf:()=> 'codex-cli 99.0.0',probe:async({env,cwd,args})=>{
     count++;assert.equal(env.CODEX_HOME,cwd);assert.ok(fs.existsSync(path.join(cwd,'config.toml')));
     assert.ok(!fs.existsSync(path.join(cwd,'auth.json')));
     return {config:{model_context_window:500000}};

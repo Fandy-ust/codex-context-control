@@ -36,9 +36,9 @@ test('guard uses the newly applied smaller window before the next server usage u
  const f=setup();try{f.r.expectedWindow=100000;f.r.lastUsage={totalTokens:0};f.bridge.fromClient(JSON.stringify({id:9,method:'turn/start',params:{threadId:'chat',input:[{type:'text',text:' a'.repeat(90000)}]}}));assert.equal(f.writes.length,0);assert.ok(f.responses.find(r=>r.id===9)?.error);}finally{f.close();}
 });
 test('resuming a saved budget injects its rebased window before the first normal request',async()=>{
- const f=setup();try{f.bridge.resolveFork=async()=>({policy:{window:736843,compact:630000,reserve:16000,revision:3,enabled:true},model:base});
+ const f=setup();try{f.bridge.records.delete('chat');f.bridge.resolveFork=async()=>({policy:{window:736843,compact:630000,reserve:16000,revision:3,enabled:true},model:base});
  f.bridge.fromClient(JSON.stringify({id:10,method:'thread/resume',params:{threadId:'chat',excludeTurns:true}}));await tick();const request=f.writes.find(x=>x.id===10);assert.equal(Math.floor(request.params.config.model_context_window*.9),700000);assert.equal(request.params.config.model_auto_compact_token_limit,630000);
- f.bridge.fromServer(JSON.stringify({id:10,result:{thread:{id:'chat',status:{type:'idle'}},model:'fixture'}}));await tick();assert.equal(f.r.expectedWindow,700000);assert.equal(f.r.policy.contextCeilingVersion,1);assert.equal(f.r.appliedRevision,4);
+ f.bridge.fromServer(JSON.stringify({id:10,result:{thread:{id:'chat',status:{type:'idle'}},model:'fixture'}}));f.r=f.bridge.records.get('chat');await tick();assert.equal(f.r.expectedWindow,700000);assert.equal(f.r.policy.contextCeilingVersion,1);assert.equal(f.r.appliedRevision,4);
  }finally{f.close();}
 });
 
