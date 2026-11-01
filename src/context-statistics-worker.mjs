@@ -19,7 +19,7 @@ parentPort.on('message',({taskId,id,refresh,mode='statistics',knownResultKey})=>
       const events=readHistory(workerData.home,id,history);
       if(previous?.revision===events.revision){resultCacheHit=true;entry={...previous,sources:events.sources};}
       else {
-        const candidate=mode==='observation'?{...localUsageObservation(events),...(!historySourcesUnchanged(workerData.home,events.sources)?{known:false}:{})}:mode==='speed'?latestObservedSpeed(buildTimeline(events,id,()=>0).responses):analyzeEvents(events,id),{generatedAt,...content}=candidate??{},fingerprint=JSON.stringify(content);
+        const candidate=mode==='observation'?{...localUsageObservation(events),...(!historySourcesUnchanged(workerData.home,events.sources)?{known:false}:{})}:mode==='speed-report'?{responses:buildTimeline(events,id,()=>0).responses.slice(-200)}:mode==='speed'?latestObservedSpeed(buildTimeline(events,id,()=>0).responses):analyzeEvents(events,id),{generatedAt,...content}=candidate??{},fingerprint=JSON.stringify(content);
         resultUnchanged=previous?.fingerprint===fingerprint;
         entry={revision:events.revision,sources:events.sources,result:resultUnchanged?previous.result:candidate,
           fingerprint,key:resultUnchanged?previous.key:randomUUID()};

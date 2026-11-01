@@ -1415,5 +1415,7 @@
   "压缩历史解压失败，文件可能损坏": "Unable to decompress history; the file may be damaged.",
   "聊天历史文件不存在": "The chat history file does not exist.",
   "不支持的聊天历史文件格式": "Unsupported chat history file format.",
-  "无法唯一定位继承历史文件：找到多份不同记录": "Cannot identify inherited history: multiple distinct records were found."
+  "无法唯一定位继承历史文件：找到多份不同记录": "Cannot identify inherited history: multiple distinct records were found.",
+  "本轮仍在运行，需等待轮次结束后才能应用。": "This turn is still running; changes can apply after it finishes.",
+  "等待已确认的上下文整理": "Waiting for the confirmed context compaction"
 }

@@ -88,6 +88,18 @@
     "codex-backups": {
       "method": "POST",
       "path": "/codex/backups"
+    },
+    "chat": {
+      "method": "POST",
+      "path": "/chat"
+    },
+    "context-operation": {
+      "method": "POST",
+      "path": "/context-operation"
+    },
+    "speed-report": {
+      "method": "POST",
+      "path": "/context-speed"
     }
   }
 }

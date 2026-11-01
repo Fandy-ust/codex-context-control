@@ -1,0 +1,12 @@
+export function speedReport(id,statistics,limit=20){
+ const responses=(statistics.responses??[]).slice(-limit);
+ const samples=responses.map(r=>({id:r.id,timestamp:r.timestamp,model:r.config?.model??null,effort:r.config?.effort??null,serviceTier:r.config?.serviceTier??null,kind:r.eventType??'unknown',outputTokens:r.outputTokens??null,reasoningTokens:r.reasoningTokens??null,durationMs:r.durationMs??null,tokensPerSecond:r.timingKind==='observed_generation'&&Number.isFinite(r.tokensPerSecond)&&r.tokensPerSecond>=0&&r.durationMs>0?r.tokensPerSecond:null}));
+ const groups=new Map();
+ for(const r of samples){const key=JSON.stringify([r.model,r.effort,r.serviceTier,r.kind]);const g=groups.get(key)??{model:r.model,effort:r.effort,serviceTier:r.serviceTier,kind:r.kind,measuredSamples:0,unavailableSamples:0,outputTokens:0,durationMs:0};if(r.tokensPerSecond!=null&&Number.isFinite(r.outputTokens)&&r.outputTokens>=0){g.measuredSamples++;g.outputTokens+=r.outputTokens;g.durationMs+=r.durationMs;}else g.unavailableSamples++;groups.set(key,g);}
+ const comparable=(statistics.responses??[]).filter(r=>r.eventType!=='compaction'&&r.timingKind==='observed_generation'&&Number.isFinite(r.outputTokens)&&r.outputTokens>=0&&Number.isFinite(r.durationMs)&&r.durationMs>0);
+ const last=comparable.at(-1),matching=last?comparable.filter(r=>JSON.stringify([r.config?.model,r.config?.effort,r.config?.serviceTier,r.eventType])===JSON.stringify([last.config?.model,last.config?.effort,last.config?.serviceTier,last.eventType])):[];
+ const recent=matching.slice(-5),baseline=matching.slice(-10,-5),rate=rows=>rows.length?rows.reduce((n,r)=>n+r.outputTokens,0)*1000/rows.reduce((n,r)=>n+r.durationMs,0):null;
+ const recentRate=rate(recent),baselineRate=rate(baseline);
+ const comparison={model:last?.config?.model??null,effort:last?.config?.effort??null,serviceTier:last?.config?.serviceTier??null,kind:last?.eventType??null,recentSamples:recent.length,baselineSamples:baseline.length,recentTokensPerSecond:recentRate,baselineTokensPerSecond:baselineRate,changePercent:recent.length>=3&&baseline.length>=3&&baselineRate>0?(recentRate/baselineRate-1)*100:null};
+ return {id,comparison,metric:'observed_output_tokens_per_second',samples,groups:[...groups.values()].map(g=>({...g,tokensPerSecond:g.measuredSamples&&g.durationMs>0?g.outputTokens/(g.durationMs/1000):null})),notes:'Output tokens may include reasoning. Missing timing is null, not zero. This is generation throughput, not guaranteed speed or network TTFT.'};
+}

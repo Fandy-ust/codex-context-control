@@ -17,6 +17,19 @@ function fixture(publish){
   const close=()=>{bridge.frontLines.close();bridge.backLines.close();input.destroy();output.destroy();child.stdin.destroy();child.stdout.destroy();};
   return {bridge,record,writes,close};
 }
+test('tracked compaction checks the exact turn, model, budget and history before native execution and reports completion',async()=>{
+ const f=fixture(async()=>({})),reports=[];f.bridge.onContextOperation=value=>reports.push(value);
+ Object.assign(f.record,{turnId:'turn',policy:policy(500000,420000,1),policyVersion:1});
+ const request={id:'chat',operationId:'receipt',turnId:'turn',model:'fixture',revision:1,contextEpoch:0};let calls=0;
+ f.bridge.rpc=async method=>{assert.equal(method,'thread/compact/start');calls++;return {};};
+ try{
+  for(const change of [{turnId:'other'},{model:'other'},{revision:2},{contextEpoch:1}])await assert.rejects(f.bridge.compactTracked({...request,...change}),/changed/);
+  f.bridge.external.set('pending',{threadId:'chat',method:'turn/start'});await assert.rejects(f.bridge.compactTracked(request),/changed/);f.bridge.external.clear();assert.equal(calls,0);
+  await f.bridge.compactTracked(request);assert.equal(calls,1);assert.equal(f.record.locked,true);assert.equal(reports.length,0);
+  f.bridge.fromServer(JSON.stringify({method:'turn/completed',params:{threadId:'chat',turn:{id:'compact-turn',status:'completed'}}}));await until(()=>reports.length===1);
+  assert.equal(reports[0].state,'completed');assert.equal(reports[0].operationId,'receipt');assert.equal(f.record.locked,false);
+ }finally{f.close();}
+});
 test('a fresh fork expands before any model request and holds the first message until reload completes',async()=>{
  const f=fixture(async()=>({})),entered=deferred(),release=deferred(),calls=[];
  Object.assign(f.record,{usageFresh:false,freshUsage:false,lastUsage:null,policy:policy(526316,473000,1),appliedRevision:1,revision:1,configuredWindow:526316,seed:{config:{model_context_window:526316,model_auto_compact_token_limit:473000}}});f.bridge.rememberAppliedBudget(f.record,f.record.policy);

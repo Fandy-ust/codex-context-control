@@ -42,7 +42,7 @@ if(!enhanced){
   let peer,closed=false,bridge;
   bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{
     await ensureDaemon();return request('forkBudget',{id,model,contextCeiling:!!ceiling?.version});
-  },{observeQuota:value=>peer?.call('observeQuota',value),resolveUsage:id=>peer?.call('localUsage',{id},30000),resolveCompensation:createCompensationResolver(),accountingWindowLimit:ceiling?.accountingWindowLimit,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling?.version});}});
+  },{onContextOperation:value=>peer?.call('updateContextOperation',value),observeQuota:value=>peer?.call('observeQuota',value),resolveUsage:id=>peer?.call('localUsage',{id},30000),resolveCompensation:createCompensationResolver(),accountingWindowLimit:ceiling?.accountingWindowLimit,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling?.version});}});
   async function attach(){
     if(closed)return;
     try{
@@ -50,6 +50,7 @@ if(!enhanced){
         if(op==='setPolicy')return bridge.setPolicy(p.id,p.policy,p.model);
         if(op==='clearPolicy')return bridge.clearPolicy(p.id,p.revision);
         if(op==='compact')return bridge.compact(p.id);
+        if(op==='context-compact')return bridge.compactTracked(p);
         if(op==='queue-start'){try{return await bridge.startAutomatic(p.id,p.task);}catch(error){const task=bridge.records.get(p.id)?.automaticTask;if(task?.executionId===p.task.executionId&&task.status==='running')return task;return {executionId:p.task.executionId,taskId:p.task.taskId,status:'error',error:error.message,errorConfirmed:task?.executionId!==p.task.executionId||task.errorConfirmed===true};}}
         if(op==='queue-prepare')return bridge.prepareAutomatic(p.id);
         if(op==='queue-interrupt')return bridge.interruptAutomatic(p.id,p.executionId);
@@ -59,7 +60,7 @@ if(!enhanced){
         throw new Error('不支持的运行时操作');
       });
       if(closed){peer.close();return;}
-      await peer.call('registerBridge',{pid:process.pid,nativePid:child.pid,accountSwitchVersion:1,creditsStopVersion:1,version:bridgeVersion,taskQueueVersion:4,compensationVersion:ceiling?.accountingWindowLimit?3:2,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
+      await peer.call('registerBridge',{pid:process.pid,nativePid:child.pid,accountSwitchVersion:1,creditsStopVersion:1,version:bridgeVersion,taskQueueVersion:4,contextOperationsVersion:1,compensationVersion:ceiling?.accountingWindowLimit?3:2,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
       if(closed){peer.close();return;}
       if(bridge.quotaObserver.snapshot)await peer.call('observeQuota',bridge.quotaObserver.snapshot);
       for(const record of bridge.records.values())bridge.notify(record);

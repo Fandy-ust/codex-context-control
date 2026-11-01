@@ -9,15 +9,28 @@ context-manager global status
 context-manager global quota
 context-manager global defaults-set --window 400K --compact 360K
 context-manager chat list
+context-manager chat show current --summary
 context-manager chat preflight CHAT_ID --window 500K --compact 450K
 context-manager chat set CHAT_ID --window 500K --compact 450K
-context-manager chat speed CHAT_ID --limit 20
+context-manager chat speed current --limit 20 --summary
 context-manager queue --help
 ```
 
 Use the full launcher path if it is not on PATH. Defaults affect future new chats; forks inherit their parent. `chat set --save-only` saves without requesting application, and `--revision` prevents stale writes. Saving, queuing and runtime confirmation are distinct states. `chat compact` explicitly requests native compaction; `chat stop-auto` preserves the current runtime window while stopping subsequent automatic budget application.
 
 Speed results group recorded generation throughput by model, effort, service tier and response kind. Aggregate throughput is total output tokens divided by observed generation duration. Missing timing remains null. Output can include reasoning, and the metric is not network TTFT or visible-text speed.
+
+## Agent workflow
+
+`current` validates `CODEX_THREAD_ID`; it never guesses the foreground chat. Use an explicit ID when unavailable. Start with `chat show current --summary` for requested/loaded budgets, observation validity, estimated headroom, capabilities and recent receipts. Use task-specific judgment to interpret the measurements.
+
+Preflight returns `budgetValid`, `evidence`, `execution`, `basis.policyRevision` and `registered:false`; checking a proposal never registers it. Discuss the tradeoff, then apply using `--revision N` from that basis. Reuse a stable `--request-id ID` for the same budget change or compaction request. Inspect `chat operations current` or `chat operation current OPERATION_ID` after uncertain responses; structured errors expose `code`, `nextAction` and an operation ID when available.
+
+After agreement, `chat compact current --when-idle --request-id CONFIRMED_ID` registers one compaction bound to the exact current turn, model, budget and history branch. End the turn at a safe checkpoint rather than polling yourself. Requests expire after 15 minutes and cancel or become superseded on interruption, relevant changes or disconnect. Cancel an unstarted compaction with `chat cancel current OPERATION_ID`. It does not interrupt a turn or send a continuation message; a service restart does not replay uncertain operations. Inspect capabilities: older bridges require a normal Codex restart.
+
+Accepted, waiting, executing, awaiting readback and completed/confirmed are distinct. Budget confirmation uses the next normal request's window readback. Receipts are bounded to 200 entries. Speed summaries compare available samples with matching configurations and keep insufficient baselines unknown; they reuse existing workers without full context tokenization, another Codex server or model-list downloads.
+
+The skill defaults to quality-first, supports balanced and speed-first preferences and revisits tradeoffs when the user reports slowness. It continues safe work with comfortable headroom and yields only when an unresolved choice risks compaction during the next stage.
 
 ## Install the skill
 

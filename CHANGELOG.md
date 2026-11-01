@@ -1,3 +1,9 @@
+## 0.27.25
+
+- Add targeted current-chat summaries and distinguish budget validity, usage evidence, execution timing and read-only preflight from registration.
+- Track CLI budget changes and one-shot idle compaction with bounded persisted receipts, request deduplication, revision checks, cancellation and structured recovery; bind compaction to the current turn and cancel stale intent without restarting or replaying work.
+- Add numerical speed reports without full context tokenization and update the bundled skill for interactive, task-aware quality/balanced/speed policies on both platforms.
+
 ## 0.27.24
 
 - Remove the redundant post-save budget guidance from both desktop main windows; retain the existing runtime status and operation errors.

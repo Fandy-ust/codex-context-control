@@ -43,8 +43,8 @@ export class Store {
       return this.catalog?.get(slug)||null;
     }catch {this.catalogStamp=null;this.catalog=new Map();return null;}
   }
-  publicThread(id,owners=new Map()) {
-    this.refreshMetadata();
+  publicThread(id,owners=new Map(),{refreshMetadata=true}={}) {
+    if(refreshMetadata)this.refreshMetadata();
     const t=this.data.threads[id]||{id};const ownersForThread=owners.get(id)||[];
     const cached=ownersForThread.length===0?this.threadCache.get(id):null;
     const observation=cached&&(!t.lastUsage||(cached.observedAt??0)>(t.observedAt??0))?cached:{};
