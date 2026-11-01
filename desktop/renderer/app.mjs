@@ -598,7 +598,7 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       if(budgetInputError)throw Error(budgetInputError);
       const params={id:selected,...budgetCommand(draft,policyForDraft(draft,current().modelMetadata),state.capabilities),expectedRevision:draft.expectedRevision,apply:true};
       try{
-        await run('policy',params);dirty=false;setNotice(t('预算已保存，实际窗口将在下一轮请求后确认。'));await refresh();
+        await run('policy',params);dirty=false;setNotice('');await refresh();
       }catch(error){setNotice(error.message,true);throw error;}return;
     }
     if(action==='scan'){await run('scan');await refresh();if(settingsOpen)render();return;}

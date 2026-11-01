@@ -1,3 +1,8 @@
+## 0.27.24
+
+- Remove the redundant post-save budget guidance from both desktop main windows; retain the existing runtime status and operation errors.
+- Include the Zstandard decoder in the Windows payload so its installed service can start.
+
 ## 0.27.23
 
 - Read plain and Zstandard-compressed Codex histories through one bounded, streaming reader. Follow immutable fork/edit boundaries in decompressed bytes, recognize representation changes, and distinguish missing, conflicting and damaged history.
