@@ -43,12 +43,14 @@ export class Bridge {
     const id=m.params?.threadId;const record=this.records.get(id);
     if(m.method==='thread/rollback'&&record){record.usageFresh=false;record.freshUsage=false;}
     if(m.method==='turn/start'&&record?.automaticTask?.status==='starting'){this.rejectTurn(m,'队列正在提交任务，请稍后再发送。');return;}
-    if(m.method==='turn/start'&&record&&!record.locked&&record.status==='idle'&&record.policy&&record.appliedRevision!==record.policy.revision){
-      if(['error','needs_compaction','needs_observation'].includes(record.phase)){this.rejectTurn(m,record.message||'新预算尚未应用，请刷新或停止自动应用后再发送。');return;}
+    // Missing usage defers the budget change, not the request that can measure it.
+    // Keep the current runtime configuration until a later idle preflight succeeds.
+    if(m.method==='turn/start'&&record&&!record.locked&&record.status==='idle'&&record.policy&&record.appliedRevision!==record.policy.revision&&record.phase!=='needs_observation'){
+      if(['error','needs_compaction'].includes(record.phase)){this.rejectTurn(m,record.message||'新预算尚未应用，请刷新或停止自动应用后再发送。');return;}
       // Acquire the reload lock synchronously before letting a new turn use an
       // intermediate budget; apply() still performs the normal safety checks.
       this.apply(record).catch(()=>{});
-      if(!record.locked&&record.policy&&record.appliedRevision!==record.policy.revision){this.rejectTurn(m,record.message||'新预算尚未应用，请刷新或停止自动应用后再发送。');return;}
+      if(!record.locked&&record.policy&&record.appliedRevision!==record.policy.revision&&record.phase!=='needs_observation'){this.rejectTurn(m,record.message||'新预算尚未应用，请刷新或停止自动应用后再发送。');return;}
     }
     if((record?.locked||record?.initializing)&&blockedMethods.has(m.method)){
       if(record.queue.length>=128||record.queueBytes+line.length>128*1024*1024){if(m.id!=null)this.writeFrontend(JSON.stringify({id:m.id,error:{code:-32000,message:'Context Control is applying a change; retry this request.'}}));return;}
@@ -294,7 +296,7 @@ export class Bridge {
       // A fresh usage record can only arrive after the next turn. Like a manual
       // turn, allow that observation under the runtime's current configuration;
       // do not shrink/reload history without preflight or mark the task failed.
-      if(r.policy&&r.appliedRevision!==r.policy.revision)throw Error(r.message||'请先完成上下文预算应用');
+      if(r.policy&&r.appliedRevision!==r.policy.revision&&r.phase!=='needs_observation')throw Error(r.message||'请先完成上下文预算应用');
       if(r.status!=='idle'||r.locked||r.initializing)throw Error('请等待聊天空闲');
     }
     for(const file of settings.attachments){try{if(!fs.statSync(file.path).isFile())throw Error();}catch{throw Error('附件不存在或无法读取：'+file.name);}}
@@ -409,7 +411,7 @@ export class Bridge {
   }
   async apply(record){
     if(this.accountTransition)return;
-    if(record.locked||!record.policy||record.appliedRevision===record.policy.revision||record.status!=='idle')return;
+    if(record.locked||!record.policy||record.appliedRevision===record.policy.revision||record.status!=='idle'||[...this.external.values()].some(p=>p.threadId===record.id&&p.method==='turn/start'))return;
     record.usageFresh??=record.freshUsage;
     record.locked=true;
     try{

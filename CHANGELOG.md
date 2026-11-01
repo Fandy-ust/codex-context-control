@@ -1,3 +1,8 @@
+## 0.27.25
+
+- Fix manual messages and queued tasks getting stuck after a model switch or missing usage observation. Defer budget changes while allowing a normal request under the current runtime configuration, then retry budget application after fresh usage arrives.
+- Preserve compaction and reload-error blocks, prevent background budget reloads racing a submitted request, and clarify the waiting-for-usage status on both desktops.
+
 ## 0.27.24
 
 - Remove the redundant post-save budget guidance from both desktop main windows; retain the existing runtime status and operation errors.

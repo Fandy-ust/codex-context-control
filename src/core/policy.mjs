@@ -42,7 +42,7 @@ export function preflight(thread,policy,model) {
       policy.window>=old.window&&compact>=old.compact&&
       usable-policy.reserve>=Math.floor(old.window*percent/100)-old.reserve&&compact-policy.reserve>=old.compact-old.reserve)
       return {...result,usageIsEstimate:false,expansionOnly:true,message:'扩容不降低当前窗口与压缩余量，可在发送消息前加载。'};
-    return {...result,code:'needs_observation',allowed:false,message:'正在核对本地用量；尚无有效记录，暂未应用新预算。'};
+    return {...result,code:'needs_observation',allowed:false,message:'尚无有效用量记录；暂缓调整预算，可继续发送消息。'};
   }
   result.estimatedUsage=usage;
   if(usage+policy.reserve>=Math.min(usable,compact))return {...result,code:'needs_compaction',allowed:false,message:'最近请求用量加预留已达到新阈值；请先在 Codex 压缩，再重新测量。'};

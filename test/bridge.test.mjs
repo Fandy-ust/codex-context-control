@@ -38,7 +38,7 @@ test('resuming an already loaded thread cannot claim a newly injected budget was
   assert.equal(f.record.appliedRevision,1);assert.equal(f.record.configuredWindow,526316);assert.equal(f.record.seed.config.model_context_window,526316);
  }finally{f.close();}
 });
-test('local evidence can unblock a stale budget without a model request, and an unavailable budget never silently forwards input',async()=>{
+test('local evidence applies a stale budget; missing evidence allows input without applying the budget',async()=>{
  const f=fixture(async()=>({}));f.record.usageFresh=false;f.record.freshUsage=false;let reads=0;
  f.bridge.resolveUsage=async()=>{reads++;return {known:true,model:'fixture',lastUsage:{totalTokens:120000}};};
  f.bridge.rpc=async method=>method==='thread/resume'?{thread:{id:'chat',status:{type:'idle'}},model:'fixture',modelProvider:'fixture',sandbox:{type:'readOnly'}}:{};
@@ -47,7 +47,7 @@ test('local evidence can unblock a stale budget without a model request, and an 
   Object.assign(f.record,{usageFresh:false,freshUsage:false,appliedBudget:null});f.bridge.resolveUsage=async()=>({known:false});
   f.bridge.setPolicy('chat',policy(382106,326000,3),model);await until(()=>f.record.phase==='needs_observation'&&!f.record.locked);
   const responses=[];f.bridge.output.on('data',d=>responses.push(JSON.parse(d.toString())));
-  f.bridge.fromClient(JSON.stringify({id:2,method:'turn/start',params:{threadId:'chat',input:[]}}));await until(()=>responses.length);assert.equal(f.writes.length,0);assert.match(responses.at(-1).error.message,/本地用量/);
+  f.bridge.fromClient(JSON.stringify({id:2,method:'turn/start',params:{threadId:'chat',input:[]}}));await until(()=>f.writes.length);assert.equal(responses.length,0);assert.equal(f.writes[0].id,2);assert.equal(f.record.appliedRevision,2);assert.equal(f.record.policy.revision,3);
  }finally{f.close();}
 });
 
@@ -217,4 +217,62 @@ test('disabling stops compensation-triggered compaction even before the enlarged
   f.bridge.resolveCompensation=Object.assign(async()=>({enabled:false}),{isEnabled:()=>false});f.bridge.compact=async()=>{called++;};
   f.bridge.scheduleCompensatedCompaction(f.record);await tick();assert.equal(called,0);
  }finally{f.close();}
+});
+
+
+test('model switch without local usage allows one manual turn, then applies the pending budget after fresh usage',async()=>{
+ const f=fixture(async()=>({}));const calls=[];
+ f.bridge.resolveUsage=async()=>({known:false});
+ f.bridge.rpc=async(method,params)=>{calls.push({method,params});return method==='thread/resume'?{thread:{id:'chat',status:{type:'idle'}},model:'fixture',modelProvider:'fixture',sandbox:{type:'readOnly'}}:{};};
+ try{
+  Object.assign(f.record,{policy:policy(447369,382000,2),policyVersion:2,appliedRevision:1,appliedBudget:null,usageFresh:false,freshUsage:false});
+  const blocked=deferred();f.bridge.resolveUsage=async()=>{await blocked.promise;return {known:false};};
+  const applying=f.bridge.apply(f.record);
+  f.bridge.fromClient(JSON.stringify({id:301,method:'turn/start',params:{threadId:'chat',input:[{type:'text',text:'hello'}]}}));
+  assert.equal(f.writes.length,0);blocked.resolve();await applying;
+  assert.equal(f.writes.filter(m=>m.method==='turn/start').length,1);
+  assert.equal(f.record.appliedRevision,1);assert.equal(calls.length,0,'no reload without evidence');
+  f.bridge.fromServer(JSON.stringify({id:301,result:{turn:{id:'turn-301'}}}));
+  f.bridge.fromServer(JSON.stringify({method:'turn/started',params:{threadId:'chat',turn:{id:'turn-301'}}}));
+  f.bridge.fromServer(JSON.stringify({method:'thread/tokenUsage/updated',params:{threadId:'chat',tokenUsage:{modelContextWindow:665000,last:{totalTokens:125000}}}}));
+  f.bridge.fromServer(JSON.stringify({method:'thread/status/changed',params:{threadId:'chat',status:{type:'idle'}}}));
+  await until(()=>f.record.appliedRevision===2&&!f.record.locked);
+  assert.ok(calls.some(c=>c.method==='thread/resume'&&c.params.config));
+  assert.equal(f.writes.filter(m=>m.method==='turn/start').length,1,'never replay the user input');
+ }finally{f.close();}
+});
+
+test('scheduled apply cannot reload after an observation turn has already been submitted',async()=>{
+ const f=fixture(async()=>({}));let calls=0;f.bridge.resolveUsage=async()=>{calls++;return {known:false};};
+ try{
+  f.record.usageFresh=false;f.record.freshUsage=false;
+  f.bridge.setPolicy('chat',policy(447369,382000,2),model);
+  f.bridge.fromClient(JSON.stringify({id:302,method:'turn/start',params:{threadId:'chat',input:[]}}));
+  await tick();assert.equal(f.writes.length,1);assert.equal(calls,0);assert.equal(f.record.locked,false);
+ }finally{f.close();}
+});
+
+test('automatic task can obtain missing usage without applying an unverified budget',async()=>{
+ const f=fixture(async()=>({}));const calls=[];
+ Object.assign(f.record,{usageFresh:false,freshUsage:false,appliedBudget:null});
+ f.bridge.resolveUsage=async()=>({known:false});
+ f.bridge.rpc=async(method,params)=>{calls.push({method,params});return {turn:{id:'queued-observation',status:'inProgress'}};};
+ try{
+  f.bridge.setPolicy('chat',policy(447369,382000,2),model);
+  await tick();await until(()=>!f.record.locked&&f.record.phase==='needs_observation');
+  const result=await f.bridge.startAutomatic('chat',{executionId:'observe-1',taskId:'task-1',prompt:'continue'});
+  assert.equal(result.status,'running');assert.equal(calls.filter(c=>c.method==='turn/start').length,1);
+  assert.equal(f.record.appliedRevision,undefined);assert.ok(!calls.some(c=>c.method==='thread/resume'));
+ }finally{f.close();}
+});
+
+test('measured over-capacity and reload errors still reject manual input',async()=>{
+ for(const phase of ['needs_compaction','error']){
+  const f=fixture(async()=>({}));const responses=[];f.bridge.output.on('data',d=>responses.push(JSON.parse(d.toString())));
+  try{
+   Object.assign(f.record,{policy:policy(100000,90000,2),phase,message:'blocked',appliedRevision:1});
+   f.bridge.fromClient(JSON.stringify({id:303,method:'turn/start',params:{threadId:'chat',input:[]}}));
+   assert.equal(f.writes.length,0);assert.equal(responses[0].error.message,'Context Control: blocked');
+  }finally{f.close();}
+ }
 });
