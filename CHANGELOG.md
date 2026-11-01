@@ -1,3 +1,8 @@
+## 0.27.26
+
+- Prevent duplicate `notify` keys after restoring older Codex configurations: normalize only the quoted root key spelling before manual or automatic recovery, preserving commands, comments, configuration values and original backup blocks.
+- Recheck legacy queued restore jobs before applying. Reject conflicting duplicate-key snapshots and retain damaged evidence; recovery still waits for Codex to exit. The shared restore service covers Windows and macOS.
+
 ## 0.27.25
 
 - Fix manual messages and queued tasks getting stuck after a model switch or missing usage observation. Defer budget changes while allowing a normal request under the current runtime configuration, then retry budget application after fresh usage arrives.
