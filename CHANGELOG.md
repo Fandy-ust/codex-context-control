@@ -1,3 +1,7 @@
+## 0.27.26
+
+- Preserve model-bound inherited usage when a fresh desktop fork changes its model and returns to the measured model before generating content. New input, generated content, rollback and compaction still invalidate the observation; usage from a different model is never treated as current.
+
 ## 0.27.25
 
 - Add targeted current-chat summaries and distinguish budget validity, usage evidence, execution timing and read-only preflight from registration.

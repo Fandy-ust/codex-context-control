@@ -15,8 +15,8 @@ function item(value){
 export function statisticsEvent(event){
  const p=event.payload??{};let payload;
  switch(event.type){
-  case 'session_meta':payload=pick(p,['history_base']);if(p.base_instructions?.text)payload.base_instructions={text:p.base_instructions.text};break;
-  case 'turn_context':payload=pick(p,['turn_id','model','effort','reasoning_effort','service_tier']);break;
+  case 'session_meta':payload=pick(p,['history_base','model_provider']);if(p.base_instructions?.text)payload.base_instructions={text:p.base_instructions.text};break;
+  case 'turn_context':payload=pick(p,['turn_id','model','model_provider_id','effort','reasoning_effort','service_tier']);break;
   case 'response_item':payload=item(p);break;
   case 'token_usage_record':payload=pick(p,['response_id','turn_id','usage']);break;
   case 'compacted':payload=pick(p,['message','window_id','compaction_response_id']);if(Array.isArray(p.replacement_history))payload.replacement_history=p.replacement_history.map(item);break;
@@ -24,7 +24,7 @@ export function statisticsEvent(event){
    payload={type:p.type};
    if(p.type==='task_started')Object.assign(payload,pick(p,['turn_id','model_context_window']));
    if(p.type==='token_count'){payload.info=pick(p.info,['model_context_window']);if(p.info?.last_token_usage)payload.info.last_token_usage=pick(p.info.last_token_usage,['total_tokens']);}
-   if(p.type==='thread_settings_applied')payload.thread_settings=pick(p.thread_settings,['model','reasoning_effort','service_tier']);
+   if(p.type==='thread_settings_applied')payload.thread_settings=pick(p.thread_settings,['model','model_provider_id','reasoning_effort','service_tier']);
    if(p.type==='item_completed'){
     Object.assign(payload,pick(p,['started_at_ms','completed_at_ms']));payload.item=pick(p.item,['id','type']);
    }
