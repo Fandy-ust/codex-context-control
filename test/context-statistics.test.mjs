@@ -49,7 +49,7 @@ test('offline tokenizer and worker return aggregates; cache is per chat and refr
   const file=f.write(id,[e('session_meta',{}),e('response_item',msg('user','hello world')),e('response_item',msg('assistant','hi',{phase:'final'})),e('token_usage_record',{response_id:'a',usage:{input_tokens:10,output_tokens:1,cached_input_tokens:2}})]);
   const out=analyzeContext(f.home,id);assert.equal(out.visibleTokens,2);assert.equal(out.responses.length,1);assert.ok(!JSON.stringify(out).includes('hello world'));
   const service=createContextStatisticsService(f.home),first=await service(id);fs.appendFileSync(file,JSON.stringify(e('compacted',{message:'summary',replacement_history:[msg('user','summary')]}))+'\n');
-  assert.deepEqual(await service(id),first);assert.equal((await service(id,true)).snapshotKind,'local_history');await assert.rejects(service(parent),/尚无本地历史/);
+  assert.deepEqual(await service(id),first);assert.equal((await service(id,true)).snapshotKind,'local_history');await assert.rejects(service(parent),/尚无可读取的本地历史/);
  }finally{f.close();}
 });
 

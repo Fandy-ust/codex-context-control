@@ -25,9 +25,12 @@ export function createContextStatisticsService(home=codexHome,{idleMs=30000,cach
   function dispatch(){
     if(closed)return;
     while(queue.length){
-      const next=queue[0];let slot=slots.find(s=>!s.job&&s.lastId===next.id)??slots.find(s=>!s.job&&s.affinity.has(next.id))??slots.find(s=>!s.job);
-      if(!slot){if(slots.length>=workerLimit)return;try{slot=makeSlot();}catch{queue.shift().reject(new Error('无法启动统计进程'));continue;}}
-      const job=queue.shift();clearTimeout(slot.idleTimer);slot.job=job;slot.lastId=job.id;slot.worker.ref();
+      // Statistics, speed and preflight observations for one chat share a
+      // worker's parsed history instead of decoding the same file in parallel.
+      const index=queue.findIndex(job=>!slots.some(s=>s.job?.id===job.id));if(index<0)return;
+      const next=queue[index];let slot=slots.find(s=>!s.job&&s.lastId===next.id)??slots.find(s=>!s.job&&s.affinity.has(next.id))??slots.find(s=>!s.job);
+      if(!slot){if(slots.length>=workerLimit)return;try{slot=makeSlot();}catch{queue.splice(index,1)[0].reject(new Error('无法启动统计进程'));continue;}}
+      const [job]=queue.splice(index,1);clearTimeout(slot.idleTimer);slot.job=job;slot.lastId=job.id;slot.worker.ref();
       slot.timer=setTimeout(()=>complete(slot,new Error('统计耗时过长，请稍后刷新')),timeoutMs);
       slot.worker.postMessage({taskId:job.taskId,id:job.id,refresh:job.refresh,mode:job.mode,knownResultKey:job.cached?.key});
     }
@@ -37,7 +40,7 @@ export function createContextStatisticsService(home=codexHome,{idleMs=30000,cach
     if(closed)throw new Error('统计服务已关闭');
     if(!/^[a-f\d-]{36}$/i.test(id))throw new Error('聊天 ID 无效');
     if(pending.has(cacheKey))return pending.get(cacheKey);
-    const found=cache.get(cacheKey);if(!refresh&&found&&Date.now()-found.at<cacheMs)return found.data;
+    const found=cache.get(cacheKey);if(mode!=='observation'&&!refresh&&found&&Date.now()-found.at<cacheMs)return found.data;
     if(pending.size>=8)throw new Error('正在统计其他聊天，请稍后刷新');
     const task=new Promise((resolve,reject)=>{queue.push({id,refresh,mode,cached:found,taskId:++sequence,resolve,reject});dispatch();})
       .then(({data,key})=>{cache.delete(cacheKey);cache.set(cacheKey,{data,key,at:Date.now()});if(cache.size>12)cache.delete(cache.keys().next().value);return data;})
@@ -45,6 +48,7 @@ export function createContextStatisticsService(home=codexHome,{idleMs=30000,cach
     pending.set(cacheKey,task);return task;
   };
   get.speed=(id,refresh=false)=>get(id,refresh,'speed');
+  get.observation=(id,refresh=false)=>get(id,refresh,'observation');
   get.diagnostics=()=>({workerStarts,workers:slots.length,pending:pending.size,queued:queue.length,cachedResults:cache.size,last:lastDiagnostics});
   get.close=()=>{closed=true;for(const job of queue.splice(0))job.reject(new Error('统计服务已关闭'));for(const slot of [...slots]){const job=slot.job;slot.job=null;retire(slot);job?.reject(new Error('统计服务已关闭'));}cache.clear();};
   return get;

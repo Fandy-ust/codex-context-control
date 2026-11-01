@@ -3,10 +3,10 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {probeAppServer} from './runtime-probe.mjs';
+import {inspectRuntimeSchema} from './runtime-schema.mjs';
 import {runtimeSupported} from './compatibility.mjs';
 
-const revision=1;
+const revision=2;
 const digest=value=>crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 function fileIdentity(file){
   try{const real=fs.realpathSync(file),s=fs.statSync(real);return [real,s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs];}catch{return [file,'missing'];}
@@ -33,7 +33,7 @@ export function recordRuntimeStartupFailure(home,result){
   save(home,{...result,enhanced:false,reason:'native-startup-failed',checkedAt:Date.now(),cached:false});
 }
 
-export async function checkRuntimeCompatibility({binary,home,managerVersion,extraArgs=[],probe=probeAppServer,versionOf,now=Date.now,successTtl=86400000,failureTtl=60000}){
+export async function checkRuntimeCompatibility({binary,home,managerVersion,extraArgs=[],probe,versionOf,now=Date.now,successTtl=Infinity,failureTtl=60000}){
   const key=identity(binary,managerVersion,extraArgs),previous=readRuntimeCompatibility(home),at=now();
   const age=at-(previous?.checkedAt??0);
   if(previous?.identity===key&&typeof previous.enhanced==='boolean'&&age>=0&&age<(previous.enhanced?successTtl:failureTtl))return {...previous,cached:true};
@@ -49,16 +49,18 @@ export async function checkRuntimeCompatibility({binary,home,managerVersion,extr
     result.runtimeVersion=nativeVersion.trim();
     temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-runtime-check-'));
     fs.writeFileSync(path.join(temp,'config.toml'),'[features]\nplugins=false\n[analytics]\nenabled=false\n[feedback]\nenabled=false\n');
-    const response=await probe({command:binary,args:['app-server','--listen','stdio://',...extraArgs],cwd:temp,env:{...process.env,CODEX_HOME:temp,CONTEXT_CONTROL_CODEX_HOME:temp}});
-    // Check manager-owned overrides, not user settings. Unknown config keys can
-    // otherwise be silently ignored by a newer CLI while initialize succeeds.
-    for(let i=0;i<extraArgs.length;i+=2){
+    const options={command:binary,args:['app-server','--listen','stdio://',...extraArgs],extraArgs,cwd:temp,env:{...process.env,CODEX_HOME:temp,CONTEXT_CONTROL_CODEX_HOME:temp}};
+    const response=await (probe?probe(options):inspectRuntimeSchema(options));
+    // An explicitly supplied live probe can confirm overrides. The normal
+    // startup uses local schema/syntax evidence only; actual window readback
+    // remains tied to the existing runtime, never fabricated from this check.
+    if(response.evidence!=='local-schema')for(let i=0;i<extraArgs.length;i+=2){
       const assignment=extraArgs[i+1],equal=assignment.indexOf('='),name=assignment.slice(0,equal);
       const expected=JSON.parse(assignment.slice(equal+1));
       if(extraArgs[i]!=='-c'||response.config[name]!==expected){result.reason='config-override-not-confirmed';return result;}
     }
     if(identity(binary,managerVersion,extraArgs)!==key){result.reason='runtime-changed-during-probe';return result;}
-    result.enhanced=true;result.reason='verified';return result;
+    result.enhanced=true;result.reason=response.evidence==='local-schema'?'verified-local-schema':'verified';return result;
   }catch(error){result.reason=/^probe-[a-z-]+$/.test(error.code||'')?error.code:'probe-failed';return result;}
   finally{
     save(home,result);

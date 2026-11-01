@@ -17,6 +17,39 @@ function fixture(publish){
   const close=()=>{bridge.frontLines.close();bridge.backLines.close();input.destroy();output.destroy();child.stdin.destroy();child.stdout.destroy();};
   return {bridge,record,writes,close};
 }
+test('a fresh fork expands before any model request and holds the first message until reload completes',async()=>{
+ const f=fixture(async()=>({})),entered=deferred(),release=deferred(),calls=[];
+ Object.assign(f.record,{usageFresh:false,freshUsage:false,lastUsage:null,policy:policy(526316,473000,1),appliedRevision:1,revision:1,configuredWindow:526316,seed:{config:{model_context_window:526316,model_auto_compact_token_limit:473000}}});f.bridge.rememberAppliedBudget(f.record,f.record.policy);
+ f.bridge.rpc=async(method,params)=>{calls.push({method,params});if(method==='thread/resume'){if(params.config){entered.resolve();await release.promise;}return {thread:{id:'chat',status:{type:'idle'}},model:'fixture',modelProvider:'fixture',sandbox:{type:'readOnly'}};}return {};};
+ try{
+  f.bridge.setPolicy('chat',policy(715790,643000,2),model);await entered.promise;
+  f.bridge.fromClient(JSON.stringify({id:1,method:'turn/start',params:{threadId:'chat',input:[]}}));assert.equal(f.writes.length,0);
+  release.resolve();await until(()=>f.writes.some(m=>m.method==='turn/start'));
+  assert.equal(f.record.appliedRevision,2);assert.equal(f.record.expectedWindow,680000);assert.equal(f.record.freshUsage,false);assert.equal(f.record.phase,'awaiting_runtime_confirmation');
+  assert.equal(calls.filter(x=>x.method==='thread/resume'&&x.params.config)[0].params.config.model_context_window,715790);assert.ok(!calls.some(x=>x.method==='model/list'||x.method==='thread/compact/start'));
+ }finally{release.resolve();f.close();}
+});
+test('resuming an already loaded thread cannot claim a newly injected budget was applied',async()=>{
+ const f=fixture(async()=>({}));f.bridge.nativeBudgetSupport=true;f.bridge.resolveFork=async()=>({policy:policy(715790,643000,2),model});
+ Object.assign(f.record,{policy:policy(526316,473000,1),policyVersion:1,appliedRevision:1,revision:1,configuredWindow:526316,usageFresh:true,seed:{config:{model_context_window:526316,model_auto_compact_token_limit:473000}}});
+ try{
+  f.bridge.fromClient(JSON.stringify({id:41,method:'thread/resume',params:{threadId:'chat',excludeTurns:true}}));await until(()=>f.writes.some(m=>m.id===41));
+  f.bridge.fromServer(JSON.stringify({id:41,result:{thread:{id:'chat',status:{type:'idle'}},model:'fixture'}}));await tick();
+  assert.equal(f.record.appliedRevision,1);assert.equal(f.record.configuredWindow,526316);assert.equal(f.record.seed.config.model_context_window,526316);
+ }finally{f.close();}
+});
+test('local evidence can unblock a stale budget without a model request, and an unavailable budget never silently forwards input',async()=>{
+ const f=fixture(async()=>({}));f.record.usageFresh=false;f.record.freshUsage=false;let reads=0;
+ f.bridge.resolveUsage=async()=>{reads++;return {known:true,model:'fixture',lastUsage:{totalTokens:120000}};};
+ f.bridge.rpc=async method=>method==='thread/resume'?{thread:{id:'chat',status:{type:'idle'}},model:'fixture',modelProvider:'fixture',sandbox:{type:'readOnly'}}:{};
+ try{
+  f.bridge.setPolicy('chat',policy(447369,382000,2),model);await until(()=>f.record.appliedRevision===2);assert.equal(reads,1);assert.equal(f.writes.length,0);
+  Object.assign(f.record,{usageFresh:false,freshUsage:false,appliedBudget:null});f.bridge.resolveUsage=async()=>({known:false});
+  f.bridge.setPolicy('chat',policy(382106,326000,3),model);await until(()=>f.record.phase==='needs_observation'&&!f.record.locked);
+  const responses=[];f.bridge.output.on('data',d=>responses.push(JSON.parse(d.toString())));
+  f.bridge.fromClient(JSON.stringify({id:2,method:'turn/start',params:{threadId:'chat',input:[]}}));await until(()=>responses.length);assert.equal(f.writes.length,0);assert.match(responses.at(-1).error.message,/本地用量/);
+ }finally{f.close();}
+});
 
 test('a newer budget arriving during reload applies before the queued next turn',async()=>{
   const f=fixture(async()=>({}));const entered=deferred(),release=deferred();const reloaded=[];let restores=0;
@@ -156,7 +189,7 @@ test('disabling compensation retries restoration after stale usage and a desktop
   f.bridge.rpc=async(method,params)=>{if(method==='thread/resume'){if(params.config)reloaded.push(params.config);return {thread:{id:'chat',status:{type:'idle'}},model:'fixture',modelProvider:'fixture',sandbox:{type:'readOnly'}};}return {};};
   await f.bridge.syncCompensation(f.record);
   assert.equal(reloaded.length,0);assert.equal(f.record.compensation.enabled,true,'pending disable must not erase the applied runtime');assert.equal(f.record.compensation.pendingEnabled,false);
-  f.bridge.external.set(JSON.stringify('resume'),{method:'thread/resume',threadId:'chat',seed:{config:{}},fork:{resume:true,resumePolicy:budget,preserveUsage:true}});
+  f.bridge.external.set(JSON.stringify('resume'),{method:'thread/resume',threadId:'chat',seed:{config:{}},fork:{resume:true,resumePolicy:budget,preserveUsage:true,wasLoaded:true}});
   f.bridge.fromServer(JSON.stringify({id:'resume',result:{thread:{id:'chat',status:{type:'idle'}},model:'fixture',modelProvider:'fixture'}}));
   assert.equal(f.record.compensation.enabled,true);assert.equal(f.record.compensationKey,'previously applied enlarged budget');
   f.record.usageFresh=true;

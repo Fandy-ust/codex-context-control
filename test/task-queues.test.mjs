@@ -254,13 +254,13 @@ test('saving an identical configured budget advances its revision without requir
  const calls=[];b.rpc=async(method)=>{calls.push(method);return {turn:{id:'budget-turn',status:'completed'}};};
  await b.startAutomatic('chat',{taskId:'a',executionId:'budget-current',prompt:'继续任务'});assert.deepEqual(calls,['turn/start']);
 });
-test('automatic turns can produce the missing usage observation but cannot bypass an unsafe budget preflight',async t=>{
+test('automatic turns never use an unapplied budget to obtain a missing observation or bypass preflight',async t=>{
  const b=bridgeFixture(t),r=b.record('chat'),calls=[];
  r.policy={revision:2,window:700000,compact:640000,reserve:16000,retainedFloor:0};r.appliedRevision=1;r.usageFresh=false;r.modelInfo={max_context_window:828000,effective_context_window_percent:100};
  b.rpc=async(method)=>{calls.push(method);return {turn:{id:'observation-turn',status:'completed'}};};
- await b.startAutomatic('chat',{taskId:'a',executionId:'observe',prompt:'运行任务并取得实际用量'});assert.deepEqual(calls,['turn/start']);assert.equal(r.appliedRevision,1);
+ await assert.rejects(b.startAutomatic('chat',{taskId:'a',executionId:'observe',prompt:'运行任务并取得实际用量'}),/本地用量/);assert.deepEqual(calls,[]);assert.equal(r.appliedRevision,1);
  r.status='idle';r.modelInfo={max_context_window:828000,effective_context_window_percent:100};r.policy={...r.policy,window:900000,revision:3};
- await assert.rejects(b.startAutomatic('chat',{taskId:'b',executionId:'unsafe',prompt:'不能绕过上限'}),/目录上限/);assert.equal(calls.length,1);
+ await assert.rejects(b.startAutomatic('chat',{taskId:'b',executionId:'unsafe',prompt:'不能绕过上限'}),/目录上限/);assert.equal(calls.length,0);
 });
 
 

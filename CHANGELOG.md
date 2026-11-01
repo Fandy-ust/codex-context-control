@@ -1,3 +1,15 @@
+## 0.27.24
+
+- Remove the redundant post-save budget guidance from both desktop main windows; retain the existing runtime status and operation errors.
+- Include the Zstandard decoder in the Windows payload so its installed service can start.
+
+## 0.27.23
+
+- Read plain and Zstandard-compressed Codex histories through one bounded, streaming reader. Follow immutable fork/edit boundaries in decompressed bytes, recognize representation changes, and distinguish missing, conflicting and damaged history.
+- Apply proven expansions before the first fork message, without requiring a model request. Read valid local usage on demand for other changes, preserve shrink preflight, and stop manual and queued messages from silently using an unapplied budget.
+- Preserve applied configuration when an already loaded thread is resumed. Show loaded/awaiting-confirmation separately from actual readback on both desktops, and clear stale context details when switching chats.
+- Replace startup app-server probes with cached local protocol-schema inspection. No additional listening runtime or model-list download is needed for compatibility checks; automatic discovery skips cold compressed histories.
+
 ## 0.27.22
 
 - Keep existing macOS settings tabs visible in their original order when adding backup and restore.

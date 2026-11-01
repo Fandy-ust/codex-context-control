@@ -35,3 +35,13 @@ test('scope and opaque child sessions are not guessed',()=>{
   assert.throws(()=>normalizePolicy({window:'400K',scope:'body_after_prefix'}));
   assert.equal(preflight({...idle,canAcceptDirectInput:false},normalizePolicy({window:'400K'}),model).code,'unsupported_thread');
 });
+test('proven monotonic expansion needs no new request; saved targets and lower compaction headroom are not proof',()=>{
+ const old={model:'fixture',window:526316,compact:473000,reserve:16000,scope:'total',effectivePercent:95};
+ const thread={status:'idle',model:'fixture',usageFresh:false,appliedBudget:old};
+ const p=normalizePolicy({window:715790,compact:643000});
+ assert.equal(preflight(thread,p,model).expansionOnly,true);
+ for(const t of [{...thread,appliedBudget:null},{...thread,model:'other'},{...thread,appliedBudget:{...old,effectivePercent:90}}])assert.equal(preflight(t,p,model).code,'needs_observation');
+ assert.equal(preflight(thread,{...p,compact:450000},model).code,'needs_observation');
+ assert.equal(preflight(thread,{...p,window:500000},model).code,'needs_observation');
+ assert.equal(preflight({...thread,status:'active'},p,model).code,'waiting_for_idle');
+});

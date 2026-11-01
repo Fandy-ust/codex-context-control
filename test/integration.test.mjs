@@ -51,6 +51,9 @@ test('real runtime through the actual bridge preserves history, tools, permissio
     await assert.rejects(request('setPolicy',{id:a,policy:{window:'1M',compact:'800K'}}),/目录上限/);
     await request('setPolicy',{id:a,policy:{window:'400K',compact:50,reserve:1},apply:true});
     await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='needs_compaction'));
+    await assert.rejects(turn(a,'blocked while the saved budget cannot hold usage'),/达到新阈值/);
+    await request('setPolicy',{id:a,policy:{window:'400K',compact:'320K'},apply:true});
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='awaiting_runtime_confirmation'));
     const held=turn(a,'HOLD_FIXTURE');await until(()=>fixture.held());
     await request('setPolicy',{id:a,policy:{window:'500K',compact:'400K'},apply:true});
     await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='waiting_for_idle'));
@@ -85,6 +88,13 @@ test('real runtime through the actual bridge preserves history, tools, permissio
     assert.equal(await turn(a,'first request after multiple budgets uses the latest'),363000);
     const fork=(await call('thread/fork',{threadId:a,excludeTurns:true,config:{model_context_window:500000}})).thread.id;
     assert.equal(await turn(fork,'first fork turn inherits 363K instead of the global default'),363000);
+    const expandedFork=(await call('thread/fork',{threadId:a,excludeTurns:true})).thread.id;
+    await until(async()=>(await request('state')).threads.find(t=>t.id===expandedFork&&t.connected));
+    const beforeExpansionRequests=fixture.requests.length;
+    await request('setPolicy',{id:expandedFork,policy:{window:715790,compact:643000},apply:true});
+    await until(async()=>(await request('state')).threads.find(t=>t.id===expandedFork&&t.configuredWindow===715790&&t.phase==='awaiting_runtime_confirmation'));
+    assert.equal(fixture.requests.length,beforeExpansionRequests,'fork expansion must finish without a model request');
+    assert.equal(await turn(expandedFork,'first message after expansion'),680000);
     const childBudget=(await request('state')).threads.find(t=>t.id===fork).policy;
     assert.equal(childBudget.window,382106);assert.equal(childBudget.compact,326000);
     assert.equal(childBudget.revision,1);assert.equal(childBudget.inheritedFrom,a);

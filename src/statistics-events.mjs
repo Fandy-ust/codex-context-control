@@ -23,7 +23,7 @@ export function statisticsEvent(event){
   case 'event_msg':
    payload={type:p.type};
    if(p.type==='task_started')Object.assign(payload,pick(p,['turn_id','model_context_window']));
-   if(p.type==='token_count')payload.info=pick(p.info,['model_context_window']);
+   if(p.type==='token_count'){payload.info=pick(p.info,['model_context_window']);if(p.info?.last_token_usage)payload.info.last_token_usage=pick(p.info.last_token_usage,['total_tokens']);}
    if(p.type==='thread_settings_applied')payload.thread_settings=pick(p.thread_settings,['model','reasoning_effort','service_tier']);
    if(p.type==='item_completed'){
     Object.assign(payload,pick(p,['started_at_ms','completed_at_ms']));payload.item=pick(p.item,['id','type']);

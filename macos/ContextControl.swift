@@ -302,7 +302,7 @@ struct ServiceSettings: Decodable {let node:String}
             let data=try await api(ControlAPI.routes[action] ?? "/invalid",body:body)
             let object=try JSONSerialization.jsonObject(with:data) as? [String:Any]
             if action=="preflight"{notice=(object?["message"] as? String ?? L("预检完成"))+((object?["notes"] as? [String])?.map{"\n"+$0}.joined() ?? "")}
-            else if action=="policy"{editingRevision=(object?["policy"] as? [String:Any])?["revision"] as? Int ?? editingRevision;budgetEdited=false;notice=L("预算已保存。请查看下方应用状态；实际值将在正常下一轮请求后确认。")}
+            else if action=="policy"{editingRevision=(object?["policy"] as? [String:Any])?["revision"] as? Int ?? editingRevision;budgetEdited=false;notice=""}
             else{notice=object?["message"] as? String ?? L("操作已提交。")}
             await refresh()
         }catch{notice=error.localizedDescription}
@@ -326,7 +326,7 @@ struct ServiceSettings: Decodable {let node:String}
 
 func formatted(_ n:Int?) -> String {guard let n else{return L("待观测")};return n.formatted()+" tokens"}
 func phaseName(_ value:String?) -> String {
-    switch value {case "connection_conflict":return L("接入进程冲突");case "extension_pending":return L("等待重开 Codex");case "compacting":return L("正在保护性压缩");case "confirmed":return L("窗口已确认");case "awaiting_runtime_confirmation":return L("等待下一轮确认");case "reloading":return L("正在应用");case "waiting_for_idle","queued":return L("等待轮次结束");case "needs_compaction":return L("需要先压缩");case "needs_observation":return L("等待用量记录");case "error","mismatch":return L("需要处理");case "saved":return L("已保存");default:return L("尚未接入")}
+    switch value {case "connection_conflict":return L("接入进程冲突");case "extension_pending":return L("等待重开 Codex");case "compacting":return L("正在保护性压缩");case "confirmed":return L("窗口已确认");case "awaiting_runtime_confirmation":return L("预算已加载 · 待确认");case "reloading":return L("正在应用");case "waiting_for_idle","queued":return L("等待轮次结束");case "needs_compaction":return L("需要先压缩");case "needs_observation":return L("等待用量记录");case "error","mismatch":return L("需要处理");case "saved":return L("已保存");default:return L("尚未接入")}
 }
 
 enum PanelStyle {

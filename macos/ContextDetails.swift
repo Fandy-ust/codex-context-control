@@ -63,10 +63,11 @@ struct ContextStatistics:Decodable,Sendable {
     @State private var visible=true
     @State private var deferred=DeferredContextDetails()
     @State private var interactionRefresh:Task<Void,Never>?
+    @State private var requestID=UUID()
     var body:some View {
         VStack(alignment:.leading,spacing:16){
             HStack{Text(L("上下文详情")).font(.title3.weight(.semibold));Spacer();if loading{ProgressView().controlSize(.small)};Button(L("刷新"),systemImage:"arrow.clockwise"){Task{await reload(force:true)}}.disabled(loading)}.buttonStyle(.bordered)
-            HStack {Text(statistics.map{ $0.snapshotKind=="last_request" ? L("最近请求快照 · {0}", timestamp($0.snapshotAt)):L("本地保留历史 · 尚无可对齐用量") } ?? L("正在读取所选聊天…")).font(.caption).foregroundStyle(.secondary);Spacer();Toggle(L("自动刷新"),isOn:$autoRefresh).toggleStyle(.switch).controlSize(.small).font(.caption)}
+            HStack {Text(statistics.map{ $0.snapshotKind=="last_request" ? L("最近请求快照 · {0}", timestamp($0.snapshotAt)):L("本地保留历史 · 尚无可对齐用量") } ?? (error != nil ? L("上下文读取失败") : loading ? L("正在读取所选聊天…") : L("暂无上下文统计"))).font(.caption).foregroundStyle(.secondary);Spacer();Toggle(L("自动刷新"),isOn:$autoRefresh).toggleStyle(.switch).controlSize(.small).font(.caption)}
             if let error{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
             Group {
                 if let s=statistics {
@@ -96,11 +97,12 @@ struct ContextStatistics:Decodable,Sendable {
                             }.font(.caption).foregroundStyle(.secondary).padding(.top,12)
                         }
                     }.padding(.vertical,6).padding(.trailing,8)
-                }else if !loading{ContentUnavailableView(L("暂无上下文统计"),systemImage:"chart.bar.xaxis",description:Text(L("这个聊天需要有本地记录。正常交互后点击刷新。")))}
+                }else if !loading{ContentUnavailableView(L("暂无上下文统计"),systemImage:"chart.bar.xaxis",description:Text(L(error != nil ? "请查看上方原因并重试刷新。" : "此聊天尚无可读取的本地历史记录")))}
             }
         }
         .frame(maxWidth:.infinity,alignment:.leading).preferredColorScheme(.dark)
         .task(id:chatID){
+            requestID=UUID();loading=false;statistics=nil;lastPayload=nil;error=nil;deferred.statistics=nil;deferred.payload=nil
             await reload(force:false)
             while !Task.isCancelled {do{try await Task.sleep(for:.seconds(10))}catch{break};if autoRefresh && !chartInteracting{await reload(force:false)}}
         }
@@ -117,14 +119,15 @@ struct ContextStatistics:Decodable,Sendable {
         .onDisappear{visible=false;interactionRefresh?.cancel()}
     }
     private func reload(force:Bool) async {
-        if loading || !visible{return};loading=true;defer{loading=false}
+        if loading || !visible{return};let currentRequest=UUID();requestID=currentRequest;loading=true;defer{if requestID==currentRequest{loading=false}}
         do {
             let data=try await model.api(ControlAPI.statistics,body:["id":chatID,"refresh":force])
+            guard requestID==currentRequest,!Task.isCancelled else{return}
             if data==lastPayload{if !chartInteracting{deferred.statistics=nil;deferred.payload=nil};error=nil;return}
             let decoded=try await Task.detached(priority:.utility){try JSONDecoder().decode(ContextStatistics.self,from:data)}.value
-            guard !Task.isCancelled,decoded.threadId==chatID else{return}
+            guard requestID==currentRequest,!Task.isCancelled,decoded.threadId==chatID else{return}
             if chartInteracting{deferred.statistics=decoded;deferred.payload=data}else{deferred.statistics=nil;deferred.payload=nil;statistics=decoded;lastPayload=data};error=nil
-        }catch {if !Task.isCancelled{self.error=error.localizedDescription}}
+        }catch {if requestID==currentRequest && !Task.isCancelled{self.error=error.localizedDescription}}
     }
     private func amount(_ n:Int)->String {n>=1000 ? (Double(n)/1000).formatted(.number.precision(.fractionLength(0...1)))+"K":n.formatted()}
     private func color(_ category:String)->Color {switch category{case "tool_calls":return .blue;case "tool_results":return .cyan;case "user":return .green;case "assistant_final":return .blue;case "assistant_commentary":return .gray;case "instructions":return .orange;default:return Color(red:0.48,green:0.43,blue:0.60)}}

@@ -1,11 +1,11 @@
 {
   "name": "codex-context-control",
-  "version": "0.27.22",
+  "version": "0.27.24",
   "private": true,
   "type": "module",
   "description": "Local Codex extension for context control and quota-aware task queues",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.15.0"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
@@ -37,6 +37,7 @@
     "test:ci": "node --test --test-concurrency=2 test/*.test.mjs"
   },
   "dependencies": {
+    "fzstd": "0.1.1",
     "js-tiktoken": "1.0.21",
     "smol-toml": "1.9.1"
   },
