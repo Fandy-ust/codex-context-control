@@ -18,3 +18,9 @@ test('schedule CLI preserves checkpoint text and stable identity without shell e
  assert.deepEqual(calls[0],{op:'context-schedule',p:{id:env.CODEX_THREAD_ID,action:'schedule',prompt,requestId:'handoff-1',afterOperation:'budget-1',expectedRevision:4}});
  calls.length=0;await assert.rejects(runManagerCLI(['chat','schedule','current','--prompt-file','checkpoint.txt'],{env,client}),e=>e.code==='INVALID_ARGUMENT');assert.equal(calls.length,0);
 });
+
+test('chat listing pages the lightweight index without requesting the full state',async()=>{
+ const calls=[];const client=async(op,p)=>{calls.push({op,p});return {chats:[{id:'old'}]};};
+ assert.deepEqual(await runManagerCLI(['chat','list','--offset','20'],{client}),[{id:'old'}]);assert.deepEqual(calls,[{op:'chat-list',p:{offset:20}}]);
+ await assert.rejects(runManagerCLI(['chat','list','--offset','-1'],{client}),e=>e.code==='INVALID_ARGUMENT');
+});

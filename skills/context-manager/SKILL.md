@@ -19,7 +19,7 @@ Start with `--help`; use `queue --help` and `queue schema` for installed capabil
 
 ## Context control
 
-For “this chat”, use `chat show current --summary`: `current` resolves `CODEX_THREAD_ID` and verifies it against the controller. If unavailable, resolve the target with `chat list` and use its explicit ID. Do not assume the first or most active chat is the current chat. Keep changes scoped to the requested chat; changing global defaults or other chats requires that scope to be authorized.
+For “this chat”, use `chat show current --summary`: `current` resolves `CODEX_THREAD_ID` and verifies it against the controller. If unavailable, resolve the target with `chat list` and use its explicit ID. Listing reads 20 lightweight native-index entries; use `chat list --offset 20` (then 40, etc.) when an older target is needed. Normal state reads focus on recent chats plus active, pending and explicitly selected work. A missing row in that hot snapshot does not mean the chat was deleted; `chat show CHAT_ID` loads it on demand. Do not assume the first or most active chat is the current chat. Keep changes scoped to the requested chat; changing global defaults or other chats requires that scope to be authorized.
 
 Own the task's progression: proactively assess context value, remaining work and bottlenecks, then choose whether to continue, optimize or hand off. User feedback refines that judgment; it is not the only trigger. Within the authorized task and agreed bounds, make useful low-disruption adjustments with a brief explanation. Interview the user when a meaningful quality, cost or history-retention tradeoff remains unresolved.
 

@@ -1,3 +1,9 @@
+## 0.27.31
+
+- Limit automatic discovery, usage-tail reads and state hydration to the latest 20 chats, retaining active work, pending queues/operations and explicit UI selections as exceptions. Load older chat metadata by ID or a lightweight paged index without changing recency.
+- Restrict normal analytics backfill to recent/active sources; retain existing history and reserve wider scans for explicit refresh. Avoid loading every saved chat to check account-switch safety.
+- Reduce main-window refreshes to two seconds on both platforms while retaining responsive Mac menu controls. Preserve official runtime launching and signing.
+
 ## 0.27.30
 
 - Apply history reasoning estimates together with context-window and compaction changes at safe boundaries. Keep the real target within the native limit or the optional 920K extension; reserve separate runtime accounting space without patching Codex.

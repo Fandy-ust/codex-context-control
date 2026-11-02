@@ -184,7 +184,7 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func refresh() async {
         if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
-        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api(ControlAPI.state))
+        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api(ControlAPI.hotState,body:["selectedIds":[selectedID,queueDetailID].compactMap{$0}]))
             guard !menuDragInProgress else{return}
             supportsVisibleBudget=state.capabilities?.visibleBudget == true;supportsQuotaAnalytics=state.capabilities?.quotaAnalytics == true
             if quota != state.quota{acceptQuota(state.quota)}

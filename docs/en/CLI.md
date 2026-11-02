@@ -34,6 +34,8 @@ The skill defaults to quality-first, supports balanced and speed-first preferenc
 
 Since 0.27.30, safe-boundary budget application first estimates retained historical reasoning, then loads the window and threshold with accounting headroom together. Real targets obey native limits or the enabled 920K extension. `loaded` / `headroom` use real targets; `accounting` exposes extra estimates and runtime counters. Check `capabilities.reasoningBudget`; old bridges need normal reopening. Mid-turn changes can still trigger native compaction.
 
+Since 0.27.31, normal state reads focus on the latest 20 chats plus active, pending and selected work. `chat list --offset 20` pages the lightweight older-chat index; `chat show CHAT_ID` loads old metadata on demand without changing recency.
+
 ## One-shot task handoff
 
 An agent can proactively assess task progress and context, then register one continuation before ending its turn:

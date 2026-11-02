@@ -27,7 +27,7 @@ export function projectQuota(bucket, {at, scope = 'history', bucketId = 'codex'}
     fiveUsed: fh?.used ?? null, fiveReset: fh?.reset ?? null,credits:balance};
 }
 const snapshotId = value => JSON.stringify([value.scope,value.bucket,Math.floor(value.at/60000),value.weeklyReset,value.fiveReset,value.weeklyUsed,value.fiveUsed,value.credits??null]);
-function nativeRows(home) {
+function nativeRows(home,{all=false,includeIds=[]}={}) {
   let db;
   try {
     const file = fs.readdirSync(home).filter(n => /^state_\d+\.sqlite$/.test(n)).sort((a, b) => Number(b.match(/\d+/)[0]) - Number(a.match(/\d+/)[0]))[0];
@@ -36,8 +36,13 @@ function nativeRows(home) {
     const cols = new Set(db.prepare('PRAGMA table_info(threads)').all().map(p => p.name));
     if (!cols.has('id') || !cols.has('rollout_path')) return [];
     const fields = ['id', 'rollout_path', 'cwd', 'name'].filter(f => cols.has(f));
-    const order = cols.has('updated_at') ? ' ORDER BY updated_at DESC' : '';
-    return db.prepare('SELECT ' + fields.join(',') + ' FROM threads' + order + ' LIMIT 10000').all();
+    const recency=['recency_at_ms','recency_at','created_at_ms','created_at','updated_at_ms','updated_at'].find(k=>cols.has(k));
+    const order=recency?' ORDER BY '+recency+' DESC,id':' ORDER BY id';
+    const where=(cols.has('archived')?' WHERE archived=0':'')+(cols.has('thread_source')?(cols.has('archived')?' AND ':' WHERE ')+"(thread_source IS NULL OR thread_source='user')":'');
+    const rows=db.prepare('SELECT '+fields.join(',')+' FROM threads'+where+order+' LIMIT ?').all(all?10000:20),selected=new Map(rows.map(row=>[row.id,row]));
+    const get=db.prepare('SELECT '+fields.join(',')+' FROM threads WHERE id=?');
+    for(const id of new Set(includeIds)){const row=get.get(id);if(row)selected.set(row.id,row);}
+    return [...selected.values()];
   } catch {return [];} finally {db?.close();}
 }
 
@@ -129,10 +134,11 @@ export class QuotaLedger {
       if (limits) this.snapshot(projectQuota(limits, {at, bucketId: limits.limit_id}), source.id);
     }
   }
-  scan({rows = null, budget = 16 * 1024 * 1024} = {}) {
+  scan({rows = null, budget = 16 * 1024 * 1024,all=false,includeIds=[]} = {}) {
     if(!fs.existsSync(this.home))return this.progress;
-    const list = rows || nativeRows(this.home), root = canonicalLocalPath(this.home), cutoff = this.now() - RETENTION;
-    const known = new Map(this.db.prepare('SELECT id,data FROM sources').all().map(p => [p.id, JSON.parse(p.data)]));
+    const list = rows || nativeRows(this.home,{all,includeIds}), root = canonicalLocalPath(this.home), cutoff = this.now() - RETENTION;
+    const lookup=this.db.prepare('SELECT id,data FROM sources WHERE id=?');
+    const known=new Map(list.flatMap(row=>{if(typeof row?.id!=='string')return [];const p=lookup.get(row.id);return p?[[p.id,JSON.parse(p.data)]]:[];}));
     let remaining = budget, files = 0, pending = 0, unreadable = 0, bytesRead = 0;
     // Resume the first incomplete source before starting another large file.
     list.sort((a, b) => Number(known.get(b.id)?.pending || false) - Number(known.get(a.id)?.pending || false));

@@ -14,7 +14,7 @@ const groups=[
  ['lifecycle',['runtime-lifecycle','runtime-lifecycle-process']],
  ['passive-observation',['passive-quota','passive-quota-http','runtime-compatibility','compatibility']],
  ['budget-and-handoff',['compaction-compensation','context-operations','context-schedule-quota','context-schedules']],
- ['bounded-local-work',['statistics-performance','statistics-projection']]
+ ['bounded-local-work',['statistics-performance','statistics-projection','hot-chats']]
 ];
 const report={schemaVersion:1,version,commit:spawnSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).stdout?.trim()??null,platform:process.platform,arch:process.arch,startedAt:new Date().toISOString(),groups:[],artifact:null,liveBrowser:{status:'not_run',requiredBeforeRelease:true,reason:'Hosted CI has no signed-in desktop/Chrome connection. A fixture or unsigned preview cannot prove OpenAI peer acceptance.'},resourceBenchmarks:{status:'not_run',reason:'Functional contracts do not measure idle CPU/RSS, network bytes or production history latency. Follow docs/RUNTIME-VALIDATION.md.'}};
 async function group(name,names){

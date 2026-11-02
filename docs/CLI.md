@@ -42,6 +42,8 @@ CM="$HOME/Library/Application Support/CodexContextControl/bin/context-manager"
 
 从 0.27.30 起，安全边界应用预算前先计算保留历史的推理估算，将原生窗口和阈值连同计数余量一起加载。真实目标遵守原生上限或已开启的 920K 拓展；`loaded` / `headroom` 使用真实目标，`accounting` 单独返回额外估算与原生计数。检查 `capabilities.reasoningBudget`，旧连接需正常重开。轮内变化仍可能触发原生压缩。
 
+从 0.27.31 起，正常状态读取侧重最近 20 个聊天，并保留运行中、排队、待处理操作及界面选中项。`chat list --offset 20` 可按 20 条分页读取旧聊天索引；`chat show CHAT_ID` 按需加载旧聊天，不改变最近活动顺序。
+
 ## 一次性任务交接
 
 Agent 可以主动评估剩余任务、上下文价值和余量，选择继续本轮，或在交接记录保存后结束本轮，由 App 启动同一聊天的下一轮。此过程不重启 ChatGPT，也不新增 Codex server。
