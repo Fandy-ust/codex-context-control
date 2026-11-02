@@ -60,6 +60,29 @@ Explain a proposed change briefly: the observed situation, the task-specific rea
 
 Execute adjustments within the user's current answer or an already agreed range, with brief notice. Recommendations can include expansion, compaction at a checkpoint, narrower retrieval, a staged deliverable, or a model/effort tradeoff. Recommend a new chat or fork only when useful; do not create one without authorization. Speed improvements are hypotheses to assess against subsequent comparable work, not promises.
 
+### Decide between soft adjustment and a turn-boundary handoff
+
+First explore with `chat show current --summary`; compare **loaded** headroom with the estimated work until the next safe checkpoint. Use task complexity, evidence that must survive, expected tool-output growth and speed samples where relevant. The agent owns this decision within agreed limits. Explain consequential tradeoffs and interview the user if needed.
+
+| Decision | Tool use | Expected response and next action |
+| --- | --- | --- |
+| Continue normally | Read summary only | No mutation or scheduled message. Continue the task. |
+| Soft adjustment | Preflight, then `chat set current ... --revision N --request-id ID` | A budget receipt may be `waiting_for_idle`/`accepted`. Continue only work that fits the **currently loaded** budget. End naturally; the change loads at a safe boundary. No automatic message is registered; the next real user message or authorized task starts the next turn. |
+| Urgent handoff | Save a checkpoint, register agreed context operations, then `chat schedule current ... --after-operation OPERATION_ID` | `nextAction: "finish_turn"`, `agentInstruction`, readiness and a schedule receipt. Briefly explain the handoff, send a final response and **end this turn**. The app waits for its exact completion and readiness, then submits one checkpoint message to this same chat. |
+| Necessary user decision pending | Ask/interview; if remaining room is unsafe, checkpoint and end | Wait for the user's answer. Do not register an automatic continuation that could bypass the decision. |
+
+Why a turn boundary matters: a shell command or synchronous/async interview reply can add context to the current turn, but does not by itself reload that turn's context-window configuration. Neither a saved budget nor a pending receipt protects the current turn with a larger window. "Pause" here means finish the current agent turn, not kill Codex, block in a sleep/wait tool, or leave a synchronous question holding the turn open. The app's wake-up is a new same-chat message/turn, not a restart of the desktop app or process.
+
+An accepted urgent handoff returns fields like:
+
+```json
+{"nextAction":"finish_turn","agentInstruction":"请保存交接进展并结束当前轮次，等待下一条消息。…","schedule":{"state":"waiting_for_turn","sourceCompleted":false},"readiness":{"quotaValid":true,"quotaBlocked":false,"quotaSource":"credits"}}
+```
+
+Values are illustrative: quota can be unknown or blocked. Registration is not execution. An already completed/replayed receipt returns `inspect_schedule`; it is not an instruction to stop again. If registration fails, no wake-up is promised. Near exhaustion, checkpoint and end for the user's next message instead of spending the remaining room retrying.
+
+After an app-generated checkpoint arrives, inspect the schedule once and compare its `turnId`/`executionId` with `chat show current`. Verify loaded budget/readback before continuing substantial work. Resume the saved task, honoring any newer user direction. A running receipt becomes completed only after that continuation ends; do not poll yourself waiting for completion. Never create a chain of new handoffs merely to test this flow. A real user message before dispatch cancels the pending automatic message, so the real input takes precedence.
+
 ### Schedule a one-shot continuation when yielding
 
 When the unfinished task needs a new context budget or an agreed compaction before its next stage, you can arrange a handoff through the existing scheduler instead of requiring the user to type “continue”. This starts a new turn in the same chat and runtime; it does not restart ChatGPT or create another Codex server.

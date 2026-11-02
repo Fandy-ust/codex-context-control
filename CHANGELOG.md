@@ -1,3 +1,8 @@
+## 0.27.32
+
+- Return an explicit agent instruction when a one-shot handoff requires ending the current turn; replayed/completed receipts request inspection instead.
+- Document context exploration, soft budget adjustment, urgent handoff, user-interview precedence, expected receipts and continuation verification in the shared skill.
+
 ## 0.27.31
 
 - Limit automatic discovery, usage-tail reads and state hydration to the latest 20 chats, retaining active work, pending queues/operations and explicit UI selections as exceptions. Load older chat metadata by ID or a lightweight paged index without changing recency.
