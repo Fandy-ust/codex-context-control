@@ -16,6 +16,7 @@ import {installBundledNode} from '../src/bundled-node.mjs';
 import {runtimeSupported} from '../src/compatibility.mjs';
 import {enableAutomaticStartup,disableAutomaticStartup} from '../src/automatic-startup.mjs';
 import {ensureMenuBarEntry,stopMenuBarEntry} from '../src/menu-bar.mjs';
+import {installMacRuntimeLauncher} from '../src/platform/macos-runtime-launcher.mjs';
 
 const repo=fileURLToPath(new URL('../',import.meta.url));
 const applications=process.env.CONTEXT_CONTROL_APPLICATIONS || path.join(os.homedir(),'Applications');
@@ -25,7 +26,6 @@ const hooksFile=path.join(codexHome,'hooks.json');
 const installedApp=path.join(applications,'Codex Context Control.app');
 const launcherApp=path.join(applications,'Codex Context Launcher.app');
 function editHook(command,remove=false){return editOwnedHook({file:hooksFile,home:root,command,remove});}
-function shellFile(file,body){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'#!/bin/sh\nset -eu\n'+body+'\n',{mode:0o700});fs.chmodSync(file,0o700);}
 ensureRoot();
 if(process.argv.includes('--uninstall')){
   removeQueueCLI(root);
@@ -42,14 +42,14 @@ if(process.argv.includes('--uninstall')){
   const upgrade=prepareUpgrade({home:root,version:JSON.parse(fs.readFileSync(path.join(repo,'package.json'))).version});
 createCompensationManager({home:root}).setEnabled(false);
   if(process.argv.includes('--bundled-node')){
-    if(!fs.existsSync(path.join(repo,'build/Codex Context Control.app/Contents/MacOS/ContextControl'))||!fs.existsSync(path.join(repo,'node_modules/js-tiktoken/package.json')))throw Error('安装包不完整，请重新下载。');
+    if(!fs.existsSync(path.join(repo,'build/Codex Context Control.app/Contents/MacOS/ContextControl'))||!fs.existsSync(path.join(repo,'node_modules/js-tiktoken/package.json'))||!fs.existsSync(path.join(repo,'build/Codex Context Control.app/Contents/Helpers/ContextRuntimeLauncher')))throw Error('安装包不完整，请重新下载。');
     nodeBinary=installBundledNode({home:root,license:path.join(repo,'vendor/Node-LICENSE.txt')});
   }
   if(!fs.existsSync(path.join(repo,'node_modules/js-tiktoken/package.json'))){
     const dependencies=spawnSync('npm',['ci','--omit=dev','--ignore-scripts'],{cwd:repo,stdio:'inherit'});if(dependencies.status!==0)process.exit(dependencies.status||1);
   }
   const builtPanel=path.join(repo,'build/Codex Context Control.app');
-  if(!process.argv.includes('--use-built-panel')||!fs.existsSync(path.join(builtPanel,'Contents/MacOS/ContextControl'))){
+  if(!process.argv.includes('--use-built-panel')||!fs.existsSync(path.join(builtPanel,'Contents/MacOS/ContextControl'))||!fs.existsSync(path.join(builtPanel,'Contents/Helpers/ContextRuntimeLauncher'))){
     const build=spawnSync(process.execPath,[path.join(repo,'scripts/build-mac.mjs')],{stdio:'inherit'});if(build.status!==0)process.exit(build.status||1);
   }
   const oldVersion=readJSON(path.join(root,'code/package.json'),{})?.version;
@@ -64,7 +64,7 @@ createCompensationManager({home:root}).setEnabled(false);
     fs.cpSync(path.join(repo,'node_modules'),path.join(stage,'node_modules'),{recursive:true});
   });
   const shim=path.join(root,'bin/codex-context');
-  shellFile(shim,`exec ${quote(nodeBinary)} ${quote(path.join(code,'src/wrapper.mjs'))} "$@"`);
+  installMacRuntimeLauncher({source:path.join(builtPanel,'Contents/Helpers/ContextRuntimeLauncher'),shim,node:nodeBinary,wrapper:path.join(code,'src/wrapper.mjs'),original:binary,home:root});
   const hookCommand=`${quote(nodeBinary)} ${quote(path.join(code,'src/cli.mjs'))} hook`;
   const appPath=binary.split('/Contents/')[0];
   const info=spawnSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleExecutable',path.join(appPath,'Contents/Info.plist')],{encoding:'utf8'});

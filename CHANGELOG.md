@@ -1,3 +1,8 @@
+## 0.27.27
+
+- Preserve the official macOS Codex executable as the desktop app's direct child. A native exec launcher moves the existing communication bridge into a child of Codex, fixing browser peer-authorization failures caused by the previous parent proxy without changing the Codex binary, signature or security checks.
+- Keep the same shared budget, compaction and queue behavior on both platforms. Windows retains its existing launcher; macOS keeps its native UI and gains a bounded preparation handshake, untouched-input fallback and inherited-transport cleanup.
+
 ## 0.27.26
 
 - Preserve model-bound inherited usage when a fresh desktop fork changes its model and returns to the measured model before generating content. New input, generated content, rollback and compaction still invalidate the observation; usage from a different model is never treated as current.
