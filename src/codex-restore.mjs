@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {loadBlocks,treeBytes} from './backup-blocks.mjs';
 import {durableWrite,readProtectedJSON,writeProtectedJSON} from './durable-files.mjs';
-import {validateProtectedFile} from './codex-power-protection.mjs';
+import {validateProtectedFile,prepareProtectedRestore} from './codex-power-protection.mjs';
 const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
 const allowed=name=>name==='config.toml'||name==='.codex-global-state.json'||/^state_\d+\.sqlite$/.test(name);
 const activePhases=new Set(['closing','waiting_exit','waiting_quiet','applying','interrupted']);
@@ -27,7 +27,7 @@ export class CodexRestore {
   const id=crypto.randomBytes(12).toString('hex'),stage=path.join(this.directory,'manual',id);fs.mkdirSync(stage,{recursive:true,mode:0o700});
   try{const base=path.join(this.directory,'manual');const old=fs.readdirSync(base).filter(n=>/^[a-f0-9]{24}$/.test(n)&&n!==id&&n!==this.job?.id);for(const name of old)fs.rmSync(path.join(base,name),{recursive:true,force:true});}catch{}
   // Materialize and validate the entire selection before queuing, so rotation cannot invalidate it.
-  try{for(const [name,entry]of entries){const bytes=loadBlocks(path.join(path.dirname(source),'blocks'),entry),file=path.join(stage,name);durableWrite(file,bytes);validateProtectedFile(name,file);}}catch(error){fs.rmSync(stage,{recursive:true,force:true});throw error;}
+  try{for(const [name,entry]of entries){const bytes=prepareProtectedRestore(name,loadBlocks(path.join(path.dirname(source),'blocks'),entry)),file=path.join(stage,name);durableWrite(file,bytes);validateProtectedFile(name,file);}}catch(error){fs.rmSync(stage,{recursive:true,force:true});throw error;}
   this.job={id,point:params.id,autoClose:params.close===true,at:manifest.at,phase:'waiting_exit',message:'请完整退出 Codex，保持管理器运行；恢复完成后将自动打开 Codex',files:entries.map(([name])=>name),createdAt:this.now()};this.save();this.quietSince=null;return this.list();
  }
  async tick(){if(this.busy||!this.active)return;this.busy=true;try{
@@ -46,7 +46,7 @@ export class CodexRestore {
    this.job.phase='failed';this.job.message='上次恢复中断，已回退；可重新选择恢复点';this.save();return;
   }
   // Validate once more before touching the live files.
-  for(const name of this.job.files)validateProtectedFile(name,path.join(stage,name));
+  for(const name of this.job.files){const file=path.join(stage,name);if(name==='config.toml'){const bytes=fs.readFileSync(file),prepared=prepareProtectedRestore(name,bytes);if(!prepared.equals(bytes))durableWrite(file,prepared);}validateProtectedFile(name,file);}
   const targets=[...this.job.files];for(const name of this.job.files)if(name.endsWith('.sqlite'))targets.push(name+'-wal',name+'-shm');
   if(this.job.files.includes('.codex-global-state.json'))targets.push('.codex-global-state.json.bak');
   const record={};for(const name of targets){const file=path.join(this.home,name);const present=fs.existsSync(file),bytes=present?fs.readFileSync(file):null;record[name]={present,sha256:bytes?hash(bytes):null};if(bytes)durableWrite(path.join(before,name),bytes);}

@@ -1,3 +1,9 @@
+## 0.27.28
+
+- Release browser-compatible macOS runtime launching together with agent-facing context summaries, explicit preflight, lightweight speed reports, tracked idle compaction and interactive skill guidance.
+- Restore model/provider-bound inherited usage after a fork returns to its measured model, without treating new content or unfinished work as a valid observation.
+- Integrate and retain the published fixes for messages waiting on usage and duplicate notify keys during Codex configuration restore. Both platforms share this version.
+
 ## 0.27.27
 
 - Preserve the official macOS Codex executable as the desktop app's direct child. A native exec launcher moves the existing communication bridge into a child of Codex, fixing browser peer-authorization failures caused by the previous parent proxy without changing the Codex binary, signature or security checks.
@@ -5,13 +11,13 @@
 
 ## 0.27.26
 
-- Preserve model-bound inherited usage when a fresh desktop fork changes its model and returns to the measured model before generating content. New input, generated content, rollback and compaction still invalidate the observation; usage from a different model is never treated as current.
+- Prevent duplicate `notify` keys after restoring older Codex configurations: normalize only the quoted root key spelling before manual or automatic recovery, preserving commands, comments, configuration values and original backup blocks.
+- Recheck legacy queued restore jobs before applying. Reject conflicting duplicate-key snapshots and retain damaged evidence; recovery still waits for Codex to exit. The shared restore service covers Windows and macOS.
 
 ## 0.27.25
 
-- Add targeted current-chat summaries and distinguish budget validity, usage evidence, execution timing and read-only preflight from registration.
-- Track CLI budget changes and one-shot idle compaction with bounded persisted receipts, request deduplication, revision checks, cancellation and structured recovery; bind compaction to the current turn and cancel stale intent without restarting or replaying work.
-- Add numerical speed reports without full context tokenization and update the bundled skill for interactive, task-aware quality/balanced/speed policies on both platforms.
+- Fix manual messages and queued tasks getting stuck after a model switch or missing usage observation. Defer budget changes while allowing a normal request under the current runtime configuration, then retry budget application after fresh usage arrives.
+- Preserve compaction and reload-error blocks, prevent background budget reloads racing a submitted request, and clarify the waiting-for-usage status on both desktops.
 
 ## 0.27.24
 

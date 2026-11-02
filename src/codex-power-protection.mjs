@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import {DatabaseSync,backup} from 'node:sqlite';
 import {parse as parseTOML} from 'smol-toml';
 import {durableWrite} from './durable-files.mjs';
+import {prepareConfigRestore} from './codex-config-restore.mjs';
 
 const digest=b=>crypto.createHash('sha256').update(b).digest('hex');
 const text=b=>new TextDecoder('utf-8',{fatal:true}).decode(b);
@@ -17,11 +18,12 @@ function validate(name,bytes){
 }
 function checkDB(file){const db=new DatabaseSync(file,{readOnly:true});try{if(db.prepare('PRAGMA quick_check').get().quick_check!=='ok')throw Error('SQLite integrity check failed');}finally{db.close();}}
 export function validateProtectedFile(name,file){if(name.endsWith('.sqlite'))checkDB(file);else validate(name,fs.readFileSync(file));}
+export function prepareProtectedRestore(name,bytes){return name==='config.toml'?Buffer.from(prepareConfigRestore(text(bytes))):bytes;}
 const names=home=>[...['config.toml','.codex-global-state.json'].filter(n=>fs.existsSync(path.join(home,n))),...fs.readdirSync(home).filter(n=>/^state_\d+\.sqlite$/.test(n))];
 export class CodexPowerProtection {
  constructor({home,directory,isRunning,now=()=>new Date(),maxBytes=200*1024*1024,monthlyMonths=3}){Object.assign(this,{home,directory,isRunning,now,maxBytes,monthlyMonths});this.busy=false;}
  generations(tier){const dir=path.join(this.directory,tier);try{return fs.readdirSync(dir).filter(n=>/^\d+-[a-f0-9]+$/.test(n)).sort().reverse().map(n=>path.join(dir,n));}catch{return [];}}
- candidate(name){for(const dir of [...this.generations('recent'),...this.generations('daily')]){let check;try{const manifest=JSON.parse(fs.readFileSync(path.join(dir,'manifest.json'))),entry=manifest.files[name];if(!entry)continue;const bytes=loadBlocks(path.join(path.dirname(dir),'blocks'),entry);if(name.endsWith('.sqlite')){check=path.join(this.directory,'.check-'+crypto.randomBytes(8).toString('hex'));durableWrite(check,bytes);checkDB(check);}else validate(name,bytes);return bytes;}catch{}finally{if(check)fs.rmSync(check,{force:true});}}return null;}
+ candidate(name){for(const dir of [...this.generations('recent'),...this.generations('daily')]){let check;try{const manifest=JSON.parse(fs.readFileSync(path.join(dir,'manifest.json'))),entry=manifest.files[name];if(!entry)continue;const bytes=loadBlocks(path.join(path.dirname(dir),'blocks'),entry);if(name.endsWith('.sqlite')){check=path.join(this.directory,'.check-'+crypto.randomBytes(8).toString('hex'));durableWrite(check,bytes);checkDB(check);}else validate(name,bytes);return prepareProtectedRestore(name,bytes);}catch{}finally{if(check)fs.rmSync(check,{force:true});}}return null;}
  prune(){
   const collect=()=>{for(const tier of ['recent','daily'])collectBlocks(path.join(this.directory,tier,'blocks'),this.generations(tier));};
   // Keep the freshest working point plus calendar-spaced historical points.

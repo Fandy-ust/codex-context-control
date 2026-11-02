@@ -6,3 +6,27 @@ test('one-click close waits for final exit writes, verifies restored globals and
 test('manual restore survives service restart and never writes while Codex is alive',async t=>{const f=await fixture(t);await f.service.command({action:'restore',id:f.service.list().points[0].id});const restarted=new CodexRestore(f.options);await restarted.tick();assert.equal(restarted.job.phase,'waiting_exit');assert.match(fs.readFileSync(path.join(f.home,'config.toml'),'utf8'),/current/);f.setRunning(false);await restarted.tick();f.setRunning(true);f.advance();await restarted.tick();assert.equal(restarted.job.phase,'waiting_exit');f.setRunning(false);await restarted.tick();f.advance();await restarted.tick();assert.equal(restarted.job.phase,'completed');assert.equal(f.opened,1);});
 test('cancel leaves live data unchanged and corrupt snapshot cannot be queued',async t=>{const f=await fixture(t),point=f.service.list().points[0];await f.service.command({action:'restore',id:point.id});await f.service.command({action:'cancel'});await f.service.tick();assert.equal(f.opened,0);assert.match(fs.readFileSync(path.join(f.home,'config.toml'),'utf8'),/current/);const [tier]=point.id.split(':');for(const name of fs.readdirSync(path.join(f.directory,tier,'blocks')))fs.writeFileSync(path.join(f.directory,tier,'blocks',name),'damaged');await assert.rejects(f.service.command({action:'restore',id:point.id}));assert.equal(f.service.job.phase,'cancelled');await assert.rejects(f.service.command({action:'restore',id:'../../other'}));});
 test('partial restore is journaled and rolls back offline after restart',async t=>{const f=await fixture(t);await f.service.command({action:'restore',id:f.service.list().points[0].id});f.setRunning(false);await f.service.tick();f.advance();const rename=fs.renameSync;try{fs.renameSync=(from,to)=>{if(to===path.join(f.home,'.codex-global-state.json'))throw Error('simulated power interruption');return rename(from,to);};await f.service.tick();}finally{fs.renameSync=rename;}assert.equal(f.service.job.phase,'interrupted');assert.equal(f.opened,0);const restarted=new CodexRestore(f.options);await restarted.tick();f.advance();await restarted.tick();assert.equal(restarted.job.phase,'failed');assert.match(fs.readFileSync(path.join(f.home,'config.toml'),'utf8'),/current/);});
+
+
+test('manual restore normalizes legacy quoted notify before reopen and preserves the backup bytes',async t=>{
+ const f=await fixture(t),original='model="snapshot"\n"notify"=["old-helper.exe","turn-ended"]\n';
+ fs.writeFileSync(path.join(f.home,'config.toml'),original);await f.guard.tick();
+ const point=f.service.list().points[0],{loadBlocks}=await import('../src/backup-blocks.mjs'),[tier,id]=point.id.split(':');
+ const manifest=JSON.parse(fs.readFileSync(path.join(f.directory,tier,id,'manifest.json')));
+ await f.service.command({action:'restore',id:point.id});
+ // A queued job from the previous installed version may still have raw bytes.
+ fs.writeFileSync(path.join(f.directory,'manual',f.service.job.id,'config.toml'),original);
+ f.setRunning(false);await f.service.tick();f.advance();await f.service.tick();
+ assert.equal(f.service.job.phase,'completed');assert.equal(f.opened,1);
+ assert.equal(fs.readFileSync(path.join(f.home,'config.toml'),'utf8'),original.replace('"notify"','notify'));
+ assert.equal(loadBlocks(path.join(f.directory,tier,'blocks'),manifest.files['config.toml']).toString(),original);
+});
+
+test('a checksum-valid snapshot with a duplicate config key cannot be staged',async t=>{
+ const f=await fixture(t),point=f.service.list().points[0],{storeBlocks}=await import('../src/backup-blocks.mjs'),[tier,id]=point.id.split(':');
+ const file=path.join(f.directory,tier,id,'manifest.json'),manifest=JSON.parse(fs.readFileSync(file));
+ manifest.files['config.toml']=storeBlocks(path.join(f.directory,tier,'blocks'),Buffer.from('"notify"=["old"]\nnotify=["new"]\n'));
+ fs.writeFileSync(file,JSON.stringify(manifest));
+ await assert.rejects(f.service.command({action:'restore',id:point.id}));
+ assert.equal(f.service.job,null);assert.match(fs.readFileSync(path.join(f.home,'config.toml'),'utf8'),/current/);assert.equal(f.opened,0);
+});
