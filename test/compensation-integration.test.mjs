@@ -13,7 +13,7 @@ const binary=process.env.CONTEXT_CONTROL_TEST_CODEX||'/Applications/ChatGPT.app/
 const baseModel={slug:'context-fixture',max_context_window:872000,effective_context_window_percent:95};
 const policy={window:63158,compact:40000,reserve:16000,retainedFloor:0,scope:'total',revision:1,enabled:true,effectivePercent:95};
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
-async function scenario(enabled,interrupt=false,{smallCatalog=false,high=false,ceiling=false}={}){
+async function scenario(enabled,interrupt=false,{smallCatalog=false,high=false,ceiling=false,automatic=false}={}){
  const model={...baseModel,...(smallCatalog?{max_context_window:66000}:{}),...(ceiling?{max_context_window:1022223,effective_context_window_percent:90}:{})};
  const realPolicy=ceiling?{...policy,window:1022223,compact:900000,reserve:20000,effectivePercent:90}:policy;
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-compensate-')),home=path.join(temp,'codex'),control=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(control);
@@ -31,7 +31,7 @@ async function scenario(enabled,interrupt=false,{smallCatalog=false,high=false,c
  const call=(method,params)=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>{pending.delete(id);reject(Error(method+' timeout '+stderr.slice(-500)));},15000);pending.set(id,{resolve,reject,timer});input.write(JSON.stringify({id,method,params})+'\n');});
  try{
   child=spawn(binary,['app-server','--listen','stdio://'],{cwd:temp,env:{PATH:process.env.PATH,HOME:temp,TMPDIR:temp,CODEX_HOME:home},stdio:['pipe','pipe','pipe']});child.stderr.on('data',d=>stderr+=d.toString());
-  bridge=new Bridge(child,input,output,async()=>({model}),async id=>({policy:bridge.records.get(id)?.policy,model}),{accountingWindowLimit:enabled?16000000:null,nativeBudgetSupport:true,resolveNewChatBudget:async()=>({policy:interrupt?{...policy,window:700000,compact:600000,revision:0}:realPolicy}),resolveCompensation:createCompensationResolver({home,control,allowExperimental:true})});
+  bridge=new Bridge(child,input,output,async()=>({model}),async id=>({policy:bridge.records.get(id)?.policy,model}),{accountingWindowLimit:enabled?16000000:null,nativeBudgetSupport:true,resolveNewChatBudget:async()=>({policy:interrupt?{...policy,window:700000,compact:600000,revision:0}:realPolicy}),resolveCompensation:createCompensationResolver({home,control,allowExperimental:!automatic,automatic})});
   readline.createInterface({input:output}).on('line',line=>{const m=JSON.parse(line);events.push(m);if(!m.method&&pending.has(m.id)){const p=pending.get(m.id);pending.delete(m.id);clearTimeout(p.timer);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}});
   await call('initialize',{clientInfo:{name:'compensation_test',version:'1'},capabilities:{experimentalApi:true}});input.write(JSON.stringify({method:'initialized'})+'\n');
   const id=(await call('thread/start',{model:'context-fixture',cwd:temp,ephemeral:false,approvalPolicy:'never',sandbox:'read-only',baseInstructions:'Reply OK.',developerInstructions:'Keep this test instruction.'})).thread.id;
@@ -72,9 +72,10 @@ async function scenario(enabled,interrupt=false,{smallCatalog=false,high=false,c
    assert.equal(childRecord.compensation.status,'active',JSON.stringify(bridge.publicRecord(childRecord)));assert.equal(childRecord.compensation.targetWindow,60000);assert.ok(childRecord.compensation.extraTokens>=record.compensation.extraTokens);
    assert.equal(events.filter(e=>e.method==='item/started'&&String(e.params.item?.type).toLowerCase()==='contextcompaction').length,0);
    await call('thread/resume',{threadId:id,excludeTurns:true});await turn('After external resume');assert.equal(record.observedWindow,record.expectedWindow);assert.equal(record.compensation.status,'active');
-   const automatic=await bridge.startAutomatic(id,{taskId:'fixture-task',executionId:'fixture-execution',prompt:'Automatic task uses compensation',settings:{}});
-   for(let n=0;n<400&&!events.some(e=>e.method==='turn/completed'&&e.params.turn.id===automatic.turnId);n++)await delay(20);
-   assert.ok(events.some(e=>e.method==='turn/completed'&&e.params.turn.id===automatic.turnId));await delay(80);assert.equal(record.compensation.status,'active');assert.equal(record.observedWindow,record.expectedWindow);
+   const automaticTask=await bridge.startAutomatic(id,{taskId:'fixture-task',executionId:'fixture-execution',prompt:'Automatic task uses compensation',settings:{}});
+   for(let n=0;n<400&&!events.some(e=>e.method==='turn/completed'&&e.params.turn.id===automaticTask.turnId);n++)await delay(20);
+   assert.ok(events.some(e=>e.method==='turn/completed'&&e.params.turn.id===automaticTask.turnId));await delay(80);assert.equal(record.compensation.status,'active');assert.equal(record.observedWindow,record.expectedWindow);
+   if(automatic)return {compactions};
    manager.setEnabled(false);await turn('After disabling');assert.equal(record.compensation.enabled,false);assert.equal(record.observedWindow,60000);
   }
   return {compactions};
@@ -90,3 +91,5 @@ test('signed runtime shrinking a budget during a paused turn compensates before 
 test('signed runtime accepts accounting headroom beyond catalog capacity while preserving the real target',{skip:!fs.existsSync(binary),timeout:60000},async()=>{await scenario(true,false,{smallCatalog:true});});
 test('signed runtime compacts real usage even when server reasoning is already included',{skip:!fs.existsSync(binary),timeout:60000},async()=>{await scenario(true,false,{high:true});});
 test('signed runtime keeps 800K plus 500K overhead uncompressed and compacts at a real 900K threshold',{skip:!fs.existsSync(binary),timeout:60000},async()=>{await scenario(true,false,{ceiling:true});});
+
+test('automatic boundary accounting preserves the 920K target with 500K historical reasoning and real-usage compaction',{skip:!fs.existsSync(binary),timeout:60000},async()=>{await scenario(true,false,{ceiling:true,automatic:true});});

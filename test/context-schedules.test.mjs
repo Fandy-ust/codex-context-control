@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {createTaskQueues,defaultQueueConfig} from '../src/task-queues.mjs';
 
 function fixture(saved={}){
- let clock=1700000000000,serial=0,document=saved,ready=true;
+ let clock=1700000000000,serial=0,document=saved,ready=true;const protection={stopOnCreditsEnabled:false,creditsTrigger:"either"};
  const chat={id:'chat',model:'fixture',connected:true,status:'active',turnId:'source',inputEpoch:1,contextEpoch:0,policy:{revision:1,enabled:true},revision:1,phase:'confirmed'},calls=[],holds=[],deps=new Map();
- const quotaState={accountScope:'account',updatedAt:clock,buckets:[{id:'codex',primary:{remainingPercent:80,windowDurationMins:300,resetsAt:clock/1000+3600},secondary:{remainingPercent:80,windowDurationMins:10080,resetsAt:clock/1000+86400}}]};
+ const quotaState={stale:false,accountScope:'account',updatedAt:clock,buckets:[{id:'codex',primary:{remainingPercent:80,windowDurationMins:300,resetsAt:clock/1000+3600},secondary:{remainingPercent:80,windowDurationMins:10080,resetsAt:clock/1000+86400}}]};
  const quota={state:()=>quotaState,refresh:async()=>{}};
- const engine=createTaskQueues({load:()=>structuredClone(document),save:value=>{document=structuredClone(value);},thread:id=>id==='chat'?chat:null,quota,canDispatch:()=>ready,start:async(id,task)=>{calls.push(task);chat.status='active';chat.turnId='next';chat.automaticTask={executionId:task.executionId,status:'running',turnId:'next'};return chat.automaticTask;},interrupt:async()=>calls.push('interrupt'),operation:(_,id)=>deps.get(id),now:()=>clock,id:()=>String(++serial),inhibit:value=>holds.push(value)});
- return {engine,chat,calls,holds,quotaState,deps,get document(){return document;},ready:v=>ready=v,advance:n=>{clock+=n;quotaState.updatedAt=clock;},schedule:(extra={})=>engine.schedule({id:'chat',prompt:'Continue original task from checkpoint.',requestId:'one-shot',...extra}),completeSource(){Object.assign(chat,{status:'idle',lastCompletedTurnId:'source',lastTurnStatus:'completed'});engine.observeThread(chat);}};
+ const engine=createTaskQueues({creditsConfig:()=>protection,load:()=>structuredClone(document),save:value=>{document=structuredClone(value);},thread:id=>id==='chat'?chat:null,quota,canDispatch:()=>ready,start:async(id,task)=>{calls.push(task);chat.status='active';chat.turnId='next';chat.automaticTask={executionId:task.executionId,status:'running',turnId:'next'};return chat.automaticTask;},interrupt:async()=>calls.push('interrupt'),operation:(_,id)=>deps.get(id),now:()=>clock,id:()=>String(++serial),inhibit:value=>holds.push(value)});
+ return {engine,chat,calls,holds,quotaState,deps,protection,get document(){return document;},ready:v=>ready=v,advance:n=>{clock+=n;quotaState.updatedAt=clock;},schedule:(extra={})=>engine.schedule({id:'chat',prompt:'Continue original task from checkpoint.',requestId:'one-shot',...extra}),completeSource(){Object.assign(chat,{status:'idle',lastCompletedTurnId:'source',lastTurnStatus:'completed'});engine.observeThread(chat);}};
 }
 test('one-shot uses the existing scheduler without enabling regular queues or continuously monitoring afterward',async t=>{
  const f=fixture();t.after(()=>f.engine.close());f.engine.command({id:'chat',action:'add',prompt:'regular queued work'});
@@ -54,4 +54,15 @@ test('save-only budgets and old compactions cannot authorize a handoff; its own 
  f.deps.set('old',{id:'old',kind:'compact',state:'completed',turnId:'previous',inputEpoch:0});assert.throws(()=>f.schedule({afterOperation:'old'}),e=>e.code==='INVALID_DEPENDENCY');assert.equal(f.engine.schedules().length,0);
  f.deps.set('compact',{id:'compact',kind:'compact',state:'waiting_for_idle',turnId:'source',inputEpoch:1});f.schedule({afterOperation:'compact'});f.completeSource();await f.engine.tick();assert.equal(f.calls.length,0);
  await new Promise(r=>setImmediate(r));f.deps.get('compact').state='completed';f.chat.phase='needs_observation';f.chat.appliedBudget={model:'fixture'};await f.engine.tick();assert.equal(f.calls.length,1);assert.equal(f.calls[0].schedule.compactionOperationId,'compact');
+});
+
+test('Credits handoffs start once and recheck the live Credits protection before further running',async t=>{
+ const f=fixture();t.after(()=>f.engine.close());const b=f.quotaState.buckets[0];Object.assign(b,{hasCredits:true,creditBalance:'100'});Object.assign(b.primary,{usedPercent:0});Object.assign(b.secondary,{usedPercent:100,remainingPercent:0});
+ f.schedule();f.completeSource();await new Promise(r=>setImmediate(r));await f.engine.tick();assert.equal(f.calls.length,1);assert.equal(f.engine.scheduleQuotaGate('chat').source,'credits');
+ f.protection.stopOnCreditsEnabled=true;await f.engine.tick();assert.deepEqual(f.calls.slice(1),['interrupt']);await f.engine.tick();assert.equal(f.calls.length,2);
+});
+test('Credits availability changing while waiting is reevaluated without resubmission',async t=>{
+ const f=fixture();t.after(()=>f.engine.close());const b=f.quotaState.buckets[0];Object.assign(b,{hasCredits:true,creditBalance:'0'});b.secondary.remainingPercent=0;
+ f.schedule();f.completeSource();await new Promise(r=>setImmediate(r));await f.engine.tick();assert.equal(f.calls.length,0);assert.equal(f.engine.schedules()[0].state,'waiting_quota');
+ b.creditBalance='100';await f.engine.tick();assert.equal(f.calls.length,1);await f.engine.tick();assert.equal(f.calls.length,1);
 });

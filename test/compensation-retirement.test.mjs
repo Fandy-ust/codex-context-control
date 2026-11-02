@@ -1,5 +1,15 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {createCompensationManager,createCompensationResolver} from '../src/compaction-compensation.mjs';import {prepareContextCatalog} from '../src/context-ceiling.mjs';
+test('automatic boundary accounting is independent of the retired toggle and never treats unreadable history as zero',async()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-automatic-'));
+ try{
+  const resolver=createCompensationResolver({home,control:home,automatic:true});assert.equal(resolver.isEnabled(),true);
+  const missing=await resolver({id:'11111111-1111-1111-1111-111111111111'});assert.equal(missing.automatic,true);assert.equal(missing.known,false);assert.equal(missing.extraTokens,undefined);
+  assert.equal((await resolver({id:'new',newChatPolicy:{revision:1}})).extraTokens,0);
+  assert.equal((await resolver({id:'missing-fork',newChatPolicy:{revision:1},forkedFromId:'parent'})).known,false);
+  assert.equal(createCompensationManager({home}).enabled(),false);
+ }finally{fs.rmSync(home,{recursive:true,force:true});}
+});
 test('retired compensation disables inherited preferences, refuses reactivation and retains unknown settings',async()=>{
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-retired-')),file=path.join(home,'compaction-compensation.json');
  try{

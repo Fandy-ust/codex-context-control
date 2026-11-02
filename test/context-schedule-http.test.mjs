@@ -17,10 +17,13 @@ test('handoff HTTP returns context and readiness, then the existing scheduler di
   peer=await connect(async(op,p)=>{if(op==='queue-start'){starts.push(p.task);return {executionId:p.task.executionId,status:'running',turnId:'next'};}throw Error(op);});
   await peer.call('registerBridge',{pid:process.pid,taskQueueVersion:4,contextScheduleVersion:1});
   const update=change=>peer.call('updateThread',{id:'chat',model:'context-fixture',status:'active',turnId:'source',inputEpoch:1,contextEpoch:0,revision:1,phase:'confirmed',expectedWindow:400000,appliedBudget:policy,usageFresh:true,lastUsage:{totalTokens:100000},...change});await update();
-  await peer.call('observeQuota',{account:{type:'chatgpt',id:'fixture-account',email:'fixture@example.test'},observedAt:Date.now(),rateLimitsByLimitId:{codex:{primary:{usedPercent:10,windowDurationMins:300,resetsAt:Math.floor(Date.now()/1000)+3600}}}});
+  await peer.call('observeQuota',{account:{type:'chatgpt',id:'fixture-account',email:'fixture@example.test'},observedAt:Date.now(),rateLimitsByLimitId:{codex:{credits:{hasCredits:true,unlimited:false,balance:'120'},primary:{usedPercent:10,windowDurationMins:300,resetsAt:Math.floor(Date.now()/1000)+3600},secondary:{usedPercent:100,windowDurationMins:10080,resetsAt:Math.floor(Date.now()/1000)+86400}}}});
   const request={id:'chat',action:'schedule',prompt:'Continue the unfinished original task after checking its saved progress.',requestId:'confirmed-handoff'};
-  const accepted=await post(request);assert.equal(accepted.status,200);assert.equal(accepted.data.nextAction,'finish_turn');assert.equal(accepted.data.context.headroom.toWindow,284000);assert.equal(accepted.data.readiness.quotaBlocked,false);assert.equal(starts.length,0);
+  const accepted=await post(request);assert.equal(accepted.status,200);assert.equal(accepted.data.nextAction,'finish_turn');assert.equal(accepted.data.context.headroom.toWindow,284000);assert.equal(accepted.data.readiness.quotaBlocked,false);assert.equal(accepted.data.readiness.quotaSource,'credits');assert.equal(starts.length,0);
   assert.equal((await post(request)).data.schedule.id,accepted.data.schedule.id);
+  const configure=async config=>{const r=await fetch(base+'/quota/activation',{method:'POST',headers,body:JSON.stringify({action:'configure',...config})});assert.equal(r.status,200);await r.json();};
+  await configure({stopOnCreditsEnabled:true,creditsTrigger:'either'});const protectedReceipt=await post(request);assert.equal(protectedReceipt.data.readiness.quotaBlocked,true);assert.equal(protectedReceipt.data.readiness.quotaReason,'credits_protection');
+  await configure({stopOnCreditsEnabled:false});assert.equal((await post(request)).data.readiness.quotaSource,'credits');
   await update({status:'idle'});await new Promise(r=>setTimeout(r,30));assert.equal(starts.length,0);
   await update({status:'idle',lastCompletedTurnId:'source',lastTurnStatus:'completed'});
   for(let i=0;i<100&&!starts.length;i++)await new Promise(r=>setTimeout(r,20));assert.equal(starts.length,1);assert.equal(starts[0].schedule.sourceTurnId,'source');

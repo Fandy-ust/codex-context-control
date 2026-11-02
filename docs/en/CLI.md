@@ -32,6 +32,8 @@ Accepted, waiting, executing, awaiting readback and completed/confirmed are dist
 
 The skill defaults to quality-first, supports balanced and speed-first preferences and revisits tradeoffs when the user reports slowness. It continues safe work with comfortable headroom and yields only when an unresolved choice risks compaction during the next stage.
 
+Since 0.27.30, safe-boundary budget application first estimates retained historical reasoning, then loads the window and threshold with accounting headroom together. Real targets obey native limits or the enabled 920K extension. `loaded` / `headroom` use real targets; `accounting` exposes extra estimates and runtime counters. Check `capabilities.reasoningBudget`; old bridges need normal reopening. Mid-turn changes can still trigger native compaction.
+
 ## One-shot task handoff
 
 An agent can proactively assess task progress and context, then register one continuation before ending its turn:
@@ -44,7 +46,7 @@ context-manager chat schedule-cancel current SCHEDULE_ID
 
 The optional dependency must be the current budget application or this turn's explicit compaction; save-only or stale receipts cannot authorize execution. `--revision N` protects the current saved budget. The reply includes context/headroom, readiness gates and a receipt. Registration neither changes the active window nor ends the turn. Finish at a checkpoint rather than polling yourself.
 
-The existing scheduler waits for exact source completion, loaded context, completed dependencies and fresh quota above the existing reserves. It submits one same-chat continuation without enabling regular queues or dispatching their other tasks. New user input/interview answers, interruption, context changes, disconnect, a 15-minute deadline or service restart invalidate waiting intent. Uncertain delivery is never automatically retried. Up to 50 receipts are retained, with request-ID deduplication while retained. Running work uses normal Codex Stop/steering controls. Queue/global pause cancels waiting handoffs.
+The existing scheduler waits for exact source completion, loaded context, completed dependencies and fresh quota above the existing reserves, or fresh available extra Credits while honoring the existing Credits-stop trigger. `readiness.quotaSource` / `quotaReason` identify this decision; ordinary queues keep their reserves. It submits one same-chat continuation without enabling regular queues or dispatching their other tasks. New user input/interview answers, interruption, context changes, disconnect, a 15-minute deadline or service restart invalidate waiting intent. Uncertain delivery is never automatically retried. Up to 50 receipts are retained, with request-ID deduplication while retained. Running work uses normal Codex Stop/steering controls. Queue/global pause cancels waiting handoffs.
 
 Check `capabilities.scheduleAfterTurn`; older connections require a normal restart. No additional runtime or monitoring loop is created. Do not schedule automatic continuation while waiting for a necessary user decision; continue useful work when headroom is comfortable.
 

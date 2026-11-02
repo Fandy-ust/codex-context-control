@@ -1,3 +1,9 @@
+## 0.27.30
+
+- Apply history reasoning estimates together with context-window and compaction changes at safe boundaries. Keep the real target within the native limit or the optional 920K extension; reserve separate runtime accounting space without patching Codex.
+- Allow one-shot handoffs to use fresh, identified extra Credits while honoring existing Credits-stop settings. Ordinary queue percentage reserves remain unchanged.
+- Return target versus accounting values separately to agents; preserve the browser-compatible official-runtime launch chain.
+
 ## 0.27.29
 
 - Add one-shot same-chat handoffs through the existing scheduler: CLI registration returns context/headroom and readiness, then agents can finish the current turn while the app waits for exact completion, loaded budgets, explicit compaction and quota gates.

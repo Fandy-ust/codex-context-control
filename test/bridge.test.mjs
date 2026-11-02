@@ -8,6 +8,19 @@ const model={slug:'fixture',effective_context_window_percent:95,max_context_wind
 const policy=(window,compact,revision)=>({window,compact,revision,reserve:16000,retainedFloor:0,enabled:true,scope:'total'});
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const tick=()=>new Promise(r=>setImmediate(r));
+test('cold resume calculates historical reasoning before its first native configuration write',async()=>{
+ const f=fixture(async()=>({}));f.bridge.records.clear();f.bridge.nativeBudgetSupport=true;f.bridge.accountingWindowLimit=16000000;
+ const target={...policy(871579,784000,4),effectivePercent:95};f.bridge.resolveFork=async()=>({policy:target,model});
+ f.bridge.resolveCompensation=async record=>{assert.equal(record.id,'resumed');return {enabled:true,automatic:true,known:true,extraTokens:274014};};
+ try{
+  f.bridge.fromClient(JSON.stringify({id:1,method:'thread/resume',params:{threadId:'resumed',excludeTurns:true}}));
+  await until(()=>f.writes.length===1);const request=f.writes[0];assert.equal(request.method,'thread/resume');
+  assert.equal(request.params.config.model_auto_compact_token_limit,1058014);assert.ok(request.params.config.model_context_window>871579);
+  assert.ok(Math.floor(request.params.config.model_context_window*.95)>=828000+274014);
+  f.bridge.fromServer(JSON.stringify({id:1,result:{thread:{id:'resumed',status:{type:'idle'}},model:'fixture'}}));
+  const r=f.bridge.records.get('resumed');assert.equal(r.compensation.targetWindow,828000);assert.equal(r.compensation.extraTokens,274014);assert.equal(r.policy.window,871579);assert.equal(r.appliedBudget.compact,1058014);
+ }finally{f.close();}
+});
 async function until(fn){for(let n=0;n<100;n++){if(fn())return;await tick();}throw new Error('bridge did not settle');}
 function fixture(publish){
   const child=new EventEmitter();child.stdin=new PassThrough();child.stdout=new PassThrough();

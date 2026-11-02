@@ -45,6 +45,11 @@ test('snapshot distinguishes pending targets, loaded budgets and stale measureme
  const value=contextSnapshot({...thread,policy:{...policy,window:700000,revision:2},usageFresh:false});
  assert.equal(value.requested.window,665000);assert.equal(value.loaded.window,475000);assert.equal(value.loaded.revision,1);assert.equal(value.headroom.toWindow,null);assert.equal(value.observation.totalTokens,100000);assert.equal(value.observation.validForPreflight,false);
 });
+test('snapshot reports real target headroom separately from historical reasoning accounting',()=>{
+ const value=contextSnapshot({...thread,status:'idle',usageFresh:true,expectedWindow:575000,compensation:{automatic:true,status:'active',targetWindow:475000,extraTokens:100000},appliedBudget:{compact:520000,reserve:16000}});
+ assert.equal(value.loaded.window,475000);assert.equal(value.loaded.compact,420000);assert.equal(value.headroom.toWindow,359000);assert.equal(value.headroom.toCompaction,304000);
+ assert.deepEqual(value.accounting,{automatic:true,known:true,extraTokens:100000,runtimeWindow:575000,runtimeCompact:520000});
+});
 test('current is explicit, summary and operation commands use scoped routes, and compact accepts a stable request ID',async()=>{
  const calls=[],env={CODEX_THREAD_ID:'01a1976e-6204-7de3-be1d-c3849e30a996'},client=async(op,p)=>{calls.push({op,p});return {};};
  await assert.rejects(runManagerCLI(['chat','show','current'],{client,env:{}}),e=>e.code==='CURRENT_CHAT_UNKNOWN');assert.equal(calls.length,0);

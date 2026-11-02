@@ -10,6 +10,7 @@ export {defaultQueueConfig,validateQueueConfig} from './core/queue-config.mjs';
 import {defaultQueueConfig,validateQueueConfig} from './core/queue-config.mjs';
 import {normalizeTaskSettings} from './core/task-settings.mjs';
 import {createContextSchedules} from './context-schedules.mjs';
+import {contextScheduleQuotaGate} from './core/context-schedule-quota.mjs';
 import {armTaskRetry,normalizeTaskRetry,taskRetryReady,takeTaskRetry} from './core/queue-retry.mjs';
 const retryEnabled=config=>config?.retryEnabled!==false&&config?.resume==='auto';
 export function effectiveReserve(config,window,now){
@@ -27,7 +28,7 @@ export function queueQuotaGate(config,quota,now=Date.now()){
 
 // The service owns scheduling; bridges own the exact automatic turn identity.
 // Persist before sending so an uncertain delivery is never replayed on restart.
-export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,prepare=async()=>{},interrupt,inhibit=()=>{},canDispatch=()=>true,canSwitchAccounts=()=>false,operation=()=>null,now=Date.now,id=randomUUID}={}){
+export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,prepare=async()=>{},interrupt,inhibit=()=>{},canDispatch=()=>true,canSwitchAccounts=()=>false,operation=()=>null,creditsConfig=()=>({}),now=Date.now,id=randomUUID}={}){
   const saved=load()??{},queues=new Map();let monitoringEnabled=saved.monitoringEnabled!==false,ticking=false,suspended=0,timer=null,closed=false,sleep=false,lastSaved='';
   for(const q of Object.values(saved.queues??{})){
     try{if(typeof q.id!=='string'||!Array.isArray(q.tasks))continue;q.config=validateQueueConfig(q.config);for(const t of q.tasks){t.settings=normalizeTaskSettings(t.settings,q.config);const retry=normalizeTaskRetry(t.retry);if(retry)t.retry=retry;else delete t.retry;}
@@ -39,7 +40,8 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
     }catch{/* Ignore invalid persisted entries without starting them. */}
   }
   const active=q=>monitoringEnabled&&q.enabled;
-  const schedules=createContextSchedules({saved:saved.schedules,save:()=>persist(),thread,start,interrupt,quota,gate:queueQuotaGate,monitoring:()=>monitoringEnabled,canDispatch,operation,now,id});
+  const scheduleGate=(config,state,at=now())=>contextScheduleQuotaGate(queueQuotaGate(config,state,at),state,creditsConfig(),at);
+  const schedules=createContextSchedules({saved:saved.schedules,save:()=>persist(),thread,start,interrupt,quota,gate:scheduleGate,monitoring:()=>monitoringEnabled,canDispatch,operation,now,id});
   function persist(){if(closed)return;const value={version:1,monitoringEnabled,queues:Object.fromEntries(queues),schedules:schedules.snapshot()},serialized=JSON.stringify(value);if(serialized!==lastSaved){save(value);lastSaved=serialized;}sync();}
   function sync(){const needed=!closed&&([...queues.values()].some(active)||monitoringEnabled&&schedules.hasPending()),poll=!closed&&(needed||schedules.hasPending()||[...queues.values()].some(q=>q.tasks.some(t=>t.status==='running')));if(sleep!==needed){sleep=needed;inhibit(needed);}if(poll&&!timer){timer=setInterval(()=>void tick(),1000);timer.unref?.();}if(!poll&&timer){clearInterval(timer);timer=null;}}
   function list(){return {monitoringEnabled,sleepPrevented:sleep,schedules:schedules.list(),queues:[...queues.values()].map(q=>({...structuredClone(q),tasks:queueTaskHistory(structuredClone(q.tasks.filter(t=>!t.monitorOnly)),now())}))};}
@@ -150,5 +152,5 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
     }catch(error){for(const q of queues.values())if(active(q)){q.state='waiting-quota';q.message=error.message;}persist();}
     finally{ticking=false;}
   }
-  persist();return {list,get,command,tick,schedules:()=>schedules.list(),schedule(p){const result=schedules.schedule({...p,settings:{quota:{...(queues.get(p.id)?.config??defaultQueueConfig()),retryEnabled:false}}});void tick();return result;},cancelSchedule:(chatId,scheduleId)=>schedules.cancel(chatId,scheduleId),observeThread:chat=>schedules.observe(chat),cancelSchedules:(chatId,reason)=>schedules.cancelWaiting(chatId,reason),async suspend(){suspended++;while(ticking)await new Promise(r=>setTimeout(r,20));let resumed=false;return ()=>{if(!resumed){resumed=true;suspended--;}};},close(){closed=true;clearInterval(timer);inhibit(false);}};
+  persist();return {list,get,command,tick,scheduleQuotaGate:chatId=>scheduleGate(queues.get(chatId)?.config??defaultQueueConfig(),quota.state()),schedules:()=>schedules.list(),schedule(p){const result=schedules.schedule({...p,settings:{quota:{...(queues.get(p.id)?.config??defaultQueueConfig()),retryEnabled:false}}});void tick();return result;},cancelSchedule:(chatId,scheduleId)=>schedules.cancel(chatId,scheduleId),observeThread:chat=>schedules.observe(chat),cancelSchedules:(chatId,reason)=>schedules.cancelWaiting(chatId,reason),async suspend(){suspended++;while(ticking)await new Promise(r=>setTimeout(r,20));let resumed=false;return ()=>{if(!resumed){resumed=true;suspended--;}};},close(){closed=true;clearInterval(timer);inhibit(false);}};
 }
