@@ -42,6 +42,35 @@ test('a fresh fork expands before any model request and holds the first message 
   assert.equal(calls.filter(x=>x.method==='thread/resume'&&x.params.config)[0].params.config.model_context_window,715790);assert.ok(!calls.some(x=>x.method==='model/list'||x.method==='thread/compact/start'));
  }finally{release.resolve();f.close();}
 });
+test('scheduled starts validate their exact source, and a user takeover while preparing prevents automatic submission',async()=>{
+ const entered=deferred(),release=deferred(),f=fixture(async()=>{entered.resolve();await release.promise;return {};});
+ Object.assign(f.record,{model:'fixture',inputEpoch:1,contextEpoch:0,completedTurns:new Map([['source','completed']])});
+ const task={executionId:'scheduled',taskId:'handoff',prompt:'Continue original task.',schedule:{id:'handoff',sourceTurnId:'source',inputEpoch:1,contextEpoch:0,model:'fixture',policyRevision:0}};let nativeStarts=0;
+ f.bridge.rpc=async()=>{nativeStarts++;return {turn:{id:'automatic',status:'inProgress'}};};
+ try{
+  await assert.rejects(f.bridge.startAutomatic('chat',{...task,schedule:{...task.schedule,inputEpoch:0}}),e=>e.code==='SCHEDULE_CHANGED');assert.equal(nativeStarts,0);
+  const starting=f.bridge.startAutomatic('chat',task);await entered.promise;
+  f.bridge.fromClient(JSON.stringify({id:900,method:'turn/start',params:{threadId:'chat',input:[{type:'text',text:'User takes over'}]}}));release.resolve();
+  await assert.rejects(starting,e=>e.code==='SCHEDULE_CHANGED');assert.equal(nativeStarts,0);assert.equal(f.writes.filter(x=>x.method==='turn/start').length,1,'manual input passes through exactly once');
+ }finally{release.resolve();f.close();}
+});
+test('a synchronous interview answer changes the handoff input epoch',()=>{
+ const f=fixture(async()=>({}));try{
+  const before=f.record.inputEpoch;
+  f.bridge.fromServer(JSON.stringify({id:'question',method:'item/tool/requestUserInput',params:{threadId:'chat',turnId:'source',questions:[]}}));
+  f.bridge.fromClient(JSON.stringify({id:'question',result:{answers:{choice:{answers:['yes']}}}}));assert.equal(f.record.inputEpoch,before+1);
+ }finally{f.close();}
+});
+test('only a verified explicit compaction lets a handoff proceed past its stale pre-compaction counter',async()=>{
+ const f=fixture(async()=>({})),calls=[];f.bridge.contextCeiling=true;
+ Object.assign(f.record,{policy:policy(777778,630000,1),appliedRevision:1,inputEpoch:1,contextEpoch:0,usageFresh:false,lastUsage:{totalTokens:650000},completedTurns:new Map([['source','completed']]),completedContextOps:new Set(['compact-done'])});
+ f.bridge.rpc=async(method)=>{calls.push(method);return {turn:{id:'next',status:'inProgress'}};};
+ const schedule={id:'handoff',sourceTurnId:'source',inputEpoch:1,contextEpoch:0,model:'fixture',policyRevision:1};
+ try{
+  await assert.rejects(f.bridge.startAutomatic('chat',{executionId:'unprepared',taskId:'handoff',prompt:'Continue.',schedule}),/context decision/);assert.equal(calls.length,0);
+  await f.bridge.startAutomatic('chat',{executionId:'prepared',taskId:'handoff',prompt:'Continue.',schedule:{...schedule,compactionOperationId:'compact-done'}});assert.deepEqual(calls,['turn/start']);
+ }finally{f.close();}
+});
 test('resuming an already loaded thread cannot claim a newly injected budget was applied',async()=>{
  const f=fixture(async()=>({}));f.bridge.nativeBudgetSupport=true;f.bridge.resolveFork=async()=>({policy:policy(715790,643000,2),model});
  Object.assign(f.record,{policy:policy(526316,473000,1),policyVersion:1,appliedRevision:1,revision:1,configuredWindow:526316,usageFresh:true,seed:{config:{model_context_window:526316,model_auto_compact_token_limit:473000}}});

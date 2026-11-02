@@ -23,7 +23,7 @@ function incomingTokens(input=[]){if(!Array.isArray(input)||input.some(item=>!it
 
 export class Bridge {
   constructor(child,input,output,publish=async()=>({}),resolveFork=async()=>null,options={}) {
-    this.child=child;this.input=input;this.output=output;this.publish=publish;this.records=new Map();this.internal=new Map();this.external=new Map();this.sequence=0;this.prefix=`context-control:${randomUUID()}:`;
+    this.child=child;this.input=input;this.output=output;this.publish=publish;this.records=new Map();this.userQuestions=new Map();this.internal=new Map();this.external=new Map();this.sequence=0;this.prefix=`context-control:${randomUUID()}:`;
     this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;this.resolveNewChatBudget=options.resolveNewChatBudget;this.nativeBudgetSupport=options.nativeBudgetSupport===true;
     this.quotaObserver=createQuotaObserver(options.observeQuota);
     this.resolveCompensation=options.resolveCompensation;this.accountingWindowLimit=options.accountingWindowLimit;this.resolveUsage=options.resolveUsage;this.onContextOperation=options.onContextOperation;
@@ -36,13 +36,18 @@ export class Bridge {
   fromClient(line,preparedFork=null,guarded=false,compensationPrepared=false) {
     let m;try{m=JSON.parse(line);}catch{this.writeBackend(line);return;}
     if(!m||typeof m!=='object'||Array.isArray(m)){this.writeBackend(line);return;}
+    if(!m.method&&m.id!=null&&this.userQuestions.has(key(m.id))){const r=this.records.get(this.userQuestions.get(key(m.id)));this.userQuestions.delete(key(m.id));if(r){r.inputEpoch=(r.inputEpoch??0)+1;this.notify(r);}}
     if(this.accountTransition&&(blockedMethods.has(m.method)||m.method==='thread/start'||m.method==='thread/compact/start')){this.rejectTurn(m,'账号切换正在进行，请稍后重试');return;}
     if(this.resolveNewChatBudget&&m.method==='thread/start'&&m.id!=null&&isNewUserChat(m.params)&&!preparedFork?.newChat){this.prepareNewChat(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if((this.contextCeiling||this.nativeBudgetSupport)&&m.method==='thread/resume'&&m.id!=null&&m.params?.threadId&&!m.params?.path&&!m.params?.ephemeral&&!preparedFork?.resume){this.prepareResume(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if(this.contextCeiling&&['thread/start','thread/resume'].includes(m.method)&&!m.params?.ephemeral){m.params={...m.params,config:ceilingConfig(m.params?.config)};line=JSON.stringify(m);}
     const id=m.params?.threadId;const record=this.records.get(id);
+    if(record&&['turn/start','turn/steer','turn/interrupt','thread/rollback','thread/archive','thread/delete','thread/fork'].includes(m.method)){record.inputEpoch=(record.inputEpoch??0)+1;this.notify(record);}
     if(m.method==='thread/rollback'&&record){record.contextEpoch=(record.contextEpoch??0)+1;record.usageFresh=false;record.freshUsage=false;this.notify(record);}
-    if(m.method==='turn/start'&&record?.automaticTask?.status==='starting'){this.rejectTurn(m,'队列正在提交任务，请稍后再发送。');return;}
+    if(m.method==='turn/start'&&record?.automaticTask?.status==='starting'){
+      if(record.automaticTask.scheduleId&&!record.automaticTask.submitted){record.automaticTask.status='interrupted';record.automaticTask.errorCode='SCHEDULE_CHANGED';this.notify(record);}
+      else if(!record.automaticTask.scheduleId){this.rejectTurn(m,'队列正在提交任务，请稍后再发送。');return;}
+    }
     // Missing usage defers the budget change, not the request that can measure it.
     // Keep the current runtime configuration until a later idle preflight succeeds.
     if(m.method==='turn/start'&&record&&!record.locked&&record.status==='idle'&&record.policy&&record.appliedRevision!==record.policy.revision&&record.phase!=='needs_observation'){
@@ -121,7 +126,7 @@ export class Bridge {
     this.fromClient(JSON.stringify(policy?{...message,params:forkConfig(params,policy)}:message),prepared);
   }
   record(id){
-    if(!this.records.has(id))this.records.set(id,{id,status:'idle',freshUsage:false,seed:{},sticky:{},queue:[],queueBytes:0,locked:false});
+    if(!this.records.has(id))this.records.set(id,{id,status:'idle',inputEpoch:0,contextEpoch:0,lastCompletedTurnId:null,lastTurnStatus:null,freshUsage:false,seed:{},sticky:{},queue:[],queueBytes:0,locked:false});
     return this.records.get(id);
   }
   rememberAppliedBudget(record,policy,model=record.modelInfo){
@@ -167,6 +172,8 @@ export class Bridge {
   fromServer(line) {
     let m;try{m=JSON.parse(line);}catch{this.writeFrontend(line);return;}
     if(!m||typeof m!=='object'||Array.isArray(m)){this.writeFrontend(line);return;}
+    if(m.method==='item/tool/requestUserInput'&&m.id!=null){this.userQuestions.set(key(m.id),m.params?.threadId);if(this.userQuestions.size>32)this.userQuestions.delete(this.userQuestions.keys().next().value);}
+    if(m.method==='serverRequest/resolved')this.userQuestions.delete(key(m.params?.requestId));
     if(m.method)this.quotaObserver.observe(m.method,m.params);
     if(!m.method&&this.internal.has(key(m.id))){const item=this.internal.get(key(m.id));this.internal.delete(key(m.id));clearTimeout(item.timer);m.error?item.reject(Object.assign(new Error(m.error.message),{confirmed:true,errorCode:m.error.data?.codexErrorInfo==='usageLimitExceeded'?'usageLimitExceeded':null})):item.resolve(m.result);return;}
     if(!m.method&&m.id!=null){
@@ -219,7 +226,7 @@ export class Bridge {
         if(m.method==='thread/status/changed'){record.status=p.status.type;this.notify(record);if(record.status==='idle')this.schedule(record);}
         if(m.method==='turn/started'){record.lastStartedAt=timestampMs(p.turn?.startedAt)??Date.now();record.status='active';record.turnId=p.turn.id;if(record.automaticTask?.status==='starting'&&!record.automaticTask.preparingContext){record.automaticTask.turnId=p.turn.id;record.automaticTask.status='running';}record.usageFresh=false;this.notify(record);}
         if(m.method==='error'&&record.compactionWait)record.compactionWait.reject(new Error(p.error?.message||'原生压缩失败'));
-        if(m.method==='turn/completed'){record.lastCompletedTurnId=p.turn?.id??null;record.lastTurnStatus=p.turn?.status??null;record.compensationTurnPending=false;record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error||['failed','interrupted'].includes(p.turn?.status)?record.compactionWait.reject(new Error(p.turn?.error?.message||'原生压缩未完成')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;record.automaticTask.errorConfirmed=true;record.automaticTask.errorCode=p.turn.error?.codexErrorInfo==='usageLimitExceeded'||p.turn.error?.code==='usageLimitExceeded'?'usageLimitExceeded':null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.scheduleCompensatedCompaction(record);this.schedule(record);}
+        if(m.method==='turn/completed'){record.completedTurns??=new Map();record.completedTurns.set(p.turn?.id,p.turn?.status);if(record.completedTurns.size>16)record.completedTurns.delete(record.completedTurns.keys().next().value);record.lastCompletedTurnId=p.turn?.id??null;record.lastTurnStatus=p.turn?.status??null;record.compensationTurnPending=false;record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error||['failed','interrupted'].includes(p.turn?.status)?record.compactionWait.reject(new Error(p.turn?.error?.message||'原生压缩未完成')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;record.automaticTask.errorConfirmed=true;record.automaticTask.errorCode=p.turn.error?.codexErrorInfo==='usageLimitExceeded'||p.turn.error?.code==='usageLimitExceeded'?'usageLimitExceeded':null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.scheduleCompensatedCompaction(record);this.schedule(record);}
         if(m.method==='thread/name/updated'){record.name=p.name;this.notify(record);}
       }
     }
@@ -242,7 +249,7 @@ export class Bridge {
     if(ready)this.fromClient(line,null,true);
     const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
   }
-  publicRecord(record){return {...pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask','compensation','appliedBudget','lastTurnStatus','contextEpoch','lastCompletedTurnId']),effort:inheritedTaskEffort(record)};}
+  publicRecord(record){return {...pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask','compensation','appliedBudget','lastTurnStatus','contextEpoch','lastCompletedTurnId','inputEpoch']),effort:inheritedTaskEffort(record)};}
   prepareAccountSwitch(){
     if(this.accountTransition)throw Error('账号切换正在进行，请稍后重试');
     if(this.internal.size||this.external.size||[...this.records.values()].some(r=>r.status!=='idle'||r.locked||r.initializing||['starting','running'].includes(r.automaticTask?.status)))throw Error('等待所有聊天空闲后再自动切换账号');
@@ -274,10 +281,17 @@ export class Bridge {
     })();},true);return r.automaticTask;}
     catch(error){r.automaticTask.status='error';r.automaticTask.error=error.message;await this.notify(r);throw error;}
   }
+  checkScheduledTask(r,task){
+    const s=task.schedule;if(!s)return;
+    if(r.policy?.enabled!==false&&r.policy&&r.appliedRevision!==r.policy.revision)throw Object.assign(Error('Scheduled budget is not loaded.'),{code:'SCHEDULE_CHANGED'});
+    if(s.compactionOperationId&&!r.completedContextOps?.has(s.compactionOperationId))throw Object.assign(Error('Scheduled compaction completion is unverified.'),{code:'SCHEDULE_CHANGED'});
+    if(r.model!==s.model||(r.inputEpoch??0)!==s.inputEpoch||(r.contextEpoch??0)!==s.contextEpoch||(r.policy?.revision??0)!==s.policyRevision||r.completedTurns?.get(s.sourceTurnId)!=='completed')throw Object.assign(Error('Scheduled handoff changed before submission.'),{code:'SCHEDULE_CHANGED'});
+  }
   async startAutomatic(id,task,contextPrepared=false){
     if(this.accountTransition)throw Error('账号切换正在进行，请稍后重试');
     const r=this.records.get(id);if(!r||r.ephemeral||r.canAcceptDirectInput===false)throw Error('聊天不支持直接输入');
     if(r.automaticTask?.executionId===task.executionId&&!contextPrepared)return r.automaticTask;
+    this.checkScheduledTask(r,task);
     if(task.adoptTurnId){if(r.status!=='active'||r.turnId!==task.adoptTurnId)throw Error('当前轮次已经变化');r.automaticTask={executionId:task.executionId,taskId:task.taskId,turnId:r.turnId,status:'running'};await this.notify(r);return r.automaticTask;}
     if(r.status!=='idle'||r.locked||r.initializing||[...this.external.values()].some(p=>p.threadId===id&&p.method==='turn/start'))throw Error('请等待聊天空闲');
     if(typeof task.prompt!=='string'||!task.prompt.trim()||task.prompt.length>16000)throw Error('任务提示词无效');
@@ -292,7 +306,7 @@ export class Bridge {
     if(r.policy&&r.appliedRevision!==r.policy.revision){
       if(this.sameRuntimeBudget(r,r.policy)){r.appliedRevision=r.policy.revision;r.revision=r.policy.revision;}
       else await this.apply(r);
-      if(r.phase==='needs_compaction'&&!contextPrepared)return this.prepareAutomaticContext(id,task);
+      if(r.phase==='needs_compaction'&&!contextPrepared){if(task.schedule)throw Error('Scheduled continuation requires another context decision.');return this.prepareAutomaticContext(id,task);}
       // A fresh usage record can only arrive after the next turn. Like a manual
       // turn, allow that observation under the runtime's current configuration;
       // do not shrink/reload history without preflight or mark the task failed.
@@ -320,11 +334,12 @@ export class Bridge {
     if(settings.model)params.model=selectedModel;
     if(selectedEffort)params.effort=selectedEffort;
     if(params.collaborationMode&&(settings.model||selectedEffort))params.collaborationMode={...params.collaborationMode,settings:{...params.collaborationMode.settings,...(settings.model?{model:selectedModel}:{}),...(selectedEffort?{reasoning_effort:selectedEffort}:{})}};
-    r.automaticTask={executionId:task.executionId,taskId:task.taskId,status:'starting'};await this.notify(r);let turnSubmitted=false;
+    r.automaticTask={executionId:task.executionId,taskId:task.taskId,status:'starting',...(task.schedule?{scheduleId:task.schedule.id,submitted:false}:{})};await this.notify(r);let turnSubmitted=false;
     try{
       if(this.resolveCompensation&&r.policy){r.locked=true;try{await this.syncCompensation(r,selectedModel);}finally{r.locked=false;}}
-      if(this.contextCeiling||r.compensation?.enabled){const logical=r.policy&&Number.isInteger(r.modelInfo?.effective_context_window_percent)?Math.floor(r.policy.window*r.modelInfo.effective_context_window_percent/100):null;const incoming=incomingTokens(input),cap=Math.min(logical??r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,this.contextCeiling?MAX_CONTEXT_INPUT:Number.MAX_SAFE_INTEGER),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if(incoming==null||incoming+reserve>=cap)throw Error('新输入本身已接近上下文上限，请拆分输入。');if((r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve)){if(!contextPrepared)return this.prepareAutomaticContext(id,task);throw Error('压缩后上下文仍接近上限，已暂停任务');}}
-      turnSubmitted=true;const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
+      if(this.contextCeiling||r.compensation?.enabled){const logical=r.policy&&Number.isInteger(r.modelInfo?.effective_context_window_percent)?Math.floor(r.policy.window*r.modelInfo.effective_context_window_percent/100):null;const incoming=incomingTokens(input),cap=Math.min(logical??r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,this.contextCeiling?MAX_CONTEXT_INPUT:Number.MAX_SAFE_INTEGER),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if(incoming==null||incoming+reserve>=cap)throw Error('新输入本身已接近上下文上限，请拆分输入。');if(!(task.schedule?.compactionOperationId&&r.usageFresh===false)&&(r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve)){if(task.schedule)throw Error('Scheduled continuation requires another context decision.');if(!contextPrepared)return this.prepareAutomaticContext(id,task);throw Error('压缩后上下文仍接近上限，已暂停任务');}}
+      this.checkScheduledTask(r,task);if(task.schedule){if(r.automaticTask.status!=='starting'||r.status!=='idle'||[...this.external.values()].some(p=>p.threadId===id&&p.method==='turn/start'))throw Object.assign(Error('Scheduled handoff changed before submission.'),{code:'SCHEDULE_CHANGED'});params.turnTrigger='context_manager_schedule';params.parentTurnId=task.schedule.sourceTurnId;r.automaticTask.submitted=true;}
+      r.inputEpoch=(r.inputEpoch??0)+1;turnSubmitted=true;const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
     catch(error){if(turnSubmitted&&!error.confirmed&&r.automaticTask.turnId&&r.status==='active')throw error;r.automaticTask.status='error';r.automaticTask.error=error.message;r.automaticTask.errorConfirmed=!turnSubmitted||error.confirmed===true;r.automaticTask.errorCode=error.errorCode??null;await this.notify(r);throw error;}
     finally{const queued=r.queue.splice(0);r.queueBytes=0;for(const line of queued)this.fromClient(line);}
   }
@@ -388,10 +403,10 @@ export class Bridge {
   }
   async compactTracked(request){
     const r=this.records.get(request.id);
-    if(!r||r.status!=='idle'||(r.turnId??null)!==request.turnId||r.model!==request.model||(r.policy?.revision??r.policyVersion??0)!==request.revision||(r.contextEpoch??0)!==request.contextEpoch||[...this.external.values()].some(p=>p.threadId===request.id&&blockedMethods.has(p.method)))
+    if(!r||r.status!=='idle'||(r.turnId??null)!==request.turnId||r.model!==request.model||(r.policy?.revision??r.policyVersion??0)!==request.revision||(r.contextEpoch??0)!==request.contextEpoch||(request.inputEpoch!=null&&(r.inputEpoch??0)!==request.inputEpoch)||[...this.external.values()].some(p=>p.threadId===request.id&&blockedMethods.has(p.method)))
       throw Object.assign(Error('Chat changed before compaction could start.'),{code:'CHAT_STATE_CHANGED'});
     const report=patch=>Promise.resolve(this.onContextOperation?.({id:request.id,operationId:request.operationId,...patch})).catch(()=>{});
-    return this.compact(request.id,(success,error)=>{void report({state:success?'completed':/超时|退出/.test(error?.message??'')?'outcome_unknown':'failed',reason:error?.message??null});});
+    return this.compact(request.id,(success,error)=>{if(success){r.completedContextOps??=new Set();r.completedContextOps.add(request.operationId);if(r.completedContextOps.size>16)r.completedContextOps.delete(r.completedContextOps.values().next().value);r.freshUsage=false;r.usageFresh=false;this.notify(r);}void report({state:success?'completed':/超时|退出/.test(error?.message??'')?'outcome_unknown':'failed',reason:error?.message??null});});
   }
   async compact(id,onFinished,automatic=false){
     if(this.accountTransition)throw Error('账号切换正在进行，请稍后重试');

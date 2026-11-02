@@ -100,6 +100,10 @@
     "speed-report": {
       "method": "POST",
       "path": "/context-speed"
+    },
+    "context-schedule": {
+      "method": "POST",
+      "path": "/context-schedule"
     }
   }
 }

@@ -27,6 +27,7 @@ enum ControlAPI {
     static let chat = "/chat"
     static let contextOperation = "/context-operation"
     static let speedReport = "/context-speed"
+    static let contextSchedule = "/context-schedule"
     static let routes: [String:String] = [
         "account-switch": "/accounts",
         "cloud-sync": "/cloud-sync",
@@ -52,6 +53,7 @@ enum ControlAPI {
         "codex-backups": "/codex/backups",
         "chat": "/chat",
         "context-operation": "/context-operation",
-        "speed-report": "/context-speed"
+        "speed-report": "/context-speed",
+        "context-schedule": "/context-schedule"
     ]
 }

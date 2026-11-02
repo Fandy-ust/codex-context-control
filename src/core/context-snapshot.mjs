@@ -1,7 +1,7 @@
 import {savedBudget} from './budget.mjs';
 import {preflight} from './policy.mjs';
 
-export function contextSnapshot(thread,{deferredCompaction=false,operations=[]}={}){
+export function contextSnapshot(thread,{deferredCompaction=false,operations=[],schedules=[]}={}){
   const target=savedBudget(thread.policy,thread.modelMetadata),fresh=(thread.usageFresh??thread.freshUsage)===true,used=thread.lastUsage?.totalTokens;
   const window=thread.expectedWindow??thread.observedWindow??null,compact=thread.appliedBudget?.compact??null,reserve=thread.appliedBudget?.reserve??thread.policy?.reserve??16000;
   const available=thread.connected===true&&!thread.ambiguous&&!thread.ephemeral&&thread.canAcceptDirectInput!==false;
@@ -10,7 +10,7 @@ export function contextSnapshot(thread,{deferredCompaction=false,operations=[]}=
     loaded:{revision:thread.revision??null,window,compact,confirmed:thread.phase==='confirmed'},
     observation:{totalTokens:Number.isSafeInteger(used)?used:null,observedAt:thread.observedAt??null,validForPreflight:fresh,kind:thread.connected?'runtime':'cached',observedWindow:thread.observedWindow??null},
     headroom:{estimated:true,valid:fresh&&Number.isSafeInteger(used),toWindow:fresh&&Number.isSafeInteger(used)&&window!=null?window-used-reserve:null,toCompaction:fresh&&Number.isSafeInteger(used)&&compact!=null?compact-used-reserve:null,reserve},
-    limits:thread.modelMetadata??null,actions:{applyNow:available&&thread.status==='idle',compactNow:available&&thread.status==='idle',compactWhenIdle:available&&deferredCompaction},operations:operations.slice(0,5)};
+    limits:thread.modelMetadata??null,actions:{applyNow:available&&thread.status==='idle',compactNow:available&&thread.status==='idle',compactWhenIdle:available&&deferredCompaction},operations:operations.slice(0,5),schedules:schedules.slice(0,5)};
 }
 
 export function contextPreflight(thread,policy,model){

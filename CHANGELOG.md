@@ -1,3 +1,9 @@
+## 0.27.29
+
+- Add one-shot same-chat handoffs through the existing scheduler: CLI registration returns context/headroom and readiness, then agents can finish the current turn while the app waits for exact completion, loaded budgets, explicit compaction and quota gates.
+- Preserve ordinary queue switches and pending work. Bind waiting intent to source input/model/budget/history, cancel on user takeover or pauses, expire after 15 minutes, and never retry uncertain submissions or replay after service restart.
+- Update the shared skill to proactively optimize task performance and choose continuation, interview or a scheduled handoff. Both platforms share behavior; the browser-compatible native launch path is unchanged.
+
 ## 0.27.28
 
 - Release browser-compatible macOS runtime launching together with agent-facing context summaries, explicit preflight, lightweight speed reports, tracked idle compaction and interactive skill guidance.

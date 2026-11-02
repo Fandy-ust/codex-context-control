@@ -1418,5 +1418,7 @@
   "不支持的聊天历史文件格式": "Unsupported chat history file format.",
   "无法唯一定位继承历史文件：找到多份不同记录": "Cannot identify inherited history: multiple distinct records were found.",
   "本轮仍在运行，需等待轮次结束后才能应用。": "This turn is still running; changes can apply after it finishes.",
-  "等待已确认的上下文整理": "Waiting for the confirmed context compaction"
+  "等待已确认的上下文整理": "Waiting for the confirmed context compaction",
+  "等待已安排的一次性任务交接": "Waiting for the scheduled one-shot handoff",
+  "仍有待完成的任务交接": "A scheduled task handoff is still pending"
 }

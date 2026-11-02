@@ -43,7 +43,7 @@ export function createContextOperations({load=()=>[],save=()=>{},now=Date.now,id
           else if(thread.status==='active')update(value,{state:'waiting_for_idle'});
           else if(thread.phase==='reloading')update(value,{state:'executing'});
         }else if(value.state==='waiting_for_idle'){
-          if((thread.turnId??null)!==value.turnId||thread.model!==value.model||revision!==value.revision||(thread.contextEpoch??0)!==(value.contextEpoch??0))update(value,{state:'superseded',reason:'chat_state_changed'});
+          if((thread.turnId??null)!==value.turnId||thread.model!==value.model||revision!==value.revision||(thread.contextEpoch??0)!==(value.contextEpoch??0)||(value.inputEpoch!=null&&(thread.inputEpoch??0)!==value.inputEpoch))update(value,{state:'superseded',reason:'chat_state_changed'});
           else if(thread.status==='idle'&&['interrupted','failed'].includes(thread.lastTurnStatus))update(value,{state:'cancelled',reason:'turn_did_not_complete'});
         }
       }

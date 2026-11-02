@@ -9,6 +9,7 @@ const pending=t=>['waiting','running','interrupted'].includes(t.status)&&!(t.kin
 export {defaultQueueConfig,validateQueueConfig} from './core/queue-config.mjs';
 import {defaultQueueConfig,validateQueueConfig} from './core/queue-config.mjs';
 import {normalizeTaskSettings} from './core/task-settings.mjs';
+import {createContextSchedules} from './context-schedules.mjs';
 import {armTaskRetry,normalizeTaskRetry,taskRetryReady,takeTaskRetry} from './core/queue-retry.mjs';
 const retryEnabled=config=>config?.retryEnabled!==false&&config?.resume==='auto';
 export function effectiveReserve(config,window,now){
@@ -26,7 +27,7 @@ export function queueQuotaGate(config,quota,now=Date.now()){
 
 // The service owns scheduling; bridges own the exact automatic turn identity.
 // Persist before sending so an uncertain delivery is never replayed on restart.
-export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,prepare=async()=>{},interrupt,inhibit=()=>{},canDispatch=()=>true,canSwitchAccounts=()=>false,now=Date.now,id=randomUUID}={}){
+export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,prepare=async()=>{},interrupt,inhibit=()=>{},canDispatch=()=>true,canSwitchAccounts=()=>false,operation=()=>null,now=Date.now,id=randomUUID}={}){
   const saved=load()??{},queues=new Map();let monitoringEnabled=saved.monitoringEnabled!==false,ticking=false,suspended=0,timer=null,closed=false,sleep=false,lastSaved='';
   for(const q of Object.values(saved.queues??{})){
     try{if(typeof q.id!=='string'||!Array.isArray(q.tasks))continue;q.config=validateQueueConfig(q.config);for(const t of q.tasks){t.settings=normalizeTaskSettings(t.settings,q.config);const retry=normalizeTaskRetry(t.retry);if(retry)t.retry=retry;else delete t.retry;}
@@ -38,13 +39,14 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
     }catch{/* Ignore invalid persisted entries without starting them. */}
   }
   const active=q=>monitoringEnabled&&q.enabled;
-  function persist(){if(closed)return;const value={version:1,monitoringEnabled,queues:Object.fromEntries(queues)},serialized=JSON.stringify(value);if(serialized!==lastSaved){save(value);lastSaved=serialized;}sync();}
-  function sync(){const needed=!closed&&[...queues.values()].some(active),poll=!closed&&(needed||[...queues.values()].some(q=>q.tasks.some(t=>t.status==='running')));if(sleep!==needed){sleep=needed;inhibit(needed);}if(poll&&!timer){timer=setInterval(()=>void tick(),1000);timer.unref?.();}if(!poll&&timer){clearInterval(timer);timer=null;}}
-  function list(){return {monitoringEnabled,sleepPrevented:sleep,queues:[...queues.values()].map(q=>({...structuredClone(q),tasks:queueTaskHistory(structuredClone(q.tasks.filter(t=>!t.monitorOnly)),now())}))};}
+  const schedules=createContextSchedules({saved:saved.schedules,save:()=>persist(),thread,start,interrupt,quota,gate:queueQuotaGate,monitoring:()=>monitoringEnabled,canDispatch,operation,now,id});
+  function persist(){if(closed)return;const value={version:1,monitoringEnabled,queues:Object.fromEntries(queues),schedules:schedules.snapshot()},serialized=JSON.stringify(value);if(serialized!==lastSaved){save(value);lastSaved=serialized;}sync();}
+  function sync(){const needed=!closed&&([...queues.values()].some(active)||monitoringEnabled&&schedules.hasPending()),poll=!closed&&(needed||schedules.hasPending()||[...queues.values()].some(q=>q.tasks.some(t=>t.status==='running')));if(sleep!==needed){sleep=needed;inhibit(needed);}if(poll&&!timer){timer=setInterval(()=>void tick(),1000);timer.unref?.();}if(!poll&&timer){clearInterval(timer);timer=null;}}
+  function list(){return {monitoringEnabled,sleepPrevented:sleep,schedules:schedules.list(),queues:[...queues.values()].map(q=>({...structuredClone(q),tasks:queueTaskHistory(structuredClone(q.tasks.filter(t=>!t.monitorOnly)),now())}))};}
   function get(key){return queues.get(key);}
   function command(p){
-    if(p.action==='monitoring'){if(typeof p.enabled!=='boolean')throw Error('开关值无效');monitoringEnabled=p.enabled;for(const q of queues.values())if(q.enabled)q.message=p.enabled?'等待检查额度':'全局监视已暂停；保留此聊天的监视设置';persist();void tick();return list();}
-    if(p.action==='disable-all'){for(const q of queues.values()){q.enabled=false;q.message='监视已关闭；当前轮次结束后停止队列';q.revision++;}persist();return list();}
+    if(p.action==='monitoring'){if(typeof p.enabled!=='boolean')throw Error('开关值无效');monitoringEnabled=p.enabled;if(!p.enabled)schedules.cancelWaiting(null,'monitoring_paused');for(const q of queues.values())if(q.enabled)q.message=p.enabled?'等待检查额度':'全局监视已暂停；保留此聊天的监视设置';persist();void tick();return list();}
+    if(p.action==='disable-all'){schedules.cancelWaiting(null,'queues_paused');for(const q of queues.values()){q.enabled=false;q.message='监视已关闭；当前轮次结束后停止队列';q.revision++;}persist();return list();}
     if(typeof p.id!=='string'||!p.id.length||p.id.length>180||['__proto__','constructor','prototype'].includes(p.id)||!thread(p.id))throw Error('未找到聊天');
     let original=queues.get(p.id);
     if(p.action==='add'&&p.requestId!=null){
@@ -68,13 +70,14 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
     else if(p.action==='retry'){const t=task();if(!['error','interrupted'].includes(t.status))throw Error('该任务无需重试');t.continuation=t.continuation===true||t.status==='interrupted'||t.errorConfirmed===true;t.status='waiting';t.error=null;delete t.retry;q.pause=null;}
     else if(p.action==='stop'){const t=task();if(t.status!=='running')throw Error('当前任务未在执行');q.enabled=false;delete t.retry;q.pause={kind:'manual'};q.message='已请求停止当前任务';void interrupt(q.id,t.executionId).catch(error=>{const current=queues.get(q.id);if(current){current.message=error.message;persist();}});}
     else throw Error('队列操作无效');
+    if(['enable','pause-cycle','stop','config'].includes(p.action))schedules.cancelWaiting(p.id,'chat_paused');
     q.revision++;queues.set(q.id,q);persist();void tick();return list();
   }
   async function tick(){
-    if(ticking||suspended||closed||![...queues.values()].some(q=>active(q)||q.tasks.some(t=>t.status==='running')))return;
+    if(ticking||suspended||closed||(!schedules.hasPending()&&![...queues.values()].some(q=>active(q)||q.tasks.some(t=>t.status==='running'))))return;
     ticking=true;
     try{
-      if([...queues.values()].some(active))await quota.refresh(true);
+      if([...queues.values()].some(active)||monitoringEnabled&&schedules.hasPending())await quota.refresh(true);
       if(closed||suspended)return;
       for(const q of queues.values()){
         if(suspended||closed)return;
@@ -99,7 +102,7 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
         }
         if(!q.enabled){q.state='off';continue;}
         if(!monitoringEnabled){q.state='global-off';q.message='全局监视已暂停；保留此聊天的监视设置';continue;}
-        const dispatch=canDispatch(q.id);if(dispatch!==true){q.state=typeof dispatch==='string'?'waiting-context':'switching-account';q.message=typeof dispatch==='string'?dispatch:'正在切换账号，等待身份与额度确认';continue;}
+        const dispatch=schedules.blocks(q.id)?'等待已安排的一次性任务交接':canDispatch(q.id);if(dispatch!==true){q.state=typeof dispatch==='string'?'waiting-context':'switching-account';q.message=typeof dispatch==='string'?dispatch:'正在切换账号，等待身份与额度确认';continue;}
         if(!chat?.connected&&chat?.queueCanLoad){q.state='loading-chat';q.message='正在后台加载聊天';await prepare(q.id);continue;}
         // Adopt each new user-started turn by its exact identity. Monitoring
         // records never become prompts and cannot replay a user's manual work.
@@ -143,9 +146,9 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
         try{const receipt=await start(q.id,{executionId:next.executionId,taskId:next.id,settings:next.settings,prompt:continuation&&!taskCommand(next.prompt)?'继续上次被额度保护中断的任务，先检查已有进度，避免重复操作。原任务：\n'+next.prompt:next.prompt});if(receipt?.status==='error'){next.status='error';next.error=receipt.error;next.errorConfirmed=receipt.errorConfirmed===true;q.pause={kind:'manual'};if(next.errorConfirmed&&active(q)&&retryEnabled(config)){armTaskRetry(next,now());q.pause={kind:'retry'};q.message='等待自动重试，任务和进度已保留';}else{delete next.retry;q.message='任务提交未确认，请核对后重试';}}}
         catch(error){next.status='error';next.error=error.message;next.errorConfirmed=false;delete next.retry;q.pause={kind:'manual'};q.message='任务提交未确认，请核对后重试';}
       }
-      persist();
+      if(schedules.hasPending())await schedules.tick();persist();
     }catch(error){for(const q of queues.values())if(active(q)){q.state='waiting-quota';q.message=error.message;}persist();}
     finally{ticking=false;}
   }
-  persist();return {list,get,command,tick,async suspend(){suspended++;while(ticking)await new Promise(r=>setTimeout(r,20));let resumed=false;return ()=>{if(!resumed){resumed=true;suspended--;}};},close(){closed=true;clearInterval(timer);inhibit(false);}};
+  persist();return {list,get,command,tick,schedules:()=>schedules.list(),schedule(p){const result=schedules.schedule({...p,settings:{quota:{...(queues.get(p.id)?.config??defaultQueueConfig()),retryEnabled:false}}});void tick();return result;},cancelSchedule:(chatId,scheduleId)=>schedules.cancel(chatId,scheduleId),observeThread:chat=>schedules.observe(chat),cancelSchedules:(chatId,reason)=>schedules.cancelWaiting(chatId,reason),async suspend(){suspended++;while(ticking)await new Promise(r=>setTimeout(r,20));let resumed=false;return ()=>{if(!resumed){resumed=true;suspended--;}};},close(){closed=true;clearInterval(timer);inhibit(false);}};
 }

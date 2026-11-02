@@ -1,6 +1,6 @@
 ---
 name: context-manager
-description: "Manage Codex context budgets, compaction, response-speed tradeoffs, task queues and quota monitoring through Context Manager. Use when users request context or speed adjustments, long work approaches compaction, or queues and quotas need management. Assess the task and discuss tradeoffs before adjusting; not for generic Codex configuration."
+description: "Manage Codex context budgets, compaction, response-speed tradeoffs, one-shot task handoffs, task queues and quota monitoring through Context Manager. Use when users request context or speed adjustments, long work approaches compaction, or queues and quotas need management. Assess the task and discuss tradeoffs before adjusting; not for generic Codex configuration."
 ---
 
 # Context Manager
@@ -20,6 +20,8 @@ Start with `--help`; use `queue --help` and `queue schema` for installed capabil
 ## Context control
 
 For “this chat”, use `chat show current --summary`: `current` resolves `CODEX_THREAD_ID` and verifies it against the controller. If unavailable, resolve the target with `chat list` and use its explicit ID. Do not assume the first or most active chat is the current chat. Keep changes scoped to the requested chat; changing global defaults or other chats requires that scope to be authorized.
+
+Own the task's progression: proactively assess context value, remaining work and bottlenecks, then choose whether to continue, optimize or hand off. User feedback refines that judgment; it is not the only trigger. Within the authorized task and agreed bounds, make useful low-disruption adjustments with a brief explanation. Interview the user when a meaningful quality, cost or history-retention tradeoff remains unresolved.
 
 ### Choose a working policy
 
@@ -57,6 +59,20 @@ Explain a proposed change briefly: the observed situation, the task-specific rea
 - **The next step risks compaction and the necessary decision is unresolved:** preserve a checkpoint, explain why waiting is necessary, and end the current turn at a safe point for the user's decision. Do not interrupt your own runtime, pause unrelated queues or enqueue yourself to simulate this pause.
 
 Execute adjustments within the user's current answer or an already agreed range, with brief notice. Recommendations can include expansion, compaction at a checkpoint, narrower retrieval, a staged deliverable, or a model/effort tradeoff. Recommend a new chat or fork only when useful; do not create one without authorization. Speed improvements are hypotheses to assess against subsequent comparable work, not promises.
+
+### Schedule a one-shot continuation when yielding
+
+When the unfinished task needs a new context budget or an agreed compaction before its next stage, you can arrange a handoff through the existing scheduler instead of requiring the user to type “continue”. This starts a new turn in the same chat and runtime; it does not restart ChatGPT or create another Codex server.
+
+1. Save a concise UTF-8 checkpoint: original goal and acceptance criteria, user constraints, completed work, source/file references, remaining work and the next concrete step. Keep it within the task's existing authorization and at most 16000 characters.
+2. Register any agreed budget change or idle compaction first. Then use `chat schedule current --prompt-file CHECKPOINT_FILE --request-id STABLE_ID`; add `--after-operation OPERATION_ID` to depend on that action. `--revision N` checks the current saved budget revision (use the new revision returned by `chat set`, not its earlier preflight revision).
+3. Inspect the response's `context`, `readiness`, `schedule` and `nextAction`. It reports estimated room and whether quota is known or blocked; registration alone does not guarantee execution or change the active window. Announce the chosen handoff briefly and end the current turn at a safe checkpoint. Do not poll waiting for yourself to become idle or keep working through a projected compaction boundary.
+
+The app waits for that exact turn to complete, the target budget to load, any explicit dependency to finish and fresh quota to pass its existing reserves. Budget `awaiting_readback` can proceed once loaded: the continuation itself provides normal usage readback. Each accepted handoff submits its prompt at most once; uncertain delivery is not automatically retried. Up to 50 handoff receipts are retained, with request-ID deduplication while retained; use unique stable IDs and inspect rather than resubmitting an old uncertain request. Ordinary queue switches and other pending tasks are preserved.
+
+Use `chat schedules current` to inspect metadata or `chat schedule-cancel current SCHEDULE_ID` to cancel an unstarted handoff. New user input (including an interview answer), interruption, context/model/budget changes, disconnection, expiry after 15 minutes, or service restart invalidate waiting intent. Already started work follows Codex's normal Stop/steering controls. Global or per-chat queue pause cancels waiting handoffs. Check `capabilities.scheduleAfterTurn`; an older bridge requires a normal Codex restart. Never work around missing support by spawning a second runtime.
+
+If you are yielding because a necessary user decision is still pending, leave automatic continuation unscheduled. Comfortable headroom is a reason to keep progressing, not to manufacture turn boundaries. When your plan or the user's direction changes after registration, inspect/cancel the handoff rather than leaving an unwanted wakeup behind.
 
 ### Execute and verify using installed capabilities
 
