@@ -1,6 +1,6 @@
 ---
 name: context-manager
-description: "Manage Codex context budgets, compaction, response-speed tradeoffs, task queues and quota monitoring through Context Manager. Use when users request context or speed adjustments, long work approaches compaction, or queues and quotas need management. Assess the task and discuss tradeoffs before adjusting; not for generic Codex configuration."
+description: "Manage Codex context budgets, compaction, response-speed tradeoffs, one-shot task handoffs, task queues and quota monitoring through Context Manager. Use when users request context or speed adjustments, long work approaches compaction, or queues and quotas need management. Assess the task and discuss tradeoffs before adjusting; not for generic Codex configuration."
 ---
 
 # Context Manager
@@ -19,7 +19,9 @@ Start with `--help`; use `queue --help` and `queue schema` for installed capabil
 
 ## Context control
 
-For “this chat”, use `chat show current --summary`: `current` resolves `CODEX_THREAD_ID` and verifies it against the controller. If unavailable, resolve the target with `chat list` and use its explicit ID. Do not assume the first or most active chat is the current chat. Keep changes scoped to the requested chat; changing global defaults or other chats requires that scope to be authorized.
+For “this chat”, use `chat show current --summary`: `current` resolves `CODEX_THREAD_ID` and verifies it against the controller. If unavailable, resolve the target with `chat list` and use its explicit ID. Listing reads 20 lightweight native-index entries; use `chat list --offset 20` (then 40, etc.) when an older target is needed. Normal state reads focus on recent chats plus active, pending and explicitly selected work. A missing row in that hot snapshot does not mean the chat was deleted; `chat show CHAT_ID` loads it on demand. Do not assume the first or most active chat is the current chat. Keep changes scoped to the requested chat; changing global defaults or other chats requires that scope to be authorized.
+
+Own the task's progression: proactively assess context value, remaining work and bottlenecks, then choose whether to continue, optimize or hand off. User feedback refines that judgment; it is not the only trigger. Within the authorized task and agreed bounds, make useful low-disruption adjustments with a brief explanation. Interview the user when a meaningful quality, cost or history-retention tradeoff remains unresolved.
 
 ### Choose a working policy
 
@@ -58,6 +60,43 @@ Explain a proposed change briefly: the observed situation, the task-specific rea
 
 Execute adjustments within the user's current answer or an already agreed range, with brief notice. Recommendations can include expansion, compaction at a checkpoint, narrower retrieval, a staged deliverable, or a model/effort tradeoff. Recommend a new chat or fork only when useful; do not create one without authorization. Speed improvements are hypotheses to assess against subsequent comparable work, not promises.
 
+### Decide between soft adjustment and a turn-boundary handoff
+
+First explore with `chat show current --summary`; compare **loaded** headroom with the estimated work until the next safe checkpoint. Use task complexity, evidence that must survive, expected tool-output growth and speed samples where relevant. The agent owns this decision within agreed limits. Explain consequential tradeoffs and interview the user if needed.
+
+| Decision | Tool use | Expected response and next action |
+| --- | --- | --- |
+| Continue normally | Read summary only | No mutation or scheduled message. Continue the task. |
+| Soft adjustment | Preflight, then `chat set current ... --revision N --request-id ID` | A budget receipt may be `waiting_for_idle`/`accepted`. Continue only work that fits the **currently loaded** budget. End naturally; the change loads at a safe boundary. No automatic message is registered; the next real user message or authorized task starts the next turn. |
+| Urgent handoff | Save a checkpoint, register agreed context operations, then `chat schedule current ... --after-operation OPERATION_ID` | `nextAction: "finish_turn"`, `agentInstruction`, readiness and a schedule receipt. Briefly explain the handoff, send a final response and **end this turn**. The app waits for its exact completion and readiness, then submits one checkpoint message to this same chat. |
+| Necessary user decision pending | Ask/interview; if remaining room is unsafe, checkpoint and end | Wait for the user's answer. Do not register an automatic continuation that could bypass the decision. |
+
+Why a turn boundary matters: a shell command or synchronous/async interview reply can add context to the current turn, but does not by itself reload that turn's context-window configuration. Neither a saved budget nor a pending receipt protects the current turn with a larger window. "Pause" here means finish the current agent turn, not kill Codex, block in a sleep/wait tool, or leave a synchronous question holding the turn open. The app's wake-up is a new same-chat message/turn, not a restart of the desktop app or process.
+
+An accepted urgent handoff returns fields like:
+
+```json
+{"nextAction":"finish_turn","agentInstruction":"请保存交接进展并结束当前轮次，等待下一条消息。…","schedule":{"state":"waiting_for_turn","sourceCompleted":false},"readiness":{"quotaValid":true,"quotaBlocked":false,"quotaSource":"credits"}}
+```
+
+Values are illustrative: quota can be unknown or blocked. Registration is not execution. An already completed/replayed receipt returns `inspect_schedule`; it is not an instruction to stop again. If registration fails, no wake-up is promised. Near exhaustion, checkpoint and end for the user's next message instead of spending the remaining room retrying.
+
+After an app-generated checkpoint arrives, inspect the schedule once and compare its `turnId`/`executionId` with `chat show current`. Verify loaded budget/readback before continuing substantial work. Resume the saved task, honoring any newer user direction. A running receipt becomes completed only after that continuation ends; do not poll yourself waiting for completion. Never create a chain of new handoffs merely to test this flow. A real user message before dispatch cancels the pending automatic message, so the real input takes precedence.
+
+### Schedule a one-shot continuation when yielding
+
+When the unfinished task needs a new context budget or an agreed compaction before its next stage, you can arrange a handoff through the existing scheduler instead of requiring the user to type “continue”. This starts a new turn in the same chat and runtime; it does not restart ChatGPT or create another Codex server.
+
+1. Save a concise UTF-8 checkpoint: original goal and acceptance criteria, user constraints, completed work, source/file references, remaining work and the next concrete step. Keep it within the task's existing authorization and at most 16000 characters.
+2. Register any agreed budget change or idle compaction first. Then use `chat schedule current --prompt-file CHECKPOINT_FILE --request-id STABLE_ID`; add `--after-operation OPERATION_ID` to depend on that action. `--revision N` checks the current saved budget revision (use the new revision returned by `chat set`, not its earlier preflight revision).
+3. Inspect the response's `context`, `readiness`, `schedule` and `nextAction`. It reports estimated room and whether quota is known or blocked; registration alone does not guarantee execution or change the active window. Announce the chosen handoff briefly and end the current turn at a safe checkpoint. Do not poll waiting for yourself to become idle or keep working through a projected compaction boundary.
+
+The app waits for that exact turn to complete, the target budget to load, any explicit dependency to finish and fresh quota. A one-shot handoff can continue with a fresh, identified positive or unlimited extra-Credits observation; the existing Credits-stop trigger still applies. Ordinary queues retain their percentage reserves. Inspect readiness.quotaSource and quotaReason rather than treating a zero percentage as proof the account cannot continue. Budget `awaiting_readback` can proceed once loaded: the continuation itself provides normal usage readback. Each accepted handoff submits its prompt at most once; uncertain delivery is not automatically retried. Up to 50 handoff receipts are retained, with request-ID deduplication while retained; use unique stable IDs and inspect rather than resubmitting an old uncertain request. Ordinary queue switches and other pending tasks are preserved.
+
+Use `chat schedules current` to inspect metadata or `chat schedule-cancel current SCHEDULE_ID` to cancel an unstarted handoff. New user input (including an interview answer), interruption, context/model/budget changes, disconnection, expiry after 15 minutes, or service restart invalidate waiting intent. Already started work follows Codex's normal Stop/steering controls. Global or per-chat queue pause cancels waiting handoffs. Check `capabilities.scheduleAfterTurn`; an older bridge requires a normal Codex restart. Never work around missing support by spawning a second runtime.
+
+If you are yielding because a necessary user decision is still pending, leave automatic continuation unscheduled. Comfortable headroom is a reason to keep progressing, not to manufacture turn boundaries. When your plan or the user's direction changes after registration, inspect/cancel the handoff rather than leaving an unwanted wakeup behind.
+
 ### Execute and verify using installed capabilities
 
 - `chat preflight CHAT_ID --window 400K --compact 360K` checks a proposed budget.
@@ -67,7 +106,7 @@ Execute adjustments within the user's current answer or an already agreed range,
 - `chat operations CHAT_ID` lists receipts; `chat operation CHAT_ID OPERATION_ID` inspects one. `chat cancel CHAT_ID OPERATION_ID` cancels a compaction request that has not started. Executing compaction cannot be undone; a newer budget supersedes a previous budget request.
 - `chat stop-auto CHAT_ID` stops further automatic budget application while preserving the current runtime window.
 
-Window values mean usable context capacity. The controller handles model limits and runtime conversion. With compaction compensation enabled, Codex may report a larger runtime window than the target budget.
+Window values mean usable context capacity, capped by native model limits or 920K when the extension is enabled. At safe boundaries the controller calculates retained historical-reasoning estimates before loading window and compaction settings together. The accounting block separates this extra local estimate and larger runtime counters from the real loaded target and headroom. Do not add accounting overhead to the requested real capacity or interpret the larger counter as additional usable context. Estimates are not actual reasoning usage or a guarantee against mid-turn compaction. Older connections need a normal restart for capabilities.reasoningBudget; no additional runtime is needed.
 
 An active turn's window change queues until that turn ends; `waiting_for_idle` does not mean the new budget is already protecting the running turn. For your own active chat, register any agreed deferred action and finish at a safe checkpoint. Do not poll waiting for yourself to become idle or retry compaction. Check `agentCapabilities`/summary `capabilities` before using new features; an older connected runtime may require a normal Codex restart for deferred compaction. No command hot-reloads the active turn.
 

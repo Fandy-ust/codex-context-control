@@ -1,13 +1,9 @@
-# Early compaction compensation is retired
+# Historical reasoning accounting and budget application
 
-Starting with 0.25.2, both desktops remove the switch, reject reactivation and migrate an enabled legacy preference to off. Native context windows, compaction thresholds, manual compaction and saved chat budgets remain available.
+Starting with 0.27.30, safe-boundary budget application first estimates retained historical reasoning from local ordinary or `.zst` records, then loads the window and compaction threshold with accounting headroom together. Cold resumes perform the estimate before applying their configuration. The bounded cache retains lengths rather than reasoning payloads; there is no additional Codex server or repeated model-list retrieval.
 
-The runtime's compaction counter can include additional historical-reasoning estimates that are absent from displayed request usage. User input during a running turn changes the reasoning boundary. External compensation can update the window only at safe turn boundaries, so it cannot reliably cover an entire long-running turn.
+The real target stays within native model limits or the optional 920K extension. Extra estimates enlarge only the runtime accounting window and threshold. CLI `loaded` and `headroom` remain real-target values; `accounting` reports the additional estimate and runtime counters separately. Real-usage checks still protect the target and response reserve.
 
-Older versions could also forget the applied compensation state on resume even when the runtime retained its old window. Disabling could then incorrectly appear complete. Version 0.25.2 retains applied state, retries restoration and reports pending restoration explicitly.
+This boundary adjustment does not guarantee that a long turn will never compact early. Steering can change reasoning boundaries and generated content can grow; native capacity checks remain active. Unreadable history cannot be treated as zero overhead and reported as a successfully applied budget.
 
-A 920K target does not guarantee compaction waits for 900K of displayed usage. Disabling compensation does not remove the runtime's additional accounting rules. Short synthetic tests establish only their tested scenarios, not live-provider or long-turn guarantees.
-
-Updates preserve budgets and do not actively compact chats. Restore the original parameters at a safe idle boundary; normally restart Codex to load the updated bridge. Restoration is confirmed only when the runtime window matches the target, not merely when the preference says off. Historical compensation fixtures remain isolated test-only inputs; the production UI and API cannot re-enable compensation.
-
-The older binary patch remains retired because a modified runtime lacks the official signing identity required for Computer Use. This update leaves the official Codex executable unchanged.
+The old manual compensation switch and modified-runtime patch remain retired. This implementation passes configuration to the official executable and preserves the App → official Codex → Node bridge-child launch chain. It does not modify the official binary, signature checks or Chrome permissions. A normal Codex restart loads the new bridge; saved configuration and confirmed runtime readback remain distinct.

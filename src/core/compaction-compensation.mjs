@@ -56,7 +56,7 @@ export function compensationBudget(policy, model, observation = {enabled:false})
   const percent = model?.effective_context_window_percent;
   const targetWindow = Number.isInteger(percent) ? Math.floor(policy.window * percent / 100) : null;
   const base = {window:policy.window, compact:policy.compact};
-  const details = {enabled:observation.enabled === true, status:'off', extraTokens:0, targetWindow, runtimeWindow:targetWindow};
+  const details = {enabled:observation.enabled === true, ...(observation.automatic?{automatic:true}:{}), status:'off', extraTokens:0, targetWindow, runtimeWindow:targetWindow};
   if (!details.enabled) return {...base, details};
   if (!observation.known || !Number.isInteger(percent) || percent < 1 || percent > 100 || !Number.isSafeInteger(model?.max_context_window))
     return {...base, details:{...details,status:'unavailable',message:'等待完整历史，暂未补偿'}};

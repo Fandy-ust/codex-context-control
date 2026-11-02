@@ -13,6 +13,14 @@
       "method": "GET",
       "path": "/state"
     },
+    "hot-state": {
+      "method": "POST",
+      "path": "/state/hot"
+    },
+    "chat-list": {
+      "method": "POST",
+      "path": "/chats/list"
+    },
     "statistics": {
       "method": "POST",
       "path": "/context-stats"
@@ -100,6 +108,10 @@
     "speed-report": {
       "method": "POST",
       "path": "/context-speed"
+    },
+    "context-schedule": {
+      "method": "POST",
+      "path": "/context-schedule"
     }
   }
 }

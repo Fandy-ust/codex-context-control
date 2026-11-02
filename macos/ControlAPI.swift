@@ -5,6 +5,8 @@ enum ControlAPI {
     static let accountSwitch = "/accounts"
     static let cloudSync = "/cloud-sync"
     static let state = "/state"
+    static let hotState = "/state/hot"
+    static let chatList = "/chats/list"
     static let statistics = "/context-stats"
     static let preflight = "/preflight"
     static let policy = "/policy"
@@ -27,10 +29,13 @@ enum ControlAPI {
     static let chat = "/chat"
     static let contextOperation = "/context-operation"
     static let speedReport = "/context-speed"
+    static let contextSchedule = "/context-schedule"
     static let routes: [String:String] = [
         "account-switch": "/accounts",
         "cloud-sync": "/cloud-sync",
         "state": "/state",
+        "hot-state": "/state/hot",
+        "chat-list": "/chats/list",
         "statistics": "/context-stats",
         "preflight": "/preflight",
         "policy": "/policy",
@@ -52,6 +57,7 @@ enum ControlAPI {
         "codex-backups": "/codex/backups",
         "chat": "/chat",
         "context-operation": "/context-operation",
-        "speed-report": "/context-speed"
+        "speed-report": "/context-speed",
+        "context-schedule": "/context-schedule"
     ]
 }

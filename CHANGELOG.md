@@ -1,3 +1,26 @@
+## 0.27.32
+
+- Return an explicit agent instruction when a one-shot handoff requires ending the current turn; replayed/completed receipts request inspection instead.
+- Document context exploration, soft budget adjustment, urgent handoff, user-interview precedence, expected receipts and continuation verification in the shared skill.
+
+## 0.27.31
+
+- Limit automatic discovery, usage-tail reads and state hydration to the latest 20 chats, retaining active work, pending queues/operations and explicit UI selections as exceptions. Load older chat metadata by ID or a lightweight paged index without changing recency.
+- Restrict normal analytics backfill to recent/active sources; retain existing history and reserve wider scans for explicit refresh. Avoid loading every saved chat to check account-switch safety.
+- Reduce main-window refreshes to two seconds on both platforms while retaining responsive Mac menu controls. Preserve official runtime launching and signing.
+
+## 0.27.30
+
+- Apply history reasoning estimates together with context-window and compaction changes at safe boundaries. Keep the real target within the native limit or the optional 920K extension; reserve separate runtime accounting space without patching Codex.
+- Allow one-shot handoffs to use fresh, identified extra Credits while honoring existing Credits-stop settings. Ordinary queue percentage reserves remain unchanged.
+- Return target versus accounting values separately to agents; preserve the browser-compatible official-runtime launch chain.
+
+## 0.27.29
+
+- Add one-shot same-chat handoffs through the existing scheduler: CLI registration returns context/headroom and readiness, then agents can finish the current turn while the app waits for exact completion, loaded budgets, explicit compaction and quota gates.
+- Preserve ordinary queue switches and pending work. Bind waiting intent to source input/model/budget/history, cancel on user takeover or pauses, expire after 15 minutes, and never retry uncertain submissions or replay after service restart.
+- Update the shared skill to proactively optimize task performance and choose continuation, interview or a scheduled handoff. Both platforms share behavior; the browser-compatible native launch path is unchanged.
+
 ## 0.27.28
 
 - Release browser-compatible macOS runtime launching together with agent-facing context summaries, explicit preflight, lightweight speed reports, tracked idle compaction and interactive skill guidance.

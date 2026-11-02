@@ -30,6 +30,7 @@ export function createContextOperations({load=()=>[],save=()=>{},now=Date.now,id
     transition(operationId,threadId,patch){const value=records.get(operationId);get(operationId,threadId);if(terminal.has(value.state))return copy(value);return update(value,patch);},
     cancel(operationId,threadId){const value=records.get(operationId);get(operationId,threadId);if(terminal.has(value.state))return copy(value);if(value.kind!=='compact'||!['accepted','waiting_for_idle'].includes(value.state))throw contextError('NOT_CANCELLABLE','Only a compaction request that has not started can be cancelled.','inspect_operation');return update(value,{state:'cancelled',reason:'user_cancelled'});},
     pending(threadId){return this.list(threadId).filter(v=>!terminal.has(v.state));},
+    pendingThreadIds(){return [...new Set([...records.values()].map(expire).filter(v=>!terminal.has(v.state)).map(v=>v.threadId))];},
     observe(thread){
       for(const value of records.values()){
         if(value.threadId!==thread.id||terminal.has(expire(value).state))continue;
@@ -43,7 +44,7 @@ export function createContextOperations({load=()=>[],save=()=>{},now=Date.now,id
           else if(thread.status==='active')update(value,{state:'waiting_for_idle'});
           else if(thread.phase==='reloading')update(value,{state:'executing'});
         }else if(value.state==='waiting_for_idle'){
-          if((thread.turnId??null)!==value.turnId||thread.model!==value.model||revision!==value.revision||(thread.contextEpoch??0)!==(value.contextEpoch??0))update(value,{state:'superseded',reason:'chat_state_changed'});
+          if((thread.turnId??null)!==value.turnId||thread.model!==value.model||revision!==value.revision||(thread.contextEpoch??0)!==(value.contextEpoch??0)||(value.inputEpoch!=null&&(thread.inputEpoch??0)!==value.inputEpoch))update(value,{state:'superseded',reason:'chat_state_changed'});
           else if(thread.status==='idle'&&['interrupted','failed'].includes(thread.lastTurnStatus))update(value,{state:'cancelled',reason:'turn_did_not_complete'});
         }
       }

@@ -30,6 +30,8 @@ test('agent HTTP supports targeted snapshots, pure plans, scoped receipts, defer
   await post('/compact',compactRequest);assert.equal(compactCalls.length,1);
   await update();const cancelled=(await post('/compact',{...compactRequest,requestId:'cancel-me'})).data.operation;
   assert.equal((await post('/context-operation',{id:'chat',action:'cancel',operationId:cancelled.id})).data.operation.state,'cancelled');await update({status:'idle'});assert.equal(compactCalls.length,1);
+  await update({inputEpoch:1});const superseded=(await post('/compact',{...compactRequest,requestId:'user-steers'})).data.operation;
+  await update({inputEpoch:2});await update({status:'idle'});assert.equal((await post('/context-operation',{id:'chat',action:'show',operationId:superseded.id})).data.operation.state,'superseded');assert.equal(compactCalls.length,1,'new user input cancels pending compaction as well as continuation');
   const budget={id:'chat',track:true,requestId:'budget-once',expectedRevision:1,budget:{usableWindow:500000,compact:450000,reserve:16000,retainedFloor:0,scope:'total'}};
   const saved=(await post('/policy',budget)).data;assert.ok(saved.operation.id);assert.equal(saved.policy.revision,2);
   const again=(await post('/policy',budget)).data;assert.equal(again.operation.id,saved.operation.id);assert.equal(JSON.parse(fs.readFileSync(path.join(control,'state.json'))).policies.chat.revision,2);

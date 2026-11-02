@@ -82,7 +82,7 @@ export function createQuotaAnalyticsService({home = root, historyHome = codexHom
     syncSettings:params=>call('sync-settings',params),
     syncExport:params=>call('sync-export',params),
     syncImport:params=>call('sync-import',params),
-    scan: () => scanPending ||= call('scan').finally(() => {scanPending = null;}),
+    scan: params => scanPending ||= call('scan',params).finally(() => {scanPending = null;}),
     report: params => {
       const key = JSON.stringify(params || {});
       if (reportPending?.key === key) return reportPending.task;
