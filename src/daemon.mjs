@@ -51,6 +51,9 @@ import {createRuntimeFixManager} from './runtime-fix.mjs';
 import {ceilingModel,policyForModel,CONTEXT_CEILING_VERSION} from './context-ceiling.mjs';
 import {initialNewChatDefaults,nativeNewChatDefaults,newChatDefaultLimits,clampNewChatDefaults,normalizeNewChatDefaults,policyForNewChat,persistedNewChatPolicy} from './new-chat-defaults.mjs';
 import {createContextStatisticsService} from './context-statistics-service.mjs';
+import {contextSnapshot,contextPreflight} from './core/context-snapshot.mjs';
+import {speedReport} from './core/speed-report.mjs';
+import {createContextOperations,contextError} from './context-operations.mjs';
 
 export async function startDaemon() {
   const launchDesktop=()=>openAccountDesktop({environment:windows?codexLaunchEnvironment():process.env});
@@ -76,6 +79,7 @@ export async function startDaemon() {
   for(const t of Object.values(store.data.threads)){t.freshUsage=false;t.usageFresh=false;t.phase='disconnected';}
   store.save();
   const bridges=new Map();const owners=new Map();
+  const operations=createContextOperations({load:()=>readJSON(path.join(root,'context-operations.json'),[]),save:values=>atomicJSON(path.join(root,'context-operations.json'),values)});
   const quotaAnalytics=createQuotaAnalyticsService();
   const passiveQuota=createPassiveQuotaStore({home:root});
   const quota=createQuotaManager({read:()=>passiveQuota.read(),home:root,isConnected:at=>[...bridges.values()].some(b=>b.quotaObservedAt===at),onObservation:async observation=>{const scope=await quotaAnalytics.record(observation);await cloudSync.command({action:'status'}).catch(()=>{});return scope;}});
@@ -99,7 +103,7 @@ export async function startDaemon() {
   function queueSupported(id){const peers=queuePeers(id);return peers.length===1&&supportsTaskQueues(bridges.get(peers[0]));}
   function queueRestartRequired(id){const peers=(owners.get(id)||[]).length?owners.get(id):[...bridges.keys()];return peers.length===1&&!supportsTaskQueues(bridges.get(peers[0]));}
   const queueCall=(id,op,params)=>{const peers=queuePeers(id);if(peers.length!==1)throw Error('需要唯一的已接入运行时');if(!queueSupported(id))throw Error(QUEUE_RUNTIME_RESTART);return peers[0].call(op,{id,...params},30000);};
-  const taskQueues=createTaskQueues({load:()=>{try{return readJSON(queueFile,{});}catch{return {};}},save:value=>atomicJSON(queueFile,value),quota,thread:id=>Object.hasOwn(store.data.threads,id)?{...store.publicThread(id,owners),taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!(owners.get(id)||[]).length&&queueSupported(id)}:null,prepare:id=>queueCall(id,'queue-prepare',{}),canDispatch:()=>!creditsProtection?.state().busy&&(queueAccountAuto?.dispatchAllowed()??true),canSwitchAccounts:()=>queueAccountAuto?.state().enabled===true,start:(id,task)=>queueCall(id,'queue-start',{task}),interrupt:(id,executionId)=>queueCall(id,'queue-interrupt',{executionId}),inhibit:createQueueSleepInhibitor()});
+  const taskQueues=createTaskQueues({load:()=>{try{return readJSON(queueFile,{});}catch{return {};}},save:value=>atomicJSON(queueFile,value),quota,thread:id=>Object.hasOwn(store.data.threads,id)?{...store.publicThread(id,owners),taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!(owners.get(id)||[]).length&&queueSupported(id)}:null,prepare:id=>queueCall(id,'queue-prepare',{}),canDispatch:id=>operations.pending(id).some(o=>o.kind==='compact')?'等待已确认的上下文整理':!creditsProtection?.state().busy&&(queueAccountAuto?.dispatchAllowed()??true),canSwitchAccounts:()=>queueAccountAuto?.state().enabled===true,start:(id,task)=>queueCall(id,'queue-start',{task}),interrupt:(id,executionId)=>queueCall(id,'queue-interrupt',{executionId}),inhibit:createQueueSleepInhibitor()});
   const creditsFile=path.join(root,'credits-protection.json');
   creditsProtection=createCreditsProtection({load:()=>readJSON(creditsFile,{}),save:value=>atomicJSON(creditsFile,value),quota,config:()=>quotaActivation.state().config,
     stop:({scope})=>stopForCredits({queues:taskQueues,quota,bridges},scope)});
@@ -168,14 +172,56 @@ export async function startDaemon() {
   function bridgeReady(b){return !!b&&(extension.enabled()?b.contextCeiling===CONTEXT_CEILING_VERSION&&b.contextCatalogRevision===2:b.contextCeiling!==CONTEXT_CEILING_VERSION);}
   function runtimeModel(id,slug,extended){const m=store.model(slug??store.data.threads[id]?.model)||nativeDefaultModel();if(typeof extended!=='boolean'){const peers=owners.get(id)||[];extended=peers.length===1?bridges.get(peers[0])?.contextCeiling===CONTEXT_CEILING_VERSION:extension.enabled();}return extended?ceilingModel(m):m;}
   function extensionState(fix=runtimeFix.status()){return extension.status([...bridges.values()],{compatible:!!fix.originalVersion,available:!!nativeDefaultModel()});}
-  function publicThread(id,extensionStatus){const t=store.publicThread(id,owners),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===0?!!m:peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,responseSpeed:runningThread(t)?responseSpeeds.get(id):null,taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!peers.length&&queueSupported(id),policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:t.ambiguous?'connection_conflict':'extension_pending',message:t.ambiguous?'检测到多个接入进程，请完整重启 Codex':(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
+  function publicThread(id,extensionStatus,refreshMetadata=true){const t=store.publicThread(id,owners,{refreshMetadata}),m=modelFor(id,t.model),peers=owners.get(id)||[];const ready=peers.length===0?!!m:peers.length===1&&bridgeReady(bridges.get(peers[0]));return {...t,responseSpeed:runningThread(t)?responseSpeeds.get(id):null,taskQueueSupported:queueSupported(id),taskQueueRestartRequired:queueRestartRequired(id),queueCanLoad:!peers.length&&queueSupported(id),policy:policyForModel(t.policy,m,{revise:false}),...(!ready&&peers.length?{phase:t.ambiguous?'connection_conflict':'extension_pending',message:t.ambiguous?'检测到多个接入进程，请完整重启 Codex':(extensionStatus??extensionState()).message}:{}),modelMetadata:m?Object.fromEntries(['max_context_window','context_window','effective_context_window_percent','context_ceiling','context_compact_ceiling'].map(k=>[k,m[k]]).concat([['context_catalog_ready',ready]])):null};}
   function newChatDefaults(){return clampNewChatDefaults(store.data.newChatDefaults||(extension.enabled()?initialNewChatDefaults:nativeNewChatDefaults),defaultModel());}
+  function selectedThread(id){if(typeof id!=='string'||!Object.hasOwn(store.data.threads,id))throw contextError('CHAT_NOT_FOUND','Chat not found.','select_chat');return publicThread(id,undefined,false);}
+  function operationPeer(id){const peers=owners.get(id)||[];if(peers.length!==1)throw contextError('CONNECTION_REQUIRED','A unique connected runtime is required.','inspect_connection');if(bridges.get(peers[0])?.contextOperationsVersion!==1)throw contextError('RUNTIME_RESTART_REQUIRED','Restart Codex normally to load agent operation support.','restart_codex');return peers[0];}
+  async function executeCompaction(operation){
+    const current=operations.get(operation.id,operation.threadId);if(!['accepted','waiting_for_idle'].includes(current.state))return;
+    const t=selectedThread(current.threadId);
+    if((t.turnId??null)!==current.turnId||t.model!==current.model||(t.policy?.revision??0)!==current.revision||(t.contextEpoch??0)!==current.contextEpoch){operations.transition(current.id,t.id,{state:'superseded',reason:'chat_state_changed'});return;}
+    if(t.status!=='idle'||(current.waitForTurnCompletion&&t.lastCompletedTurnId!==current.turnId))return;
+    const peer=operationPeer(t.id);operations.transition(current.id,t.id,{state:'executing'});
+    try{await peer.call('context-compact',{id:t.id,operationId:current.id,turnId:current.turnId,model:current.model,revision:current.revision,contextEpoch:current.contextEpoch},30000);}
+    catch(error){operations.transition(current.id,t.id,{state:/changed|改变|轮次结束/.test(error.message)?'superseded':'outcome_unknown',reason:error.message});}
+  }
+  function observeOperations(id){
+    const t=selectedThread(id);operations.observe(t);
+    for(const operation of operations.pending(id))if(operation.kind==='compact'&&t.status==='idle')void executeCompaction(operation).catch(error=>operations.transition(operation.id,id,{state:'failed',reason:error.message}));
+  }
+  async function trackedPolicy(p){
+    const t=selectedThread(p.id),policy=normalizeBudgetCommand(p,modelFor(p.id,t.model));
+    const fingerprint=JSON.stringify({kind:'budget',policy,apply:p.apply!==false});
+    const previous=operations.replay(p.id,p.requestId,fingerprint);if(previous)return {operation:previous};
+    if(p.expectedRevision!=null&&p.expectedRevision!==(t.policy?.revision??0))throw contextError('REVISION_CONFLICT','Budget changed; read this chat again.','refresh_chat');
+    if(t.ephemeral||t.canAcceptDirectInput===false)throw contextError('UNSUPPORTED_CHAT','This chat does not accept budget operations.','select_chat');
+    const plan=preflight(t,policy,modelFor(p.id,t.model));
+    if(['above_catalog_maximum','above_safe_compact','below_retained_floor','unsupported_thread'].includes(plan.code))throw contextError('BUDGET_REJECTED',plan.message,'revise_budget');
+    const operation=operations.create({threadId:p.id,requestId:p.requestId,fingerprint,kind:'budget',revision:(t.policy?.revision??0)+1});
+    try{const result=await handle(null,'setPolicy',{...p,track:false});operations.transition(operation.id,p.id,{state:p.apply===false?'completed':'accepted'});observeOperations(p.id);return {...result,operation:operations.get(operation.id,p.id)};}
+    catch(error){const saved=store.data.policies[p.id]?.revision===operation.revision;operations.transition(operation.id,p.id,{state:saved?'outcome_unknown':'failed',reason:error.message});throw Object.assign(error,{operationId:operation.id});}
+  }
+  async function trackedCompact(p){
+    if(p.whenIdle!=null&&typeof p.whenIdle!=='boolean')throw contextError('INVALID_ARGUMENT','whenIdle must be boolean.','fix_request');
+    const t=selectedThread(p.id),fingerprint=JSON.stringify({kind:'compact',whenIdle:p.whenIdle===true});
+    const replay=operations.replay(p.id,p.requestId,fingerprint);if(replay)return {operation:replay};
+    operationPeer(p.id);
+    if(t.ephemeral||t.canAcceptDirectInput===false)throw contextError('UNSUPPORTED_CHAT','This chat does not accept direct context operations.','select_chat');
+    const waitForTurnCompletion=!!t.turnId&&t.lastCompletedTurnId!==t.turnId;
+    if((t.status!=='idle'||waitForTurnCompletion)&&!p.whenIdle)throw contextError('WAITING_FOR_IDLE','Chat is active; use --when-idle after agreeing on compaction.','defer_until_idle');
+    if(!['idle','active','inProgress'].includes(t.status))throw contextError('CHAT_NOT_READY','Chat is not ready for compaction.','refresh_chat');
+    if(operations.pending(p.id).some(o=>o.kind==='compact'))throw contextError('OPERATION_PENDING','A compaction request is already pending.','inspect_operations');
+    const operation=operations.create({threadId:p.id,requestId:p.requestId,fingerprint,kind:'compact',turnId:t.turnId??null,model:t.model,revision:t.policy?.revision??0,contextEpoch:t.contextEpoch??0,waitForTurnCompletion});
+    operations.transition(operation.id,p.id,{state:t.status==='idle'&&!waitForTurnCompletion?'accepted':'waiting_for_idle'});
+    if(t.status==='idle')await executeCompaction(operation);
+    return {operation:operations.get(operation.id,p.id)};
+  }
   function state(){
     store.refreshMetadata();const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);
     const threads=Object.keys(store.data.threads).map(id=>publicThread(id,ext)).filter(t=>!t.archived&&t.ephemeral!==true&&t.canAcceptDirectInput!==false&&(t.threadSource==null||t.threadSource==='user')).sort(compareThreadActivity);
     // Keep background monitoring light: speed sampling is needed only while the tray menu is visible.
     try{if(JSON.parse(fs.readFileSync(path.join(root,'ui-status.json'),'utf8')).menuWindowVisible===true)responseSpeeds.observe(threads);}catch{}
-    return {apiVersion:CONTROL_API_VERSION,capabilities:{visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,queueAccountSwitch:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueueState(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:accountQuotaState(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
+    return {apiVersion:CONTROL_API_VERSION,capabilities:{agentContext:true,contextOperations:true,visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,queueAccountSwitch:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueueState(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:accountQuotaState(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
   }
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version,buildId};
@@ -199,7 +245,13 @@ export async function startDaemon() {
       }catch(error){store.data.policies=oldPolicies;store.data.newChatDefaults=oldDefaults;store.data.extensionRestore=oldRestore;extension.setEnabled(previous);throw error;}
       return extensionState();
     }
-    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,creditsStopVersion:p.creditsStopVersion===1?1:null,nativePid:Number.isSafeInteger(p.nativePid)&&p.nativePid>0?p.nativePid:null,accountSwitchVersion:p.accountSwitchVersion===1?1:null,compensationVersion:[1,2,3].includes(p.compensationVersion)?p.compensationVersion:null,taskQueueVersion:p.taskQueueVersion==null?null:p.taskQueueVersion===4?4:0,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});}store.save();});return {ok:true};}
+    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,contextOperationsVersion:p.contextOperationsVersion===1?1:null,creditsStopVersion:p.creditsStopVersion===1?1:null,nativePid:Number.isSafeInteger(p.nativePid)&&p.nativePid>0?p.nativePid:null,accountSwitchVersion:p.accountSwitchVersion===1?1:null,compensationVersion:[1,2,3].includes(p.compensationVersion)?p.compensationVersion:null,taskQueueVersion:p.taskQueueVersion==null?null:p.taskQueueVersion===4?4:0,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});for(const o of operations.pending(id))if(o.kind==='compact')operations.transition(o.id,id,{state:o.state==='waiting_for_idle'?'cancelled':'outcome_unknown',reason:'connection_closed'});}store.save();});return {ok:true};}
+    if(op==='updateContextOperation'){
+      if(!bridges.get(peer)?.ids.has(p.id))throw contextError('AUTH_FAILED','This runtime does not own the chat.');
+      const operation=operations.get(p.operationId,p.id);if(operation.kind!=='compact'||operation.state!=='executing')return {ignored:true};
+      if(!['completed','failed','outcome_unknown'].includes(p.state))throw contextError('INVALID_ARGUMENT','Invalid completion state.');
+      return operations.transition(operation.id,p.id,{state:p.state,reason:typeof p.reason==='string'?p.reason.slice(0,500):null});
+    }
     if(op==='observeQuota'){if(!bridges.has(peer))throw Error('未注册运行时连接');if(!accountTransition&&!queueAccountAuto?.state().busy){if(p.invalidated===true){passiveQuota.invalidate();quota.invalidate();}else if(passiveQuota.observe(p)){bridges.get(peer).quotaObservedAt=p.observedAt;await quota.sync();}}return {ok:true};}
     if(op==='localUsage'){if(!bridges.get(peer)?.ids.has(p.id))throw Error('此连接尚未加载聊天');return contextStatistics.observation(p.id);}
     if(op==='updateThread') {
@@ -208,7 +260,7 @@ export async function startDaemon() {
       const previousPolicy=JSON.stringify(store.data.policies[p.id]??null);
       const hadOwner=b.ids.has(p.id);
       b.ids.add(p.id);rebuildOwners();
-      const allowed=['id','name','cwd','model','effort','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource','automaticTask','compensation','appliedBudget'];
+      const allowed=['id','name','cwd','model','effort','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource','automaticTask','compensation','appliedBudget','lastTurnStatus','contextEpoch','lastCompletedTurnId'];
       const clean=Object.fromEntries(allowed.filter(k=>Object.hasOwn(p,k)).map(k=>[k,p[k]]));
       if(!Object.hasOwn(clean,'usageFresh'))clean.usageFresh=clean.freshUsage===true;
       if(clean.threadSource!=null&&typeof clean.threadSource!=='string')delete clean.threadSource;
@@ -227,13 +279,19 @@ export async function startDaemon() {
       Object.assign(store.data.threads[p.id],reconcileWindowConfirmation(store.data.threads[p.id],store.data.policies[p.id],modelFor(p.id)));
       if(inherited||previousPolicy!==JSON.stringify(store.data.policies[p.id]??null))store.save();else store.scheduleSave();
       // Completion still reconciles when monitoring was switched off mid-turn.
+      observeOperations(p.id);
       void taskQueues.tick();
       return {policy:bridgeReady(b)?store.data.policies[p.id]||null:null,model:runtimeModel(p.id,clean.model,b.contextCeiling===CONTEXT_CEILING_VERSION)};
     }
     if(op==='preflight') {
-      if((owners.get(p.id)||[]).some(peer=>!bridgeReady(bridges.get(peer))))return {code:'runtime_restart_required',allowed:false,message:'请完整退出并重开 Codex，加载修正后的模型目录。'};
-      const t=store.data.threads[p.id];const policy=normalizeBudgetCommand(p,modelFor(p.id,t?.model));
-      return preflight(t,policy,modelFor(p.id,t?.model));
+      if((owners.get(p.id)||[]).some(peer=>!bridgeReady(bridges.get(peer))))return {code:'runtime_restart_required',allowed:false,message:'请完整退出并重开 Codex，加载修正后的模型目录。',budgetValid:null,evidence:{sufficient:false},execution:{canExecuteNow:false,when:'blocked',blockers:['runtime_restart_required']},registered:false};
+      let t=selectedThread(p.id);const policy=normalizeBudgetCommand(p,modelFor(p.id,t.model));
+      if(t.status==='idle'&&!(t.usageFresh??t.freshUsage)&&preflight(t,policy,modelFor(p.id,t.model)).code==='needs_observation'){
+        const stamp=JSON.stringify([t.turnId,t.model,t.observedAt,t.policy?.revision]);
+        const local=await contextStatistics.observation(p.id).catch(()=>null);const current=selectedThread(p.id);
+        if(local?.known&&local.model===t.model&&stamp===JSON.stringify([current.turnId,current.model,current.observedAt,current.policy?.revision]))t={...t,lastUsage:local.lastUsage,usageFresh:true};else t=current;
+      }
+      return contextPreflight(t,policy,modelFor(p.id,t.model));
     }
     if(op==='setPolicy') {
       const t=Object.hasOwn(store.data.threads,p.id)?store.data.threads[p.id]:null;if(!t)throw new Error('未找到聊天');
@@ -248,14 +306,14 @@ export async function startDaemon() {
       if(!extension.enabled()&&store.data.extensionRestore?.policies)delete store.data.extensionRestore.policies[p.id];
       const candidates=owners.get(p.id)||[];
       Object.assign(t,{phase:p.apply===false?'saved':candidates.length===1?'queued':'waiting_bridge',message:p.apply===false?'已保存；尚未请求应用。':candidates.length>1?'多个运行时加载了此聊天，请先关闭其中一个。':'等待接入 Codex 的连接。'});
-      store.save();
+      store.save();operations.observe(publicThread(p.id));
       if(saved.enabled&&candidates.length===1){await candidates[0].call('setPolicy',{id:p.id,policy:saved,model:modelFor(t.id,t.model)});}
       return {policy:saved,plan,thread:publicThread(p.id)};
     }
     if(op==='clearPolicy'){
       if(!Object.hasOwn(store.data.threads,p.id))throw new Error('未找到聊天');
       if(!extension.enabled()&&store.data.extensionRestore?.policies)delete store.data.extensionRestore.policies[p.id];
-      const previous=store.data.policies[p.id];if(previous)store.data.policies[p.id]={...previous,enabled:false,revision:previous.revision+1};store.save();
+      const previous=store.data.policies[p.id];if(previous)store.data.policies[p.id]={...previous,enabled:false,revision:previous.revision+1};store.save();operations.observe(publicThread(p.id));
       const candidates=owners.get(p.id)||[];for(const candidate of candidates)await candidate.call('clearPolicy',{id:p.id,revision:store.data.policies[p.id]?.revision});
       return {ok:true,message:'已停止后续自动应用；当前运行时窗口保持现值。'};
     }
@@ -288,6 +346,21 @@ export async function startDaemon() {
       const params=body?JSON.parse(body):{};const route=req.url;
       let answer;const operation=controlOperation(req.method,route);
       if(operation==='state')answer=state();
+      else if(operation==='chat'){
+        const thread=selectedThread(params.id),capabilities={agentContext:true,contextOperations:true,compactWhenIdle:(owners.get(params.id)||[]).length===1&&bridges.get(owners.get(params.id)[0])?.contextOperationsVersion===1};
+        answer=params.summary===true?{...contextSnapshot(thread,{deferredCompaction:capabilities.compactWhenIdle,operations:operations.list(params.id)}),capabilities}:{...thread,agentCapabilities:capabilities};
+      }
+      else if(operation==='context-operation'){
+        selectedThread(params.id);
+        if(params.action==='list')answer={operations:operations.list(params.id)};
+        else if(params.action==='show')answer={operation:operations.get(params.operationId,params.id)};
+        else if(params.action==='cancel')answer={operation:operations.cancel(params.operationId,params.id)};
+        else throw contextError('INVALID_ARGUMENT','Expected list, show or cancel.','fix_request');
+      }
+      else if(operation==='speed-report'){
+        selectedThread(params.id);const limit=params.limit??20;if(!Number.isInteger(limit)||limit<1||limit>200)throw contextError('INVALID_ARGUMENT','Limit must be 1–200.','fix_request');
+        const report=speedReport(params.id,await contextStatistics.speedReport(params.id,params.refresh===true),limit);answer=params.summary===true?{id:report.id,metric:report.metric,comparison:report.comparison,groups:report.groups,notes:report.notes}:report;
+      }
       else if(codexRestore.active&&['account-switch','install-update','task-queue','quota-activation'].includes(operation)&&params.action!=='status')throw Error('请先完成或取消 Codex 恢复');
       else if(operation==='account-switch'){if(queueAccountAuto.state().busy&&params.action!=='status')throw Error('自动切换正在进行，请稍后重试');if(params.action==='preflight')answer={blockers:switchBlockers()};else{const result=await accountSwitcher.command(params);if(params.action==='switch'){passiveQuota.invalidate();quota.invalidate();queueAccountAuto.retarget(params.id);}answer=accountQuotaViews(result,accountQuotaState()).login;}}
       else if((accountTransition||queueAccountAuto.state().busy)&&['cloud-sync','quota-activation','task-queue','quota-refresh','quota-credit-baseline'].includes(operation)&&!(operation==='task-queue'&&(params.enabled===false&&['monitoring','enable','account-switch'].includes(params.action)||['stop','disable-all'].includes(params.action))))throw Error('账号切换正在进行，请稍后重试');
@@ -323,16 +396,16 @@ export async function startDaemon() {
       else if(operation==='defaults')answer=await handle(null,'setNewChatDefaults',params);
       else if(operation==='runtime-fix')answer=runtimeFix.setEnabled(params.enabled,undefined,[...bridges.values()]);
       else if(operation==='preflight')answer=await handle(null,'preflight',params);
-      else if(operation==='policy')answer=await handle(null,'setPolicy',params);
+      else if(operation==='policy')answer=params.track===true?await trackedPolicy(params):await handle(null,'setPolicy',params);
       else if(operation==='clear')answer=await handle(null,'clearPolicy',params);
-      else if(operation==='compact')answer=await handle(null,'compact',params);
+      else if(operation==='compact')answer=params.track===true?await trackedCompact(params):await handle(null,'compact',params);
       else{res.writeHead(404);res.end();return;}
       let serialized;
       if(route==='/context-stats'){
         serialized=statisticsJSON.get(answer);if(serialized==null){serialized=JSON.stringify(answer);statisticsJSON.set(answer,serialized);}
       }else serialized=JSON.stringify(answer);
       res.writeHead(200,{'Content-Type':'application/json; charset=utf-8'});res.end(serialized);
-    }catch(error){res.writeHead(400,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify({error:error.message}));}
+    }catch(error){res.writeHead(400,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify({error:error.message,...(error.code?{code:error.code}:{}),...(error.nextAction?{nextAction:error.nextAction}:{}),...(error.operationId?{operationId:error.operationId}:{})}));}
   });
   await new Promise((resolve,reject)=>{web.once('error',reject);web.listen(0,'127.0.0.1',resolve);});
   atomicJSON(path.join(root,'connection.json'),{port:web.address().port,token,pid:process.pid,script:fileURLToPath(import.meta.url),executable:process.execPath,buildId});

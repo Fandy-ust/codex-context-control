@@ -1,3 +1,14 @@
+## 0.27.28
+
+- Release browser-compatible macOS runtime launching together with agent-facing context summaries, explicit preflight, lightweight speed reports, tracked idle compaction and interactive skill guidance.
+- Restore model/provider-bound inherited usage after a fork returns to its measured model, without treating new content or unfinished work as a valid observation.
+- Integrate and retain the published fixes for messages waiting on usage and duplicate notify keys during Codex configuration restore. Both platforms share this version.
+
+## 0.27.27
+
+- Preserve the official macOS Codex executable as the desktop app's direct child. A native exec launcher moves the existing communication bridge into a child of Codex, fixing browser peer-authorization failures caused by the previous parent proxy without changing the Codex binary, signature or security checks.
+- Keep the same shared budget, compaction and queue behavior on both platforms. Windows retains its existing launcher; macOS keeps its native UI and gains a bounded preparation handshake, untouched-input fallback and inherited-transport cleanup.
+
 ## 0.27.26
 
 - Prevent duplicate `notify` keys after restoring older Codex configurations: normalize only the quoted root key spelling before manual or automatic recovery, preserving commands, comments, configuration values and original backup blocks.

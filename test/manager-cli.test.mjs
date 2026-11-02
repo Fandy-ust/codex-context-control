@@ -1,8 +1,8 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {runManagerCLI,speedReport} from '../src/manager-cli.mjs';
 test('chat CLI sends visible capacity to shared validation and preserves budget revision/reserve',async()=>{
- const calls=[];const client=async(op,p)=>{calls.push({op,p});return op==='state'?{capabilities:{visibleBudget:true},threads:[{id:'chat',policy:{window:421053,compact:360000,reserve:18000,retainedFloor:1000,revision:4},modelMetadata:{effective_context_window_percent:95,max_context_window:872000}}]}:{saved:true};};
- await runManagerCLI(['chat','set','chat','--window','500K','--compact','450K'],{client});assert.equal(calls[1].op,'policy');assert.deepEqual(calls[1].p,{id:'chat',budget:{usableWindow:500000,compact:450000,reserve:18000,retainedFloor:1000,scope:'total'},expectedRevision:4,apply:true});
+ const calls=[];const client=async(op,p)=>{calls.push({op,p});return op==='chat'?{id:'chat',policy:{window:421053,compact:360000,reserve:18000,retainedFloor:1000,revision:4},modelMetadata:{effective_context_window_percent:95,max_context_window:872000}}:{saved:true};};
+ await runManagerCLI(['chat','set','chat','--window','500K','--compact','450K'],{client});assert.equal(calls[1].op,'policy');assert.deepEqual(calls[1].p,{id:'chat',budget:{usableWindow:500000,compact:450000,reserve:18000,retainedFloor:1000,scope:'total'},expectedRevision:4,apply:true,track:true,requestId:calls[1].p.requestId});assert.match(calls[1].p.requestId,/^[a-f0-9-]{36}$/);
  calls.length=0;await runManagerCLI(['chat','set','chat','--window','400K','--save-only'],{client});assert.equal(calls[1].p.apply,false);
  calls.length=0;await assert.rejects(runManagerCLI(['chat','set','chat','--window','2M'],{client}));assert.equal(calls.filter(c=>c.op==='policy').length,0);
  calls.length=0;await assert.rejects(runManagerCLI(['chat','speed','chat','--tier','priority'],{client}),e=>e.code==='INVALID_ARGUMENT');assert.equal(calls.length,0);

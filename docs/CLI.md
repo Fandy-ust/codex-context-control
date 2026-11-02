@@ -13,10 +13,10 @@ CM="$HOME/Library/Application Support/CodexContextControl/bin/context-manager"
 "$CM" global defaults
 "$CM" global defaults-set --window 400K --compact 360K
 "$CM" chat list
-"$CM" chat show CHAT_ID
+"$CM" chat show current --summary
 "$CM" chat preflight CHAT_ID --window 500K --compact 450K
 "$CM" chat set CHAT_ID --window 500K --compact 450K
-"$CM" chat speed CHAT_ID --limit 20
+"$CM" chat speed current --limit 20 --summary
 "$CM" chat stats CHAT_ID
 ```
 
@@ -26,6 +26,19 @@ CM="$HOME/Library/Application Support/CodexContextControl/bin/context-manager"
 - `chat speed` 只使用已有观测，按模型、思考程度、服务档位和响应类型分组，汇总用输出 token 总量除以观测生成时长。缺少时间戳时返回 `null`。输出 token 可能包含推理，不等于可见文字速度或网络首包时间。
 - 额度／用量和统计查询支持各自帮助中列出的 `--refresh`。不请求改模型、改服务档位或切换前台 App 窗口。
 - 新命令统一输出 JSON，错误退出码非零。保存、排队和读回确认分开报告；补偿后的运行时窗口与 App 中的目标容量可能不同。
+
+## 面向 agent 的交互流程
+
+`current` 读取并验证 `CODEX_THREAD_ID`；无法确定时返回错误，不猜测前台聊天。其他环境使用明确的聊天 ID。
+
+1. 用 `chat show current --summary` 查看已请求／已加载预算、观测有效性、估算余量、可用动作和近期操作。结合任务内容判断，不把未知用量当作零。
+2. 用 `chat preflight current --window 500K --compact 450K` 检查提议。`budgetValid`、`evidence`、`execution` 分别说明预算是否可行、证据是否充分、何时能执行；`registered:false` 表示没有登记操作。与用户协商后，用 `basis.policyRevision` 作为 `chat set --revision N` 的依据。
+3. 修改预算和请求压缩时提供稳定的 `--request-id ID`。超时后用 `chat operations current` 或 `chat operation current OPERATION_ID` 查看原操作，避免重复执行。错误中的 `code`、`nextAction`、`operationId` 提供恢复信息。
+4. 用户确认后，可用 `chat compact current --when-idle --request-id CONFIRMED_ID` 登记一次空闲后压缩；agent 在安全位置结束本轮即可，不需要自己轮询等待。请求绑定本轮、模型、预算和历史分支，15 分钟未执行即过期；中断、相关状态变化或断线会使其取消或失效。尚未执行时可用 `chat cancel current OPERATION_ID` 取消。
+
+操作已接受、等待空闲、执行中、等待读回和已完成分别报告。压缩不自动发送续聊消息；重启服务不重放未确定的操作。最多保留 200 条操作记录，预算确认需要后续正常请求的窗口读回。旧的已接入运行时需正常重开 Codex 才支持延后压缩；检查摘要的 `capabilities`。
+
+速度摘要使用同模型、思考程度、服务档位及响应类型的近期／基线样本；基线不足时变化率为 `null`。读取复用已有统计工作线程，不做完整上下文 token 化，不额外启动 Codex server 或下载模型列表。默认质量优先，用户嫌慢时重新讨论取舍；空间充足时继续工作，下一阶段存在压缩风险且决策未定时再暂停协商。
 
 ## 配套 skill
 

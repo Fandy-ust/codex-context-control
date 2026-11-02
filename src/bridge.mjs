@@ -26,7 +26,7 @@ export class Bridge {
     this.child=child;this.input=input;this.output=output;this.publish=publish;this.records=new Map();this.internal=new Map();this.external=new Map();this.sequence=0;this.prefix=`context-control:${randomUUID()}:`;
     this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;this.resolveNewChatBudget=options.resolveNewChatBudget;this.nativeBudgetSupport=options.nativeBudgetSupport===true;
     this.quotaObserver=createQuotaObserver(options.observeQuota);
-    this.resolveCompensation=options.resolveCompensation;this.accountingWindowLimit=options.accountingWindowLimit;this.resolveUsage=options.resolveUsage;
+    this.resolveCompensation=options.resolveCompensation;this.accountingWindowLimit=options.accountingWindowLimit;this.resolveUsage=options.resolveUsage;this.onContextOperation=options.onContextOperation;
     this.frontLines=readline.createInterface({input,crlfDelay:Infinity});this.backLines=readline.createInterface({input:child.stdout,crlfDelay:Infinity});
     this.frontLines.on('line',line=>this.fromClient(line));this.backLines.on('line',line=>this.fromServer(line));
     child.once('exit',()=>{for(const item of this.internal.values()){clearTimeout(item.timer);item.reject(new Error('Codex 运行时已退出'));}this.internal.clear();});
@@ -41,7 +41,7 @@ export class Bridge {
     if((this.contextCeiling||this.nativeBudgetSupport)&&m.method==='thread/resume'&&m.id!=null&&m.params?.threadId&&!m.params?.path&&!m.params?.ephemeral&&!preparedFork?.resume){this.prepareResume(m).catch(error=>this.rejectTurn(m,error.message));return;}
     if(this.contextCeiling&&['thread/start','thread/resume'].includes(m.method)&&!m.params?.ephemeral){m.params={...m.params,config:ceilingConfig(m.params?.config)};line=JSON.stringify(m);}
     const id=m.params?.threadId;const record=this.records.get(id);
-    if(m.method==='thread/rollback'&&record){record.usageFresh=false;record.freshUsage=false;}
+    if(m.method==='thread/rollback'&&record){record.contextEpoch=(record.contextEpoch??0)+1;record.usageFresh=false;record.freshUsage=false;this.notify(record);}
     if(m.method==='turn/start'&&record?.automaticTask?.status==='starting'){this.rejectTurn(m,'队列正在提交任务，请稍后再发送。');return;}
     // Missing usage defers the budget change, not the request that can measure it.
     // Keep the current runtime configuration until a later idle preflight succeeds.
@@ -219,7 +219,7 @@ export class Bridge {
         if(m.method==='thread/status/changed'){record.status=p.status.type;this.notify(record);if(record.status==='idle')this.schedule(record);}
         if(m.method==='turn/started'){record.lastStartedAt=timestampMs(p.turn?.startedAt)??Date.now();record.status='active';record.turnId=p.turn.id;if(record.automaticTask?.status==='starting'&&!record.automaticTask.preparingContext){record.automaticTask.turnId=p.turn.id;record.automaticTask.status='running';}record.usageFresh=false;this.notify(record);}
         if(m.method==='error'&&record.compactionWait)record.compactionWait.reject(new Error(p.error?.message||'原生压缩失败'));
-        if(m.method==='turn/completed'){record.compensationTurnPending=false;record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error||['failed','interrupted'].includes(p.turn?.status)?record.compactionWait.reject(new Error(p.turn?.error?.message||'原生压缩未完成')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;record.automaticTask.errorConfirmed=true;record.automaticTask.errorCode=p.turn.error?.codexErrorInfo==='usageLimitExceeded'||p.turn.error?.code==='usageLimitExceeded'?'usageLimitExceeded':null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.scheduleCompensatedCompaction(record);this.schedule(record);}
+        if(m.method==='turn/completed'){record.lastCompletedTurnId=p.turn?.id??null;record.lastTurnStatus=p.turn?.status??null;record.compensationTurnPending=false;record.lastCompletedAt=timestampMs(p.turn?.completedAt)??Date.now();if(record.compactionWait){p.turn?.error||['failed','interrupted'].includes(p.turn?.status)?record.compactionWait.reject(new Error(p.turn?.error?.message||'原生压缩未完成')):record.compactionWait.resolve();}if(record.automaticTask&&record.automaticTask.turnId===p.turn.id){record.automaticTask.status=p.turn.error||p.turn.status==='failed'?'error':p.turn.status==='interrupted'?'interrupted':'completed';record.automaticTask.error=p.turn.error?.message??null;record.automaticTask.errorConfirmed=true;record.automaticTask.errorCode=p.turn.error?.codexErrorInfo==='usageLimitExceeded'||p.turn.error?.code==='usageLimitExceeded'?'usageLimitExceeded':null;}record.status='idle';record.turnId=p.turn.id;this.notify(record);this.scheduleCompensatedCompaction(record);this.schedule(record);}
         if(m.method==='thread/name/updated'){record.name=p.name;this.notify(record);}
       }
     }
@@ -242,7 +242,7 @@ export class Bridge {
     if(ready)this.fromClient(line,null,true);
     const queued=record.queue.splice(0);record.queueBytes=0;for(const pending of queued)this.fromClient(pending);
   }
-  publicRecord(record){return {...pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask','compensation','appliedBudget']),effort:inheritedTaskEffort(record)};}
+  publicRecord(record){return {...pick(record,['id','name','cwd','model','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','forkedFromId','forkPolicy','newChatPolicy','threadSource','lastStartedAt','lastCompletedAt','automaticTask','compensation','appliedBudget','lastTurnStatus','contextEpoch','lastCompletedTurnId']),effort:inheritedTaskEffort(record)};}
   prepareAccountSwitch(){
     if(this.accountTransition)throw Error('账号切换正在进行，请稍后重试');
     if(this.internal.size||this.external.size||[...this.records.values()].some(r=>r.status!=='idle'||r.locked||r.initializing||['starting','running'].includes(r.automaticTask?.status)))throw Error('等待所有聊天空闲后再自动切换账号');
@@ -385,6 +385,13 @@ export class Bridge {
       record.protectedUsageGeneration=record.usageGeneration;
       this.compact(record.id,undefined,true).catch(error=>{record.phase='error';record.message=error.message;this.notify(record);});
     });
+  }
+  async compactTracked(request){
+    const r=this.records.get(request.id);
+    if(!r||r.status!=='idle'||(r.turnId??null)!==request.turnId||r.model!==request.model||(r.policy?.revision??r.policyVersion??0)!==request.revision||(r.contextEpoch??0)!==request.contextEpoch||[...this.external.values()].some(p=>p.threadId===request.id&&blockedMethods.has(p.method)))
+      throw Object.assign(Error('Chat changed before compaction could start.'),{code:'CHAT_STATE_CHANGED'});
+    const report=patch=>Promise.resolve(this.onContextOperation?.({id:request.id,operationId:request.operationId,...patch})).catch(()=>{});
+    return this.compact(request.id,(success,error)=>{void report({state:success?'completed':/超时|退出/.test(error?.message??'')?'outcome_unknown':'failed',reason:error?.message??null});});
   }
   async compact(id,onFinished,automatic=false){
     if(this.accountTransition)throw Error('账号切换正在进行，请稍后重试');

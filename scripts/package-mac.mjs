@@ -44,6 +44,7 @@ fs.writeFileSync(path.join(app,'Contents/Info.plist'),`<?xml version="1.0"?><!DO
 const identity=process.env.CONTEXT_CONTROL_SIGN_IDENTITY;
 if(identity){
  run('/usr/bin/codesign',['--force','--options','runtime','--timestamp','--entitlements','packaging/node-entitlements.plist','--sign',identity,path.join(payload,'vendor/node')]);
+ run('/usr/bin/codesign',['--force','--options','runtime','--timestamp','--sign',identity,path.join(payload,'build/Codex Context Control.app/Contents/Helpers/ContextRuntimeLauncher')]);
  run('/usr/bin/codesign',['--force','--options','runtime','--timestamp','--sign',identity,path.join(payload,'build/Codex Context Control.app')]);
 }
 if(identity){const signed=spawnSync('/usr/bin/codesign',['-d','--verbose=4',path.join(payload,'build/Codex Context Control.app')],{encoding:'utf8'});if(!/Authority=Developer ID Application:/.test(signed.stderr))throw Error('Use a Developer ID Application identity for distribution');}

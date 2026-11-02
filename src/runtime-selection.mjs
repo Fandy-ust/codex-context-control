@@ -15,14 +15,14 @@ export function selectDesktopRuntime(parentExecutable,configuredExecutable,fallb
   const binary=path.join(app,'Contents/Resources/codex-cli/bin/codex');
   return fs.existsSync(binary)?{binary,desktop:true}:{binary:fallback,desktop:false};
 }
-export function callerRuntime(){
+export function callerRuntime({parentPid=process.ppid}={}){
   const fallback=realBinary();
   if(windows&&readJSON(path.join(root,'automatic-startup.json'))){
     const registered=desktopInstallation()?.executable,configured=settings().desktopExecutable;
-    let pid=process.ppid;for(let n=0;n<4&&pid>0;n++){const info=processInfo(pid);if(!info)break;for(const desktop of [registered,configured].filter(Boolean)){const selected=selectDesktopRuntime(info.executable,desktop,fallback);if(selected.desktop)return selected;}pid=info.parent;}
+    let pid=parentPid;for(let n=0;n<4&&pid>0;n++){const info=processInfo(pid);if(!info)break;for(const desktop of [registered,configured].filter(Boolean)){const selected=selectDesktopRuntime(info.executable,desktop,fallback);if(selected.desktop)return selected;}pid=info.parent;}
     return {binary:fallback,desktop:false};
   }
   if(process.platform!=='darwin'||!readJSON(path.join(root,'automatic-startup.json')))return {binary:fallback,desktop:true};
-  const parent=spawnSync('/bin/ps',['-p',String(process.ppid),'-o','comm='],{encoding:'utf8',timeout:2000}).stdout?.trim();
+  const parent=spawnSync('/bin/ps',['-p',String(parentPid),'-o','comm='],{encoding:'utf8',timeout:2000}).stdout?.trim();
   return selectDesktopRuntime(parent,settings().desktopExecutable,fallback);
 }

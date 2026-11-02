@@ -6,9 +6,11 @@ import {classifyRuntimeCommand} from './compatibility.mjs';
 import {settings,root} from './paths.mjs';
 import {checkRuntimeCompatibility,recordRuntimeStartupFailure} from './runtime-compatibility.mjs';
 import {integrationLog} from './diagnostic-log.mjs';
+import {nativeLaunchChannel,sendNativeLaunchPlan,inheritedRuntime} from './native-channel.mjs';
 
 const startupAt=Date.now();integrationLog('wrapper.boot',{node:process.execPath,argumentCount:process.argv.length-2});
-const args=process.argv.slice(2);const caller=callerRuntime();
+const channel=nativeLaunchChannel();
+const args=process.argv.slice(2);const caller=callerRuntime({parentPid:channel?.clientPid??process.ppid});
 const desktop=caller.desktop&&settings().uninstalled!==true,originalBinary=caller.binary;
 const command=classifyRuntimeCommand(args);
 integrationLog('wrapper.runtime_selected',{desktop,binary:originalBinary,node:process.execPath,...command});
@@ -33,16 +35,20 @@ if(desktop&&command.stdio){
 }
 if(!enhanced){
   if(desktop&&command.stdio)process.stderr.write(`Context Manager: 增强兼容性尚未确认，本次使用原生启动 (${compatibility?.reason})。\n`);
-  const p=spawn(originalBinary,args,{stdio:'inherit',env:process.env});p.on('exit',(code,signal)=>signal?process.kill(process.pid,signal):process.exit(code??1));
-  p.once('error',error=>{integrationLog('wrapper.passthrough_error',{code:error.code,message:error.message});process.stderr.write('Context Manager: '+error.message+'\n');process.exitCode=1;});
+  if(channel)sendNativeLaunchPlan(channel,{binary:originalBinary,args,enhanced:false});
+  else{
+    const p=spawn(originalBinary,args,{stdio:'inherit',env:process.env});p.on('exit',(code,signal)=>signal?process.kill(process.pid,signal):process.exit(code??1));
+    p.once('error',error=>{integrationLog('wrapper.passthrough_error',{code:error.code,message:error.message});process.stderr.write('Context Manager: '+error.message+'\n');process.exitCode=1;});
+  }
 }else{
-  const child=spawn(runtime.binary,launchArgs,{stdio:['pipe','pipe','inherit'],env:process.env});
+  if(channel&&!sendNativeLaunchPlan(channel,{binary:runtime.binary,args:launchArgs,enhanced:true}))process.exit(0);
+  const child=channel?inheritedRuntime(channel):spawn(runtime.binary,launchArgs,{stdio:['pipe','pipe','inherit'],env:process.env});
   child.once('spawn',()=>integrationLog('wrapper.native_started',{childPid:child.pid,contextCeiling:!!ceiling?.version}));
   child.once('exit',(code,signal)=>integrationLog('wrapper.native_exit',{code,signal}));
   let peer,closed=false,bridge;
   bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{
     await ensureDaemon();return request('forkBudget',{id,model,contextCeiling:!!ceiling?.version});
-  },{observeQuota:value=>peer?.call('observeQuota',value),resolveUsage:id=>peer?.call('localUsage',{id},30000),resolveCompensation:createCompensationResolver(),accountingWindowLimit:ceiling?.accountingWindowLimit,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling?.version});}});
+  },{onContextOperation:value=>peer?.call('updateContextOperation',value),observeQuota:value=>peer?.call('observeQuota',value),resolveUsage:id=>peer?.call('localUsage',{id},30000),resolveCompensation:createCompensationResolver(),accountingWindowLimit:ceiling?.accountingWindowLimit,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling?.version});}});
   async function attach(){
     if(closed)return;
     try{
@@ -50,6 +56,7 @@ if(!enhanced){
         if(op==='setPolicy')return bridge.setPolicy(p.id,p.policy,p.model);
         if(op==='clearPolicy')return bridge.clearPolicy(p.id,p.revision);
         if(op==='compact')return bridge.compact(p.id);
+        if(op==='context-compact')return bridge.compactTracked(p);
         if(op==='queue-start'){try{return await bridge.startAutomatic(p.id,p.task);}catch(error){const task=bridge.records.get(p.id)?.automaticTask;if(task?.executionId===p.task.executionId&&task.status==='running')return task;return {executionId:p.task.executionId,taskId:p.task.taskId,status:'error',error:error.message,errorConfirmed:task?.executionId!==p.task.executionId||task.errorConfirmed===true};}}
         if(op==='queue-prepare')return bridge.prepareAutomatic(p.id);
         if(op==='queue-interrupt')return bridge.interruptAutomatic(p.id,p.executionId);
@@ -59,7 +66,7 @@ if(!enhanced){
         throw new Error('不支持的运行时操作');
       });
       if(closed){peer.close();return;}
-      await peer.call('registerBridge',{pid:process.pid,nativePid:child.pid,accountSwitchVersion:1,creditsStopVersion:1,version:bridgeVersion,taskQueueVersion:4,compensationVersion:ceiling?.accountingWindowLimit?3:2,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
+      await peer.call('registerBridge',{pid:process.pid,nativePid:child.pid,accountSwitchVersion:1,creditsStopVersion:1,version:bridgeVersion,taskQueueVersion:4,contextOperationsVersion:1,compensationVersion:ceiling?.accountingWindowLimit?3:2,runtimeFixId:runtime.runtimeFixId,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,newChatDefaultsVersion:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:2});
       if(closed){peer.close();return;}
       if(bridge.quotaObserver.snapshot)await peer.call('observeQuota',bridge.quotaObserver.snapshot);
       for(const record of bridge.records.values())bridge.notify(record);
@@ -67,7 +74,7 @@ if(!enhanced){
     }catch(error){integrationLog('wrapper.service_attach_failed',{message:error.message});if(!closed)setTimeout(attach,1500).unref();}
   }
   attach();
-  const lifecycle=watchRuntimeLifecycle({child,input:process.stdin,output:process.stdout,onDisconnect:reason=>{closed=true;peer?.close();integrationLog('wrapper.client_disconnected',{reason,parentPid:process.ppid,childPid:child.pid});}});
+  const lifecycle=watchRuntimeLifecycle({child,input:process.stdin,output:process.stdout,parentPid:channel?.clientPid??process.ppid,onDisconnect:reason=>{closed=true;peer?.close();integrationLog('wrapper.client_disconnected',{reason,parentPid:channel?.clientPid??process.ppid,childPid:child.pid});}});
   child.stdin.on('error',error=>{if(!closed&&!bridge.initialized)recordRuntimeStartupFailure(root,compatibility);integrationLog('wrapper.native_input_error',{code:error.code});lifecycle.disconnect('native-input-error');});
   child.once('error',error=>{recordRuntimeStartupFailure(root,compatibility);closed=true;peer?.close();process.stderr.write(`Context Control: ${error.message}\n`);process.exitCode=1;});
   child.once('exit',(code,signal)=>{
@@ -76,6 +83,6 @@ if(!enhanced){
     if(!closed&&!bridge.initialized&&(code!==0||signal))recordRuntimeStartupFailure(root,compatibility);
     closed=true;peer?.close();process.exitCode=code??(signal?1:0);
   });
-  child.once('close',()=>{bridge.frontLines.close();bridge.backLines.close();});
+  child.once('close',()=>{bridge.frontLines.close();bridge.backLines.close();if(channel){process.stdin.destroy();process.stdout.end(()=>process.exit(process.exitCode??0));setTimeout(()=>process.exit(process.exitCode??0),1000).unref();}});
   process.once('SIGTERM',()=>child.kill('SIGTERM'));process.once('SIGINT',()=>child.kill('SIGINT'));
 }

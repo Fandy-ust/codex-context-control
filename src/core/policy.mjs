@@ -28,7 +28,7 @@ export function preflight(thread,policy,model) {
   Object.assign(result,{expectedWindow:usable,effectiveCompact:compact,catalogMaximum:maximum,usablePercent:percent});
   if(compact!==policy.compact)result.notes.push(`total 模式下实际阈值最多为 ${compact.toLocaleString()}。`);
   if(policy.retainedFloor+policy.reserve>=Math.min(usable,compact))return {...result,code:'below_retained_floor',allowed:false,message:'必须保留量加下一轮预留已达到容量或压缩阈值；需要更大的窗口或减少保留量。'};
-  if(thread?.status==='active'||thread?.status==='inProgress')return {...result,code:'waiting_for_idle',allowed:false,message:'本轮仍在运行，已排队等待轮次结束。'};
+  if(thread?.status==='active'||thread?.status==='inProgress')return {...result,code:'waiting_for_idle',allowed:false,message:'本轮仍在运行，需等待轮次结束后才能应用。'};
   if(thread?.ephemeral||thread?.canAcceptDirectInput===false)return {...result,code:'unsupported_thread',allowed:false,message:'临时会话或由父代理管理的会话暂不支持重新加载。'};
   // Reloading identical history invalidates window confirmation, not its last
   // measured usage. Older bridges only provide freshUsage.

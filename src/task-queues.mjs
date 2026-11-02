@@ -99,7 +99,7 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
         }
         if(!q.enabled){q.state='off';continue;}
         if(!monitoringEnabled){q.state='global-off';q.message='全局监视已暂停；保留此聊天的监视设置';continue;}
-        if(!canDispatch()){q.state='switching-account';q.message='正在切换账号，等待身份与额度确认';continue;}
+        const dispatch=canDispatch(q.id);if(dispatch!==true){q.state=typeof dispatch==='string'?'waiting-context':'switching-account';q.message=typeof dispatch==='string'?dispatch:'正在切换账号，等待身份与额度确认';continue;}
         if(!chat?.connected&&chat?.queueCanLoad){q.state='loading-chat';q.message='正在后台加载聊天';await prepare(q.id);continue;}
         // Adopt each new user-started turn by its exact identity. Monitoring
         // records never become prompts and cannot replay a user's manual work.

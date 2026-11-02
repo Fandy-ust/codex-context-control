@@ -1,6 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {zstdCompressSync} from 'node:zlib';import {DatabaseSync} from 'node:sqlite';
 import {readHistory,createHistoryCache,historySourcesUnchanged} from '../src/context-history.mjs';
 import {randomBytes} from 'node:crypto';
+import {localUsageObservation} from '../src/core/usage-observation.mjs';
 import {statisticsEvent} from '../src/statistics-events.mjs';import {createContextStatisticsService} from '../src/context-statistics-service.mjs';import {ThreadCache} from '../src/thread-cache.mjs';import {readForkParent} from '../src/fork-metadata.mjs';
 const parent='11111111-1111-1111-1111-111111111111',child='22222222-2222-2222-2222-222222222222';
 const event=(type,payload)=>({type,payload});const encode=items=>items.map(e=>JSON.stringify(e)).join('\n')+'\n';
@@ -8,7 +9,7 @@ function fixture(){
  const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-compressed-')),dir=path.join(home,'sessions');fs.mkdirSync(dir);
  const db=new DatabaseSync(path.join(home,'state_5.sqlite'));db.exec('CREATE TABLE threads(id TEXT PRIMARY KEY,rollout_path TEXT)');
  const source=path.join(dir,'rollout-'+parent+'.jsonl'),fork=path.join(dir,'rollout-'+child+'.jsonl');
- const data=encode([event('session_meta',{id:parent}),event('turn_context',{model:'fixture'}),event('response_item',{type:'message',role:'user',content:[{type:'input_text',text:'PRIVATE_BODY 中文'}]}),event('event_msg',{type:'token_count',info:{last_token_usage:{total_tokens:120},model_context_window:500000}}),event('event_msg',{type:'task_complete'})]);
+ const data=encode([event('session_meta',{id:parent,model_provider:'openai'}),event('turn_context',{model:'fixture'}),event('response_item',{type:'message',role:'user',content:[{type:'input_text',text:'PRIVATE_BODY 中文'}]}),event('event_msg',{type:'token_count',info:{last_token_usage:{total_tokens:120},model_context_window:500000}}),event('event_msg',{type:'task_complete'})]);
  fs.writeFileSync(source+'.zst',zstdCompressSync(Buffer.from(data)));db.prepare('INSERT INTO threads VALUES(?,?)').run(parent,source);
  fs.writeFileSync(fork,encode([event('session_meta',{id:child,forked_from_id:parent,history_base:{thread_id:parent,end_byte_offset:Buffer.byteLength(data),end_ordinal_exclusive:5}})]));db.prepare('INSERT INTO threads VALUES(?,?)').run(child,fork);
  return {home,db,source,fork,data,close(){db.close();fs.rmSync(home,{recursive:true,force:true});}};
@@ -57,4 +58,20 @@ test('cold discovery skips decompression; explicit tails and fork headers suppor
   assert.equal(readForkParent(f.home,child,f.fork,new Map()),null);
   assert.equal(readForkParent(f.home,child,f.fork,new Map(),{includeCompressed:true}),parent);
  }finally{f.close();}
+});
+test('fork model settings can return to the measured model before first input without losing inherited usage',async()=>{
+ const f=fixture(),get=createContextStatisticsService(f.home,{cacheMs:0});
+ const settings=(model,provider='openai')=>event('event_msg',{type:'thread_settings_applied',thread_settings:{model,model_provider_id:provider}});
+ try{
+  fs.appendFileSync(f.fork,encode([settings('another-model')]));assert.equal((await get.observation(child)).known,false);
+  fs.appendFileSync(f.fork,encode([settings('fixture')]));const restored=await get.observation(child);assert.equal(restored.known,true);assert.equal(restored.lastUsage.totalTokens,120);
+  fs.appendFileSync(f.fork,encode([event('response_item',{type:'message',role:'user',content:'new input'}),settings('another-model'),settings('fixture')]));assert.equal((await get.observation(child)).known,false);
+ }finally{get.close();f.close();}
+});
+test('provider changes and unfinished or changed history cannot reuse a model-bound observation',()=>{
+ const base=[event('session_meta',{model_provider:'openai'}),event('turn_context',{model:'fixture'}),event('event_msg',{type:'token_count',info:{last_token_usage:{total_tokens:120}}}),event('event_msg',{type:'task_complete'})];
+ const setting=(provider)=>event('event_msg',{type:'thread_settings_applied',thread_settings:{model:'fixture',model_provider_id:provider}});
+ assert.equal(localUsageObservation([...base,setting('different')]).known,false);
+ assert.equal(localUsageObservation([...base,setting('different'),setting('openai')]).known,true);
+ for(const changed of [event('response_item',{}),event('compacted',{}),event('event_msg',{type:'thread_rolled_back'}),event('event_msg',{type:'task_started'})])assert.equal(localUsageObservation([...base,changed,setting('different'),setting('openai')]).known,false);
 });

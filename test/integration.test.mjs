@@ -18,12 +18,15 @@ test('real runtime through the actual bridge preserves history, tools, permissio
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-'));const home=path.join(temp,'codex');fs.mkdirSync(home);const control=path.join(temp,'control');
   process.env.CONTEXT_CONTROL_HOME=control;process.env.CONTEXT_CONTROL_CODEX_HOME=home;
   const {request}=await import('../src/ipc.mjs');
-  const fixture=await fixtureServer();
+  let heldOnce=false;
+  const fixture=await fixtureServer({holdForRequest:request=>{const last=[...(request.input||[])].reverse().find(item=>item.role==='user'),text=JSON.stringify(last);if(text.includes('HOLD_ONCE_FOR_COMPACT')&&!heldOnce){heldOnce=true;return true;}return text.includes('HOLD_FIXTURE');}});
   const catalog=path.join(repo,'test/fixtures/models.json');
   fs.copyFileSync(catalog,path.join(home,'models_cache.json'));
   fs.writeFileSync(path.join(home,'config.toml'),`model="context-fixture"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(catalog)}\nmodel_context_window=500000\nmodel_auto_compact_token_limit=450000\ncli_auth_credentials_store="file"\n[features]\nplugins=false\n[analytics]\nenabled=false\n[feedback]\nenabled=false\n[model_providers.fixture]\nname="Loopback fixture"\nbase_url="http://127.0.0.1:${fixture.port}/v1"\nwire_api="responses"\nrequires_openai_auth=false\nsupports_websockets=false\n`);
   const env={CONTEXT_CONTROL_NEW_CHAT_DEFAULTS:'0',PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:temp,CODEX_HOME:home,CONTEXT_CONTROL_CODEX_HOME:home,CONTEXT_CONTROL_HOME:control,CONTEXT_CONTROL_REAL_CODEX:binary,CONTEXT_CONTROL_CATALOG_PATH:catalog};
-  const child=spawn(process.execPath,[path.join(repo,'src/wrapper.mjs'),'app-server','--listen','stdio://'],{env,cwd:temp,stdio:['pipe','pipe','pipe']});
+  let command=process.execPath,commandArgs=[path.join(repo,'src/wrapper.mjs'),'app-server','--listen','stdio://'];
+  if(process.platform==='darwin'&&process.env.CONTEXT_CONTROL_TEST_NATIVE_LAUNCHER){command=path.join(temp,'native-launcher');fs.copyFileSync(process.env.CONTEXT_CONTROL_TEST_NATIVE_LAUNCHER,command);fs.chmodSync(command,0o700);fs.writeFileSync(command+'.json',JSON.stringify({node:process.execPath,wrapper:path.join(repo,'src/wrapper.mjs'),original:binary,home:control}));commandArgs=['app-server','--listen','stdio://'];}
+  const child=spawn(command,commandArgs,{env,cwd:temp,stdio:['pipe','pipe','pipe']});
   const events=[];const pending=new Map();let sequence=0;let errors='';child.stderr.on('data',d=>errors+=d.toString());
   readline.createInterface({input:child.stdout}).on('line',line=>{const m=JSON.parse(line);events.push(m);if(!m.method&&pending.has(m.id)){const p=pending.get(m.id);pending.delete(m.id);clearTimeout(p.timer);m.error?p.reject(new Error(JSON.stringify(m.error))):p.resolve(m.result);}});
   function call(method,params){const id=++sequence;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);reject(new Error(`${method} timeout; ${errors.slice(-500)}`));},15000);pending.set(id,{resolve,reject,timer});child.stdin.write(JSON.stringify({id,method,params})+'\n');});}
@@ -60,6 +63,20 @@ test('real runtime through the actual bridge preserves history, tools, permissio
     fixture.release();await held;
     await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='awaiting_runtime_confirmation'));
     assert.equal(await turn(a,'A after queued change'),475000);assert.equal(await turn(b,'B still unchanged'),258400);
+    const post=async(route,body)=>{const response=await fetch(`http://127.0.0.1:${connection.port}${route}`,{method:'POST',headers:{Authorization:`Bearer ${connection.token}`},body:JSON.stringify(body)});const value=await response.json();assert.equal(response.status,200,JSON.stringify(value));return value;};
+    const beforeDeferred=fixture.requests.length,activeForCompact=turn(a,'HOLD_ONCE_FOR_COMPACT');
+    await until(()=>fixture.requests.length>beforeDeferred);
+    await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.status==='active'));
+    const deferredRequest={id:a,track:true,whenIdle:true,requestId:'native-deferred-compaction'};
+    const receipt=(await post('/compact',deferredRequest)).operation;
+    assert.equal(receipt.state,'waiting_for_idle');assert.equal(fixture.requests.length,beforeDeferred+1);
+    assert.equal((await post('/compact',deferredRequest)).operation.id,receipt.id);
+    fixture.release();await activeForCompact;
+    await until(async()=>(await post('/context-operation',{id:a,action:'show',operationId:receipt.id})).operation.state==='completed');
+    const afterDeferred=fixture.requests.length;assert.equal(afterDeferred,beforeDeferred+2,'one normal response and one compaction, without a continuation request');
+    await post('/compact',deferredRequest);await sleep(60);assert.equal(fixture.requests.length,afterDeferred);
+    assert.equal(await turn(b,'B after scoped deferred compaction'),258400);
+    assert.equal(await turn(a,'Resume task after confirmed deferred compaction'),475000);
     await request('setPolicy',{id:a,policy:{window:'500K',compact:1000,reserve:1},apply:true});
     await until(async()=>(await request('state')).threads.find(t=>t.id===a&&t.phase==='awaiting_runtime_confirmation'));
     await turn(a,'REPORT_HIGH_USAGE');const offset=events.length;await turn(a,'measure native compaction');
