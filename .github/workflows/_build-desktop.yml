@@ -30,6 +30,16 @@ jobs:
       - run: npm run test:win:package
       - run: npm run test:win:setup
       - run: npm run test:win:update
+      - name: Runtime release contract
+        run: node scripts/test-runtime-release.mjs
+      - name: Preserve runtime contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-contract-windows-x64
+          retention-days: 14
+          path: build/runtime-release/
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: context-manager-windows-x64
@@ -61,6 +71,16 @@ jobs:
         run: |
           CONTEXT_CONTROL_TEST_INSTALLER_APP="$PWD/build/distribution/Install Context Manager.app" npm run test:distribution
           hdiutil verify build/distribution/*.dmg
+      - name: Runtime release contract
+        run: node scripts/test-runtime-release.mjs
+      - name: Preserve runtime contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-contract-macos-arm64
+          retention-days: 14
+          path: build/runtime-release/
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: context-manager-macos-arm64

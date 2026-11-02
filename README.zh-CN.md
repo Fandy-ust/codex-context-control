@@ -54,6 +54,6 @@ https://github.com/user-attachments/assets/412c24ac-a4cc-4220-92f8-7ad2291558b5
 
 旧版核心压缩补丁因缺少官方签名而影响 Computer Use，已停用。外层压缩补偿也因无法可靠跟进长轮次计数，在 0.25.2 停用。**920K 上下文设置继续保留，但不承诺显示用量一定到 900K 才压缩。**[说明](docs/COMPACTION_COMPENSATION.md)。
 
-[额度分析说明](docs/QUOTA_ANALYTICS.md) · [使用指南](docs/FEATURES.md) · [跨平台开发](docs/MULTIPLATFORM_DEVELOPMENT.md) · [构建与发布](docs/CROSS_PLATFORM_BUILD.md) · [参与协作](CONTRIBUTING.md) · [隐私](docs/PRIVACY.md)
+[额度分析说明](docs/QUOTA_ANALYTICS.md) · [使用指南](docs/FEATURES.md) · [跨平台开发](docs/MULTIPLATFORM_DEVELOPMENT.md) · [构建与发布](docs/CROSS_PLATFORM_BUILD.md) · [启动、签名与资源验收](docs/RUNTIME-VALIDATION.md) · [参与协作](CONTRIBUTING.md) · [隐私](docs/PRIVACY.md)
 
 [MIT 许可](LICENSE) · [第三方声明](THIRD_PARTY_NOTICES.md) · 独立项目，与 OpenAI 无隶属关系。

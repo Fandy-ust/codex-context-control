@@ -1,5 +1,7 @@
 # 本机验证记录
 
+后续版本的固定验收流程见[启动、信任与资源验收标准](RUNTIME-VALIDATION.md)。以下为历史验证记录。
+
 日期：2026-10-15 至 2026-10-16，Asia/Hong_Kong。
 
 环境：macOS 26 arm64、Node 25.8.1、Apple Swift 6.2.4。原生应用部署目标为 macOS 14.0。

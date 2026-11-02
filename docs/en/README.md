@@ -28,6 +28,7 @@ These detailed historical reports remain in their original Chinese; the English 
 - [Stress tests and fixes, October 17](../STRESS_TEST_2026-10-17.md)
 - [Earlier stress tests, October 16](../STRESS_TEST_2026-10-16.md)
 - [Validation history](../VALIDATION.md)
+- [Runtime trust, monitoring costs and release acceptance standard (中文)](../RUNTIME-VALIDATION.md)
 - [Cache writes](../CACHE-WRITE-RESEARCH.md)
 - [Cache and speed](../CACHE-SPEED-RESEARCH.md)
 
