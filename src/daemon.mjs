@@ -160,7 +160,7 @@ export async function startDaemon() {
   if(root===defaultRoot()){const initial=setTimeout(()=>quota.refresh().catch(()=>{}),1500);initial.unref();const polling=setInterval(()=>quota.refresh().catch(()=>{}),10000);polling.unref();}
   const updater=createUpdateManager({current:JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url))).version});
   if(root===defaultRoot()){const timer=setTimeout(()=>updater.check().catch(()=>{}),5000);timer.unref();const interval=setInterval(()=>updater.check().catch(()=>{}),6*60*60*1000);interval.unref();}
-  const contextStatistics=createContextStatisticsService();
+  const contextStatistics=createContextStatisticsService(codexHome,{onWorkerError:error=>integrationLog('statistics.worker_error',error)});
   const responseSpeeds=createRunningSpeedCache(id=>contextStatistics.speed(id));
   const statisticsJSON=new WeakMap();
   const runtimeFix=createRuntimeFixManager();
@@ -443,4 +443,4 @@ export async function startDaemon() {
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};
 }
-if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1]))startDaemon().catch(error=>{process.stderr.write(error.message+'\n');process.exitCode=1;});
+if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1])){ensureRoot();process.chdir(root);startDaemon().catch(error=>{process.stderr.write(error.message+'\n');process.exitCode=1;});}
