@@ -31,7 +31,7 @@ struct Chat: Identifiable, Decodable,Equatable {
     let taskQueueSupported:Bool?;let taskQueueRestartRequired:Bool?
     var queueRestartRequired:Bool{taskQueueRestartRequired == true || (connected && taskQueueSupported == false)}
     let ephemeral:Bool?;let canAcceptDirectInput:Bool?;let threadSource:String?;let lastActivityAt:Int?;let lastStartedAt:Int?;let lastCompletedAt:Int?
-    let observedWindow:Int?;let expectedWindow:Int?;let lastUsage:Usage?;let freshUsage:Bool?;let revision:Int?
+    let observedWindow:Int?;let expectedWindow:Int?;var lastUsage:Usage?;let freshUsage:Bool?;let revision:Int?
     let policy:Budget?;let modelMetadata:Metadata?;let compensation:CompensationDetails?;let responseSpeed:ResponseSpeed?
     var title:String { if let name,!name.isEmpty{return name};if let cwd{return URL(fileURLWithPath:cwd).lastPathComponent};return String(id.prefix(12)) }
     var canCompact:Bool {connected && !ambiguous && status=="idle" && ephemeral != true && canAcceptDirectInput != false && !["compacting","reloading","extension_pending"].contains(phase ?? "")}
@@ -65,7 +65,8 @@ struct QuotaState:Decodable,Equatable {let accounts:[QuotaAccount]?;let resetNot
 struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics:Bool?;let creditBaseline:Bool?}
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
 struct ChatSidebar:Decodable,Equatable {let projects:[SidebarProject];let standaloneThreadIds:[String]}
-struct RuntimeState: Decodable {let quotaActivation:QuotaActivationState?;let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let compactionCompensation:CompensationState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct ChatCatalog:Decodable {let revision:String;let threads:[Chat];let sidebar:ChatSidebar}
+struct RuntimeState: Decodable {let chatCatalog:ChatCatalog?;let quotaActivation:QuotaActivationState?;let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let compactionCompensation:CompensationState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -123,6 +124,8 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var quotaActivation:QuotaActivationState?
     @Published var taskQueues:TaskQueuesState?
     @Published var queueDetailID:String?
+    private var cachedCatalog:ChatCatalog?
+    private var cachedUsage:[String:Usage]=[:]
     @Published var chats:[Chat]=[]
     @Published var sidebar:ChatSidebar?
     @Published var selectedID:String?
@@ -184,7 +187,7 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func refresh() async {
         if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
-        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api(ControlAPI.hotState,body:["selectedIds":[selectedID,queueDetailID].compactMap{$0}]))
+        do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api(ControlAPI.hotState,body:["selectedIds":[selectedID,queueDetailID].compactMap{$0},"includeCatalog":true,"catalogRevision":cachedCatalog?.revision ?? ""]))
             guard !menuDragInProgress else{return}
             supportsVisibleBudget=state.capabilities?.visibleBudget == true;supportsQuotaAnalytics=state.capabilities?.quotaAnalytics == true
             if quota != state.quota{acceptQuota(state.quota)}
@@ -195,8 +198,14 @@ struct ServiceSettings: Decodable {let node:String}
             creditsNotifier.observe(state.quotaActivation?.creditsProtection?.event,enabled:state.quotaActivation?.config.creditsNotificationsEnabled != false,stale:state.quota?.stale != false)
             if taskQueues != state.taskQueues{taskQueues=state.taskQueues}
             if queueModels != (state.queueModels ?? []){queueModels=state.queueModels ?? []}
-            if chats != state.threads{chats=state.threads}
-            if sidebar != state.sidebar{sidebar=state.sidebar}
+            if let catalog=state.chatCatalog{cachedCatalog=catalog}
+            for chat in state.threads{if let usage=chat.lastUsage{cachedUsage[chat.id]=usage}}
+            var merged=Dictionary((cachedCatalog?.threads ?? []).map{row in var chat=row;if let usage=cachedUsage[row.id]{chat.lastUsage=usage};return (chat.id,chat)},uniquingKeysWith:{first,_ in first})
+            for chat in state.threads{merged[chat.id]=chat}
+            let display=(cachedCatalog?.threads ?? []).compactMap{merged.removeValue(forKey:$0.id)}+Array(merged.values)
+            if chats != display{chats=display}
+            let fullSidebar=cachedCatalog?.sidebar ?? state.sidebar
+            if sidebar != fullSidebar{sidebar=fullSidebar}
             if bridgeCount != state.bridgeCount{bridgeCount=state.bridgeCount}
             if runtimeFix != state.runtimeFix{runtimeFix=state.runtimeFix}
             if contextCeilingPending != (state.contextCeilingPending ?? false){contextCeilingPending=state.contextCeilingPending ?? false}
@@ -728,7 +737,7 @@ struct ContentView: View {
         .frame(minWidth:960,minHeight:670)
         .background(PanelStyle.background)
         .preferredColorScheme(.dark).tint(PanelStyle.blue).environment(\.locale,Localization.locale)
-        .onChange(of:model.selectedID){_,_ in model.showQuotaAnalytics=false;model.fill()}
+        .onChange(of:model.selectedID){_,_ in model.showQuotaAnalytics=false;model.fill();Task{await model.refresh()}}
         .sheet(isPresented:$showControlPanel){MainControlPanelView(model:model,initialTab:controlTab,close:{showControlPanel=false})}
 
     }

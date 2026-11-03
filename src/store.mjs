@@ -8,6 +8,7 @@ import {ThreadCache} from './thread-cache.mjs';
 import {ProjectCatalog} from './project-catalog.mjs';
 import {inheritedForkPolicy} from './fork-budget.mjs';
 import {HOT_CHAT_LIMIT,visibleChat} from './core/hot-chats.mjs';
+import {randomUUID} from 'node:crypto';
 
 export class Store {
   constructor(){this.file=path.join(root,'state.json');const saved=readJSON(this.file,{version:2,policies:{},threads:{}});this.data=normalizeStateDocument(saved);this.metadata=new Map();this.metadataCheckedAt=0;this.threadCache=new ThreadCache({home:codexHome,file:path.join(root,'thread-cache.json')});this.projects=new ProjectCatalog(codexHome);}
@@ -57,9 +58,30 @@ export class Store {
   }
   // Discover the local index; numeric observations are refreshed asynchronously.
   async seedRecentMetadata(){
-    try{this.DatabaseSync=(await import('node:sqlite')).DatabaseSync;this.refreshMetadata(true);}catch{/* Metadata discovery is optional. */}
+    try{this.DatabaseSync=(await import('node:sqlite')).DatabaseSync;this.readCatalog();this.refreshMetadata(true);}catch{/* Metadata discovery is optional. */}
   }
-  async scanLocal(){this.refreshMetadata(true);await this.threadCache.running;return this.refreshObservations(true);}
+  async scanLocal(){this.readCatalog();this.refreshMetadata(true);await this.threadCache.running;return this.refreshObservations(true);}
+  updateCatalog(t){
+    this.catalogRows??=new Map();if(!t?.id)return;
+    const row={id:t.id,name:t.name??null,model:t.model??null,cwd:t.cwd??null,projectId:t.projectId??null,lastActivityAt:activityTime(t)};
+    if(!visibleChat(t)){if(this.catalogRows.delete(t.id)){this.catalogRevision=randomUUID();this.catalogSnapshot=null;}return;}
+    if(JSON.stringify(this.catalogRows.get(t.id))!==JSON.stringify(row)){this.catalogRows.set(t.id,row);this.catalogRevision=randomUUID();this.catalogSnapshot=null;}
+  }
+  readCatalog(){
+    let db;try{
+      const file=fs.readdirSync(codexHome).filter(n=>/^state_\d+\.sqlite$/.test(n)).sort((a,b)=>Number(b.match(/\d+/)[0])-Number(a.match(/\d+/)[0]))[0];if(!file||!this.DatabaseSync){for(const t of Object.values(this.data.threads))this.updateCatalog(t);return;}
+      db=new this.DatabaseSync(path.join(codexHome,file),{readOnly:true});const cols=new Set(db.prepare('PRAGMA table_info(threads)').all().map(r=>r.name));
+      const fields=['id','name','model','cwd','project_id','thread_source','archived','recency_at_ms','recency_at','created_at_ms','created_at'].filter(k=>cols.has(k));const rows=db.prepare('SELECT '+fields.join(',')+' FROM threads').all();this.catalogRows=new Map();
+      for(const row of rows)this.updateCatalog({id:row.id,name:typeof row.name==='string'&&!/[\r\n]/.test(row.name)&&row.name.length<=120?row.name:null,model:row.model,cwd:row.cwd,projectId:row.project_id,threadSource:row.thread_source,archived:row.archived===1,nativeActivityAt:timestampMs(row.recency_at_ms)??timestampMs(row.recency_at),createdAt:timestampMs(row.created_at_ms)??timestampMs(row.created_at)});
+      this.catalogRevision=randomUUID();this.catalogSnapshot=null;
+    }catch{for(const t of Object.values(this.data.threads))this.updateCatalog(t);}finally{db?.close();}
+  }
+  sidebarCatalog(){
+    if(!this.catalogRows)this.readCatalog();if(this.catalogSnapshot)return this.catalogSnapshot;
+    const rows=[...(this.catalogRows?.values()??[])].sort((a,b)=>b.lastActivityAt-a.lastActivityAt||a.id.localeCompare(b.id));
+    const threads=rows.map(t=>{const usage=this.data.threads[t.id]?.lastUsage??this.threadCache.get(t.id)?.lastUsage;return {...t,connected:false,ambiguous:false,status:'notLoaded',phase:'cached',freshUsage:false,modelMetadata:null,...(usage?{lastUsage:{totalTokens:usage.totalTokens}}:{})};});
+    return this.catalogSnapshot={revision:this.catalogRevision??'empty',threads,sidebar:this.projects.sidebar(rows)};
+  }
   refreshObservations(force=false){if(!force&&Date.now()-(this.observationsCheckedAt??0)<15000)return this.threadCache.running??Promise.resolve();this.observationsCheckedAt=Date.now();return this.threadCache.scan(this.scanRows??[]);}
   setRequiredIds(ids){this.requiredIds=new Set(ids);}
   listLocal(offset=0){
@@ -94,6 +116,8 @@ export class Store {
         if(!cols.has('id'))return;
         // Use the explicit native name, never the legacy title/first prompt.
         this.projects.readNative(db,cols.has('project_id'));
+        const projectStamp=JSON.stringify(this.projects.native);
+        if(projectStamp!==this.catalogProjectStamp){this.catalogProjectStamp=projectStamp;this.catalogRevision=randomUUID();this.catalogSnapshot=null;}
         const selected=['id','name','model','cwd','project_id','updated_at','updated_at_ms','recency_at','recency_at_ms','created_at','created_at_ms','thread_source','archived','rollout_path'].filter(c=>cols.has(c));
         const hasRecencyColumn=cols.has('recency_at_ms')||cols.has('recency_at');
         const candidates=['recency_at_ms','recency_at','created_at_ms','created_at',...(!hasRecencyColumn?['updated_at_ms','updated_at']:[])].filter(c=>cols.has(c));
@@ -128,6 +152,7 @@ export class Store {
           metadata.set(row.id,current);
           if(!this.data.threads[row.id]&&!current.archived)this.data.threads[row.id]={id:row.id,name:null,cwd:row.cwd||null,status:'notLoaded',freshUsage:false};
           if(this.data.threads[row.id])Object.assign(this.data.threads[row.id],current);
+          this.updateCatalog({...this.data.threads[row.id],...current});
         }
         // Keep native names authoritative even when an older bridge continues
         // publishing the title it captured before Codex renamed the fork.

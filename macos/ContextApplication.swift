@@ -181,7 +181,7 @@ import AppKit
     private func publishStatus(windowVisible:Bool?=nil){
         guard started else{return}
         var state=statusController.diagnostics
-        state.merge(["quotaIntegrated":true,"pid":ProcessInfo.processInfo.processIdentifier,"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? mainWindow.isVisible,"bridgeCount":model.bridgeCount,"startedInBackground":background,"runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()],uniquingKeysWith:{$1})
+        state.merge(["quotaIntegrated":true,"pid":ProcessInfo.processInfo.processIdentifier,"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? mainWindow.isVisible,"bridgeCount":model.bridgeCount,"displayedChatCount":model.chats.count,"startedInBackground":background,"runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()],uniquingKeysWith:{$1})
         guard let data=try? JSONSerialization.data(withJSONObject:state,options:.sortedKeys),data != lastStatus else{return}
         do {
             try FileManager.default.createDirectory(at:model.home,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])

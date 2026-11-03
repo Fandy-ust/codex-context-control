@@ -75,3 +75,5 @@ The default is `~/.codex/skills/context-manager`, or `$CODEX_HOME/skills/context
 Run the same command after extension updates to update the skill. It replaces unmodified managed `SKILL.md` content, preserves unrelated files and stops if you edited the skill; `--force` explicitly replaces local edits. Installing the extension alone does not modify any agent's skills.
 
 For another agent supporting `SKILL.md`, choose its skills parent directory with `skill install --path "/path/to/agent/skills"`. `skill path` locates the bundled copy. Alternatively copy the repository's `skills/context-manager` folder into the agent's skills directory; the extension and its CLI are still required.
+
+Since 0.27.34 the main panel displays the full lightweight cached catalog. The twenty-chat cap limits hot state/usage reads, not visibility. Selecting a cold chat refreshes it immediately; unchanged catalogs are not retransmitted.
