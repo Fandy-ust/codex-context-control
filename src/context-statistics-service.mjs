@@ -1,7 +1,7 @@
 import {Worker} from 'node:worker_threads';
 import {codexHome} from './paths.mjs';
 
-export function createContextStatisticsService(home=codexHome,{idleMs=30000,cacheMs=1000,maxWorkers=2,timeoutMs=25000}={}){
+export function createContextStatisticsService(home=codexHome,{idleMs=30000,cacheMs=1000,maxWorkers=2,timeoutMs=25000,onWorkerError=()=>{}}={}){
   const cache=new Map(),pending=new Map(),queue=[],slots=[];
   const workerLimit=Number.isInteger(maxWorkers)?Math.max(1,Math.min(2,maxWorkers)):2;
   let sequence=0,closed=false,workerStarts=0,lastDiagnostics=null;
@@ -18,7 +18,7 @@ export function createContextStatisticsService(home=codexHome,{idleMs=30000,cach
     worker.on('message',message=>{if(message.taskId!==slot.job?.taskId)return;lastDiagnostics=message.diagnostics??null;const cached=slot.job.cached;
       const invalidReuse=message.resultReused&&(!cached||cached.key!==message.resultKey);
       complete(slot,message.error?new Error(message.error):invalidReuse?new Error('统计缓存已失效，请重试'):null,{data:message.resultReused?cached?.data:message.result,key:message.resultKey});});
-    worker.on('error',()=>complete(slot,new Error('统计进程无法完成，请刷新重试')));
+    worker.on('error',error=>{try{onWorkerError({code:error.code??null,message:String(error.message).slice(0,500)});}catch{}complete(slot,new Error('统计进程无法完成，请刷新重试'));});
     worker.on('exit',()=>{clearTimeout(slot.idleTimer);if(slot.job)complete(slot,new Error('统计进程已退出，请重试'));else {const i=slots.indexOf(slot);if(i>=0)slots.splice(i,1);}});
     return slot;
   }

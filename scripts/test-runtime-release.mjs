@@ -11,7 +11,7 @@ const output=path.join(repo,'build/runtime-release');fs.mkdirSync(output,{recurs
 const version=JSON.parse(fs.readFileSync(path.join(repo,'package.json'))).version;
 const groups=[
  ['launch',process.platform==='darwin'?['mac-runtime-launcher']:process.platform==='win32'?['windows-launcher','windows-launcher-retarget']:[]],
- ['lifecycle',['runtime-lifecycle','runtime-lifecycle-process']],
+ ['lifecycle',['runtime-lifecycle','runtime-lifecycle-process','service-reinstall']],
  ['passive-observation',['passive-quota','passive-quota-http','runtime-compatibility','compatibility']],
  ['budget-and-handoff',['compaction-compensation','context-operations','context-schedule-quota','context-schedules']],
  ['bounded-local-work',['statistics-performance','statistics-projection','hot-chats']]

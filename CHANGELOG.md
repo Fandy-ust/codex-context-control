@@ -1,3 +1,8 @@
+## 0.27.33
+
+- Keep the controller working directory in persistent app data so replacing/reinstalling code cannot break all statistics workers with ENOENT uv_cwd. Apply to both desktop platforms and direct service startup.
+- Add a real-service regression that removes its original launch directory and verifies statistics still work.
+
 ## 0.27.32
 
 - Return an explicit agent instruction when a one-shot handoff requires ending the current turn; replayed/completed receipts request inspection instead.
