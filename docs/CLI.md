@@ -86,3 +86,5 @@ Agent 可以主动评估剩余任务、上下文价值和余量，选择继续�
 扩展更新后重新运行同一命令即可更新 skill。安装器仅替换自己管理且未经修改的 `SKILL.md`，保留其他文件；本地内容被修改时会停止，确认要覆盖后可加 `--force`。扩展安装过程不会自动改动 agent 的 skills。
 
 其他支持 `SKILL.md` 的 agent 可指定 skills 父目录：`context-manager skill install --path "/path/to/agent/skills"`。`skill path` 返回 扩展内置副本的位置。从 GitHub 手动安装时，把 `skills/context-manager` 文件夹放入 agent 的 skills 目录即可；仍需安装带 CLI 的 Context Manager。
+
+主面板从 0.27.34 起使用完整的轻量缓存列表；20条限制仅作用于热状态和用量扫描，不限制展示。旧聊天被选中时立即加载，索引未变化时不重复传输。

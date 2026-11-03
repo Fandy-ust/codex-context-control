@@ -225,7 +225,7 @@ export async function startDaemon() {
     for(const id of operations.pendingThreadIds())ids.add(id);
     return [...ids];
   }
-  function state({selectedIds=[]}={}){
+  function state({selectedIds=[],includeCatalog=false,catalogRevision=null}={}){
     if(!Array.isArray(selectedIds)||selectedIds.length>20||selectedIds.some(id=>typeof id!=='string'||id.length>256))throw Error('Invalid selected chats');
     const requiredIds=[...criticalThreadIds(),...selectedIds];store.setRequiredIds(requiredIds);store.refreshMetadata(false,selectedIds);
     const fix=runtimeFix.status(undefined,[...bridges.values()]),ext=extensionState(fix);
@@ -233,7 +233,8 @@ export async function startDaemon() {
     const threads=ids.map(id=>publicThread(id,ext,false)).sort(compareThreadActivity);
     // Keep background monitoring light: speed sampling is needed only while the tray menu is visible.
     try{if(JSON.parse(fs.readFileSync(path.join(root,'ui-status.json'),'utf8')).menuWindowVisible===true)responseSpeeds.observe(threads);}catch{}
-    return {hotChats:{limit:HOT_CHAT_LIMIT,returned:threads.length},apiVersion:CONTROL_API_VERSION,capabilities:{agentContext:true,contextOperations:true,contextSchedules:true,reasoningBudget:true,visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,queueAccountSwitch:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueueState(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:accountQuotaState(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
+    const chatCatalog=includeCatalog&&catalogRevision!==store.catalogRevision?store.sidebarCatalog():null;
+    return {...(includeCatalog?{catalogRevision:store.catalogRevision,chatCatalog}:{}),hotChats:{limit:HOT_CHAT_LIMIT,returned:threads.length},apiVersion:CONTROL_API_VERSION,capabilities:{agentContext:true,contextOperations:true,contextSchedules:true,reasoningBudget:true,visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,queueAccountSwitch:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueueState(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:accountQuotaState(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
   }
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version,buildId};
@@ -288,6 +289,7 @@ export async function startDaemon() {
       // their native parent metadata before replying with the auto-apply policy.
       store.refreshMetadata(false,[p.id]);const inherited=store.inheritDiscoveredForks();
       if(!Object.hasOwn(store.data.policies,p.id)&&p.newChatPolicy&&b.newChatDefaultsVersion!=null&&!p.ephemeral&&p.canAcceptDirectInput!==false&&!store.data.threads[p.id].forkedFromId){store.data.policies[p.id]={...persistedNewChatPolicy(p.newChatPolicy,runtimeModel(p.id,clean.model,b.contextCeiling===CONTEXT_CEILING_VERSION)),updatedAt:Date.now()};}
+      store.updateCatalog({...store.data.threads[p.id],...store.metadata.get(p.id)});
       Object.assign(store.data.threads[p.id],reconcileWindowConfirmation(store.data.threads[p.id],store.data.policies[p.id],modelFor(p.id)));
       if(inherited||previousPolicy!==JSON.stringify(store.data.policies[p.id]??null))store.save();else store.scheduleSave();
       // Completion still reconciles when monitoring was switched off mid-turn.

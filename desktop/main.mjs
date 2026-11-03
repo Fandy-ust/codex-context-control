@@ -105,7 +105,7 @@ async function api(action,params={}){
     return {ok:true};
   }
   const route=assertControlOperation(action==='state'?'hot-state':action);
-  if(action==='state')params={selectedIds:Array.isArray(params?.selectedIds)?params.selectedIds:typeof params?.selectedId==='string'?[params.selectedId]:[]};
+  if(action==='state')params={selectedIds:Array.isArray(params?.selectedIds)?params.selectedIds:typeof params?.selectedId==='string'?[params.selectedId]:[],includeCatalog:params?.includeCatalog===true,catalogRevision:params?.catalogRevision??null};
   const connection=readJSON(path.join(root,'connection.json'));
   if(!Number.isSafeInteger(connection?.port)||connection.port<1||connection.port>65535||!/^[a-f0-9]{64}$/.test(connection.token||''))throw Error('Local service connection is unavailable');
   const response=await fetch(`http://127.0.0.1:${connection.port}${route.path}`,{method:route.method,headers:{Authorization:`Bearer ${connection.token}`},...(route.method==='POST'?{body:JSON.stringify(params)}:{}),signal:AbortSignal.timeout(['statistics','quota-analytics'].includes(action)?60000:30000)});

@@ -1,3 +1,8 @@
+## 0.27.34
+
+- Restore the complete main-panel chat list through a lightweight cached catalog. The twenty-chat limit applies to hot state/usage reads, not sidebar visibility.
+- Transfer the catalog once and resend only when its revision changes. Selecting an old chat immediately requests its latest state and retains its numeric cache. Apply on both native macOS and Windows.
+
 ## 0.27.33
 
 - Keep the controller working directory in persistent app data so replacing/reinstalling code cannot break all statistics workers with ENOENT uv_cwd. Apply to both desktop platforms and direct service startup.

@@ -22,6 +22,8 @@ test('service reads only recent metadata, pins active/selected chats and lazily 
   assert.equal(d.store.scanRows.length,20);assert.equal(Object.keys(d.store.data.threads).length,20);
   let reads=0;const read=d.store.publicThread.bind(d.store);d.store.publicThread=(...args)=>{reads++;return read(...args);};
   let state=await request('state');assert.equal(state.threads.length,20);assert.equal(reads,20,'cold chats must not be hydrated and then filtered');
+  const catalogued=await request('state',{includeCatalog:true});assert.equal(catalogued.threads.length,20);assert.equal(catalogued.chatCatalog.threads.length,100);assert.equal(d.store.scanRows.length,20,'displaying the cached catalog must not scan cold usage files');
+  const reused=await request('state',{includeCatalog:true,catalogRevision:catalogued.chatCatalog.revision});assert.equal(reused.chatCatalog,null,'unchanged cached catalog must not be resent');
   peer=await connect(async()=>({}));await peer.call('registerBridge',{pid:process.pid});await peer.call('updateThread',{id:'chat-090',model:'fixture',status:'active',turnId:'long-running',lastStartedAt:now-1000000});
   state=await request('state');assert.equal(state.threads.length,21);assert.ok(state.threads.some(t=>t.id==='chat-090'));
   state=await request('state',{selectedIds:['chat-080']});assert.equal(state.threads.length,22);assert.ok(state.threads.some(t=>t.id==='chat-080'));assert.ok(d.store.scanRows.length<=22);
