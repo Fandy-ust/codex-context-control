@@ -19,6 +19,24 @@ test('existing visible budgets migrate once, and the native catalog is copied wi
 });
 function setup(){const child=new EventEmitter();child.stdin=new PassThrough();child.stdout=new PassThrough();const input=new PassThrough(),output=new PassThrough(),writes=[],responses=[];const bridge=new Bridge(child,input,output,async()=>({}),async()=>null,{contextCeiling:1});child.stdin.on('data',d=>writes.push(...d.toString().trim().split('\n').map(JSON.parse)));output.on('data',d=>responses.push(...d.toString().trim().split('\n').map(JSON.parse)));const r=bridge.record('chat');Object.assign(r,{status:'idle',observedWindow:920000,lastUsage:{totalTokens:903990}});return {bridge,r,writes,responses,close(){bridge.frontLines.close();bridge.backLines.close();for(const stream of [input,output,child.stdin,child.stdout])stream.destroy();}};}
 const tick=()=>new Promise(r=>setImmediate(r));
+test('null and omitted ceiling config use the same defaults as an empty object',()=>{
+ assert.deepEqual(ceilingConfig(null),ceilingConfig({}));
+ assert.deepEqual(ceilingConfig(),ceilingConfig({}));
+});
+test('desktop start and resume with null config preserve the connection and forward requests',async()=>{
+ for(const method of ['thread/start','thread/resume']){
+  const f=setup();try{
+   f.bridge.fromClient(JSON.stringify({id:20,method,params:{threadId:'chat',config:null}}));
+   await tick();
+   const request=f.writes.find(x=>x.id===20);
+   assert.ok(request,`${method} must reach the runtime`);
+   assert.deepEqual(request.params.config,ceilingConfig({}));
+   f.bridge.fromClient(JSON.stringify({id:21,method:'model/list',params:{}}));
+   assert.ok(f.writes.find(x=>x.id===21),'subsequent requests must still reach the runtime');
+   assert.equal(f.responses.some(x=>x.error),false);
+  }finally{f.close();}
+ }
+});
 test('new input waits for native compaction and updated usage before being sent',async()=>{
  const f=setup();try{f.bridge.fromClient(JSON.stringify({id:1,method:'turn/start',params:{threadId:'chat',input:[{type:'text',text:' a'.repeat(50)}]}}));assert.equal(f.writes.length,1);assert.equal(f.writes[0].method,'thread/compact/start');
  f.bridge.fromServer(JSON.stringify({id:f.writes[0].id,result:{}}));await tick();assert.equal(f.writes.length,1);

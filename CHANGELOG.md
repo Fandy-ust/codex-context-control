@@ -1,3 +1,8 @@
+## 0.27.35
+
+- Fix a shared bridge crash when Codex sends an explicit null configuration while starting or resuming a chat with context extension enabled. Treat null like an omitted configuration so the local runtime connection stays available on macOS and Windows.
+- Add regressions for null configuration defaults, chat start/resume forwarding and subsequent requests.
+
 ## 0.27.34
 
 - Restore the complete main-panel chat list through a lightweight cached catalog. The twenty-chat limit applies to hot state/usage reads, not sidebar visibility.

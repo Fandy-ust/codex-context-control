@@ -21,6 +21,7 @@ export function migrateCeilingPolicy(policy,originalModel){
  return {...policy,window,compact,revision:policy.revision+1,effectivePercent:CEILING_PERCENT,contextCeilingVersion:CONTEXT_CEILING_VERSION,updatedAt:Date.now()};
 }
 export function ceilingConfig(config={}){
+ config??={};
  const result={...config,model_auto_compact_token_limit_scope:'total',model_post_turn_compact_threshold_percent:100};
  result.model_context_window=Math.min(Number.isSafeInteger(config.model_context_window)&&config.model_context_window>=1000?config.model_context_window:CEILING_RAW_WINDOW,CEILING_RAW_WINDOW);
  result.model_auto_compact_token_limit=Math.min(Number.isSafeInteger(config.model_auto_compact_token_limit)&&config.model_auto_compact_token_limit>0?config.model_auto_compact_token_limit:MAX_CONTEXT_COMPACT,MAX_CONTEXT_COMPACT);
