@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {rendererAccountOwner} from '../src/account-project-state.mjs';
 import {createAccountSwitcher,credentialProfile,fileStoreConfig} from '../src/account-switch.mjs';
 import {accountSwitchView} from '../desktop/renderer/account-switch.mjs';
 import {accountVault} from '../src/account-vault.mjs';
@@ -67,6 +69,30 @@ test('switch validates identity, retains the latest outgoing auth, writes refres
   assert.equal(Object.values(f.stored.profiles).find(p=>p.auth.tokens.account_id==='first').auth.tokens.refresh_token,'refresh-2');
   assert.match(fs.readFileSync(path.join(f.codexHome,'config.toml'),'utf8'),/^cli_auth_credentials_store = "file"\nmodel = "Sol"/);assert.equal(f.opened,1);assert.equal(f.manager.state().activeId,id);assert.equal(f.manager.state().busy,false);
   assert.doesNotMatch(fs.readFileSync(path.join(f.home,'account-switch.json'),'utf8'),/new-rotated-secret|access_token/);
+});
+
+function projectSwitchFixture(t,extra={}){
+  const f=fixture(t,extra),signed=id=>{const value=auth(id);value.tokens.id_token='header.'+Buffer.from(JSON.stringify({'https://api.openai.com/auth':{chatgpt_user_id:'user-'+id,chatgpt_account_id:id}})).toString('base64url')+'.signature';return value;};
+  const first=signed('first'),second=signed('second');f.setProfiles([second]);fs.writeFileSync(path.join(f.codexHome,'auth.json'),JSON.stringify(first));
+  const db=new DatabaseSync(path.join(f.codexHome,'state_5.sqlite'));db.exec("CREATE TABLE projects(id TEXT);INSERT INTO projects VALUES('p');CREATE TABLE threads(id TEXT);INSERT INTO threads VALUES('a');");db.close();
+  const file=path.join(f.codexHome,'.codex-global-state.json'),state={'local-projects':{p:{id:'p',name:'Project'}},'thread-project-assignments':{a:{projectKind:'local',projectId:'p'}},'electron-account-renderer-state-v1':{owner:rendererAccountOwner(first),inactive:{}},'electron-persisted-atom-state':{private:'source'}};
+  fs.writeFileSync(file,JSON.stringify(state));fs.writeFileSync(file+'.bak','previous backup');
+  return {...f,file,state,first,second,id:credentialProfile(second,info(second)).id};
+}
+
+test('account commit preserves projects for native desktop activation without sharing account atoms',async t=>{
+  const f=projectSwitchFixture(t);await f.manager.command({action:'switch',id:f.id,confirmed:true});
+  const state=JSON.parse(fs.readFileSync(f.file)),target=state['electron-account-renderer-state-v1'].inactive[rendererAccountOwner(f.second)];
+  assert.equal(target.globals['local-projects'].p.name,'Project');assert.equal(target.globals['thread-project-assignments'].a.projectId,'p');assert.deepEqual(target.atoms,{});
+  assert.equal(fs.readFileSync(f.file+'.bak','utf8'),fs.readFileSync(f.file,'utf8'));assert.deepEqual(JSON.parse(fs.readFileSync(f.file+'.account-switch-backup')),f.state);
+});
+
+test('failed account commit restores auth, config and both project state files',async t=>{
+  let checks=0,folder;const f=projectSwitchFixture(t,{guard:async()=>{if(++checks===2){const file=path.join(folder,'account-switch.json');fs.unlinkSync(file);fs.mkdirSync(file);}}});folder=f.home;
+  const config=path.join(f.codexHome,'config.toml');fs.writeFileSync(config,'model = "Sol"\n');
+  await assert.rejects(f.manager.command({action:'switch',id:f.id,confirmed:true}));
+  assert.deepEqual(JSON.parse(fs.readFileSync(f.file)),f.state);assert.equal(fs.readFileSync(f.file+'.bak','utf8'),'previous backup');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.codexHome,'auth.json'))),f.first);assert.equal(fs.readFileSync(config,'utf8'),'model = "Sol"\n');
 });
 
 test('candidate inspection refreshes only isolated credentials and exposes quota without tokens',async t=>{

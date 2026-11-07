@@ -1,3 +1,8 @@
+## 0.27.36
+
+- Preserve local projects and their saved chat assignments when switching to an account with an empty desktop project list. Support account-scoped renderer state on Windows and macOS without copying cloud identities, remote projects or permissions.
+- Verify destination identity before preparing project state, keep existing destination projects, and roll back project files with credentials and configuration if account commit fails.
+
 ## 0.27.35
 
 - Fix a shared bridge crash when Codex sends an explicit null configuration while starting or resuming a chat with context extension enabled. Treat null like an omitted configuration so the local runtime connection stays available on macOS and Windows.

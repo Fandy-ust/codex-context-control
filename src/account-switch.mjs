@@ -7,6 +7,7 @@ import {privateDirectory} from './platform/index.mjs';
 import {accountVault} from './account-vault.mjs';
 import {nativeAccountSession} from './account-login.mjs';
 import {normalizeQuota} from './account-quota.mjs';
+import {prepareProjectSwitch} from './account-project-state.mjs';
 
 const safeName=value=>typeof value==='string'&&value.length<=40&&!/[\x00-\x1f\x7f]/.test(value);
 const fileBacked=text=>!/^\s*cli_auth_credentials_store\s*=\s*["'](?:keyring|ephemeral)["']/m.test((text||'').split(/^\s*\[/m)[0]);
@@ -101,10 +102,17 @@ export function createAccountSwitcher({home,codexHome,secrets=accountVault(home)
         if(params.force===true&&context.automatic!==true)await prepareSwitch(context);
         await guard(context);if((fs.existsSync(authFile)?fs.readFileSync(authFile):null)?.toString()!==before?.toString())throw Error('登录状态已变化，请重试');
         const latestConfig=fs.existsSync(configFile)?fs.readFileSync(configFile,'utf8'):null;if(latestConfig!==config)throw Error('登录配置已变化，请重试');
+        // Desktop account isolation now also moves project globals. Seed the
+        // verified destination while all desktop processes are stopped.
+        const projects=prepareProjectSwitch(codexHome,before?JSON.parse(before):null,verified.auth);
+        const projectBackup=projects&&fs.existsSync(projects.file+'.bak')?fs.readFileSync(projects.file+'.bak'):null;
         secure(codexHome);atomicJSON(authFile,verified.auth);
         const previousActive=metadata.activeId,previousRestart=metadata.restartRequired;
-        try{atomicText(configFile,fileStoreConfig(config||''));metadata.activeId=selected.id;metadata.restartRequired=true;persist();committed=true;context.committed=true;}
-        catch(error){metadata.activeId=previousActive;metadata.restartRequired=previousRestart;if(before)atomicText(authFile,before);else fs.unlinkSync(authFile);if(config!=null)atomicText(configFile,config);else if(fs.existsSync(configFile))fs.unlinkSync(configFile);throw error;}
+        try{
+          if(projects){atomicText(projects.file+'.account-switch-backup',projects.before);atomicText(projects.file,projects.after);atomicText(projects.file+'.bak',projects.after);}
+          atomicText(configFile,fileStoreConfig(config||''));metadata.activeId=selected.id;metadata.restartRequired=true;persist();committed=true;context.committed=true;
+        }
+        catch(error){metadata.activeId=previousActive;metadata.restartRequired=previousRestart;if(before)atomicText(authFile,before);else fs.unlinkSync(authFile);if(config!=null)atomicText(configFile,config);else if(fs.existsSync(configFile))fs.unlinkSync(configFile);if(projects){atomicText(projects.file,projects.before);if(projectBackup)atomicText(projects.file+'.bak',projectBackup);else if(fs.existsSync(projects.file+'.bak'))fs.unlinkSync(projects.file+'.bak');}throw error;}
         job={status:'switched'};
       }finally{cleanup(folder);}
       if(committed&&params.open!==false){try{await openDesktop();metadata.restartRequired=false;persist();}catch{job={status:'switched',error:'账号已切换，请手动打开 Codex'};}}
