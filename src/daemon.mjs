@@ -265,7 +265,7 @@ export async function startDaemon() {
       if(!['completed','failed','outcome_unknown'].includes(p.state))throw contextError('INVALID_ARGUMENT','Invalid completion state.');
       return operations.transition(operation.id,p.id,{state:p.state,reason:typeof p.reason==='string'?p.reason.slice(0,500):null});
     }
-    if(op==='observeQuota'){if(!bridges.has(peer))throw Error('未注册运行时连接');if(!accountTransition&&!queueAccountAuto?.state().busy){if(p.invalidated===true){passiveQuota.invalidate();quota.invalidate();}else if(passiveQuota.observe(p)){bridges.get(peer).quotaObservedAt=p.observedAt;await quota.sync();}}return {ok:true};}
+    if(op==='observeQuota'){if(!bridges.has(peer))throw Error('未注册运行时连接');if(!accountTransition&&!queueAccountAuto?.state().busy){if(p.invalidated===true){passiveQuota.invalidate();quota.invalidate({keepDisplay:true});}else if(passiveQuota.observe(p)){bridges.get(peer).quotaObservedAt=p.observedAt;await quota.sync();}}return {ok:true};}
     if(op==='localUsage'){if(!bridges.get(peer)?.ids.has(p.id))throw Error('此连接尚未加载聊天');return contextStatistics.observation(p.id);}
     if(op==='updateThread') {
       const b=bridges.get(peer);if(!b)throw new Error('未注册运行时连接');

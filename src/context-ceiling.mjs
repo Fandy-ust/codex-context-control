@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
+import {parse} from 'smol-toml';
 function atomicJSON(file,value){fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});const stage=file+'.'+crypto.randomBytes(6).toString('hex')+'.tmp';try{fs.writeFileSync(stage,JSON.stringify(value),{mode:0o600,flag:'wx'});fs.renameSync(stage,file);}finally{fs.rmSync(stage,{force:true});}}
 import {ceilingModel,CONTEXT_CEILING_VERSION,CEILING_RAW_WINDOW,MAX_CONTEXT_COMPACT} from './core/context-window.mjs';
 export * from './core/context-window.mjs';
@@ -12,6 +13,11 @@ export function prepareContextCatalog({home=process.env.CONTEXT_CONTROL_CODEX_HO
  const source=process.env.CONTEXT_CONTROL_CATALOG_PATH||path.join(home,'models_cache.json');
  try{
   const data=JSON.parse(fs.readFileSync(source));if(!Array.isArray(data.models)||!data.models.length)return null;
+  // A scoped cache (for example auto-review only) must not replace discovery
+  // for the whole desktop runtime. Let native startup refresh it instead.
+  if(!data.models.some(model=>model.visibility==null||model.visibility==='list'))return null;
+  let selectedModel;try{selectedModel=parse(fs.readFileSync(path.join(home,'config.toml'),'utf8')).model;}catch{}
+  if(selectedModel&&!data.models.some(model=>model.slug===selectedModel))return null;
   const models=data.models.map(model=>{const extended=enabled?ceilingModel(model):{...model,context_window:model.context_window??model.max_context_window};if(compensation&&Number.isSafeInteger(extended.context_window)&&extended.context_window>0)extended.max_context_window=Math.max(extended.max_context_window??0,ACCOUNTING_WINDOW_LIMIT);delete extended.context_ceiling;delete extended.context_compact_ceiling;delete extended.native_effective_context_window_percent;return extended;});
   const catalog={models},hash=crypto.createHash('sha256').update(JSON.stringify(catalog)).digest('hex').slice(0,20);
   const file=path.join(control,'catalogs',`context-${enabled?'920k':'native'}-${hash}.json`);

@@ -1,11 +1,60 @@
 ---
 name: context-manager
-description: "Manage Codex context budgets, compaction, response-speed tradeoffs, one-shot task handoffs, task queues and quota monitoring through Context Manager. Use when users request context or speed adjustments, long work approaches compaction, or queues and quotas need management. Assess the task and discuss tradeoffs before adjusting; not for generic Codex configuration."
+description: "Plan and manage your working context to complete long or context-heavy tasks well. Proactively assess retained evidence, remaining work, expected context growth and response speed; use Context Manager to inspect headroom, adjust budgets or hand off at a safe turn boundary. Invoke at meaningful planning checkpoints, after compaction, or when your own task assessment suggests context pressure or a performance bottleneck; no explicit user request is needed. Also handles requested context tuning, task queues and quotas."
 ---
 
 # Context Manager
 
-Context Manager is a local extension for Codex. Its menu bar or system tray panel and CLI share the same local controller. Use the task's needs, local measurements and the user's preferences to manage context interactively; the controller owns runtime validation and execution.
+Use this as a planning capability while doing the user's task. Own the decision about when to inspect context, what information is worth keeping, and whether to continue, change your approach, expand capacity or prepare a handoff. Optimize the whole task's quality, elapsed time, continuity and rework cost. Do not wait for the user to diagnose a context problem or request a command.
+
+The skill supplies decision guidance; it is not a background monitor. Your task assessment initiates occasional checks. The local CLI supplies bounded observations, preflight checks and execution receipts; it cannot judge which evidence the task still needs. Combine both. A hunch that the task has grown, details are becoming hard to reconcile, or responses are slowing is a reason to inspect, not a measurement of context occupancy or model attention.
+
+## Keep a lightweight context plan
+
+At a meaningful planning point, consider:
+
+- **Continuity:** the goal, user constraints and preferences, unresolved hypotheses, important decisions, and evidence needed by the next stage. Separate detail that must remain available from material recoverable through precise file/source references.
+- **Work ahead:** the next useful checkpoint, remaining complexity, likely input/tool-output growth, and room for reasoning, a response and a checkpoint. Forecast a rough range with uncertainty, not an exact token count or the whole task's cumulative billed tokens.
+- **Capacity and timing:** the latest loaded budget, earliest applicable compaction/capacity boundary, observation freshness and any saved change that has not loaded. Plan against the loaded state.
+- **Decision and next check:** continue, narrow retrieval/output, stage the work, adjust capacity, or consolidate at a checkpoint. Revisit when an upcoming action or new evidence could change that choice.
+
+Keep this in the ordinary task plan or checkpoint when it helps continuity; do not create a separate report or persistent file for every task. A short, comfortable task can proceed without a CLI call. For substantial work, inspect at the start of a context-heavy phase when there is no useful recent observation. After a major batch of reads/tool results, a change of phase, an unexpected slowdown, or compaction, decide whether another check would change your next action. Reuse a still-relevant observation instead of checking every message or on a timer.
+
+After compaction or a handoff, reconstruct the goal, constraints, decisions and remaining work from the retained summary and task artifacts. A summary is not a verbatim copy of earlier user messages. Retrieve the relevant original messages or authoritative files when a missing detail affects the next decision; do not reread the entire history by default. Check the current budget once before substantial new context growth when the previous observation may no longer apply. Expanding a window does not restore content already removed by compaction.
+
+## Observe only what can inform the decision
+
+Start with `chat show current --summary`. Inspect loaded versus requested budgets, estimated headroom, freshness, model limits, available actions and pending operations. Use full `chat show` only for missing detail. If speed matters, use `chat speed current --summary`; it returns recent/baseline samples without full context tokenization. Request full statistics only when the extra detail could change the plan. Prefer cached reads; avoid routine `--refresh`, repeated model-list downloads, extra Codex servers or monitoring loops.
+
+Compare the likely growth until the next safe checkpoint with the room to the **earliest loaded compaction or capacity boundary**, allowing for output/reasoning and uncertainty. Account for large tool results before reading them. Treat stale or unavailable estimates as unknown; reduce the next read or use a conservative checkpoint rather than assuming zero usage. If accounting is unknown, the loaded capacity exceeds the reported real ceiling, or the compaction boundary is missing, do not present the resulting headroom as verified usable space. Use bounded work and resolve that uncertainty before a large stage. The controller's accounting overhead is already handled separately; do not add it again to real headroom. Use `chat preflight` to validate a concrete proposed budget, not a universal occupancy percentage or fixed K-sized preset.
+
+Distinguish observed values, your forecast and unknowns. An occasional useful update might be: “The remaining review depends on these earlier decisions. I expect the next batch to add roughly X–Y tokens, so I'll limit the read to the relevant sections and check again before the full comparison.” Only supply numbers when you have a basis; a qualitative estimate is better than invented precision. Report when this changes the plan or explains a tradeoff, not as a recurring status ritual.
+
+## Choose a policy and an action
+
+Default to **quality-first**, using speed as supporting evidence. Policies guide your judgment; they are not CLI modes or fixed window sizes. Adapt to the task phase and the user's expressed priorities while preserving explicit limits.
+
+| Policy | What to optimize and when to change course |
+| --- | --- |
+| Quality-first | Keep decision-critical evidence and continuity. Favor justified expansion when the next phase still needs detailed history. Consolidate once a phase is complete and its essentials can be preserved. |
+| Balanced | Weigh continuity, elapsed time and avoidable growth. Prefer focused retrieval and staged work; expand or consolidate when that improves completion of the task. |
+| Speed-first | Seek a useful result sooner. Diagnose tool waits, repeated work and generation speed; narrow inputs/output or stage deliverables. Consider consolidation if history is dispensable, or offer model/effort alternatives with their tradeoffs. |
+
+Choose the least disruptive action that supports the next phase. More capacity is useful when relevant context needs room to grow; raising a maximum alone neither improves quality nor makes generation faster. Lowering a maximum does not remove existing history. A single slow response does not prove context is the cause: compare available samples under the same model, effort, tier and response kind, and include tool latency and rework in the task-level assessment. Do not oscillate budgets after each sample.
+
+Continue when the work fits. Improve retrieval/output discipline when avoidable growth is the problem. Expand within agreed bounds when valuable history and the next phase need room. Consider compaction at a meaningful checkpoint when completed detail is recoverable; first preserve essential constraints, decisions, source references and next steps. Native compaction chooses the replacement history: `--floor` is a numeric preflight constraint, not a way to pin text or guarantee lossless retention.
+
+## Own routine decisions; involve the user for real tradeoffs
+
+You may inspect, forecast, narrow reads and improve the execution plan on your own. Within the task's authorization and agreed adjustment range, choose and apply useful budget changes with a brief notice and verify their receipts; do not interview before every action. If an adjustment range has not been established, propose one concrete change when needed rather than turning every task into a setup interview.
+
+Seek the user's judgment when important history could be discarded, the quality/cost tradeoff is material, a model/tier change is proposed, or the action exceeds agreed scope. “This is too slow” is evidence to reassess and offer alternatives, not blanket permission to change spending, models or retained history. Existing answers persist; do not request the same choice again.
+
+- **Comfortable room:** keep progressing. Discuss optional tuning asynchronously when useful, without pausing work solely for it.
+- **The next stage may exhaust the loaded room:** anticipate this before large reads or extended work. Explain the relevant evidence, recommendation and tradeoff while there is still time to choose.
+- **The next step risks compaction and a necessary decision is unresolved:** preserve a checkpoint, ask a focused question and end this turn at a safe point. Await the real reply; do not arrange automatic continuation past the unanswered decision.
+
+Interaction helps resolve meaningful choices; it is not the trigger for your awareness. Never treat silence as agreement. Recommend a fork/new chat only when it benefits the task and create it only when authorized.
 
 ## CLI entry point
 
@@ -17,52 +66,13 @@ Start with `--help`; use `queue --help` and `queue schema` for installed capabil
 
 `skill path` locates the bundled skill. When asked to install or update it, use `skill install`; `--path` selects another agent's skills parent directory.
 
-## Context control
+## Resolve the current chat
 
 For “this chat”, use `chat show current --summary`: `current` resolves `CODEX_THREAD_ID` and verifies it against the controller. If unavailable, resolve the target with `chat list` and use its explicit ID. Listing reads 20 lightweight native-index entries; use `chat list --offset 20` (then 40, etc.) when an older target is needed. Normal state reads focus on recent chats plus active, pending and explicitly selected work. A missing row in that hot snapshot does not mean the chat was deleted; `chat show CHAT_ID` loads it on demand. Do not assume the first or most active chat is the current chat. Keep changes scoped to the requested chat; changing global defaults or other chats requires that scope to be authorized.
 
-Own the task's progression: proactively assess context value, remaining work and bottlenecks, then choose whether to continue, optimize or hand off. User feedback refines that judgment; it is not the only trigger. Within the authorized task and agreed bounds, make useful low-disruption adjustments with a brief explanation. Interview the user when a meaningful quality, cost or history-retention tradeoff remains unresolved.
-
-### Choose a working policy
-
-Default to **quality-first** unless the user has expressed another preference. These are agent decision policies, not CLI options or fixed token presets:
-
-| Policy | Priorities and likely choices |
-| --- | --- |
-| Quality-first | Preserve relevant evidence and reasoning continuity. Favor a justified expansion when the next stage still depends on detailed history; consider compaction at a meaningful checkpoint. |
-| Balanced | Weigh continuity against elapsed time and avoidable context growth. Consolidate completed work and keep room for the next stage. |
-| Speed-first | Favor a useful result sooner. Reduce unnecessary output, repeated searches and serial tool work; consider context reduction when history is dispensable, or suggest model/effort alternatives when relevant. |
-
-Treat “this is too slow” as a reason to reassess and offer alternatives, not as permission to silently change models, service tier, spend or discard history. The user's latest preference takes precedence over the default. A policy may change with the task phase; preserve explicit user limits and previously agreed adjustment ranges.
-
-### Assess at useful checkpoints
-
-Assess when the user requests it, before a context-heavy stage, near the anticipated compaction boundary, or when task requirements or observed performance change materially. When space is comfortable and work is progressing, continue without a recurring interview or status report.
-
-Start with `chat show current --summary` (or an explicit ID): inspect the requested and loaded budgets, observation freshness, estimated headroom, model limits, available actions and operation receipts. Use full `chat show` only for additional detail. Get speed/statistics only when they would change the decision; use cached reads and avoid routine `--refresh` or tight polling. `chat speed current --summary` provides a bounded numerical report without full context tokenization; missing or insufficient comparable samples stay unknown. Do not launch another Codex server, fetch model lists repeatedly or add a monitoring loop to support this skill.
-
-Combine these observations with your understanding of the visible working context:
-
-- Which user constraints, unresolved hypotheses, decisions and evidence must survive? Which material can be recovered from files or another authoritative source?
-- What remains until the next meaningful checkpoint, and how much new context might inputs, tool results and responses add? Estimate a range with uncertainty; cumulative billed tokens across requests are not context growth.
-- Will the remaining room accommodate that stage, a response reserve and uncertainty? Use the controller's preflight rather than a universal percentage or a fixed K-sized window.
-- Is delay coming from recorded generation throughput, tool waits, repeated work or a difficult task? State what the available evidence cannot distinguish.
-
-Do not claim access to hidden context, an exact future token count or a measurement of the model's attention. A larger configured window alone does not establish higher actual usage. Before proposed compaction, identify the critical state and, when useful, preserve a concise checkpoint with source references and next steps in an appropriate task artifact. Native compaction controls the replacement history; `--floor` is a numeric preflight constraint, not a way to pin specific text or guarantee lossless retention.
-
-### Keep adjustment interactive
-
-Explain a proposed change briefly: the observed situation, the task-specific reason, the preferred action and its tradeoff. Offer a small number of meaningful choices when the user's preference is unresolved. Use an available asynchronous question/interview facility and continue independent, safe work while awaiting the reply. Do not interpret silence as agreement or ask again for a choice already authorized.
-
-- **Comfortable headroom:** continue working. If an adjustment would be useful, discuss it without pausing solely to wait for optional tuning.
-- **A stage may exhaust the remaining room:** raise the choice before reading large inputs or starting that stage. “Near compaction” depends on anticipated growth and uncertainty, not only the current occupancy percentage.
-- **The next step risks compaction and the necessary decision is unresolved:** preserve a checkpoint, explain why waiting is necessary, and end the current turn at a safe point for the user's decision. Do not interrupt your own runtime, pause unrelated queues or enqueue yourself to simulate this pause.
-
-Execute adjustments within the user's current answer or an already agreed range, with brief notice. Recommendations can include expansion, compaction at a checkpoint, narrower retrieval, a staged deliverable, or a model/effort tradeoff. Recommend a new chat or fork only when useful; do not create one without authorization. Speed improvements are hypotheses to assess against subsequent comparable work, not promises.
-
 ### Decide between soft adjustment and a turn-boundary handoff
 
-First explore with `chat show current --summary`; compare **loaded** headroom with the estimated work until the next safe checkpoint. Use task complexity, evidence that must survive, expected tool-output growth and speed samples where relevant. The agent owns this decision within agreed limits. Explain consequential tradeoffs and interview the user if needed.
+Use the plan and latest observation to select the execution path below. Read again only if the observation is no longer sufficient for this decision.
 
 | Decision | Tool use | Expected response and next action |
 | --- | --- | --- |
@@ -153,7 +163,7 @@ Use `chat speed CHAT_ID --limit 20 --summary` for recorded generation throughput
 
 Compare several available samples under the same model, effort, service tier and response kind, excluding compaction from normal-generation comparisons. Missing measurements stay `null`; output counts can include reasoning. Generation tokens/s is not time to first visible token or end-to-end task duration. A single slow response is insufficient to attribute delay to context size; cached input is still context, not free capacity.
 
-A request to analyze speed does not authorize configuration changes. When the user wants faster work, explain relevant alternatives and their quality, cost or continuity tradeoffs through the interactive process above. After an authorized change, reassess at a useful checkpoint and keep the user's preference open to revision; avoid oscillating budgets after each sample.
+Use speed evidence proactively when it can improve your task plan. A read-only speed investigation does not by itself expand mutation authority; apply the agreed scope and interaction rules above. After a change, compare subsequent work at a useful checkpoint rather than assuming the intervention helped.
 
 ## Results and retries
 

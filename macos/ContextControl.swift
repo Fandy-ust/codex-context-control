@@ -61,7 +61,8 @@ struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPerc
 struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?;let creditBalance:String?}
 struct CreditBaseline:Decodable,Equatable {let last:Double;let baseline:Double}
 struct QuotaAccount:Decodable,Equatable,Identifiable {var id:String{scope};let scope:String;let label:String?;let current:Bool;let showQuota:Bool?;let loginId:String?;let remote:Bool?;let sourceName:String?;let buckets:[QuotaBucket];let updatedAt:Int?;let creditBaselines:[String:CreditBaseline?]?}
-struct QuotaState:Decodable,Equatable {let accounts:[QuotaAccount]?;let resetNotification:QuotaResetEvent?;let creditBaselines:[String:CreditBaseline?]?;let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let displayStale:Bool?;let error:String?;var presentationStale:Bool {displayStale ?? stale}}
+struct QuotaDisplayFallback:Decodable,Equatable {let buckets:[QuotaBucket];let creditBaselines:[String:CreditBaseline?]}
+struct QuotaState:Decodable,Equatable {let accounts:[QuotaAccount]?;let resetNotification:QuotaResetEvent?;let creditBaselines:[String:CreditBaseline?]?;let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let displayStale:Bool?;let error:String?;let displayFallback:QuotaDisplayFallback?;var presentationStale:Bool {displayStale ?? stale};var displayBuckets:[QuotaBucket]{buckets.isEmpty ? displayFallback?.buckets ?? [] : buckets}}
 struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics:Bool?;let creditBaseline:Bool?}
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
 struct ChatSidebar:Decodable,Equatable {let projects:[SidebarProject];let standaloneThreadIds:[String]}
@@ -137,8 +138,8 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var quota:QuotaState?
     @Published var quotaRefreshing=false
     @Published var selectedQuotaID="codex"
-    var selectedQuota:QuotaBucket? {quota?.buckets.first{$0.id==selectedQuotaID} ?? quota?.buckets.first}
-    var selectedCreditBaseline:CreditBaseline? {guard let id=selectedQuota?.id,let entries=quota?.creditBaselines,let value=entries[id] else{return nil};return value}
+    var selectedQuota:QuotaBucket? {quota?.displayBuckets.first{$0.id==selectedQuotaID} ?? quota?.displayBuckets.first}
+    var selectedCreditBaseline:CreditBaseline? {guard let id=selectedQuota?.id,let entries=quota?.displayFallback?.creditBaselines ?? quota?.creditBaselines,let value=entries[id] else{return nil};return value}
     @Published var supportsVisibleBudget=false
     @Published var bridgeCount=0
     @Published var contextCeilingPending=false
@@ -223,7 +224,7 @@ struct ServiceSettings: Decodable {let node:String}
     }
     func acceptQuota(_ value:QuotaState?){
         quota=value
-        if value?.buckets.contains(where:{$0.id==selectedQuotaID}) != true,let first=value?.buckets.first{selectedQuotaID=first.id}
+        if value?.displayBuckets.contains(where:{$0.id==selectedQuotaID}) != true,let first=value?.displayBuckets.first{selectedQuotaID=first.id}
     }
     func resetCredits() async {
         guard let id=selectedQuota?.id else{return};quotaRefreshing=true;defer{quotaRefreshing=false}

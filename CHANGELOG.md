@@ -1,3 +1,23 @@
+## 0.27.40
+
+- Ship the quota display continuity, empty-chat first submission, and startup catalog safeguards together for macOS and Windows, on top of the published project preservation and null-config fixes.
+- Make the shared Context Manager skill guide agents to plan context at useful checkpoints, estimate growth, and preserve relevant evidence before compaction or handoff.
+
+## 0.27.39
+
+- Reject scoped startup model caches containing only hidden models or missing the configured model before generating the desktop model catalog. Keep native model discovery available instead of pinning an incomplete list across the runtime lifetime.
+- Preserve model names, visibility, and hidden entries when the cache is usable. Apply the startup guard to macOS and Windows; retain first-turn historical-accounting behavior from 0.27.38.
+
+## 0.27.38
+
+- Send the first message of a newly created empty chat with its already-loaded context budget, without waiting for historical reasoning accounting or its model metadata. Start accounting checks after the first submission.
+- Preserve checks for resumed and forked chats, second messages after interrupted turns, and oversized first inputs. Apply the shared bridge behavior to macOS and Windows, including automatic tasks.
+
+## 0.27.37
+
+- Keep showing the last quota and Credits values while Codex reconnects or confirms the account on macOS and Windows. Replace them when a new reading arrives, without a cache label.
+- Keep displayed fallback values separate from quota checks for queues and Credits protection.
+
 ## 0.27.36
 
 - Preserve local projects and their saved chat assignments when switching to an account with an empty desktop project list. Support account-scoped renderer state on Windows and macOS without copying cloud identities, remote projects or permissions.

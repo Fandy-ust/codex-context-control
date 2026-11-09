@@ -33,8 +33,8 @@ struct AccountQuotaSection:View {
     private func content(now:Date)->some View {
         VStack(alignment:.leading,spacing:8){
             HStack(spacing:6){Image(systemName:"bolt.fill");Text(L("账户额度")).fontWeight(.medium);Spacer();if model.quotaRefreshing{ProgressView().controlSize(.mini)};Button{Task{await model.refreshQuota()}} label:{Image(systemName:"arrow.clockwise")}.buttonStyle(.plain).disabled(model.quotaRefreshing).help(L("刷新额度"))}.font(.system(size:12)).foregroundStyle(.secondary)
-            if (model.quota?.buckets.count ?? 0)>1 {
-                Picker(L("额度类型"),selection:$model.selectedQuotaID){ForEach(model.quota?.buckets ?? []){bucket in Text(bucket.name).tag(bucket.id)}}.labelsHidden()
+            if (model.quota?.displayBuckets.count ?? 0)>1 {
+                Picker(L("额度类型"),selection:$model.selectedQuotaID){ForEach(model.quota?.displayBuckets ?? []){bucket in Text(bucket.name).tag(bucket.id)}}.labelsHidden()
             }
             if windows.isEmpty && model.selectedQuota?.creditBalance == nil && model.selectedQuota?.hasCredits != true && model.selectedQuota?.unlimitedCredits != true {
                 Text(L(model.quotaRefreshing || model.quota?.loading == true ? "正在读取额度…":"额度暂不可用")).font(.system(size:12)).foregroundStyle(.secondary)

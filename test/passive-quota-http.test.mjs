@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {once} from 'node:events';
+import {selectedQuota} from '../src/quota-display.mjs';
 
 test('only the connected source of the displayed quota suppresses the refresh warning',async()=>{
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'passive-http-')),home=path.join(temp,'codex'),control=path.join(temp,'control');fs.mkdirSync(home);fs.mkdirSync(control);
@@ -32,7 +33,19 @@ test('only the connected source of the displayed quota suppresses the refresh wa
   for(let i=0;i<20;i++){state=await request('state');if(state.bridgeCount===1)break;await new Promise(r=>setTimeout(r,10));}
   assert.equal(state.bridgeCount,1);assert.equal(state.quota.displayStale,true,'an unrelated remaining bridge cannot hide a source disconnect');
   await other.call('observeQuota',latest);assert.equal((await request('state')).quota.displayStale,false,'reconnected sources may replay their latest snapshot');
-  await other.call('observeQuota',{invalidated:true});state=await request('state');assert.equal(state.quota.displayStale,true);assert.deepEqual(state.quota.buckets,[]);
+  await other.call('observeQuota',{invalidated:true});state=await request('state');
+  assert.equal(state.quota.displayStale,true);
+  assert.deepEqual(state.quota.buckets,[]);
+  assert.equal(state.quota.updatedAt,null);
+  assert.equal(state.quota.stale,true,'the retained display must not qualify as live quota');
+  assert.equal(selectedQuota(state.quota,'codex').primary.remainingPercent,40);
+  const refreshed=await fetch(`http://127.0.0.1:${c.port}/quota`,{method:'POST',headers,body:'{}'});
+  assert.equal(refreshed.status,200);
+  assert.equal(selectedQuota(await refreshed.json(),'codex').primary.remainingPercent,40,'manual refresh without a new observation retains the displayed number');
+  await other.call('observeQuota',{...observation,observedAt:Math.max(Date.now(),latest.observedAt+1)});
+  state=await request('state');
+  assert.equal(state.quota.displayFallback,null);
+  assert.equal(selectedQuota(state.quota,'codex').primary.remainingPercent,80,'a new observation replaces the fallback');
  }finally{
   for(const peer of [source,other])if(peer&&!peer.socket.destroyed){const closed=once(peer.socket,'close');peer.socket.destroy();await closed;}
   d.web.closeAllConnections();await new Promise(r=>d.web.close(r));await new Promise(r=>d.ipcServer.close(r));

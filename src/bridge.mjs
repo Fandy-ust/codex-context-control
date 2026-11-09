@@ -82,7 +82,7 @@ export class Bridge {
       const seed=pick(m.params||{},[...resumeFields,...stickyFields,'config','ephemeral']);
       this.external.set(key(m.id),{method:m.method,threadId:id,seed,fork:preparedFork});
     }
-    if(m.method==='turn/start'&&record){record.usageFresh=false;if(this.resolveCompensation)record.compensationTurnPending=true;}
+    if(m.method==='turn/start'&&record){record.initialTurnWithoutHistory=false;record.usageFresh=false;if(this.resolveCompensation)record.compensationTurnPending=true;}
     this.writeBackend(line);
   }
   async prepareNewChat(message){
@@ -144,6 +144,10 @@ export class Bridge {
   budgetKey(policy,budget){return JSON.stringify([policy.revision,budget.window,budget.compact,budget.details]);}
   async syncCompensation(record,requestedModel=null){
     if(!record.policy)return;
+    // Only a freshly created, empty user chat can use its already-loaded
+    // budget without historical reasoning accounting. Consume this exemption
+    // on submission, not on usage arrival (failed/interrupted turns count).
+    if(record.initialTurnWithoutHistory&&!record.forkedFromId&&!record.turnId&&!record.lastUsage&&!record.inheritedUsage)return;
     const policy={...record.policy};
     const switching=requestedModel&&requestedModel!==record.model;
     const budget=await this.runtimeBudget(record,policy);
@@ -192,7 +196,8 @@ export class Bridge {
           const record=this.record(t.id);if(record.model&&m.result.model&&record.model!==m.result.model){record.compensation=null;record.compensationKey=null;record.appliedBudget=null;record.appliedRevision=null;record.usageFresh=false;}const oldConfig=record.seed.config;record.seed={...record.seed,...pending.seed,config:pending.fork?.wasLoaded?oldConfig:{...oldConfig,...pending.seed.config}};
           Object.assign(record,pick(t,['name','cwd','model','ephemeral','canAcceptDirectInput','threadSource']));
           record.model=m.result.model||record.model;record.status=t.status?.type||'idle';record.snapshot=m.result;const activeTurn=t.turns?.findLast(turn=>['inProgress','in_progress'].includes(turn.status));if(activeTurn)record.turnId=activeTurn.id;
-          if(pending.method==='thread/start'&&pending.fork?.newChatPolicy&&!t.ephemeral&&t.canAcceptDirectInput!==false&&!t.forkedFromId){const policy=pending.fork.newChatPolicy;Object.assign(record,{newChatPolicy:policy,policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已沿用新对话默认设置，等待首次窗口读回。'});}
+          if(pending.method==='thread/start'&&pending.fork?.newChatPolicy&&!t.ephemeral&&t.canAcceptDirectInput!==false&&!t.forkedFromId){const policy=pending.fork.newChatPolicy;Object.assign(record,{initialTurnWithoutHistory:!record.turnId&&!record.lastUsage&&!record.inheritedUsage&&!(t.turns?.length),newChatPolicy:policy,policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,configuredWindow:policy.window,expectedWindow:Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'已沿用新对话默认设置，等待首次窗口读回。'});}
+          if(pending.method!=='thread/start')record.initialTurnWithoutHistory=false;
           if(pending.fork?.resumePolicy&&!pending.fork.wasLoaded){const policy=pending.fork.resumePolicy,budget=pending.fork.resumeBudget;Object.assign(record,{policy,policyVersion:policy.revision,appliedRevision:policy.revision,revision:policy.revision,modelInfo:pending.fork.resumeModel,configuredWindow:policy.window,expectedWindow:budget?.details.runtimeWindow??Math.floor(policy.window*(policy.effectivePercent??(this.contextCeiling?90:95))/100),freshUsage:false,usageFresh:false,phase:'awaiting_runtime_confirmation',message:'预算已加载，等待下一次正常请求读回确认。'});if(budget){record.compensation=budget.details;record.compensationKey=this.budgetKey(policy,budget);}this.rememberAppliedBudget(record,budget?{...policy,window:budget.window,compact:budget.compact}:policy);}
           if(pending.fork?.wasLoaded&&!pending.fork.preserveUsage){record.usageFresh=false;record.freshUsage=false;}
           if(pending.method==='thread/start'&&record.policy)this.rememberAppliedBudget(record,record.policy);
@@ -345,7 +350,7 @@ export class Bridge {
       if(this.resolveCompensation&&r.policy){r.locked=true;try{await this.syncCompensation(r,selectedModel);}finally{r.locked=false;}}
       if(this.contextCeiling||r.compensation?.enabled){const logical=r.policy&&Number.isInteger(r.modelInfo?.effective_context_window_percent)?Math.floor(r.policy.window*r.modelInfo.effective_context_window_percent/100):null;const incoming=incomingTokens(input),cap=Math.min(logical??r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,this.contextCeiling?MAX_CONTEXT_INPUT:Number.MAX_SAFE_INTEGER),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if(incoming==null||incoming+reserve>=cap)throw Error('新输入本身已接近上下文上限，请拆分输入。');if(!(task.schedule?.compactionOperationId&&r.usageFresh===false)&&(r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve)){if(task.schedule)throw Error('Scheduled continuation requires another context decision.');if(!contextPrepared)return this.prepareAutomaticContext(id,task);throw Error('压缩后上下文仍接近上限，已暂停任务');}}
       this.checkScheduledTask(r,task);if(task.schedule){if(r.automaticTask.status!=='starting'||r.status!=='idle'||[...this.external.values()].some(p=>p.threadId===id&&p.method==='turn/start'))throw Object.assign(Error('Scheduled handoff changed before submission.'),{code:'SCHEDULE_CHANGED'});params.turnTrigger='context_manager_schedule';params.parentTurnId=task.schedule.sourceTurnId;r.automaticTask.submitted=true;}
-      r.inputEpoch=(r.inputEpoch??0)+1;turnSubmitted=true;const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
+      r.inputEpoch=(r.inputEpoch??0)+1;turnSubmitted=true;r.initialTurnWithoutHistory=false;const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
     catch(error){if(turnSubmitted&&!error.confirmed&&r.automaticTask.turnId&&r.status==='active')throw error;r.automaticTask.status='error';r.automaticTask.error=error.message;r.automaticTask.errorConfirmed=!turnSubmitted||error.confirmed===true;r.automaticTask.errorCode=error.errorCode??null;await this.notify(r);throw error;}
     finally{const queued=r.queue.splice(0);r.queueBytes=0;for(const line of queued)this.fromClient(line);}
   }

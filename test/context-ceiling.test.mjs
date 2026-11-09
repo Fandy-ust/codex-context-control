@@ -80,3 +80,35 @@ test('accounting catalogs expand only internal bounds and preserve native defaul
   assert.equal(fs.readFileSync(file,'utf8'),source);assert.equal(prepareContextCatalog({home,control,enabled:false,compensation:false}),null);
  }finally{fs.rmSync(home,{recursive:true,force:true});}
 });
+
+
+test('partial startup caches do not replace native discovery and complete caches recover',()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-partial-catalog-')),control=path.join(home,'control');
+ const source=path.join(home,'models_cache.json');
+ try{
+  fs.writeFileSync(path.join(home,'config.toml'),'model="fixture"\n');
+  for(const enabled of [false,true]){
+   for(const models of [[{...base,slug:'codex-auto-review',visibility:'hide'}],[{...base,slug:'other',visibility:'list'}]]){
+    fs.writeFileSync(source,JSON.stringify({models}));
+    const before=fs.readFileSync(source,'utf8');
+    const result=prepareContextCatalog({home,control,enabled,compensation:true});
+    assert.equal(result,null);assert.deepEqual(contextCeilingLaunchArgs(['app-server'],result),['app-server']);
+    assert.equal(fs.existsSync(path.join(control,'catalogs')),false);assert.equal(fs.readFileSync(source,'utf8'),before);
+   }
+  }
+  fs.writeFileSync(source,JSON.stringify({models:[{...base,visibility:'list',display_name:'Fixture'},{...base,slug:'codex-auto-review',visibility:'hide'}]}));
+  for(const enabled of [false,true]){
+   const result=prepareContextCatalog({home,control,enabled,compensation:true});
+   const models=JSON.parse(fs.readFileSync(result.file)).models;
+   assert.equal(models.length,2);assert.equal(models[0].display_name,'Fixture');assert.equal(models[0].visibility,'list');assert.equal(models[1].visibility,'hide');
+  }
+ }finally{fs.rmSync(home,{recursive:true,force:true});}
+});
+
+test('hidden-only catalogs are rejected even without a configured model',()=>{
+ const home=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-hidden-catalog-'));
+ try{
+  fs.writeFileSync(path.join(home,'models_cache.json'),JSON.stringify({models:[{...base,visibility:'hide'}]}));
+  assert.equal(prepareContextCatalog({home,control:home,enabled:true,compensation:true}),null);
+ }finally{fs.rmSync(home,{recursive:true,force:true});}
+});

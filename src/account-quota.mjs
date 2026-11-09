@@ -43,7 +43,7 @@ export function normalizeQuota(response){
  return entries.map(([id,value])=>({id,name:typeof value?.limitName==='string'?value.limitName.slice(0,100):id,primary:window(value?.primary),secondary:window(value?.secondary),creditBalance:creditBalance(value?.credits),hasCredits:value?.credits?.hasCredits===true,unlimitedCredits:value?.credits?.unlimited===true})).filter(v=>v.primary||v.secondary||v.creditBalance!=null||v.hasCredits||v.unlimitedCredits).sort((a,b)=>(a.id==='codex'?-1:b.id==='codex'?1:a.id.localeCompare(b.id)));
 }
 export function createQuotaManager({read=async()=>{throw Error('等待 ChatGPT 同步额度');},now=Date.now,interval=10000,home=null,onObservation=null,isConnected=null}={}){
- let buckets=[],updatedAt=null,checkedAt=0,error=null,pending,paused=false;
+ let buckets=[],updatedAt=null,checkedAt=0,error=null,pending,paused=false,generation=0;
  const preferencesFile=home?path.join(home,'quota-preferences.json'):null;
  let preferences;try{preferences=preferencesFile?readJSON(preferencesFile,{}):{};}catch{preferences={};}
  const resetFile=home?path.join(home,'quota-reset-notifications.json'):null;
@@ -51,26 +51,33 @@ export function createQuotaManager({read=async()=>{throw Error('等待 ChatGPT �
  let creditBaselines=preferences?.creditBaselines??{},creditScope=preferences?.creditScope??null;
  const creditAccounts=preferences?.creditAccounts??{};
  const accounts=preferences?.accounts??{};
- const saveBaselines=()=>{if(creditScope)creditAccounts[creditScope]=creditBaselines;if(preferencesFile)atomicJSON(preferencesFile,{...preferences,accounts,creditScope,creditAccounts,creditBaselines});};
+ let displayScope=preferences?.displayScope??creditScope;
+ const saveBaselines=()=>{if(creditScope)creditAccounts[creditScope]=creditBaselines;if(preferencesFile)atomicJSON(preferencesFile,{...preferences,accounts,creditScope,creditAccounts,creditBaselines,displayScope});};
  function state(){
-  const stale=!!error||!!updatedAt&&now()-updatedAt>interval*2;
+  const stale=!!error||!updatedAt||now()-updatedAt>interval*2;
   // A quiet connected client still has the same last reading. Keep age-based
   // freshness for automation, independently of the quota display warning.
   const displayStale=isConnected?!!error||!updatedAt||!isConnected(updatedAt):stale;
-  return {accounts:Object.entries(accounts).map(([scope,value])=>({...value,scope,current:scope===creditScope,creditBaselines:creditAccounts[scope]??{}})).sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt),buckets,resetNotification:resetState?.scope===creditScope?resetState?.event??null:null,accountScope:creditScope,creditBaselines,updatedAt,loading:!!pending,stale,displayStale,error};
+  // Keep the previous display separate from live quota consumed by automation.
+  const saved=displayScope&&Object.hasOwn(accounts,displayScope)?accounts[displayScope]:null;
+  const displayFallback=!buckets.length&&saved?.buckets?.length?{buckets:saved.buckets,creditBaselines:creditAccounts[displayScope]??{}}:null;
+  return {accounts:Object.entries(accounts).map(([scope,value])=>({...value,scope,current:scope===creditScope,creditBaselines:creditAccounts[scope]??{}})).sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt),buckets,displayFallback,resetNotification:resetState?.scope===creditScope?resetState?.event??null:null,accountScope:creditScope,creditBaselines,updatedAt,loading:!!pending,stale,displayStale,error};
  }
  async function refresh(force=false,fromObservation=false){
   if(paused)return state();
   if(pending){await pending;return fromObservation?refresh(false,true):state();}if(!fromObservation&&checkedAt&&now()-checkedAt<(force?10000:interval))return state();checkedAt=now();
+  const sourceGeneration=generation;
   pending=(async()=>{try{
     const response=await read(),observed=normalizeQuota(response),observedAt=Number.isFinite(response.observedAt)?Math.min(response.observedAt,now()):now();if(updatedAt===observedAt)return state();let resetScope=null;
-    if(onObservation)try{const scope=await onObservation({buckets:observed,at:observedAt,account:response.account??null});if(typeof scope==='string')resetScope=scope;if(typeof scope==='string'&&scope!==creditScope){creditScope=scope;creditBaselines=creditAccounts[scope]??{};}}catch{/* History failure does not hide current quota. */}
+    if(onObservation)try{const scope=await onObservation({buckets:observed,at:observedAt,account:response.account??null});if(typeof scope==='string')resetScope=scope;}catch{/* History failure does not hide current quota. */}
+    if(sourceGeneration!==generation)return state();
+    if(resetScope&&resetScope!==creditScope){creditScope=resetScope;creditBaselines=creditAccounts[resetScope]??{};}
     const next={...creditBaselines};for(const bucket of observed)if(!['__proto__','constructor','prototype'].includes(bucket.id))next[bucket.id]=observeCreditBalance(next[bucket.id],bucket.creditBalance);
     if(JSON.stringify(next)!==JSON.stringify(creditBaselines)){creditBaselines=next;saveBaselines();}
     try{const nextReset=observeQuotaResets(resetState,{buckets:observed,scope:resetScope,at:observedAt});if(nextReset!==resetState){resetState=nextReset;if(resetFile)atomicJSON(resetFile,resetState);}}catch{/* Notification persistence must not hide quota. */}
     buckets=observed;updatedAt=observedAt;error=buckets.length?null:'当前账户暂无额度数据';
-    if(resetScope&&resetScope!=='unidentified'&&buckets.length){accounts[resetScope]={label:response.account?.email||response.account?.id||resetScope.slice(-8),buckets,updatedAt};saveBaselines();}
-  }catch{error='暂时无法读取额度';}return state();})().finally(()=>{pending=null;});
+    if(resetScope&&resetScope!=='unidentified'&&buckets.length){accounts[resetScope]={label:response.account?.email||response.account?.id||resetScope.slice(-8),buckets,updatedAt};displayScope=resetScope;saveBaselines();}
+  }catch{if(sourceGeneration===generation)error='暂时无法读取额度';}return state();})().finally(()=>{pending=null;});
   await pending;return state();
  }
  function resetCredits(id,legacy=null){
@@ -81,6 +88,6 @@ export function createQuotaManager({read=async()=>{throw Error('等待 ChatGPT �
   else{creditBaselines={...creditBaselines,[id]:observeCreditBalance(null,bucket.creditBalance)};preferences.creditSources[originKey]='manual';}
   saveBaselines();return state();
  }
- function removeAccounts(scopes){for(const scope of scopes){delete accounts[scope];delete creditAccounts[scope];for(const key of Object.keys(preferences.creditSources??{}))if(key.startsWith(scope+':'))delete preferences.creditSources[key];}if(scopes.includes(creditScope)){creditBaselines={};buckets=[];updatedAt=null;}if(scopes.includes(resetState?.scope)){resetState=null;if(resetFile)atomicJSON(resetFile,null);}saveBaselines();}
- return {state,refresh,sync:()=>refresh(false,true),resetCredits,removeAccounts,async suspend(){paused=true;await pending;return ()=>{paused=false;};},invalidate(){buckets=[];updatedAt=null;checkedAt=0;creditScope=null;creditBaselines={};error=null;saveBaselines();}};
+ function removeAccounts(scopes){for(const scope of scopes){delete accounts[scope];delete creditAccounts[scope];for(const key of Object.keys(preferences.creditSources??{}))if(key.startsWith(scope+':'))delete preferences.creditSources[key];}if(scopes.includes(creditScope)){creditBaselines={};buckets=[];updatedAt=null;}if(scopes.includes(displayScope))displayScope=null;if(scopes.includes(resetState?.scope)){resetState=null;if(resetFile)atomicJSON(resetFile,null);}saveBaselines();}
+ return {state,refresh,sync:()=>refresh(false,true),resetCredits,removeAccounts,async suspend(){paused=true;await pending;return ()=>{paused=false;};},invalidate({keepDisplay=false}={}){generation++;buckets=[];updatedAt=null;checkedAt=0;creditScope=null;creditBaselines={};error=null;if(!keepDisplay)displayScope=null;saveBaselines();}};
 }
