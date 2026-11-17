@@ -22,18 +22,23 @@ export async function setWindowsIntegration(enabled,{probe=probeWindowsLauncher,
     try{await probe(config.shim,config.realBinary);}catch(error){integrationLog('integration.probe_failed',{message:error.message});throw error;}
   }
   let startupChanged=false;
+  let phase='startup';
   try{
     if(enabled){
       enableWindowsStartup(config.shim,startupOptions);startupChanged=true;
+      phase='hooks';
       editOwnedHook({file:hooks,home:root,command,previousCommand:config.hookCommand});
     }else{
       disableWindowsStartup(startupOptions);startupChanged=true;
+      phase='hooks';
       if(config.hookCommand&&fs.existsSync(hooks))editOwnedHook({file:hooks,home:root,command:config.hookCommand,remove:true});
     }
+    phase='preferences';
     atomicJSON(path.join(root,'settings.json'),{...config,hookCommand:enabled?command:null});
     atomicJSON(preferenceFile(),{...previousPreference,version:Math.max(previousPreference.version||1,1),enabled,explicit:origin==='user'||previousPreference.explicit===true,lastError:null});
     integrationLog('integration.preference_saved',{enabled});
   }catch(error){
+    integrationLog('integration.enable_failed',{enabled,phase,message:error.message});
     atomicJSON(path.join(root,'settings.json'),config);
     if(beforeHooks)fs.writeFileSync(hooks,beforeHooks);else fs.rmSync(hooks,{force:true});
     if(startupChanged){try{disableWindowsStartup(startupOptions);if(previousRecord?.value)enableWindowsStartup(previousRecord.value,startupOptions);}catch{}}
