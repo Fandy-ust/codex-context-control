@@ -32,6 +32,20 @@ import UserNotifications
             catch{NSLog("Quota notification delivery failed: %@",error.localizedDescription)}
         }
     }
+    func post(title:String,body:String){
+        guard let center=notificationCenter else{return}
+        if authorizationTask == nil {
+            authorizationTask=Task{(try? await center.requestAuthorization(options:[.alert,.sound])) ?? false}
+        }
+        Task{
+            if let authorizationTask{_ = await authorizationTask.value}
+            let settings=await center.notificationSettings()
+            guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else{return}
+            let content=UNMutableNotificationContent();content.title=title;content.body=body
+            do{try await center.add(UNNotificationRequest(identifier:UUID().uuidString,content:content,trigger:nil))}
+            catch{NSLog("Context notification delivery failed: %@",error.localizedDescription)}
+        }
+    }
     nonisolated func userNotificationCenter(_ center:UNUserNotificationCenter,willPresent notification:UNNotification,withCompletionHandler completionHandler:@escaping (UNNotificationPresentationOptions)->Void){
         completionHandler([.banner,.sound])
     }

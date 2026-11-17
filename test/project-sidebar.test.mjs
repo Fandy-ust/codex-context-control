@@ -86,5 +86,8 @@ test('sidebar repeats project chats in Recent, respects collapse and escapes met
   assert.equal((closed.match(/data-id="a"/g)||[]).length,1);assert.match(closed,/No chats yet/);assert.match(closed,/data-id="single"/);
   const refreshed=projectSidebar({...args,threads:args.threads.map(chat=>chat.id==='a'?{...chat,lastActivityAt:400}:chat)});const recentUpdated=refreshed.slice(refreshed.indexOf('recent-section'));assert.ok(recentUpdated.indexOf('data-id="a"')<recentUpdated.indexOf('data-id="single"'));assert.equal(args.threads[0].lastActivityAt,200);
   const recentClosed=projectSidebar({...args,recentExpanded:false});assert.equal((recentClosed.match(/data-sidebar-scroll=/g)||[]).length,1);assert.ok(!recentClosed.slice(recentClosed.indexOf('recent-section')).includes('data-id="single"'));assert.match(recentClosed,/data-action="recent-toggle" aria-expanded="false"/);
+  const projectsClosed=projectSidebar({...args,projectsExpanded:false,expanded:new Map([['p',true]])});
+  assert.match(projectsClosed,/data-action="projects-toggle" aria-expanded="false"/);assert.ok(!projectsClosed.includes('project-group'));assert.match(projectsClosed,/data-id="single"/);assert.equal((projectsClosed.match(/data-id="a"/g)||[]).length,1);
+  const bothClosed=projectSidebar({...args,projectsExpanded:false,recentExpanded:false});assert.ok(!bothClosed.includes('class="chat-button'));assert.match(bothClosed,/projects-toggle/);assert.match(bothClosed,/recent-toggle/);
   const fallback=projectSidebar({...args,sidebar:null});assert.match(fallback,/data-id="a"/);assert.match(fallback,/No local projects/);
 });

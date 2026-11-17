@@ -1,4 +1,6 @@
 import {codexBackupsView} from './codex-backups.mjs';
+import {contextReminderSettings} from './context-reminder-settings.mjs';
+import {DEFAULT_REMINDER_CONFIG,normalizeReminderConfig} from '../../src/core/context-reminder-config.mjs';
 import {nextActivationAt} from '../../src/core/activation-schedule.mjs';
 import {movedQueueOrder} from '../../src/core/queue-order.mjs';
 import {accountSwitchView,switchSavedAccount} from './account-switch.mjs';
@@ -6,7 +8,7 @@ import {cloudSyncView,cloudSyncForm} from './cloud-sync.mjs';
 import {responseSpeedContent} from './response-speed.mjs';
 import {activationView} from './quota-activation.mjs';
 import {normalizeTaskSettings} from '../../src/core/task-settings.mjs';
-import {queueStrip,queueManager,queueDetail,queueTaskEditor} from './task-queues.mjs';
+import {queueStrip,queueManager,queuePreferences,queueDetail,queueTaskEditor} from './task-queues.mjs';
 import {quotaAnalyticsView,bindQuotaAnalytics} from './quota-analytics.mjs';
 import {observeCreditBalance} from '../../src/credit-baseline.mjs';
 import {draftLimits as legacyDraftLimits,resizeDraft as legacyResizeDraft,policyForDraft as legacyPolicyForDraft} from '../../src/core/default-budget-editor.mjs';
@@ -41,6 +43,8 @@ let cloudState=null,loginState=null,loginRendered="";
 let activationDraft=null;
 let settingsOpen=false,settingsTab='general',settingsSnapshot=null,settingsUnderlay='';
 let integrationError='',integrationPending=false;
+let chatReminderPending=false;
+let reminderDraft=null,reminderDirty=false,reminderRevision=0,reminderExpanded=false,reminderPreview='';
 let detailsOpen=false,detailsRestoreScroll=null,statsLoading=false,statsError='',rawSelectedID=null,lastDetailBucket=null,smoothingTimer,deferredStats=null;
 let mainNotice='',mainNoticeError=false;
 let budgetInputError='',detailsEpoch=0,serviceAvailable=false,smoothingInteracting=false;
@@ -82,6 +86,7 @@ function observeCredits(quota){
 }
 const trayDrafts=new Map();
 const projectExpansion=new Map(),sidebarScroll=new Map(),detailsScrollByChat=new Map();
+let projectsExpanded=localStorage.getItem('projects-expanded')!=='false';
 let recentExpanded=localStorage.getItem('recent-expanded')!=='false';
 try{const saved=JSON.parse(localStorage.getItem('project-expansion')||'[]');if(Array.isArray(saved))for(const pair of saved)if(Array.isArray(pair)&&typeof pair[0]==='string'&&typeof pair[1]==='boolean')projectExpansion.set(...pair);}catch{}
 root.addEventListener('scroll',event=>{const key=event.target.dataset?.sidebarScroll;if(key)sidebarScroll.set(key,event.target.scrollTop);},true);
@@ -97,6 +102,33 @@ const current=()=>state?.threads.find(t=>t.id===selected);
 const phaseNames={connection_conflict:['接入进程冲突','Connection conflict'],extension_pending:['等待重开 Codex','Restart Codex'],compacting:['正在保护性压缩','Compacting'],confirmed:['窗口已确认','Window confirmed'],awaiting_runtime_confirmation:['预算已加载 · 待确认','Budget loaded · awaiting confirmation'],reloading:['正在应用','Applying'],waiting_for_idle:['等待轮次结束','Waiting for turn end'],queued:['等待轮次结束','Queued'],needs_compaction:['需要先压缩','Compaction needed'],needs_observation:['等待用量记录','Waiting for usage'],error:['需要处理','Needs attention'],mismatch:['需要处理','Readback mismatch'],saved:['已保存','Saved']};
 const phase=thread=>{const names=phaseNames[thread?.phase];return names?t(...names):t('尚未接入','Not connected');};
 function notify(message){const node=document.querySelector('#toast');node.textContent=t(message);node.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.style.display='none',6500);}
+function openChatContextLog(chat){
+  const dialog=document.querySelector('#context-log-dialog');
+  dialog.innerHTML=`<header class="row between"><h2 id="context-log-title">${e(t('上下文管理日志'))}</h2><button class="flat" data-log-close aria-label="${e(t('关闭'))}">×</button></header><div class="row between"><span class="muted">${e(chatName(chat))}</span><button class="flat" data-log-refresh>${e(t('刷新'))}</button></div><div data-log-body aria-live="polite"></div>`;
+  dialog.querySelector('[data-log-close]').onclick=()=>dialog.close();
+  const body=dialog.querySelector('[data-log-body]'),refresh=dialog.querySelector('[data-log-refresh]');
+  const numbers=value=>Number.isSafeInteger(value)?value.toLocaleString():'—';
+  const renderEvent=entry=>{
+    const title=entry.kind==='hook-error'?t('上下文提醒 Hook 执行失败'):entry.kind==='expand'?t('扩容请求'):entry.kind==='compact'?t('原生压缩请求'):t(entry.includePrompt?'完整 Context Planner + 状态':'上下文状态');
+    const detail=entry.kind==='expand'?t('目标窗口 {0} · 压缩阈值 {1}',undefined,numbers(entry.window),numbers(entry.compact))
+      :entry.kind==='reminder'?t('估计 {0} tokens',undefined,numbers(entry.used)):'';
+    const triggers={UserPromptSubmit:'提交消息',PostCompact:'压缩后',first:'首次工具回调',settings:'设置已更新',state:'状态变化',growth:'上下文增量',calls:'工具调用次数',interval:'达到最长间隔'};
+    const states={accepted:'已接受',waiting_for_idle:'等待空闲',executing:'执行中',awaiting_readback:'等待读回',confirmed:'已确认',completed:'已完成',failed:'失败',blocked:'暂缓',cancelled:'已取消',superseded:'已被替代',expired:'已过期',outcome_unknown:'结果未知'};
+    const meta=entry.trigger==='growth'?t('上下文增量 +{0} tokens',undefined,numbers(entry.growth)):t(triggers[entry.trigger]||states[entry.state]||'');
+    const delivery=entry.delivery==='accepted'?t('Codex 已接收'):entry.delivery==='returned'?t('已返回给 Codex，未收到确认'):'';
+    const planner=entry.planner?`<details><summary>${e(t('查看发送的提示词'))}</summary><pre class="context-log-planner">${e(entry.planner)}${entry.plannerTruncated?'…':''}</pre></details>`:'';
+    return `<li><div class="row between"><strong>${e(title)}</strong><time class="tiny muted">${e(new Date(entry.at).toLocaleString())}</time></div><p class="tiny muted">${e([detail,meta,delivery].filter(Boolean).join(' · '))}</p>${planner}</li>`;
+  };
+  const load=async()=>{
+    refresh.disabled=true;body.textContent=t('正在读取…');
+    try{const {events}=await api.invoke('context-reminders',{action:'log',id:chat.id});body.innerHTML=events.length?`<ol class="context-log-list">${events.map(renderEvent).join('')}</ol>`:`<p class="muted">${e(t('此聊天暂无上下文管理日志'))}</p>`;}
+    catch(error){body.textContent=error.message;}
+    finally{refresh.disabled=false;}
+  };
+  refresh.onclick=load;
+  if(!dialog.open)dialog.showModal();
+  void load();
+}
 async function run(action,params={},message){if(busy)return;busy=true;document.body.classList.add('busy');try{const result=await api.invoke(action,params);if(message)notify(message);return result;}catch(error){notify(error.message);throw error;}finally{busy=false;document.body.classList.remove('busy');}}
 function observed(thread){const capacity=displayedContextWindow(thread);return capacity>0&&thread.lastUsage?.totalTokens!=null?Math.max(0,thread.lastUsage.totalTokens/capacity):null;}
 function ring(thread){const fraction=observed(thread);return `<span class="ring" style="--fraction:${Math.min(1,fraction??0)}" aria-hidden="true"><i></i></span>`;}
@@ -105,7 +137,7 @@ function sidebar(){
   const connected=state?.bridgeCount>0;
   const update=state?.update,updating=['downloading','installing'].includes(update?.phase);
   const updateButton=update?.available||updating?`<button class="quick-update" data-action="update" ${updating||busy?'disabled':''} title="${e(update.error||t('安装更新 {0}','Install update {0}',update.version||''))}">${updating?'↻':'↓'} ${e(updating?t('更新中','Updating'):t('有更新','Update'))}</button>`:'';
-  const navigation=projectSidebar({threads:state?.threads,sidebar:state?.sidebar,selected,expanded:projectExpansion,recentExpanded,t,escape:e,chatName,statusText});
+  const navigation=projectSidebar({threads:state?.threads,sidebar:state?.sidebar,selected,expanded:projectExpansion,projectsExpanded,recentExpanded,t,escape:e,chatName,statusText});
   return `<aside class="sidebar"><div class="brand row"><span class="dot ${connected?'on':''}"></span><span>Codex</span>${preferences.demo?`<span class="preview-pill">${e(t('预览','Preview'))}</span>`:''}<span class="grow"></span><span class="tiny">v${e(preferences.version||'')}</span>${updateButton}<button class="settings-trigger" data-action="settings" title="${e(t('设置','Settings'))}" aria-label="${e(t('设置','Settings'))}" aria-haspopup="dialog" aria-expanded="${settingsOpen}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m9.5 3-.7 2.2-2 .9-2.1-.5-2.5 4.3 1.5 1.7v2.3l-1.5 1.7 2.5 4.3 2.1-.5 2 .9.7 2.2h5l.7-2.2 2-.9 2.1.5 2.5-4.3-1.5-1.7v-2.3l1.5-1.7-2.5-4.3-2.1.5-2-.9-.7-2.2Z"/><circle cx="12" cy="12.8" r="3"/></svg></button></div>${navigation}${sidebarAccounts({quota:state?.quota,pool:preferences.quotaPool,observation:creditBaselines[selectedQuota(state?.quota,preferences.quotaPool)?.id],available:serviceAvailable,t,escape:e,language:preferences.language})}</aside>`;
 }
 function slider(value,model,{single=false,id='main'}={}){
@@ -161,11 +193,11 @@ function settingsBudgetCard(value,model,{defaults=false}={}){
 function chatPage(){
   const chat=current();let previewError=budgetInputError;
   if(chat&&!previewError){try{if(!draft)throw Error('等待当前模型的原生窗口信息');applePolicyForDraft(draft,chat.modelMetadata,chat);}catch(error){previewError=error.message;}}
-  return chatView({chat:chat?{...chat,name:chatName(chat)}:null,draft,observedTitle:observedWindowTitle(chat),modelName:modelDisplayName(chat?.model||''),canEdit:!!draft&&chat?.modelMetadata?.context_catalog_ready!==false,previewError,budgetCard,details:queueStrip({quota:state?.quota,chat,queues:state?.taskQueues,e,t})+detailsPage(),notice:mainNotice,noticeError:mainNoticeError,e,t,tokens});
+  return chatView({chat:chat?{...chat,name:chatName(chat)}:null,draft,observedTitle:observedWindowTitle(chat),modelName:modelDisplayName(chat?.model||''),canEdit:!!draft&&chat?.modelMetadata?.context_catalog_ready!==false,previewError,budgetCard,details:queueStrip({quota:state?.quota,chat,queues:state?.taskQueues,e,t})+detailsPage(),notice:mainNotice,noticeError:mainNoticeError,contextReminders:state?.contextReminders,reminderPending:chatReminderPending||!serviceAvailable,e,t,tokens});
 }
 
 function defaultModel(){const l=state?.newChatDefaultsLimits;return l?{max_context_window:Math.ceil(l.maximumUsableWindow*100/l.effectivePercent),effective_context_window_percent:l.effectivePercent,...(l.extended?{context_ceiling:920000,context_compact_ceiling:904000}:{})}:null;}
-function defaultsPage(){return `<div class="content"><div><h1>${e(t('全局默认','Global defaults'))}</h1><p class="muted">${e(t('只影响之后创建的新聊天；分支继续继承父聊天预算。','Only affects new chats. Forks continue to inherit their parent budget.'))}</p></div>${budgetCard(draft,defaultModel(),{defaults:true})}<div class="actions"><button class="primary" data-action="save-defaults" ${!draft?'disabled':''}>${e(t('保存默认值','Save defaults'))}</button><button data-action="copy-current" ${!current()?'disabled':''}>${e(t('使用当前聊天设置','Use current chat settings'))}</button><button class="flat" data-action="reload">${e(t('取消','Cancel'))}</button></div>${state.newChatDefaultsPending?`<div class="state-card">${e(t('已有连接需要重开 Codex 才能加载新聊天默认功能。','Restart Codex to load defaults support in older connections.'))}</div>`:''}</div>`;}
+function defaultsPage(){return `<div class="content"><div><h1>${e(t('新聊天默认值','New chat defaults'))}</h1><p class="muted">${e(t('只影响之后创建的新聊天；分支继续继承父聊天预算。','Only affects new chats. Forks continue to inherit their parent budget.'))}</p></div>${budgetCard(draft,defaultModel(),{defaults:true})}<div class="actions"><button class="primary" data-action="save-defaults" ${!draft?'disabled':''}>${e(t('保存默认值','Save defaults'))}</button><button data-action="copy-current" ${!current()?'disabled':''}>${e(t('使用当前聊天设置','Use current chat settings'))}</button><button class="flat" data-action="reload">${e(t('取消','Cancel'))}</button></div>${state.newChatDefaultsPending?`<div class="state-card">${e(t('已有连接需要重开 Codex 才能加载新聊天默认功能。','Restart Codex to load defaults support in older connections.'))}</div>`:''}</div>`;}
 function setNotice(message,error=false){mainNotice=message||'';mainNoticeError=error;const node=document.getElementById('main-notice');if(node){node.textContent=t(mainNotice);node.hidden=!mainNotice;node.classList.toggle('error',error);node.classList.toggle('muted',!error);}}
 function refreshBudgetValidity(){
   if(editingDefaults()||mode==='tray')return;
@@ -246,15 +278,33 @@ function quotaPanel(compact=false){
   const creditControls=compact?'':`<div class="stack"><button data-action="quota-analytics">▥ ${e(t('额度分析','Quota analytics'))}</button><div class="row wrap"><button data-action="credit-baseline-reset" ${!credit||bucket?.unlimitedCredits||quota?.stale!==false||quota?.loading||!serviceAvailable?'disabled':''}>${e(t('重置 Credits 基准','Reset Credits baseline'))}</button>${Number.isFinite(baseline)?`<span class="tiny muted">${e(t('当前基准：{0}','Current baseline: {0}',baseline.toLocaleString(preferences.language==='zh'?'zh-CN':'en-US',{maximumFractionDigits:20})))}</span>`:''}</div><p class="tiny muted">${e(t('将当前余额设为新的 100%；余额增加时也会自动更新基准。','Use the current balance as the new 100%. Balance increases also reset the baseline automatically.'))}</p></div>`;
   return `<section class="quota-panel ${compact?'compact':'card stack'}"><div class="row between"><h2>${e(t('账户额度','Account quota'))}</h2><button class="small" data-action="quota-refresh" ${busy||quota?.loading?'disabled':''} aria-label="${e(t('刷新额度','Refresh quota'))}">↻ ${e(t('刷新','Refresh'))}</button></div>${buckets.length>1?`<label class="stack tiny" for="quota-pool">${e(t('额度类型','Quota pool'))}<select id="quota-pool">${buckets.map(item=>`<option value="${e(item.id)}" ${item.id===bucket?.id?'selected':''}>${e(item.name)}</option>`).join('')}</select></label>`:''}${windows.map(window=>`<div class="quota-window ${quotaLevel(window.remainingPercent)}"><div class="row between"><span class="muted">${e(period(window))}</span><strong class="num">${e(t('剩余 {0}%','{0}% remaining',Math.round(window.remainingPercent)))}</strong></div><div class="quota-meter"><i style="width:${Math.max(0,Math.min(100,window.remainingPercent))}%"></i></div><div class="tiny muted quota-reset">${quotaReset(window,{t,escape:e,language:preferences.language})}</div></div>`).join('')||`<p class="tiny muted">${e(quota?.loading?t('正在读取额度…','Reading quota…'):t(quota?.error||'额度暂不可用','Quota unavailable'))}</p>`}${bucket?.creditBalance!=null||bucket?.hasCredits||bucket?.unlimitedCredits?`<p class="tiny muted">${e(bucket?.unlimitedCredits?t('额外额度不限量','Unlimited extra credits'):bucket?.creditBalance!=null?t('额外额度：{0}','Extra credits: {0}',bucket.creditBalance):t('额外额度可用','Extra credits available'))}</p>`:''}${creditControls}${compact?'':`<p class="tiny muted">${e(t('同步 Codex 客户端已有额度数据；刷新只读取本地记录。','Sync existing Codex client quota data; refresh only reads local observations.'))}</p>`}</section>`;
 }
-function generalSettings(){
-  const ext=state?.contextExtension,u=state?.update||{};
-  return `<section class="card stack"><h2>${e(t('通用','General'))}</h2><label class="stack tiny" for="language">${e(t('语言','Language'))}<select id="language"><option value="auto" ${preferences.selection==='auto'?'selected':''}>${e(t('自动（按时区）','Automatic (time zone)'))}</option><option value="zh" ${preferences.selection==='zh'?'selected':''}>中文</option><option value="en" ${preferences.selection==='en'?'selected':''}>English</option></select></label><div class="row wrap"><button data-action="scan">↻ ${e(t('同步本地聊天','Sync local chats'))}</button><button data-action="open-codex">↗ ${e(t('打开 Codex','Open Codex'))}</button></div><div class="extension"><div class="row between"><span>${e(t('拓展上下文','Extended context'))}</span><input type="checkbox" id="extension" class="switch" aria-label="${e(t('拓展上下文','Extended context'))}" ${ext?.enabled?'checked':''} ${!ext?.available||!ext?.compatible?'disabled':''}></div><p class="tiny muted">${e(t(ext?.message||'等待 Codex 连接','Waiting for Codex'))}</p></div><div class="extension"><label class="row between" for="auto-check-updates"><span>${e(t('启动时自动检查更新','Check for updates on startup'))}</span><input type="checkbox" id="auto-check-updates" class="switch" ${preferences.autoCheckUpdates!==false?'checked':''}></label><p class="tiny muted">${e(t('发现新版本时提示，由你决定是否安装。','Show a prompt when an update is available. You choose when to install.'))}</p></div><div class="row wrap"><button data-action="update" ${['downloading','installing'].includes(u.phase)?'disabled':''}>↓ ${e(['downloading','installing'].includes(u.phase)?t('正在更新…','Updating…'):u.available?t('安装更新 {0}','Install update {0}',u.version):t('检查更新','Check for updates'))}</button><button data-action="check-update" ${['downloading','installing'].includes(u.phase)?'disabled':''} ${u.available?'':'hidden'}>↻ ${e(t('检查更新','Check for updates'))}</button><span class="tiny muted">v${e(preferences.version||'')}</span></div>${u.error?`<span class="tiny error" role="status">${e(t(u.error))}</span>`:''}<div class="row wrap"><button data-action="diagnostics">${e(t('诊断','Diagnostics'))}</button><button data-action="open-logs">${e(t('打开接入日志','Open integration logs'))}</button></div><div class="feature-note"><strong>${e(t('提前压缩修复','Early compaction fix'))}</strong><p class="tiny muted">${e(t('上游已停用此旧版补丁，Windows 不提供该开关。原生自动压缩与聊天页的压缩触发阈值仍可使用。','The legacy patch is disabled upstream and unavailable on Windows. Native automatic compaction and per-chat thresholds remain available.'))}</p></div></section>`;
+function experimentalSettings(){
+  const reminders=state?.contextReminders;
+  if(!reminderDraft||!reminderDirty&&reminderRevision!==(reminders?.revision??0)){reminderDraft=structuredClone(reminders?.config??DEFAULT_REMINDER_CONFIG);reminderRevision=reminders?.revision??0;}
+  return contextReminderSettings(reminders,reminderDraft,{e,t,busy,available:serviceAvailable,expanded:reminderExpanded,dirty:reminderDirty,preview:reminderPreview});
 }
+function generalSettings(){
+  return `<div class="content"><section class="card stack"><h2>${e(t('语言','Language'))}</h2><select id="language" aria-label="${e(t('语言','Language'))}"><option value="auto" ${preferences.selection==='auto'?'selected':''}>${e(t('自动（按时区）','Automatic (time zone)'))}</option><option value="zh" ${preferences.selection==='zh'?'selected':''}>中文</option><option value="en" ${preferences.selection==='en'?'selected':''}>English</option></select></section><section class="card stack"><div class="row between"><div><h2>${e(t('窗口快捷键','Window shortcut'))}</h2><p class="tiny muted">${e(shortcutEnabled?shortcutLabel(shortcutDraft):t('已关闭','Disabled'))}</p></div><button data-action="settings-tab" data-tab="shortcut">${e(t('修改','Edit'))}</button></div></section></div>`;
+}
+function contextSettings(){
+  const ext=state?.contextExtension;
+  return `<div class="content"><section class="card stack"><label class="row between" for="extension"><h2>${e(t('拓展上下文','Extended context'))}</h2><input type="checkbox" id="extension" class="switch" ${ext?.enabled?'checked':''} ${!ext?.available||!ext?.compatible?'disabled':''}></label><p class="tiny muted">${e(t(ext?.message||'等待 Codex 连接','Waiting for Codex'))}</p></section>${state?defaultsPage():''}</div>`;
+}
+function maintenanceSettings(){
+  const u=state?.update||{};
+  return `<div class="content"><section class="card stack"><div class="row between"><div><h2>Context Manager</h2><p class="tiny muted">v${e(preferences.version||'')}</p></div><button data-action="update" ${['downloading','installing'].includes(u.phase)?'disabled':''}>${e(['downloading','installing'].includes(u.phase)?t('正在更新…','Updating…'):u.available?t('安装更新 {0}','Install update {0}',u.version):t('检查更新','Check for updates'))}</button></div><label class="row between" for="auto-check-updates"><span>${e(t('启动时自动检查更新','Check for updates on startup'))}</span><input type="checkbox" id="auto-check-updates" class="switch" ${preferences.autoCheckUpdates!==false?'checked':''}></label>${u.available?`<button data-action="check-update">${e(t('重新检查','Check again'))}</button>`:''}${u.error?`<p class="tiny error" role="status">${e(t(u.error))}</p>`:''}</section>${integrationSettings()}<section class="card stack"><h2>${e(t('维护工具','Maintenance'))}</h2><div class="row wrap"><button data-action="diagnostics">${e(t('诊断','Diagnostics'))}</button><button data-action="scan">${e(t('重新同步本地聊天','Rescan local chats'))}</button></div></section></div>`;
+}
+const settingsGroups=()=>[
+  ['general',t('通用','General'),'◌'],['defaults',t('上下文','Context'),'▤'],['accounts',t('账号管理','Accounts'),'◎'],['queues',t('任务队列','Task queues'),'☷'],['quota',t('账户额度','Account quota'),'◴'],['automation',t('自动化','Automation'),'↻'],['cloud',t('数据与同步','Data & sync'),'⇅'],['experimental',t('实验性功能','Experimental'),'⚗'],['about',t('关于与维护','About & maintenance'),'ⓘ']
+];
+const settingsGroup=tab=>({shortcut:'general',activation:'automation',backups:'cloud',integration:'about'}[tab]||tab);
 function settingsDialog(){
   if(settingsTab==='accounts')loginRendered=JSON.stringify(loginState);
-  const tabs=[['accounts',t('账号切换','Account switching')],['activation',t('额度启动','Quota activation')],['general',t('通用','General')],['backups',t('备份与恢复','Backup and restore')],['defaults',t('全局默认','Global defaults')],['queues',t('任务队列','Task queues')],['quota',t('账户额度','Account quota')],['cloud',t('云同步','Cloud sync')],['integration',t('Codex 接入','Codex integration')],['shortcut',t('快捷键','Shortcut')]];
-  const content=settingsTab==='backups'?codexBackupsView(backupState,backupSelected,{e,t}):settingsTab==='accounts'?accountSwitchView(loginState,{e,t,pool:preferences.quotaPool,language:preferences.language}):settingsTab==='activation'?activationView(state?.quotaActivation,activationDraft,{e,t}):settingsTab==='cloud'?cloudSyncView(cloudState,{e,t}):settingsTab==='queues'?queueManager({queues:state?.taskQueues,chats:state?.threads??[],e,t}):settingsTab==='general'?generalSettings():settingsTab==='defaults'?(state?defaultsPage():''):settingsTab==='quota'?quotaPanel():settingsTab==='integration'?integrationSettings():shortcutSettings();
-  return `<div class="settings-backdrop" data-action="settings-dismiss"><section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><header class="settings-header row between"><h1 id="settings-title">${e(t('设置','Settings'))}</h1><button class="settings-close flat" data-action="settings-close" aria-label="${e(t('关闭设置','Close settings'))}">×</button></header><nav class="settings-tabs" role="tablist" aria-label="${e(t('设置分类','Settings sections'))}">${tabs.map(([id,label])=>`<button role="tab" id="settings-tab-${id}" aria-controls="settings-panel" aria-selected="${id===settingsTab}" class="${id===settingsTab?'active':''}" data-action="settings-tab" data-tab="${id}">${e(label)}</button>`).join('')}</nav><div class="settings-body" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab-${settingsTab}">${content}</div></section></div>`;
+  const group=settingsGroup(settingsTab),groups=settingsGroups();
+  const sub=group==='automation'?[['automation',t('队列与切号','Queues & switching')],['activation',t('额度保护与预约','Quota protection & schedules')]]:group==='cloud'?[['cloud',t('云同步','Cloud sync')],['backups',t('备份与恢复','Backup & restore')]]:[];
+  const content=settingsTab==='backups'?codexBackupsView(backupState,backupSelected,{e,t}):settingsTab==='accounts'?accountSwitchView(loginState,{e,t,pool:preferences.quotaPool,language:preferences.language}):settingsTab==='activation'?activationView(state?.quotaActivation,activationDraft,{e,t}):settingsTab==='cloud'?cloudSyncView(cloudState,{e,t}):settingsTab==='queues'?`<div class="content"><div class="row between"><h2>${e(t('任务队列','Task queues'))}</h2><button data-action="automation-settings">${e(t('自动化设置','Automation settings'))} ↗</button></div>${queueManager({queues:state?.taskQueues,chats:state?.threads??[],e,t})}</div>`:settingsTab==='automation'?queuePreferences({queues:state?.taskQueues,e,t}):settingsTab==='experimental'?experimentalSettings():settingsTab==='general'?generalSettings():settingsTab==='defaults'?contextSettings():settingsTab==='quota'?quotaPanel():group==='about'?maintenanceSettings():shortcutSettings();
+  const title=t('设置','Settings');
+  return `<div class="settings-backdrop" data-action="settings-dismiss"><section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><header class="settings-header row between"><h1 id="settings-title">${e(title)}</h1><button class="settings-close flat" data-action="settings-close" aria-label="${e(t('关闭','Close'))}">×</button></header><div class="settings-layout"><nav class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="${e(title)}">${groups.map(([id,label,icon])=>`<button role="tab" id="settings-tab-${id}" aria-controls="settings-panel" aria-selected="${id===group}" class="${id===group?'active':''}" data-action="settings-tab" data-tab="${id}"><span aria-hidden="true">${icon}</span>${e(label)}</button>`).join('')}</nav><div class="settings-body" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab-${group}">${settingsTab==='shortcut'?`<button class="flat settings-back" data-action="settings-tab" data-tab="general">← ${e(t('通用','General'))}</button>`:''}${sub.length?`<div class="settings-subtabs">${sub.map(([id,label])=>`<button class="${id===settingsTab?'active':''}" data-action="settings-tab" data-tab="${id}" aria-pressed="${id===settingsTab}">${e(label)}</button>`).join('')}</div>`:''}${content}</div></div></section></div>`;
 }
 function openSettings(tab='general'){
   for(const menu of root.querySelectorAll('.queue-permission-menu,.queue-attach-menu,.queue-model-menu'))menu.open=false;queueModelOpen=false;
@@ -270,12 +320,97 @@ function closeSettings(){
   settingsSnapshot=null;settingsUnderlay='';if(!dirty)loadDraft();render(true);root.querySelector('.settings-trigger')?.focus();
 }
 function switchSettingsTab(tab){
-  if(!['backups','accounts','general','defaults','quota','queues','cloud','integration','shortcut','activation'].includes(tab))return;
+  if(!['backups','accounts','general','defaults','quota','queues','cloud','integration','shortcut','activation','automation','experimental','about'].includes(tab))return;
   if(shortcutRecording)finishShortcutRecording();
   settingsTab=tab;if(tab==='backups')void loadBackups();if(tab==='cloud')void loadCloudSync();if(tab==='accounts')void pollLogins();
   if(tab==='defaults')loadDraft();else if(settingsSnapshot){draft=settingsSnapshot.draft;dirty=settingsSnapshot.dirty;}
   render();root.querySelector('.settings-body').scrollTop=0;root.querySelector(`[data-tab="${tab}"]`)?.focus();
 }
+window.__contextSettingsPreview=async tab=>{
+  if(!preferences.demo)return;
+  if(settingsOpen)closeSettings();
+  openSettings(tab);
+  if(tab==='cloud')await loadCloudSync();
+  if(tab==='accounts')await pollLogins();
+  if(tab==='backups')await loadBackups();
+};
+window.__contextSettingsSmoke=async()=>{
+  if(!preferences.demo)return {ok:false};
+  if(settingsOpen)closeSettings();
+  const previousDraft=draft?{...draft}:null,previousDirty=dirty;
+  let groups=true,overflow=false;
+  for(const tab of ['general','defaults','accounts','queues','quota','automation','activation','cloud','backups','experimental','about','shortcut']){
+    await window.__contextSettingsPreview(tab);
+    groups=groups&&root.querySelectorAll('.settings-tabs [role="tab"]').length===9&&root.querySelectorAll('.settings-tabs [aria-selected="true"]').length===1&&root.querySelector('#settings-title').textContent===t('设置','Settings');
+    const body=root.querySelector('.settings-body');overflow=overflow||body.scrollWidth>body.clientWidth+1;
+    if(tab==='defaults')groups=groups&&!!root.querySelector('#extension')&&!!root.querySelector('[data-action="save-defaults"]');
+    if(tab==='experimental')groups=groups&&!!root.querySelector('#context-reminders')&&!root.querySelector('#context-reminders').checked;
+    if(tab==='automation')groups=groups&&root.querySelectorAll('[data-queue-account-switch-toggle]').length===1;
+    if(tab==='about')groups=groups&&!!root.querySelector('[data-action="integration-toggle"]')&&!!root.querySelector('[data-action="update"]');
+  }
+  await window.__contextSettingsPreview('experimental');
+  let reminderToggle=true;
+  for(const enabled of [true,false]){
+    root.querySelector('#context-reminders').click();
+    for(let n=0;n<100&&(state?.contextReminders?.enabled!==enabled||busy);n++)await new Promise(resolve=>setTimeout(resolve,20));
+    await refresh();render();
+    reminderToggle=reminderToggle&&state?.contextReminders?.enabled===enabled&&root.querySelector('#context-reminders')?.checked===enabled;
+  }
+  const waitReminder=async check=>{for(let n=0;n<150&&!check();n++)await new Promise(resolve=>setTimeout(resolve,20));if(!check())throw Error('Reminder editor action timed out');};
+  root.querySelector('#context-reminder-experiment').open=true;
+  const editReminder=(selector,value)=>{const field=root.querySelector(selector);field.value=value;field.dispatchEvent(new Event('input',{bubbles:true}));};
+  editReminder('#reminder-prompt','Keep the loaded budget. Experiment smoke marker.');editReminder('#reminder-template','Smoke tokens={context_tokens_raw}');editReminder('#reminder-toolCalls','2');
+  root.querySelector('[data-action="reminder-preview"]').click();await waitReminder(()=>reminderPreview.includes('Smoke tokens='));
+  let reminderEditing=!!root.querySelector('.reminder-preview')&&reminderDirty;
+  root.querySelector('[data-action="reminder-save"]').click();await waitReminder(()=>!reminderDirty&&state?.contextReminders?.config?.frequency.toolCalls===2);
+  closeSettings();await window.__contextSettingsPreview('experimental');reminderEditing=reminderEditing&&root.querySelector('#reminder-prompt').value.includes('Experiment smoke marker')&&root.querySelector('#reminder-toolCalls').value==='2';
+  root.querySelector('[data-action="reminder-defaults"]').click();reminderEditing=reminderEditing&&reminderDirty&&root.querySelector('#reminder-prompt').value.includes('at most 100K');
+  root.querySelector('[data-action="reminder-save"]').click();await waitReminder(()=>!reminderDirty&&state?.contextReminders?.config?.frequency.toolCalls===6);
+  closeSettings();
+  const chatToggle=()=>root.querySelector('[data-chat-context-reminders]');
+  let scopedReminders=!chatToggle();
+  await window.__contextSettingsPreview('experimental');root.querySelector('#context-reminders').click();
+  await waitReminder(()=>state?.contextReminders?.enabled===true&&!busy);closeSettings();
+  const chatId=chatToggle()?.dataset.chatContextReminders;
+  scopedReminders=scopedReminders&&!!chatId&&!chatToggle()?.checked;
+  root.querySelector('[data-action="chat-context-log"]')?.click();
+  const logDialog=document.querySelector('#context-log-dialog');
+  await waitReminder(()=>!!logDialog.querySelector('.context-log-list li'));
+  const contextLog=logDialog.open&&!!logDialog.querySelector('.context-log-list li');
+  logDialog.close();
+  for(const enabled of [true,false]){
+    chatToggle()?.click();await waitReminder(()=>!chatReminderPending&&state?.contextReminders?.enabledChatIds?.includes(chatId)===enabled);
+    scopedReminders=scopedReminders&&chatToggle()?.checked===enabled;
+  }
+  const allToggle=()=>root.querySelector('#context-reminders-all');
+  await window.__contextSettingsPreview('experimental');
+  let allReminders=!allToggle()?.checked&&!allToggle()?.disabled;
+  allToggle()?.click();await waitReminder(()=>state?.contextReminders?.allChats===true&&!busy);closeSettings();
+  allReminders=allReminders&&chatToggle()?.checked===true;
+  for(const enabled of [false,true]){
+    chatToggle()?.click();await waitReminder(()=>!chatReminderPending&&state?.contextReminders?.excludedChatIds?.includes(chatId)===!enabled);
+    allReminders=allReminders&&chatToggle()?.checked===enabled;
+  }
+  await window.__contextSettingsPreview('experimental');allToggle()?.click();
+  await waitReminder(()=>state?.contextReminders?.allChats===false&&!busy);closeSettings();
+  allReminders=allReminders&&chatToggle()?.checked===false;
+  await window.__contextSettingsPreview('experimental');root.querySelector('#context-reminders').click();
+  await waitReminder(()=>state?.contextReminders?.enabled===false&&!busy);closeSettings();scopedReminders=scopedReminders&&!chatToggle();
+  await window.__contextSettingsPreview('experimental');
+  const notificationToggle=()=>root.querySelector('#context-reminders-notifications');
+  let developmentNotifications=notificationToggle()?.checked===false&&!notificationToggle()?.disabled;
+  for(const enabled of [true,false]){
+    notificationToggle()?.click();await waitReminder(()=>state?.contextReminders?.operationNotifications===enabled&&!busy);
+    developmentNotifications=developmentNotifications&&notificationToggle()?.checked===enabled;
+  }
+  closeSettings();
+  const preserved=JSON.stringify(draft)===JSON.stringify(previousDraft)&&dirty===previousDirty;
+  openSettings("general");root.querySelector('.settings-tabs [data-tab="accounts"]').click();root.querySelector('.settings-tabs [data-tab="queues"]').click();
+  const unifiedNavigation=settingsTab==='queues'&&root.querySelectorAll('.settings-tabs [role="tab"]').length===9&&!root.querySelector('[data-queue-account-switch-toggle]');
+  root.querySelector('[data-action="automation-settings"]').click();
+  const routed=settingsTab==='automation'&&!!root.querySelector('[data-queue-account-switch-toggle]');closeSettings();
+  return {ok:groups&&!overflow&&preserved&&unifiedNavigation&&routed&&reminderToggle&&reminderEditing&&scopedReminders&&allReminders&&developmentNotifications&&contextLog,groups,overflow,preserved,unifiedNavigation,routed,reminderToggle,reminderEditing,scopedReminders,allReminders,developmentNotifications,contextLog};
+};
 function finishShortcutRecording(){shortcutRecording=false;api.invoke('shortcut-recording',{active:false}).catch(()=>{});const field=document.getElementById('shortcut-input');if(field){field.readOnly=false;field.value=shortcutLabel(shortcutDraft);field.classList.remove('recording');}const button=root.querySelector('[data-action="shortcut-record"]');if(button)button.textContent=t('录制快捷键','Record shortcut');}
 let quotaOutlineObserver;
 function bindSidebar(){
@@ -516,7 +651,18 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
     if(action==='cloud-create-gist'){const result=await api.invoke('cloud-sync',{action:'create-gist',token:root.querySelector('#cloud-token').value.trim()});root.querySelector('#cloud-gist').value=result.gistId;return;}
     if(action==='cloud-generate'){const bytes=crypto.getRandomValues(new Uint8Array(32));const input=root.querySelector('#cloud-key');input.value=Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('');input.type='text';input.focus();input.select();return;}
     if(action==='cloud-guide'){await api.invoke('open-reference',{id:'cloud-sync'});return;}
+    if(action==='automation-settings'){openSettings('automation');return;}
     if(action==='settings'){openSettings();return;}
+    if(action==='chat-context-log'){if(current())openChatContextLog(current());return;}
+    if(action==='reminder-preview'){
+      const result=await api.invoke('context-reminders',{action:'preview',config:normalizeReminderConfig(reminderDraft),id:current()?.id});reminderPreview=result.text;reminderExpanded=true;render();return;
+    }
+    if(action==='reminder-defaults'){reminderDraft=structuredClone(DEFAULT_REMINDER_CONFIG);reminderDirty=true;reminderPreview='';reminderExpanded=true;render();return;}
+    if(action==='reminder-reload'){reminderDraft=structuredClone(state?.contextReminders?.config??DEFAULT_REMINDER_CONFIG);reminderRevision=state?.contextReminders?.revision??0;reminderDirty=false;reminderPreview='';render();return;}
+    if(action==='reminder-save'){
+      const result=await run('context-reminders',{action:'configure',config:normalizeReminderConfig(reminderDraft),expectedRevision:reminderRevision},t('实验参数已保存'));
+      state={...state,contextReminders:result};reminderDraft=structuredClone(result.config);reminderRevision=result.revision;reminderDirty=false;render();return;
+    }
     if(action==='settings-close'){closeSettings();return;}
     if(action==='settings-dismiss'){if(event.target===button)closeSettings();return;}
     if(action==='backups-refresh'){await loadBackups();return;}
@@ -575,6 +721,10 @@ root.addEventListener('click',async event=>{const button=event.target.closest('[
       const saved=await run('shortcut-save',{accelerator:shortcutDraft.trim()?normalizeShortcut(shortcutDraft):'',enabled:shortcutEnabled});
       preferences.shortcut=saved;shortcutDraft=saved.accelerator;shortcutEnabled=saved.enabled;shortcutDirty=false;render();notify(saved.inactive?t('预览设置已保存；真实模式中需单独保存。','Preview preference saved. Save it separately in local mode.'):t('快捷键设置已保存','Shortcut settings saved'));return;
     }
+    if(action==='projects-toggle'){
+      projectsExpanded=button.getAttribute('aria-expanded')!=='true';localStorage.setItem('projects-expanded',String(projectsExpanded));
+      root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();root.querySelector('[data-action="projects-toggle"]')?.focus({preventScroll:true});return;
+    }
     if(action==='recent-toggle'){
       recentExpanded=button.getAttribute('aria-expanded')!=='true';localStorage.setItem('recent-expanded',String(recentExpanded));
       root.querySelector('.sidebar').outerHTML=sidebar();bindSidebar();root.querySelector('[data-action="recent-toggle"]')?.focus({preventScroll:true});return;
@@ -631,6 +781,14 @@ root.addEventListener('pointerdown',event=>{if(event.target.id==='smoothing')smo
 window.addEventListener('pointerup',()=>{if(smoothingInteracting){smoothingInteracting=false;queueMicrotask(applyDeferredStats);}});
 window.addEventListener('pointercancel',()=>{smoothingInteracting=false;});
 root.addEventListener('change',async event=>{
+  if(event.target.matches('[data-chat-context-reminders]')){
+    const input=event.target;const enabled=input.checked;if(chatReminderPending){input.checked=!enabled;return;}
+    chatReminderPending=true;input.disabled=true;
+    try{const result=await api.invoke('context-reminders',{action:'set-chat',id:input.dataset.chatContextReminders,enabled});state={...state,contextReminders:result};}
+    catch(error){input.checked=!enabled;notify(error.message);}
+    finally{chatReminderPending=false;render();}
+    return;
+  }
   if(event.target.matches('[data-cloud-quota-account]')){const input=event.target;input.disabled=true;try{cloudState=await api.invoke('cloud-sync',{action:'set-account-visibility',id:input.dataset.cloudQuotaAccount,visible:input.checked});state=await api.invoke('state');}catch(error){input.checked=!input.checked;notify(error.message);}finally{input.disabled=false;}return;}
   if(event.target.id==='cloud-provider'){root.querySelector('[data-cloud-repository]').hidden=event.target.value==='gist';root.querySelector('[data-cloud-gist]').hidden=event.target.value!=='gist';return;}
   if(event.target.id==='cloud-interval'){root.querySelector('[data-cloud-custom]').hidden=event.target.value!=='-1';return;}
@@ -652,6 +810,14 @@ root.addEventListener('change',async event=>{
   if(target.id==='language'){await api.invoke('language',{selection:target.value});preferences=await api.invoke('preferences');render();}
   if(target.id==='quota-pool'){await api.invoke('quota-select',{id:target.value});preferences.quotaPool=target.value;render();}
   if(target.id==='shortcut-enabled'){if(target.checked&&!shortcutDraft.trim()){shortcutDraft=DEFAULT_SHORTCUT;shortcutEnabled=true;render();}else shortcutEnabled=target.checked;shortcutDirty=true;}
+  if(target.id==='context-reminders-all'||target.id==='context-reminders-notifications'){
+    const enabled=target.checked;target.disabled=true;
+    try{const result=await run('context-reminders',{action:target.id==='context-reminders-all'?'set-all-chats':'set-operation-notifications',enabled});if(result)state={...state,contextReminders:result};}
+    catch{/* run displays the service error. */}
+    finally{render();}
+    return;
+  }
+  if(target.id==='context-reminders'){await run('context-reminders',{enabled:target.checked});await refresh();render();}
   if(target.id==='extension'){await run('extension',{enabled:target.checked});dirty=false;await refresh();render();}
   if(target.id==='reserve'||target.id==='retained'){
     budgetText[target.id]=target.value;
@@ -661,7 +827,8 @@ root.addEventListener('change',async event=>{
   if(target.id==='auto-stats')auto=target.checked;
   if(target.id==='smoothing'){clearTimeout(smoothingTimer);period=Number(target.value);hover=null;drawCharts();}
 }catch{await refresh();}});
-root.addEventListener('input',event=>{if(event.target.id==='shortcut-input'&&!shortcutRecording){shortcutDraft=event.target.value;shortcutDirty=true;}if(event.target.id==='smoothing'){period=Number(event.target.value);document.getElementById('smoothing-label').textContent=period<2?t('关闭','Off'):'EMA '+period;clearTimeout(smoothingTimer);smoothingTimer=setTimeout(()=>{hover=null;if(detailsOpen)drawCharts();},120);}});
+root.addEventListener('toggle',event=>{if(event.target.id==='context-reminder-experiment')reminderExpanded=event.target.open;},true);
+root.addEventListener('input',event=>{if(event.target.id==='reminder-prompt'||event.target.id==='reminder-template'){reminderDraft[event.target.id==='reminder-prompt'?'prompt':'template']=event.target.value;reminderDirty=true;reminderPreview='';}if(event.target.dataset.reminderFrequency){reminderDraft.frequency[event.target.dataset.reminderFrequency]=event.target.value===''?null:Number(event.target.value);reminderDirty=true;reminderPreview='';}if(event.target.id==='shortcut-input'&&!shortcutRecording){shortcutDraft=event.target.value;shortcutDirty=true;}if(event.target.id==='smoothing'){period=Number(event.target.value);document.getElementById('smoothing-label').textContent=period<2?t('关闭','Off'):'EMA '+period;clearTimeout(smoothingTimer);smoothingTimer=setTimeout(()=>{hover=null;if(detailsOpen)drawCharts();},120);}});
 document.addEventListener('keydown',event=>{
   if(!shortcutRecording)return;event.preventDefault();event.stopImmediatePropagation();
   if(event.key==='Escape'){finishShortcutRecording();return;}
@@ -752,12 +919,22 @@ window.__contextSmoke=async({preview=false}={})=>{
     const previousActivity=state;state={...state,threads:state.threads.map(chat=>chat.id==='demo-c'?{...chat,lastActivityAt:Date.now()}:chat)};render();
     projects=projects&&root.querySelector('.recent-section .chat-button')?.dataset.id==='demo-c'&&root.querySelectorAll('.recent-section .chat-button').length===3;
     state=previousActivity;render();
+    const savedSelection=selected,savedExpansion=JSON.stringify([...projectExpansion]);
+    root.querySelector('[data-action="projects-toggle"]').click();
+    projects=projects&&!root.querySelector('.project-group')&&!!root.querySelector('.recent-chats')&&localStorage.getItem('projects-expanded')==='false';
+    render();projects=projects&&!root.querySelector('.project-group')&&root.querySelector('[data-action="projects-toggle"]').getAttribute('aria-expanded')==='false';
+    root.querySelector('[data-action="projects-toggle"]').click();
+    projects=projects&&!!root.querySelector('.project-group')&&selected===savedSelection&&JSON.stringify([...projectExpansion])===savedExpansion;
     const recentHeight=root.querySelector('.recent-section').getBoundingClientRect().height;
     root.querySelector('[data-action="recent-toggle"]').click();
     projects=projects&&!root.querySelector('.recent-section .chat-button')&&root.querySelector('.recent-section').getBoundingClientRect().height<recentHeight&&localStorage.getItem('recent-expanded')==='false';
     render();projects=projects&&!root.querySelector('.recent-section .chat-button');
     root.querySelector('[data-action="recent-toggle"]').click();projects=projects&&root.querySelectorAll('.recent-section .chat-button').length===3;
     const navigation=root.querySelector('.project-navigation'),projectSection=root.querySelector('.projects-section'),recentSection=root.querySelector('.recent-section');
+    projects=projects&&!root.querySelector('.workspace-tools')&&[...root.querySelectorAll('.section-toggle')].every(button=>{
+      const arrow=button.querySelector('.section-chevron').getBoundingClientRect(),label=button.querySelector('.grow').getBoundingClientRect(),bounds=button.getBoundingClientRect();
+      return arrow.left>label.right&&arrow.right<=bounds.right&&Math.abs((arrow.top+arrow.bottom-bounds.top-bounds.bottom)/2)<1;
+    });
     const gutterGap=root.querySelector('.sidebar').getBoundingClientRect().right-navigation.getBoundingClientRect().right;projects=projects&&gutterGap>=0&&gutterGap<=4;
     const sidebarContentWidth=navigation.clientWidth;navigation.style.maxHeight='120px';navigation.scrollTop=0;
     const projectTop=projectSection.getBoundingClientRect().top,recentTop=recentSection.getBoundingClientRect().top;
@@ -817,7 +994,7 @@ window.__contextSmoke=async({preview=false}={})=>{
     state={...state,update:{available:true,version:'99.0.0',phase:'idle'}};render();
     const button=root.querySelector('.quick-update'),gear=root.querySelector('.settings-trigger');
     quickUpdate=!!button&&!button.disabled&&button.title.includes('99.0.0')&&button.getBoundingClientRect().right<=gear.getBoundingClientRect().left;
-    openSettings('general');quickUpdate=quickUpdate&&!!root.querySelector('.settings-body [data-action="check-update"]:not([hidden])');closeSettings();
+    openSettings('about');quickUpdate=quickUpdate&&!!root.querySelector('.settings-body [data-action="check-update"]:not([hidden])');closeSettings();
     state={...state,update:{available:true,version:'99.0.0',phase:'downloading'}};render();quickUpdate=quickUpdate&&root.querySelector('.quick-update')?.disabled;
     state={...state,update:{available:false,phase:'idle'}};render();quickUpdate=quickUpdate&&!root.querySelector('.quick-update');
     state={...state,update:previousUpdate};render();
@@ -990,7 +1167,7 @@ root.addEventListener('submit',async event=>{
 root.addEventListener('input',event=>{if(event.target.closest('#queue-task-editor'))captureQueueTask();});
 root.addEventListener('change',async event=>{
  if(event.target.matches('[data-queue-account-switch-toggle]')){try{await queueCommand({action:'account-switch',enabled:event.target.checked});}catch(error){render();notify(error.message);}return;}
- if(event.target.matches('[data-queue-global-toggle]')){try{await queueCommand({action:'monitoring',enabled:event.target.checked});}catch(error){render();notify(error.message);}return;}
+ if(event.target.matches('[data-queue-global-toggle],[data-continuation-toggle]')){try{await queueCommand({action:event.target.matches('[data-continuation-toggle]')?'continuation':'monitoring',enabled:event.target.checked});}catch(error){render();notify(error.message);}return;}
  if(event.target.matches('[data-queue-toggle]')){try{await queueCommand({id:event.target.dataset.queueToggle,action:'enable',enabled:event.target.checked});}catch(error){render();notify(error.message);}return;}
  if(event.target.closest('#queue-task-editor')&&event.target.name==='model'){captureQueueTask();queueTaskDraft.settings.effort='';render();}
 });
@@ -1022,11 +1199,21 @@ window.__contextQueueSmoke=async()=>{
  const sticky=back.top>=parent.top&&back.bottom<parent.bottom;
  await queueCommand({id:queueID,action:'disable-all'});
  const off=state.taskQueues.queues.every(q=>!q.enabled)&&!state.taskQueues.sleepPrevented;
- openSettings('queues');let manager=!!document.querySelector('[data-action="queue-disable-all"]')&&!!document.querySelector('[data-queue-global-toggle]');
+ openSettings('queues');let manager=!!document.querySelector('[data-action="queue-disable-all"]')&&!document.querySelector('[data-queue-global-toggle]');
+ switchSettingsTab('automation');manager=manager&&!!document.querySelector('[data-queue-global-toggle]');
  for(const enabled of [false,true]){
   document.querySelector('[data-queue-global-toggle]').click();
   const until=Date.now()+3000;while((state.taskQueues.monitoringEnabled!==enabled||busy)&&Date.now()<until)await new Promise(resolve=>setTimeout(resolve,20));
   manager=manager&&state.taskQueues.monitoringEnabled===enabled&&document.querySelector('[data-queue-global-toggle]').checked===enabled;
+  const continuation=document.querySelector('[data-continuation-toggle]');
+  manager=manager&&continuation?.checked===true;
+  if(!enabled){
+   for(const value of [false,true]){
+    document.querySelector('[data-continuation-toggle]').click();
+    const until=Date.now()+3000;while((state.taskQueues.continuationEnabled!==value||busy)&&Date.now()<until)await new Promise(resolve=>setTimeout(resolve,20));
+    manager=manager&&state.taskQueues.monitoringEnabled===false&&state.taskQueues.continuationEnabled===value;
+   }
+  }
  }
  let accountSwitch=!!document.querySelector('.settings-dialog [data-queue-account-switch-toggle]')&&!document.querySelector('.settings-dialog [data-queue-account-switch-toggle]').checked;
  for(const enabled of [true,false]){document.querySelector('.settings-dialog [data-queue-account-switch-toggle]').click();const until=Date.now()+3000;while((state.taskQueues.accountSwitch?.enabled!==enabled||busy)&&Date.now()<until)await new Promise(r=>setTimeout(r,20));accountSwitch=accountSwitch&&state.taskQueues.accountSwitch?.enabled===enabled&&document.querySelector('.settings-dialog [data-queue-account-switch-toggle]').checked===enabled;}
@@ -1151,7 +1338,7 @@ window.__contextAccountsSmoke=async()=>{
   const wait=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,20));}throw Error('Account settings smoke timeout');};
   openSettings('cloud');await wait(()=>root.querySelectorAll('[data-cloud-account-name]').length===2);
   const input=root.querySelector('[data-cloud-account-name]'),id=input.dataset.cloudAccountName;
-  input.value='Smoke work';input.focus();await pollCloudSync();if(document.activeElement!==input||input.value!=='Smoke work')throw Error('Polling replaced name draft');
+  input.closest('details').open=true;input.value='Smoke work';input.focus();await pollCloudSync();if(document.activeElement!==input||input.value!=='Smoke work')throw Error('Polling replaced name draft');
   root.querySelector(`[data-action="cloud-account-rename"][data-id="${id}"]`).click();await wait(()=>cloudState?.accounts.find(a=>a.id===id)?.customName==='Smoke work');
   const toggle=root.querySelector('[data-cloud-quota-account]'),toggleId=toggle.dataset.cloudQuotaAccount;
   toggle.checked=false;toggle.dispatchEvent(new Event('change',{bubbles:true}));await wait(()=>state?.quota?.accounts.find(a=>a.scope==='account:'+toggleId)?.showQuota===false);

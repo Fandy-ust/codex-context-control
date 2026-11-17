@@ -44,7 +44,7 @@ struct CloudSyncView:View {
             Text(L("多设备云同步")).font(.headline)
             Text(L("同步加密的数值统计、账号名称或邮箱、Credits 与额度重置时间，可显示其他设备登录账号的缓存。聊天正文、标题和登录凭据不会上传。")).font(.caption).foregroundStyle(.secondary)
             Toggle(L("启用云同步"),isOn:$enabled).toggleStyle(.switch)
-            accountDeviceSettings
+            DisclosureGroup(L("账号与设备")){accountDeviceSettings.padding(.top,12)}
             Picker(L("同步方式"),selection:$provider){Text(L("GitHub 私有仓库（推荐）")).tag("repository");Text("GitHub Secret Gist").tag("gist")}.pickerStyle(.menu)
             if provider=="repository"{TextField(L("私有仓库 owner/repository"),text:$repository)}
             else{

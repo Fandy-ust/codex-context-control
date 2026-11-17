@@ -26,7 +26,7 @@ test('requests are deduplicated and pending work cancels on manual input, model/
 test('pause, disconnect, expiry and service restart never create a delayed surprise continuation',async t=>{
  for(const mode of ['pause','disconnect','expiry','restart']){
   const f=fixture();t.after(()=>f.engine.close());f.schedule();
-  if(mode==='pause')f.engine.command({action:'monitoring',enabled:false});
+  if(mode==='pause')f.engine.command({action:'continuation',enabled:false});
   if(mode==='disconnect'){f.chat.connected=false;f.engine.observeThread(f.chat);}
   if(mode==='expiry')f.advance(16*60*1000);
   if(mode==='restart'){const next=fixture(f.document);t.after(()=>next.engine.close());assert.equal(next.engine.schedules()[0].state,'cancelled');await next.engine.tick();assert.equal(next.calls.length,0);continue;}
@@ -44,8 +44,31 @@ test('uncertain submissions remain terminal across restart; waiting cancellation
  const f=fixture();t.after(()=>f.engine.close());const receipt=f.schedule();assert.throws(()=>f.engine.cancelSchedule('other',receipt.id),e=>e.code==='SCHEDULE_NOT_FOUND');assert.equal(f.engine.cancelSchedule('chat',receipt.id).state,'cancelled');f.completeSource();await f.engine.tick();assert.equal(f.calls.length,0);
  const g=fixture();t.after(()=>g.engine.close());g.schedule();g.completeSource();await new Promise(r=>setImmediate(r));await g.engine.tick();const restarted=fixture(g.document);t.after(()=>restarted.engine.close());assert.equal(restarted.engine.schedules()[0].state,'outcome_unknown');await restarted.engine.tick();assert.equal(restarted.calls.length,0);
 });
-test('global pause rejects registration and configured quota reserves protect the one-shot',async t=>{
- const f=fixture({monitoringEnabled:false});t.after(()=>f.engine.close());assert.throws(()=>f.schedule(),e=>e.code==='MONITORING_PAUSED');assert.equal(f.engine.schedules().length,0);
+test('the migrated pause persists independently; regular queue pause does not block a handoff',async t=>{
+ const f=fixture({monitoringEnabled:false});t.after(()=>f.engine.close());
+ assert.equal(f.engine.list().continuationEnabled,false);
+ assert.throws(()=>f.schedule(),e=>e.code==='CONTINUATION_PAUSED');
+ assert.equal(f.engine.schedules().length,0);
+ f.engine.command({action:'continuation',enabled:true});
+ const g=fixture(f.document);t.after(()=>g.engine.close());
+ assert.equal(g.engine.list().monitoringEnabled,false);assert.equal(g.engine.list().continuationEnabled,true);
+ g.engine.command({id:'chat',action:'add',prompt:'ordinary queued work'});
+ g.engine.command({id:'chat',action:'enable',enabled:true});
+ g.schedule();
+ g.engine.command({action:'monitoring',enabled:false});
+ await new Promise(r=>setImmediate(r));g.completeSource();
+ g.quotaState.stale=true;await g.engine.tick();
+ assert.equal(g.engine.schedules()[0].state,'waiting_quota');assert.equal(g.calls.length,0);
+ g.quotaState.stale=false;await g.engine.tick();
+ assert.equal(g.calls.length,1);assert.ok(g.calls[0].schedule);
+ assert.equal(g.engine.get('chat').tasks[0].status,'waiting');
+ g.engine.command({action:'continuation',enabled:false});
+ g.chat.status='idle';g.chat.automaticTask.status='completed';
+ await new Promise(r=>setImmediate(r));await g.engine.tick();
+ assert.equal(g.engine.schedules()[0].state,'completed');
+ assert.equal(g.engine.list().monitoringEnabled,false);
+});
+test('configured quota reserves protect the one-shot',async t=>{
  const g=fixture();t.after(()=>g.engine.close());g.engine.command({id:'chat',action:'config',config:{...defaultQueueConfig(),fiveHour:{reserve:40,stages:[]}}});g.quotaState.buckets[0].primary.remainingPercent=30;g.schedule();g.completeSource();await g.engine.tick();assert.equal(g.calls.length,0);assert.equal(g.engine.schedules()[0].state,'waiting_quota');
 });
 test('save-only budgets and old compactions cannot authorize a handoff; its own completed compaction can',async t=>{

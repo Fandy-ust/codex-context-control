@@ -1,4 +1,5 @@
 import {createCompensationManager} from '../src/compaction-compensation.mjs';
+import {createContextReminders,contextReminderCommand} from '../src/context-reminders.mjs';
 import {installQueueCLI,removeQueueCLI} from '../src/cli-launcher.mjs';
 import {editOwnedHook} from '../src/hooks.mjs';
 import fs from 'node:fs';
@@ -28,6 +29,7 @@ const launcherApp=path.join(applications,'Codex Context Launcher.app');
 function editHook(command,remove=false){return editOwnedHook({file:hooksFile,home:root,command,remove});}
 ensureRoot();
 if(process.argv.includes('--uninstall')){
+  createContextReminders().setEnabled(false);
   removeQueueCLI(root);
   disableAutomaticStartup();
   await stopMenuBarEntry(installedApp);
@@ -75,6 +77,7 @@ createCompensationManager({home:root}).setEnabled(false);
   if(previousSettings.hookCommand&&previousSettings.hookCommand!==hookCommand)editHook(previousSettings.hookCommand,true);
   atomicJSON(path.join(root,'settings.json'),inheritedSettings(previousSettings,{version:1,realBinary:binary,node:nodeBinary,hookCommand,desktopExecutable,desktopBundleId:bundle,shim,installedApp,launcherApp}));
   installQueueCLI({home:root,node:nodeBinary,codeRoot:code});
+  createContextReminders({command:()=>contextReminderCommand({home:root,node:nodeBinary,codeRoot:code})}).reconcile();
   // Keep native runtime helpers discoverable beside the shim without changing signed apps.
   const binDir=path.dirname(binary);for(const name of fs.readdirSync(binDir)){
     if(name==='codex'||name==='context-manager')continue;const link=path.join(root,'bin',name);try{fs.unlinkSync(link);}catch{}

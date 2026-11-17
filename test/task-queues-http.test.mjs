@@ -35,6 +35,11 @@ test('queue API authenticates, persists complete prompts and config, validates r
   assert.equal((await response.json()).queues.find(q=>q.id==='unopened').enabled,true);
   response=await post({action:'monitoring',enabled:false});assert.equal(response.status,200);state=await response.json();assert.equal(state.monitoringEnabled,false);assert.equal(state.queues.find(q=>q.id==='unopened').enabled,true);assert.equal(state.sleepPrevented,false);
   assert.equal(JSON.parse(fs.readFileSync(path.join(control,'task-queues.json'))).monitoringEnabled,false);
+  response=await post({action:'continuation',enabled:false});assert.equal(response.status,200);
+  state=await response.json();assert.equal(state.continuationEnabled,false);assert.equal(state.monitoringEnabled,false);
+  response=await post({action:'continuation',enabled:true});assert.equal(response.status,200);
+  state=await response.json();assert.equal(state.continuationEnabled,true);assert.equal(state.monitoringEnabled,false);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(control,'task-queues.json'))).continuationEnabled,true);
   await post({action:'disable-all'});
 
  }finally{bridge?.socket.destroy();d.web.closeAllConnections();await new Promise(r=>d.web.close(r));await new Promise(r=>d.ipcServer.close(r));await new Promise(r=>setTimeout(r,180));fs.rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});}

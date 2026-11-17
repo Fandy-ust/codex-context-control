@@ -218,3 +218,44 @@ input[type=text]{background:#ffffff08;color:inherit;border:1px solid var(--line)
 #activation-time{width:100%;min-width:0;min-height:40px;box-sizing:border-box;font:inherit;background:#ffffff08;color:inherit;border:1px solid var(--line);border-radius:var(--radius-control);padding:10px 12px}#activation-time:disabled{opacity:.45}
 
 .backup-history{display:grid;gap:10px}.backup-point p{margin:6px 0 0}.backup-confirm{border:1px solid var(--blue,#4d80ff)}.backup-panel .state-card p{line-height:1.6}
+
+/* Settings use stable, grouped navigation; workspace tools live beside chats. */
+.settings-dialog{width:min(960px,100%);height:min(700px,calc(100vh - 64px))}
+.settings-header{padding-bottom:20px;border-bottom:1px solid var(--line)}
+.settings-layout{display:grid;grid-template-columns:174px minmax(0,1fr);min-height:0;flex:1}
+.settings-tabs{flex-direction:column;gap:5px;padding:18px 12px;border-bottom:0;border-right:1px solid var(--line);background:#ffffff02}
+.settings-tabs button{display:flex;align-items:center;gap:10px;text-align:left;white-space:normal;padding:11px 12px;line-height:1.4}
+.settings-tabs button>span{width:17px;flex:none;text-align:center;font-size:17px;color:var(--muted)}
+.settings-tabs button.active{background:#ffffff0d;color:#fff}
+.settings-body{padding:24px;scrollbar-gutter:stable}
+.settings-body h2{font-size:15px;margin:0}.settings-body p{line-height:1.6}
+.settings-subtabs{display:flex;gap:6px;margin-bottom:22px;flex-wrap:wrap}
+.settings-subtabs button{background:transparent;border-color:transparent;color:var(--muted);font-size:12px}
+.settings-subtabs button.active{background:#ffffff0c;color:var(--text);border-color:var(--line)}
+.settings-back{margin-bottom:16px}
+.settings-body>.content>.content{margin:0;width:100%;padding:0}
+@media(max-width:720px){.settings-backdrop{padding:14px}.settings-dialog{height:calc(100vh - 28px);max-height:calc(100vh - 28px)}.settings-layout{grid-template-columns:136px minmax(0,1fr)}.settings-tabs{padding:12px 6px}.settings-tabs button{gap:5px;padding:10px 6px}.settings-body{padding:16px}}
+
+.settings-disclosure{border-top:1px solid var(--line);padding-top:14px}
+.settings-disclosure>summary{cursor:pointer;font-size:13px;font-weight:500;color:var(--text);padding:4px 0}
+.settings-disclosure[open]>summary{margin-bottom:16px}
+.settings-body input:not([type]),.settings-body input[type="time"]{background:#ffffff08;color:inherit;border:1px solid var(--line);padding:9px 12px;border-radius:var(--radius-control);min-width:0}
+.settings-body p:empty{display:none}
+.settings-body p{margin:0;line-height:1.6}
+.settings-body h3{margin:0;font-size:13px}
+.settings-body hr{width:100%;border:0;border-top:1px solid var(--line);margin:0}
+
+.sidebar .section-toggle{display:flex;align-items:center;gap:7px;width:100%;min-height:30px;margin:0;padding:7px 10px;border:0;background:transparent;text-align:left;font-size:11px;font-weight:500;color:var(--muted);cursor:pointer}
+.sidebar .section-toggle:hover{background:#ffffff0a;color:var(--text)}
+.section-chevron{display:block;width:12px;height:12px;flex:0 0 12px;align-self:center;margin-left:3px}
+
+.reminder-experiment summary{cursor:pointer}.reminder-experiment-body{padding-top:16px}.reminder-editor{width:100%;min-height:150px;resize:vertical;font-family:Consolas,monospace;font-size:12px;line-height:1.6}.reminder-frequency{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.reminder-frequency input{width:100%}.reminder-fields{overflow-wrap:anywhere;line-height:2}.reminder-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;padding:14px;background:#0003;border-radius:10px;font:12px/1.6 Consolas,monospace}
+
+.budget-context-options:empty{display:none}.budget-context-actions{margin-inline-start:auto;flex-shrink:0;white-space:nowrap}
+.context-log-dialog{width:min(540px,90vw);max-height:75vh;padding:20px;color:inherit;background:var(--panel,#202020);border:1px solid var(--line);border-radius:16px}
+.context-log-dialog::backdrop{background:#0008}
+.context-log-list{max-height:50vh;overflow:auto;padding:0;list-style:none}
+.context-log-list li{padding:10px 0;border-top:1px solid var(--line)}
+.context-log-list li p{margin:4px 0}
+
+.context-log-planner{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;background:#181818;padding:10px;border-radius:8px}

@@ -1,3 +1,76 @@
+## 0.28.0
+
+- Release the experimental Context Planner, status reminders, injection history and independent same-chat continuation for Windows and macOS.
+- Consolidate settings and preserve local project assignments when switching accounts.
+
+## 0.27.55
+
+- Fix Windows lifecycle hooks using PowerShell command invocation and verify the Planner appears in native model input.
+- Record full Planner deliveries in the chat log and distinguish Codex acknowledgements from unconfirmed returns.
+
+## 0.27.54
+
+- Give same-chat continuation a separate switch. Pausing regular queue monitoring does not block continuations; they still use the same quota and context checks.
+
+## 0.27.53
+
+- Add a per-chat log for status injections, expansion requests, and compaction requests, including reminder triggers and the latest available request state.
+
+## 0.27.52
+
+- Add optional system notifications for Context Planner and status injections, CLI expansion requests, and CLI compaction requests on Windows and macOS.
+
+## 0.27.51
+
+- Align the chat's automatic context management switch with the budget note. Add an optional all-chats default with individual opt-outs.
+- Send the full Context Planner at the first eligible hook after enabling, including when a turn is already running.
+
+## 0.27.50
+
+- Make experimental context management opt-in per chat on Windows and macOS. The global switch enables the feature and preserves individual chat preferences when paused.
+- Update the default English planner with early compaction guidance and a 100K per-adjustment default.
+
+## 0.27.49
+
+- Expand the English Context Planner with verification, evidence, the status box, and the shipped CLI. Send rules on user submissions and after compaction; routine tool updates and scheduled handoffs send status only.
+
+## 0.27.48
+
+- Preserve compaction invalidation across experiment parameter edits, reminder toggles and controller restarts, until fresh native usage arrives. Keep immediate next-hook parameter activation without reviving old headroom estimates.
+
+## 0.27.47
+
+- Add an experiment parameters subpanel on both platforms for editing the English prompt, status template and injection frequency; support preview, restore defaults, local persistence, next-hook activation and revision conflicts.
+- Tighten English context guidance: retain the loaded budget unless fresh occupancy and concrete next-checkpoint growth require a change; finish when the remaining work fits. Default autonomous increases to at most 50K per adjustment and a 450K ceiling without explicit user authorization; prohibit chained speculative increases. Apply the same rule in reminder messages and the bundled skill.
+
+## 0.27.46
+
+- Add an off-by-default Context reminders switch under Settings → Experimental on Windows and macOS. Opting in installs informational UserPromptSubmit, PostToolUse and PostCompact hooks, with bounded local IPC, stale-data labels and per-chat throttling.
+- Preserve external hooks on enable, update and disable; require normal Codex hook trust review. Disabling stops injections for existing sessions too. No automatic expansion, compaction, interruption or new turns.
+
+
+## 0.27.45
+
+- Integrate Accounts, Task queues and Account quota directly into the same Settings navigation on Windows and macOS. Remove the separate Workspace shell and the nested management entry in General settings.
+
+## 0.27.44
+
+- Remove the sidebar Accounts/Queues/Quota toolbar and place account/queue management in General settings. Keep the existing quota entry.
+- Align Projects and Recent disclosure icons at the right edge, using fixed-size icons instead of text glyphs on Windows and macOS.
+
+## 0.27.43
+
+- Make Projects and Recent section headings toggle their lists, with clear expansion indicators and independently persisted states on Windows and macOS. Preserve project expansion and selected chats when hiding a section.
+
+## 0.27.42
+
+- Simplify settings into five groups on Windows and macOS. Move accounts, queues and quota into workspace tools; consolidate global queue automation, context defaults and maintenance actions.
+- Remove duplicate global account-switch controls from individual queues and the obsolete Windows compaction-patch notice.
+
+## 0.27.41
+
+- Synchronize local chat project moves and explicit projectless changes when switching to an account that already has projects, while preserving cloud memberships.
+
 ## 0.27.40
 
 - Ship the quota display continuity, empty-chat first submission, and startup catalog safeguards together for macOS and Windows, on top of the published project preservation and null-config fixes.

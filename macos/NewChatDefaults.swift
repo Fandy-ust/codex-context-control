@@ -19,7 +19,7 @@ struct NewChatDefaultsView:View {
     private var maximumCompactK:Int {let p=model.newChatDefaultsLimits?.effectivePercent ?? 95;let raw=(Int(windowK)*1000*100+p-1)/p;return max(17,min(Int(windowK)-16,raw*90/100/1000))}
     var body:some View {
         VStack(alignment:.leading,spacing:22){
-            HStack{VStack(alignment:.leading,spacing:6){Text(L("新对话默认设置")).font(.title2.weight(.semibold));Text(L("新建聊天自动沿用；fork 继承父聊天。已有聊天不受影响。")).font(.callout).foregroundStyle(.secondary)};Spacer()}
+            HStack{VStack(alignment:.leading,spacing:6){Text(L("新聊天默认值")).font(.title2.weight(.semibold));Text(L("新建聊天自动沿用；fork 继承父聊天。已有聊天不受影响。")).font(.callout).foregroundStyle(.secondary)};Spacer()}
             VStack(spacing:18){
                 HStack{metric(L("压缩触发"),Int(compactK),.blue);Spacer();metric(L("预留"),Int(windowK-compactK),.secondary);Spacer();metric(L("上下文窗口"),Int(windowK),.primary)}
                 BudgetRangeSlider(window:Binding(get:{windowK},set:{setWindow($0)}),compact:Binding(get:{compactK},set:{setCompact($0)}),selection:$selection,maximumWindow:maximumWindowK,maximumCompact:maximumCompactK)

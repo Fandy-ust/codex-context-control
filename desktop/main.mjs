@@ -1,4 +1,5 @@
 import {openAccountDesktop} from '../src/account-processes.mjs';
+import {DEFAULT_REMINDER_CONFIG,normalizeReminderConfig,renderReminderConfig} from '../src/core/context-reminder-config.mjs';
 import {accountQuotaViews} from '../src/core/account-quota-link.mjs';
 import {openAccountBrowser} from './account-browser.mjs';
 import {createResetNotifier} from './quota-reset-notifications.mjs';
@@ -32,7 +33,7 @@ const {createUpdateManager}=await import('../src/updates.mjs');
 const {windowsIntegrationStatus,setWindowsIntegration,codexLaunchEnvironment}=await import('../src/windows-integration.mjs');
 const {integrationLogDirectory}=await import('../src/diagnostic-log.mjs');
 const {ensureDaemon}=await import('../src/service.mjs');
-const {resolveLanguage,languagePreference,localize}=await import('../src/localization.mjs');
+const {resolveLanguage,languagePreference,localize,L}=await import('../src/localization.mjs');
 if(process.platform==='win32')app.commandLine.appendSwitch('lang',resolveLanguage(languagePreference())==='zh'?'zh-CN':'en-US');
 const {demoState,demoStatistics}=await import('./demo.mjs');
 const demoCloudCredentials={};
@@ -100,6 +101,31 @@ async function api(action,params={}){
     if(action==='quota-analytics')return demoQuotaAnalytics(params);
     if(action==='policy'){const t=demoState.threads.find(t=>t.id===params.id);if(t){t.policy={...params.policy,enabled:true,revision:(t.policy?.revision||0)+1};t.phase='saved';}return {ok:true};}
     if(action==='defaults'){Object.assign(demoState.newChatDefaults,params);return demoState.newChatDefaults;}
+    if(action==='context-reminders'){
+      const previous=demoState.contextReminders??{enabled:false,revision:0,config:structuredClone(DEFAULT_REMINDER_CONFIG)};
+      if(params.action==='log')return {events:demoState.threads.some(chat=>chat.id===params.id)?[{kind:'reminder',used:123000,trigger:'growth',growth:20000,at:Date.now()}]:[]};
+      if(params.action==='defaults')return {config:structuredClone(DEFAULT_REMINDER_CONFIG)};
+      if(params.action==='preview')return {text:renderReminderConfig(normalizeReminderConfig(params.config),{context_tokens:'123,000',context_tokens_raw:'123000',loaded_window:'400,000',loaded_compact:'350,000',reserve_tokens:'16,000',headroom_tokens:'211,000',pressure:'normal',budget_status:'confirmed',observation_status:'preview observation',chat_id:'preview-chat',cli_path:'context-manager'})};
+      if(params.action==='set-operation-notifications'){
+        demoState.contextReminders={...previous,operationNotifications:params.enabled};
+        return demoState.contextReminders;
+      }
+      if(params.action==='set-all-chats'){
+        if(params.enabled&&!previous.enabled)throw Error('请先开启全局上下文提醒');
+        demoState.contextReminders={...previous,allChats:params.enabled};
+        return demoState.contextReminders;
+      }
+      if(params.action==='set-chat'){
+        if(!demoState.threads.some(chat=>chat.id===params.id))throw Error('未找到所选聊天');
+        if(params.enabled&&!previous.enabled)throw Error('请先开启全局上下文提醒');
+        const key=previous.allChats?'excludedChatIds':'enabledChatIds',listed=previous.allChats?!params.enabled:params.enabled;
+        const ids=new Set(previous[key]??[]);if(listed)ids.add(params.id);else ids.delete(params.id);
+        demoState.contextReminders={...previous,[key]:[...ids]};
+      }
+      else if(params.action==='configure'){if(params.expectedRevision!==previous.revision)throw Error('Reminder settings changed; reload before saving.');demoState.contextReminders={...previous,config:normalizeReminderConfig(params.config),revision:previous.revision+1};}
+      else demoState.contextReminders={...previous,enabled:params.enabled,phase:params.enabled?'awaiting_hook':'disabled',message:params.enabled?'已开启；请在 Codex 审核并信任 Hook，新会话加载后生效':'上下文提醒已关闭',error:null};
+      return structuredClone(demoState.contextReminders);
+    }
     if(action==='extension'){demoState.contextExtension.enabled=params.enabled;return demoState.contextExtension;}
     if(action==='preflight')return {allowed:true,code:'ready',message:'Demo'};
     return {ok:true};
@@ -111,6 +137,19 @@ async function api(action,params={}){
   const response=await fetch(`http://127.0.0.1:${connection.port}${route.path}`,{method:route.method,headers:{Authorization:`Bearer ${connection.token}`},...(route.method==='POST'?{body:JSON.stringify(params)}:{}),signal:AbortSignal.timeout(['statistics','quota-analytics'].includes(action)?60000:30000)});
   const body=await response.json();if(!response.ok)throw Error(localize(body.error||'Local service error'));
   if(action==='state'){body.update=uiUpdater.status();creditsNotifier.observe(body.quotaActivation?.creditsProtection?.event,{enabled:body.quotaActivation?.config?.creditsNotificationsEnabled!==false,stale:body.quota?.stale!==false});resetNotifier.observe(body.quota?.resetNotification,{enabled:body.quotaActivation?.config?.notificationsEnabled!==false,stale:body.quota?.stale!==false});}
+  if(action==='state'&&body.contextReminders?.hasOperationNotifications&&Notification.isSupported()){
+    void api('context-reminders',{action:'take-operation-notifications'}).then(({events})=>{
+      const tokens=value=>Number.isSafeInteger(value)?value.toLocaleString():'—';
+      for(const event of events){
+        const message=event.kind==='expand'?L('CLI 已请求扩容：目标窗口 {0}，压缩阈值 {1}。',tokens(event.window),tokens(event.compact))
+          :event.kind==='compact'?localize(event.waiting?'CLI 已请求压缩：等待聊天空闲。':'CLI 已请求原生压缩。')
+          :event.kind==='reminder'?L(event.includePrompt?'已发送 Context Planner 和状态（估计 {0} tokens）。':'已发送上下文状态（估计 {0} tokens）。',tokens(event.used)):null;
+        if(!message)continue;
+        const n=new Notification({title:localize("上下文管理开发通知"),body:message,silent:true});
+        n.on('failed',(_event,error)=>console.error('Context notification:',error));n.show();
+      }
+    }).catch(error=>console.error('Context notification:',error.message));
+  }
   return body;
 }
 const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,shortcut:shortcutManager.status(),menuReady:trayController.ready,menuImageReady:trayController.ready,menuVisibilityEvidence:'unverified',menuWindowVisible:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),menuOnScreen:null,windowVisible:!!(main&&!main.isDestroyed()&&main.isVisible()),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow&&!trayWindow.isDestroyed()?trayWindow.getBounds():undefined});};
@@ -325,6 +364,11 @@ if(args.includes('--quit')){app.quit();}else{
       const activationSmoke=await main.webContents.executeJavaScript('window.__contextActivationSmoke()');if(!activationSmoke.ok)throw Error(JSON.stringify(activationSmoke));console.log('QUOTA_ACTIVATION_SMOKE '+JSON.stringify(activationSmoke));
       if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR)fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'quota-activation.png'),(await main.webContents.capturePage()).toPNG());
       const appearance=await main.webContents.executeJavaScript('window.__contextAppearanceSmoke()');if(!appearance.ok)throw Error(JSON.stringify(appearance));console.log('APPEARANCE_SMOKE '+JSON.stringify(appearance));
+      const settingsSmoke=await main.webContents.executeJavaScript('window.__contextSettingsSmoke()');if(!settingsSmoke.ok)throw Error(JSON.stringify(settingsSmoke));console.log('SETTINGS_SMOKE '+JSON.stringify(settingsSmoke));
+      if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR)for(const tab of ['general','defaults','automation','activation','cloud','backups','experimental','about','accounts','queues']){
+        await main.webContents.executeJavaScript(`window.__contextSettingsPreview(${JSON.stringify(tab)})`);await new Promise(r=>setTimeout(r,80));
+        fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'settings-'+tab+'.png'),(await main.webContents.capturePage()).toPNG());
+      }
       if(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR){main.showInactive();await new Promise(r=>setTimeout(r,120));fs.writeFileSync(path.join(path.resolve(process.env.CONTEXT_CONTROL_SMOKE_SCREENSHOT_DIR),'scroll-edges-and-events.png'),(await main.webContents.capturePage()).toPNG());}
       // Exercise the real window state: visible in the background must focus in one press.
       const waitFor=async check=>{const end=Date.now()+3000;while(!check()&&Date.now()<end)await new Promise(r=>setTimeout(r,25));if(!check())throw Error('Shortcut window focus transition timed out');};

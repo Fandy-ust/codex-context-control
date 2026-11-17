@@ -48,7 +48,7 @@ if(!enhanced){
   let peer,closed=false,bridge;
   bridge=new Bridge(child,process.stdin,process.stdout,async thread=>peer?peer.call('updateThread',thread):{},async(id,model)=>{
     await ensureDaemon();return request('forkBudget',{id,model,contextCeiling:!!ceiling?.version});
-  },{onContextOperation:value=>peer?.call('updateContextOperation',value),observeQuota:value=>peer?.call('observeQuota',value),resolveUsage:id=>peer?.call('localUsage',{id},30000),resolveCompensation:createCompensationResolver({automatic:true}),accountingWindowLimit:ceiling?.accountingWindowLimit,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling?.version});}});
+  },{onContextOperation:value=>peer?.call('updateContextOperation',value),onContextHookResult:value=>peer?.call('confirmContextHook',value,1000),observeQuota:value=>peer?.call('observeQuota',value),resolveUsage:id=>peer?.call('localUsage',{id},30000),resolveCompensation:createCompensationResolver({automatic:true}),accountingWindowLimit:ceiling?.accountingWindowLimit,contextCeiling:ceiling?.version??null,contextCatalogRevision:ceiling?.version?2:null,nativeBudgetSupport:true,resolveNewChatBudget:process.env.CONTEXT_CONTROL_NEW_CHAT_DEFAULTS==='0'?null:async model=>{await ensureDaemon();return request('newChatBudget',{model,contextCeiling:!!ceiling?.version});}});
   async function attach(){
     if(closed)return;
     try{

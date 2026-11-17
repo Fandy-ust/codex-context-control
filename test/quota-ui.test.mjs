@@ -68,7 +68,8 @@ import AppKit
 test('weekly-only UI hides unsupported metrics and keeps Automatic selected across reports',async()=>{
  const {quotaFixture}=await import('../desktop/quota-demo.mjs'),{buildQuotaAnalytics}=await import('../src/core/quota-analytics.mjs');
  const fixture=quotaFixture();fixture.snapshots=fixture.snapshots.map(p=>({...p,fiveUsed:null,fiveReset:null}));
- const report=buildQuotaAnalytics(fixture),html=quotaAnalyticsView({report,analysisMode:'advanced',section:'overview',e:escape,t:s=>s});
+ // Keep the fixed October fixture inside the report's 28-day window.
+ const report=buildQuotaAnalytics(fixture,{now:Date.UTC(2026,9,18,12)}),html=quotaAnalyticsView({report,analysisMode:'advanced',section:'overview',e:escape,t:s=>s});
  assert.equal((html.match(/data-qa-chart=/g)||[]).length,4);assert.equal((html.match(/class="qa-metric"/g)||[]).length,3);assert.ok(!html.includes('5h'));assert.match(html,/<option value="" selected>/);
  const manual=quotaAnalyticsView({report,analysisMode:'advanced',section:'overview',selectedScope:report.scope,e:escape,t:s=>s});assert.ok(!manual.match(/<select id="qa-scope">([\s\S]*?)<\/select>/)[1].includes('<option value="" selected>'));
 });

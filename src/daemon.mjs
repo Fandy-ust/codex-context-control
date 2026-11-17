@@ -48,6 +48,7 @@ import {reconcileWindowConfirmation} from './confirmation.mjs';
 import {inheritedForkPolicy} from './fork-budget.mjs';
 import {transitionExtensionBudgets} from './extension-transition.mjs';
 import {createContextExtensionManager} from './context-extension.mjs';
+import {createContextReminders} from './context-reminders.mjs';
 import {createRuntimeFixManager} from './runtime-fix.mjs';
 import {ceilingModel,policyForModel,CONTEXT_CEILING_VERSION} from './context-ceiling.mjs';
 import {initialNewChatDefaults,nativeNewChatDefaults,newChatDefaultLimits,clampNewChatDefaults,normalizeNewChatDefaults,policyForNewChat,persistedNewChatPolicy} from './new-chat-defaults.mjs';
@@ -165,6 +166,8 @@ export async function startDaemon() {
   const statisticsJSON=new WeakMap();
   const runtimeFix=createRuntimeFixManager();
   const extension=createContextExtensionManager();
+  const contextReminders=createContextReminders();
+  contextReminders.reconcile();
   const compensation=createCompensationManager();
   function rebuildOwners(){owners.clear();for(const [peer,b]of bridges)for(const id of b.ids){if(!owners.has(id))owners.set(id,[]);owners.get(id).push(peer);}}
   function nativeDefaultModel(){store.model(null);return [...(store.catalog?.values()||[])].filter(m=>Number.isSafeInteger(m.max_context_window)&&Number.isInteger(m.effective_context_window_percent)).sort((a,b)=>b.max_context_window*b.effective_context_window_percent-a.max_context_window*a.effective_context_window_percent)[0]||null;}
@@ -199,7 +202,19 @@ export async function startDaemon() {
     const plan=preflight(t,policy,modelFor(p.id,t.model));
     if(['above_catalog_maximum','above_safe_compact','below_retained_floor','unsupported_thread'].includes(plan.code))throw contextError('BUDGET_REJECTED',plan.message,'revise_budget');
     const operation=operations.create({threadId:p.id,requestId:p.requestId,fingerprint,kind:'budget',revision:(t.policy?.revision??0)+1});
-    try{const result=await handle(null,'setPolicy',{...p,track:false});operations.transition(operation.id,p.id,{state:p.apply===false?'completed':'accepted'});observeOperations(p.id);return {...result,operation:operations.get(operation.id,p.id),context:contextSnapshot(selectedThread(p.id))};}
+    try{
+      const result=await handle(null,'setPolicy',{...p,track:false});
+      operations.transition(operation.id,p.id,{state:p.apply===false?'completed':'accepted'});
+      observeOperations(p.id);
+      const receipt=operations.get(operation.id,p.id),context=contextSnapshot(selectedThread(p.id));
+      const loaded=contextSnapshot(t).loaded,window=plan.expectedWindow,compact=plan.effectiveCompact;
+      const changes=[[loaded.window,window],[loaded.compact,compact]].filter(pair=>pair.every(Number.isSafeInteger));
+      if(p.apply!==false&&!['failed','superseded','outcome_unknown'].includes(receipt.state)&&
+        changes.some(([from,to])=>to>from)&&changes.every(([from,to])=>to>=from)){
+        contextReminders.notifyOperation(p.id,{operationId:receipt.id,state:receipt.state,kind:'expand',window,compact});
+      }
+      return {...result,operation:receipt,context};
+    }
     catch(error){const saved=store.data.policies[p.id]?.revision===operation.revision;operations.transition(operation.id,p.id,{state:saved?'outcome_unknown':'failed',reason:error.message});throw Object.assign(error,{operationId:operation.id});}
   }
   async function trackedCompact(p){
@@ -215,7 +230,11 @@ export async function startDaemon() {
     const operation=operations.create({threadId:p.id,requestId:p.requestId,fingerprint,kind:'compact',turnId:t.turnId??null,model:t.model,revision:t.policy?.revision??0,contextEpoch:t.contextEpoch??0,inputEpoch:t.inputEpoch??null,waitForTurnCompletion});
     operations.transition(operation.id,p.id,{state:t.status==='idle'&&!waitForTurnCompletion?'accepted':'waiting_for_idle'});
     if(t.status==='idle')await executeCompaction(operation);
-    return {operation:operations.get(operation.id,p.id),context:contextSnapshot(selectedThread(p.id))};
+    const receipt=operations.get(operation.id,p.id);
+    if(['accepted','waiting_for_idle','executing','completed'].includes(receipt.state)){
+      contextReminders.notifyOperation(p.id,{operationId:receipt.id,state:receipt.state,kind:'compact',waiting:receipt.state==='waiting_for_idle'});
+    }
+    return {operation:receipt,context:contextSnapshot(selectedThread(p.id))};
   }
   function criticalThreadIds(){
     const ids=new Set();
@@ -234,10 +253,22 @@ export async function startDaemon() {
     // Keep background monitoring light: speed sampling is needed only while the tray menu is visible.
     try{if(JSON.parse(fs.readFileSync(path.join(root,'ui-status.json'),'utf8')).menuWindowVisible===true)responseSpeeds.observe(threads);}catch{}
     const chatCatalog=includeCatalog&&catalogRevision!==store.catalogRevision?store.sidebarCatalog():null;
-    return {...(includeCatalog?{catalogRevision:store.catalogRevision,chatCatalog}:{}),hotChats:{limit:HOT_CHAT_LIMIT,returned:threads.length},apiVersion:CONTROL_API_VERSION,capabilities:{agentContext:true,contextOperations:true,contextSchedules:true,reasoningBudget:true,visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,queueAccountSwitch:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueueState(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:accountQuotaState(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
+    return {...(includeCatalog?{catalogRevision:store.catalogRevision,chatCatalog}:{}),hotChats:{limit:HOT_CHAT_LIMIT,returned:threads.length},apiVersion:CONTROL_API_VERSION,capabilities:{agentContext:true,contextOperations:true,contextSchedules:true,reasoningBudget:true,visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,queueAccountSwitch:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueueState(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:accountQuotaState(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextReminders:contextReminders.status(),compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
   }
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version,buildId};
+    if(op==='contextReminderHook'){
+      if(!contextReminders.enabled()||typeof p.session_id!=='string'||!Object.hasOwn(store.data.threads,p.session_id))return {};
+      let thread=publicThread(p.session_id,undefined,false);
+      // Prompt-submit hooks can precede turn/started on the RPC stream.
+      if(p.hook_event_name==='UserPromptSubmit'&&p.turn_id)thread={...thread,turnId:p.turn_id,usageFresh:false};
+      return contextReminders.hook(p,thread);
+    }
+    if(op==='confirmContextHook'){
+      if(!bridges.get(peer)?.ids.has(p.id)||owners.get(p.id)?.length!==1)return {};
+      const thread=store.data.threads[p.id];if(thread)contextReminders.confirmHook(p,thread);
+      return {};
+    }
     if(op==='state')return state(p);
     if(op==='newChatBudget'){const m=runtimeModel(null,p.model,p.contextCeiling??true);if(!m)throw Error('等待当前模型的原生窗口信息');return {policy:policyForNewChat(newChatDefaults(),m)};}
     if(op==='setNewChatDefaults'){
@@ -273,7 +304,7 @@ export async function startDaemon() {
       const previousPolicy=JSON.stringify(store.data.policies[p.id]??null);
       const hadOwner=b.ids.has(p.id);
       b.ids.add(p.id);rebuildOwners();
-      const allowed=['id','name','cwd','model','effort','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource','automaticTask','compensation','appliedBudget','lastTurnStatus','contextEpoch','lastCompletedTurnId','inputEpoch'];
+      const allowed=['id','name','cwd','model','effort','status','ephemeral','canAcceptDirectInput','observedWindow','expectedWindow','configuredWindow','usageObservedAt','usageInvalidatedAt','lastUsage','freshUsage','usageFresh','phase','message','turnId','revision','observedAt','forkedFromId','threadSource','automaticTask','compensation','appliedBudget','lastTurnStatus','contextEpoch','lastCompletedTurnId','inputEpoch'];
       const clean=Object.fromEntries(allowed.filter(k=>Object.hasOwn(p,k)).map(k=>[k,p[k]]));
       if(!Object.hasOwn(clean,'usageFresh'))clean.usageFresh=clean.freshUsage===true;
       if(clean.threadSource!=null&&typeof clean.threadSource!=='string')delete clean.threadSource;
@@ -364,11 +395,11 @@ export async function startDaemon() {
       else if(operation==='chat-list')answer=store.listLocal(params.offset??0);
       else if(operation==='chat'){
         const thread=selectedThread(params.id),capabilities={agentContext:true,contextOperations:true,reasoningBudget:(owners.get(params.id)||[]).length===1&&bridges.get(owners.get(params.id)[0])?.reasoningBudgetVersion===1,scheduleAfterTurn:(owners.get(params.id)||[]).length===1&&bridges.get(owners.get(params.id)[0])?.contextScheduleVersion===1,compactWhenIdle:(owners.get(params.id)||[]).length===1&&bridges.get(owners.get(params.id)[0])?.contextOperationsVersion===1};
-        answer=params.summary===true?{...contextSnapshot(thread,{deferredCompaction:capabilities.compactWhenIdle,operations:operations.list(params.id),schedules:taskQueues.schedules().filter(s=>s.chatId===params.id)}),capabilities}:{...thread,agentCapabilities:capabilities};
+        answer=params.summary===true?{continuationEnabled:taskQueues.continuationEnabled(),...contextSnapshot(thread,{deferredCompaction:capabilities.compactWhenIdle,operations:operations.list(params.id),schedules:taskQueues.schedules().filter(s=>s.chatId===params.id)}),capabilities}:{...thread,agentCapabilities:capabilities};
       }
       else if(operation==='context-schedule'){
         const thread=selectedThread(params.id);
-        if(params.action==='list')answer={schedules:taskQueues.schedules().filter(s=>s.chatId===params.id)};
+        if(params.action==='list')answer={continuationEnabled:taskQueues.continuationEnabled(),schedules:taskQueues.schedules().filter(s=>s.chatId===params.id)};
         else if(params.action==='cancel')answer={schedule:taskQueues.cancelSchedule(params.id,params.scheduleId)};
         else if(params.action==null||params.action==='schedule'){
           if(codexRestore.active||accountTransition||queueAccountAuto.state().busy)throw contextError('SERVICE_BUSY','Wait for restore or account transition to finish.','wait');
@@ -390,7 +421,7 @@ export async function startDaemon() {
       }
       else if(codexRestore.active&&['account-switch','install-update','task-queue','quota-activation'].includes(operation)&&params.action!=='status')throw Error('请先完成或取消 Codex 恢复');
       else if(operation==='account-switch'){if(queueAccountAuto.state().busy&&params.action!=='status')throw Error('自动切换正在进行，请稍后重试');if(params.action==='preflight')answer={blockers:switchBlockers()};else{const result=await accountSwitcher.command(params);if(params.action==='switch'){passiveQuota.invalidate();quota.invalidate();queueAccountAuto.retarget(params.id);}answer=accountQuotaViews(result,accountQuotaState()).login;}}
-      else if((accountTransition||queueAccountAuto.state().busy)&&['cloud-sync','quota-activation','task-queue','quota-refresh','quota-credit-baseline'].includes(operation)&&!(operation==='task-queue'&&(params.enabled===false&&['monitoring','enable','account-switch'].includes(params.action)||['stop','disable-all'].includes(params.action))))throw Error('账号切换正在进行，请稍后重试');
+      else if((accountTransition||queueAccountAuto.state().busy)&&['cloud-sync','quota-activation','task-queue','quota-refresh','quota-credit-baseline'].includes(operation)&&!(operation==='task-queue'&&(params.enabled===false&&['monitoring','continuation','enable','account-switch'].includes(params.action)||['stop','disable-all'].includes(params.action))))throw Error('账号切换正在进行，请稍后重试');
       else if(operation==='codex-backups'){if(accountTransition||queueAccountAuto.state().busy)throw Error('请等待账号切换完成');if(powerProtection.busy&&params.action!=='list')throw Error('正在备份，请稍后重试');if(params.action==='capture'){if(codexRestore.active)throw Error('请先完成或取消恢复');const result=await powerProtection.tick();if(result?.errors?.length)throw Error(result.errors[0].error||'备份失败');answer=codexRestore.list();}else answer=await codexRestore.command(params);}
       else if(operation==='cloud-sync')answer=await cloudSync.command(params);
       else if(operation==='task-queue'){if(params.action==='account-switch'){queueAccountAuto.configure(params.enabled);}else{if(params.action==='enable'&&params.enabled&&typeof params.id==='string'&&Object.hasOwn(store.data.threads,params.id)&&!(owners.get(params.id)||[]).length&&queueSupported(params.id))await queueCall(params.id,'queue-prepare',{});taskQueues.command(params);}answer=taskQueueState();}
@@ -418,6 +449,26 @@ export async function startDaemon() {
         if(!Object.hasOwn(store.data.threads,params.id))throw new Error('未找到所选聊天');
         answer=await contextStatistics(params.id,params.refresh===true);
       }
+      else if(operation==='context-reminders'){
+        if(params.action==='defaults')answer=contextReminders.defaults();
+        else if(params.action==='preview')answer=contextReminders.preview(params.config,typeof params.id==='string'&&Object.hasOwn(store.data.threads,params.id)?publicThread(params.id,undefined,false):null);
+        else if(params.action==='configure')answer=contextReminders.configure(params.config,params.expectedRevision);
+        else if(params.action==='set-operation-notifications')answer=contextReminders.setOperationNotifications(params.enabled);
+        else if(params.action==='take-operation-notifications')answer=contextReminders.takeOperationNotifications();
+        else if(params.action==='log'){
+          if(typeof params.id!=='string'||!params.id||params.id.length>180)throw Error('无效的聊天开关');
+          answer={events:contextReminders.log(params.id).map(event=>{
+            if(!event.operationId)return event;
+            try{return {...event,state:operations.get(event.operationId,params.id).state};}catch{return event;}
+          })};
+        }
+        else if(params.action==='set-all-chats')answer=contextReminders.setAllChats(params.enabled);
+        else if(params.action==='set-chat'){
+          if(typeof params.id!=='string'||(!Object.hasOwn(store.data.threads,params.id)&&!store.catalogRows?.has(params.id)))throw Error('未找到所选聊天');
+          answer=contextReminders.setChatEnabled(params.id,params.enabled);
+        }
+        else answer=contextReminders.setEnabled(params.enabled);
+      }
       else if(operation==='compensation'){compensation.setEnabled(params.enabled);answer=state().compactionCompensation;}
       else if(operation==='extension')answer=await handle(null,'setContextExtension',params);
       else if(operation==='defaults')answer=await handle(null,'setNewChatDefaults',params);
@@ -440,8 +491,8 @@ export async function startDaemon() {
   const cleanupStart=setTimeout(cleanup,30000);cleanupStart.unref();
   const cleanupTimer=setInterval(cleanup,5*60*1000);cleanupTimer.unref();
   const scanTimer=setInterval(()=>{store.setRequiredIds(criticalThreadIds());store.refreshMetadata();},15000);scanTimer.unref();
-  web.once('close',()=>{clearInterval(creditsTimer);queueAccountAuto.close();clearInterval(accountAutoTimer);accountSwitcher.close();clearInterval(activationTimer);quotaActivation.close();cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
-  const shutdown=()=>{responseSpeeds.close();contextStatistics.close();try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
+  web.once('close',()=>{contextReminders.flushLog();clearInterval(creditsTimer);queueAccountAuto.close();clearInterval(accountAutoTimer);accountSwitcher.close();clearInterval(activationTimer);quotaActivation.close();cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
+  const shutdown=()=>{responseSpeeds.close();contextStatistics.close();contextReminders.flushLog();try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};
 }

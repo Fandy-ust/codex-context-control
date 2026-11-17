@@ -3,8 +3,8 @@ export function cloudSyncView(s,{e,t}){
   const label=(zh,en)=>e(t(zh,en));
   return `<div class="content"><section class="card stack"><h2>${label('多设备云同步','Multi-device cloud sync')}</h2>
   <p class="muted">${label('同步加密的数值统计、账号名称或邮箱、Credits 与额度重置时间，可显示其他设备登录账号的缓存。聊天正文、标题和登录凭据不会上传。','Sync encrypted statistics, account names or emails, Credits and quota reset times. View cached quota from accounts signed in on other devices. Messages, titles and sign-in credentials stay local.')}</p>
-  <label class="row between">${label('启用云同步','Enable cloud sync')}<input id="cloud-enabled" type="checkbox" ${s.enabled?'checked':''}></label>
-  <h3>${label('账号与设备','Accounts and devices')}</h3>
+  <label class="row between">${label('启用云同步','Enable cloud sync')}<input id="cloud-enabled" class="switch" type="checkbox" ${s.enabled?'checked':''}></label>
+  <details class="settings-disclosure"><summary>${label('账号与设备','Accounts and devices')}</summary><div class="stack">
   <label class="stack">${label('本机名称','This device')}<input id="cloud-device-name" value="${e(s.deviceName||'')}" maxlength="80"></label>
   <label class="stack">${label('统计范围','Statistics scope')}<select id="cloud-statistics-mode">${[['current','当前账号','Current account'],['all','全部账号','All accounts'],['selected','所选账号','Selected accounts']].map(([id,zh,en])=>`<option value="${id}" ${(s.statisticsMode||'current')===id?'selected':''}>${label(zh,en)}</option>`).join('')}</select></label>
   <p class="tiny muted">${label('账号自动识别，套餐或模型变化不会新建账号。账号和设备勾选仅在本机生效；取消统计不删除历史。','Accounts are identified automatically; plan or model changes keep the same account. Selections apply to this device; hiding statistics preserves history.')}</p>
@@ -12,6 +12,7 @@ export function cloudSyncView(s,{e,t}){
   <p class="tiny muted">${label('设备：勾选后纳入统计','Devices: include checked devices in statistics')}</p>
   <div class="stack" data-cloud-devices>${(s.deviceList?.length?s.deviceList:[{id:s.deviceId,name:s.deviceName}]).map(d=>`<label class="row"><input type="checkbox" data-cloud-stat-device="${e(d.id)}" ${!(s.excludedDevices||[]).includes(d.id)?'checked':''}>${e(d.name||d.id.slice(0,8))}${d.id===s.deviceId?' · '+label('本机','This device'):''}<span class="tiny muted">${d.lastSync?e(new Date(d.lastSync).toLocaleString()):''}</span></label>`).join('')}</div>
   <label class="row"><input id="cloud-unassigned" type="checkbox" ${s.includeUnassigned?'checked':''}>${label('显示未归属历史（不上传）','Show unassigned history (not uploaded)')}</label>
+  </div></details>
   <label class="stack">${label('同步方式','Provider')}<select id="cloud-provider"><option value="repository" ${s.provider==='repository'?'selected':''}>GitHub ${label('私有仓库（推荐）','private repository (recommended)')}</option><option value="gist" ${s.provider==='gist'?'selected':''}>GitHub Secret Gist</option></select></label>
   <label class="stack" data-cloud-repository ${s.provider==='gist'?'hidden':''}>${label('私有仓库','Private repository')}<input id="cloud-repository" placeholder="owner/context-manager-sync" value="${e(s.repository||'')}" autocomplete="off"></label>
   <div class="stack" data-cloud-gist ${s.provider!=='gist'?'hidden':''}><label class="stack">Gist ID<input id="cloud-gist" value="${e(s.gistId||'')}" autocomplete="off"></label><button data-action="cloud-create-gist">${label('创建 Secret Gist','Create Secret Gist')}</button><p class="tiny muted">${label('创建后会自动填入 ID；其他设备填写同一个 ID。Secret Gist 仍可被知道链接的人读取，因此本软件始终加密统计文件。','The ID is filled after creation; use it on your other devices. Secret Gists are accessible to anyone with the link, so statistics are always encrypted.')}</p></div>

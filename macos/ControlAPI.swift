@@ -2,6 +2,7 @@
 import Foundation
 enum ControlAPI {
     static let version = 1
+    static let contextReminders = "/context-reminders"
     static let accountSwitch = "/accounts"
     static let cloudSync = "/cloud-sync"
     static let state = "/state"
@@ -31,6 +32,7 @@ enum ControlAPI {
     static let speedReport = "/context-speed"
     static let contextSchedule = "/context-schedule"
     static let routes: [String:String] = [
+        "context-reminders": "/context-reminders",
         "account-switch": "/accounts",
         "cloud-sync": "/cloud-sync",
         "state": "/state",

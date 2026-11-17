@@ -5,7 +5,8 @@ import {installQueueCLI,removeQueueCLI} from '../src/cli-launcher.mjs';
 test('global monitoring commands preserve chat switches and do not require a chat id',async()=>{
  const calls=[],client=async(op,p)=>{calls.push({op,p});return {queues:[]};};
  await runQueueCLI(['monitoring-off'],{client});await runQueueCLI(['monitoring-on'],{client});
- assert.deepEqual(calls,[{op:'task-queue',p:{action:'monitoring',enabled:false}},{op:'task-queue',p:{action:'monitoring',enabled:true}}]);
+ await runQueueCLI(['continuation-off'],{client});await runQueueCLI(['continuation-on'],{client});
+ assert.deepEqual(calls,[{op:'task-queue',p:{action:'monitoring',enabled:false}},{op:'task-queue',p:{action:'monitoring',enabled:true}},{op:'task-queue',p:{action:'continuation',enabled:false}},{op:'task-queue',p:{action:'continuation',enabled:true}}]);
 });
 
 test('automatic account switching is an explicit global queue setting',async()=>{

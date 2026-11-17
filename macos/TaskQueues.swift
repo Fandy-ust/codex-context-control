@@ -24,7 +24,7 @@ struct QueueTask:Decodable,Equatable,Identifiable {
 struct QueueTaskRetry:Decodable,Equatable {let firstFailedAt:Double;let attempts:Int;let nextAt:Double?}
 struct ChatTaskQueue:Decodable,Equatable,Identifiable {let id:String;let enabled:Bool;let config:QueueConfig;let tasks:[QueueTask];let revision:Int;let state:String;let message:String?}
 struct QueueAccountSwitchState:Decodable,Equatable {let enabled:Bool;let busy:Bool;let phase:String;let message:String}
-struct TaskQueuesState:Decodable,Equatable {var monitoringEnabled:Bool?=nil;let sleepPrevented:Bool;let queues:[ChatTaskQueue];var accountSwitch:QueueAccountSwitchState?=nil}
+struct TaskQueuesState:Decodable,Equatable {var monitoringEnabled:Bool?=nil;var continuationEnabled:Bool?=nil;let sleepPrevented:Bool;let queues:[ChatTaskQueue];var accountSwitch:QueueAccountSwitchState?=nil}
 
 extension Controller {
     func queueHasFiveHour(_ pool:String)->Bool{guard let b=quota?.buckets.first(where:{$0.id==pool}) else{return false};return [b.primary,b.secondary].contains{$0?.windowDurationMins==300}}
@@ -91,13 +91,25 @@ struct TaskQueueStrip:View {
         }.padding(.vertical,16)
     }
 }
+struct QueueAutomationSettings:View {
+    @ObservedObject var model:Controller
+    var body:some View {
+        VStack(alignment:.leading,spacing:18){
+            Text(L("队列与切号")).font(.headline)
+            QueueAccountSwitchControls(model:model)
+            Toggle(L("全局额度监视"),isOn:Binding(get:{model.taskQueues?.monitoringEnabled != false},set:{value in Task{await model.queueCommand(nil,"monitoring",values:["enabled":value])}})).toggleStyle(.switch).disabled(model.working)
+            Text(L("控制已开启监视的聊天；关闭后保留各聊天的开关和限额。监视持续生效，队列结束后不会自动关闭。")).font(.caption).foregroundStyle(.secondary)
+            Text(L("每个聊天的保留额度和重试规则，在该聊天的任务队列中调整。")).font(.caption).foregroundStyle(.secondary)
+            Toggle(L("同聊天自动续接"),isOn:Binding(get:{model.taskQueues?.continuationEnabled==true},set:{value in Task{await model.queueCommand(nil,"continuation",values:["enabled":value])}})).toggleStyle(.switch).disabled(model.working || model.taskQueues?.continuationEnabled==nil)
+                .accessibilityIdentifier("same-chat-continuation-toggle")
+            Text(L("允许按请求续接同一个聊天。独立于任务队列监视，续接前仍会检查上下文和额度。关闭会取消尚未开始的续接。")).font(.caption).foregroundStyle(.secondary)
+        }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
+    }
+}
 struct TaskQueueManagerView:View {
     @ObservedObject var model:Controller;var open:(String)->Void
     var body:some View{
         VStack(alignment:.leading,spacing:18){
-            QueueAccountSwitchControls(model:model)
-            Toggle(L("全局额度监视"),isOn:Binding(get:{model.taskQueues?.monitoringEnabled != false},set:{value in Task{await model.queueCommand(nil,"monitoring",values:["enabled":value])}})).toggleStyle(.switch).disabled(model.working)
-            Text(L("控制已开启监视的聊天；关闭后保留各聊天的开关和限额。监视持续生效，队列结束后不会自动关闭。")).font(.caption).foregroundStyle(.secondary)
             HStack{Text(L("所有任务队列")).font(.headline);Spacer();Button(L("关闭全部监视")){Task{await model.queueCommand(nil,"disable-all")}}.buttonStyle(.bordered).disabled(model.working)}
             Text(L(model.taskQueues?.sleepPrevented == true ? "有启用的队列，正在防止系统睡眠":"没有启用的队列，允许系统正常睡眠")).font(.caption).foregroundStyle(.secondary)
             ForEach(model.taskQueues?.queues.filter{$0.enabled || $0.tasks.contains{$0.status != "completed"}} ?? []){q in
@@ -155,7 +167,6 @@ struct TaskQueueDetailView:View {
             ScrollView{VStack(alignment:.leading,spacing:20){
                 Text(model.chats.first{$0.id==chatID}?.title ?? chatID).font(.title3)
                 Text(L(model.queueMessage(chatID))).foregroundStyle(.secondary)
-                QueueAccountSwitchControls(model:model)
                 HStack{Text(L("任务")).font(.headline);Spacer();Button(L("添加任务"),systemImage:"plus"){editor=QueueTask(id:UUID().uuidString,prompt:"",status:"draft",error:nil,settings:QueueTaskSettings(quota:queue?.config ?? QueueConfig()))}.buttonStyle(.borderedProminent)}
                 taskList
                 DisclosureGroup(L("当前聊天的默认限额")){

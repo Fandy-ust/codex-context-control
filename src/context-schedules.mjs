@@ -8,7 +8,7 @@ const publicValue=({prompt,settings,fingerprint,...s})=>structuredClone(s);
 
 // One-shot handoffs run inside the existing task-queue tick and persistence.
 // There is deliberately no timer, runtime process or automatic retry here.
-export function createContextSchedules({saved=[],save=()=>{},thread,start,interrupt=async()=>{},quota,gate,monitoring=()=>true,canDispatch=()=>true,operation=()=>null,now=Date.now,id=randomUUID}={}){
+export function createContextSchedules({saved=[],save=()=>{},thread,start,interrupt=async()=>{},quota,gate,enabled=()=>true,canDispatch=()=>true,operation=()=>null,now=Date.now,id=randomUUID}={}){
  const records=new Map();
  for(const original of Array.isArray(saved)?saved:[]){
   if(!original||typeof original.id!=='string'||typeof original.chatId!=='string')continue;
@@ -45,7 +45,7 @@ export function createContextSchedules({saved=[],save=()=>{},thread,start,interr
    const fingerprint=createHash('sha256').update(JSON.stringify({prompt:prompt.trim(),afterOperation})).digest('hex');
    const previous=[...records.values()].find(s=>s.chatId===chatId&&s.requestId===requestId);
    if(previous){if(previous.fingerprint!==fingerprint)throw contextError('REQUEST_ID_CONFLICT','This request ID already identifies a different handoff.','use_new_request_id');return expire(previous);}
-   if(!monitoring())throw contextError('MONITORING_PAUSED','Global monitoring is paused; no automatic continuation was registered.','ask_user');
+   if(!enabled())throw contextError('CONTINUATION_PAUSED','Same-chat continuation is off; no handoff was registered. Enable it in Settings > Automation > Queues & switching.','ask_user');
    const chat=thread(chatId);
    if(!chat?.connected||chat.ambiguous||chat.archived||chat.ephemeral||chat.canAcceptDirectInput===false||!['active','inProgress'].includes(chat.status)||!chat.turnId)throw contextError('ACTIVE_CHAT_REQUIRED','Schedule from the active chat before ending its turn.','inspect_chat');
    if(expectedRevision!=null&&expectedRevision!==(chat.policy?.revision??0))throw contextError('REVISION_CONFLICT','Budget changed; reread the chat before scheduling.','refresh_chat');
@@ -67,9 +67,10 @@ export function createContextSchedules({saved=[],save=()=>{},thread,start,interr
      const owned=chat.automaticTask;
      if(owned?.executionId===s.executionId&&['completed','error','interrupted'].includes(owned.status))update(s,{state:owned.status==='completed'?'completed':owned.status==='interrupted'?'cancelled':owned.errorConfirmed?'failed':'outcome_unknown',reason:owned.error??owned.status});
      else if(!chat.connected||chat.ambiguous||owned?.executionId!==s.executionId)update(s,{state:'outcome_unknown',reason:'execution_ownership_changed'});
-     else if(monitoring()&&owned.status==='running'&&gate(s.settings.quota,quota.state(),now()).hard&&!s.interruptRequested){update(s,{interruptRequested:true,reason:'quota_guard'});try{await interrupt(s.chatId,s.executionId);}catch{update(s,{reason:'interrupt_outcome_unknown'});}}
+     else if(owned.status==='running'&&gate(s.settings.quota,quota.state(),now()).hard&&!s.interruptRequested){update(s,{interruptRequested:true,reason:'quota_guard'});try{await interrupt(s.chatId,s.executionId);}catch{update(s,{reason:'interrupt_outcome_unknown'});}}
      continue;
     }
+    if(!enabled())continue;
     observe(chat);if(!waiting.has(s.state))continue;
     const scope=quota.state().accountScope;
     if(s.basis.accountScope&&scope&&scope!==s.basis.accountScope){update(s,{state:'cancelled',reason:'account_changed'});continue;}

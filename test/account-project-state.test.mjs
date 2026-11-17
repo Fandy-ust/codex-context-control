@@ -43,12 +43,21 @@ test('switch seeds the verified destination with local projects and real local m
 
 test('existing destination projects and invalid or mismatched source owners are preserved',t=>{
   const f=fixture(t),target={'local-projects':{mine:{name:'Existing'}}};
-  assert.equal(seedLocalProjects(f.source,target,{home:f.home,index:f.index}),target);
+  assert.equal(seedLocalProjects({},target,{home:f.home,index:f.index}),target);
   assert.equal(prepareProjectSwitch(f.home,auth('unrelated'),auth('next')),null);
   assert.throws(()=>prepareProjectSwitch(f.home,auth('old'),{tokens:{id_token:'invalid'}}),/账号归属/);
   const bad=auth('next');bad.tokens.account_id='different';assert.equal(rendererAccountOwner(bad),null);
   delete f.state['electron-account-renderer-state-v1'];fs.writeFileSync(f.file,JSON.stringify(f.state));
   assert.equal(prepareProjectSwitch(f.home,auth('old'),auth('next')),null,'legacy desktop does not need renderer seeding');
+});
+
+test('switch updates local chat moves even when the destination already has projects',t=>{
+  const f=fixture(t),target={'local-projects':{legacy:{name:'Project'}},'thread-project-assignments':{a:{projectKind:'local',projectId:'old'},b:{projectKind:'chatgpt',projectId:'cloud'},single:{projectKind:'local',projectId:'old'}},'projectless-thread-ids':['a']};
+  const result=seedLocalProjects(f.source,target,{home:f.home,index:f.index});
+  assert.equal(result['thread-project-assignments'].a.projectId,'legacy');
+  assert.equal(result['thread-project-assignments'].single,undefined);
+  assert.equal(result['thread-project-assignments'].b.projectKind,'chatgpt');
+  assert.deepEqual(result['projectless-thread-ids'],['single']);
 });
 
 test('explicit recovery restores saved projects without changing active identity or account cache',t=>{

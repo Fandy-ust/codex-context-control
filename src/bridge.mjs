@@ -12,6 +12,7 @@ import {timestampMs} from './thread-activity.mjs';
 import {preflight} from './policy.mjs';
 import {inheritedForkPolicy,forkConfig} from './fork-budget.mjs';
 import {compensationBudget} from './core/compaction-compensation.mjs';
+import {CONTEXT_REMINDER_STATUS,reminderDigest} from './context-hook-receipt.mjs';
 
 const blockedMethods=new Set(['turn/start','thread/resume','thread/settings/update','thread/unsubscribe','thread/archive','thread/delete','thread/fork']);
 const resumeFields=['model','modelProvider','cwd','approvalPolicy','approvalsReviewer','sandbox','permissions','baseInstructions','developerInstructions','serviceTier','runtimeWorkspaceRoots'];
@@ -26,7 +27,7 @@ export class Bridge {
     this.child=child;this.input=input;this.output=output;this.publish=publish;this.records=new Map();this.userQuestions=new Map();this.internal=new Map();this.external=new Map();this.sequence=0;this.prefix=`context-control:${randomUUID()}:`;
     this.resolveFork=resolveFork;this.contextCeiling=options.contextCeiling===1;this.resolveNewChatBudget=options.resolveNewChatBudget;this.nativeBudgetSupport=options.nativeBudgetSupport===true;
     this.quotaObserver=createQuotaObserver(options.observeQuota);
-    this.resolveCompensation=options.resolveCompensation;this.accountingWindowLimit=options.accountingWindowLimit;this.resolveUsage=options.resolveUsage;this.onContextOperation=options.onContextOperation;
+    this.resolveCompensation=options.resolveCompensation;this.accountingWindowLimit=options.accountingWindowLimit;this.resolveUsage=options.resolveUsage;this.onContextOperation=options.onContextOperation;this.onContextHookResult=options.onContextHookResult;
     this.frontLines=readline.createInterface({input,crlfDelay:Infinity});this.backLines=readline.createInterface({input:child.stdout,crlfDelay:Infinity});
     this.frontLines.on('line',line=>this.fromClient(line));this.backLines.on('line',line=>this.fromServer(line));
     child.once('exit',()=>{for(const item of this.internal.values()){clearTimeout(item.timer);item.reject(new Error('Codex 运行时已退出'));}this.internal.clear();});
@@ -225,12 +226,18 @@ export class Bridge {
     if(id){
       const record=this.records.get(id);
       if(record){
+        if(m.method==='hook/completed'&&p.run?.statusMessage===CONTEXT_REMINDER_STATUS&&p.run.handlerType==='command'&&p.run.source==='user'){
+          const event={userPromptSubmit:'UserPromptSubmit',postToolUse:'PostToolUse',postCompact:'PostCompact'}[p.run.eventName];
+          const failed=p.run.status==='failed';
+          const digests=Array.isArray(p.run.entries)&&p.run.status==='completed'?p.run.entries.filter(e=>e.kind==='context'&&typeof e.text==='string').slice(0,8).map(e=>reminderDigest(e.text)):[];
+          if(event&&(failed||digests.length))Promise.resolve(this.onContextHookResult?.({id,turnId:p.turnId,event,failed,digests})).catch(()=>{});
+        }
         // Native compaction may leave the previous response's counter visible.
         // Do not compact that same observation again after the turn completes.
-        if(m.method==='item/completed'&&String(p.item?.type).toLowerCase()==='contextcompaction')record.protectedUsageGeneration=record.usageGeneration;
+        if(m.method==='item/completed'&&String(p.item?.type).toLowerCase()==='contextcompaction'){record.protectedUsageGeneration=record.usageGeneration;record.usageInvalidatedAt=Date.now();}
         if(m.method==='thread/tokenUsage/updated'){
           if(record.appliedBudget&&p.tokenUsage.modelContextWindow!==Math.floor(record.appliedBudget.window*record.appliedBudget.effectivePercent/100))record.appliedBudget=null;
-          record.usageGeneration=(record.usageGeneration??0)+1;record.observedWindow=p.tokenUsage.modelContextWindow;record.lastUsage=p.tokenUsage.last;record.inheritedUsage=null;record.freshUsage=true;record.usageFresh=true;
+          record.usageGeneration=(record.usageGeneration??0)+1;record.observedWindow=p.tokenUsage.modelContextWindow;record.lastUsage=p.tokenUsage.last;record.usageObservedAt=Date.now();record.inheritedUsage=null;record.freshUsage=true;record.usageFresh=true;
           if(record.expectedWindow!=null&&record.policy&&record.revision===record.policy.revision){record.phase=record.observedWindow===record.expectedWindow?'confirmed':'mismatch';record.message=record.phase==='confirmed'?(record.compensation?.status==='active'&&record.compensation.extraTokens>0?'运行时窗口已确认；目标容量以本 App 为准。':'下一轮窗口已读回确认。'):'实际窗口与目标不一致；请查看运行时或模型目录。';}
           this.notify(record);
         }
@@ -349,7 +356,7 @@ export class Bridge {
     try{
       if(this.resolveCompensation&&r.policy){r.locked=true;try{await this.syncCompensation(r,selectedModel);}finally{r.locked=false;}}
       if(this.contextCeiling||r.compensation?.enabled){const logical=r.policy&&Number.isInteger(r.modelInfo?.effective_context_window_percent)?Math.floor(r.policy.window*r.modelInfo.effective_context_window_percent/100):null;const incoming=incomingTokens(input),cap=Math.min(logical??r.expectedWindow??r.observedWindow??MAX_CONTEXT_INPUT,this.contextCeiling?MAX_CONTEXT_INPUT:Number.MAX_SAFE_INTEGER),reserve=Math.max(r.policy?.reserve??MIN_CONTEXT_RESERVE,MIN_CONTEXT_RESERVE);if(incoming==null||incoming+reserve>=cap)throw Error('新输入本身已接近上下文上限，请拆分输入。');if(!(task.schedule?.compactionOperationId&&r.usageFresh===false)&&(r.lastUsage?.totalTokens??0)+incoming+reserve>=Math.min(cap,(r.policy?.compact??MAX_CONTEXT_COMPACT)+reserve)){if(task.schedule)throw Error('Scheduled continuation requires another context decision.');if(!contextPrepared)return this.prepareAutomaticContext(id,task);throw Error('压缩后上下文仍接近上限，已暂停任务');}}
-      this.checkScheduledTask(r,task);if(task.schedule){if(r.automaticTask.status!=='starting'||r.status!=='idle'||[...this.external.values()].some(p=>p.threadId===id&&p.method==='turn/start'))throw Object.assign(Error('Scheduled handoff changed before submission.'),{code:'SCHEDULE_CHANGED'});params.turnTrigger='context_manager_schedule';params.parentTurnId=task.schedule.sourceTurnId;r.automaticTask.submitted=true;}
+      this.checkScheduledTask(r,task);if(task.schedule){if(r.automaticTask.status!=='starting'||r.status!=='idle'||[...this.external.values()].some(p=>p.threadId===id&&p.method==='turn/start'))throw Object.assign(Error('Scheduled handoff changed before submission.'),{code:'SCHEDULE_CHANGED'});params.turnTrigger='context_manager_schedule';params.parentTurnId=task.schedule.sourceTurnId;r.automaticTask.submitted=true;this.notify(r);}
       r.inputEpoch=(r.inputEpoch??0)+1;turnSubmitted=true;r.initialTurnWithoutHistory=false;const result=await this.rpc('turn/start',params);if(!result?.turn?.id)throw Error('运行时未返回任务轮次');Object.assign(r.sticky,pick(params,stickyFields));if(settings.model){r.model=selectedModel;r.modelInfo=null;r.usageFresh=false;}if(['starting','running'].includes(r.automaticTask.status)){r.automaticTask.turnId=result.turn.id;r.automaticTask.status=result.turn.status==='completed'?'completed':'running';r.status=r.automaticTask.status==='completed'?'idle':'active';r.turnId=result.turn.id;}await this.notify(r);return r.automaticTask;}
     catch(error){if(turnSubmitted&&!error.confirmed&&r.automaticTask.turnId&&r.status==='active')throw error;r.automaticTask.status='error';r.automaticTask.error=error.message;r.automaticTask.errorConfirmed=!turnSubmitted||error.confirmed===true;r.automaticTask.errorCode=error.errorCode??null;await this.notify(r);throw error;}
     finally{const queued=r.queue.splice(0);r.queueBytes=0;for(const line of queued)this.fromClient(line);}

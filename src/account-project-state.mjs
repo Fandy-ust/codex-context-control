@@ -27,11 +27,10 @@ export function localProjectIndex(home){
   finally{db.close();}
 }
 
-// Seed only an empty destination. Never copy cloud identity, plugin caches,
-// remote projects or permission settings from another account.
+// Synchronize local memberships while retaining account-specific cloud state.
 export function seedLocalProjects(source,target,{home,index}){
   const existing=record(target['local-projects']);
-  if(Object.keys(existing).length||!index)return target;
+  if(!index)return target;
   const host='local:'+path.resolve(home),mappings=record(source['app-server-project-id-by-legacy-project-id-by-host']);
   const canonical=value=>process.platform==='win32'?path.resolve(value).toLowerCase():path.resolve(value);
   const sourceHost=Object.keys(mappings).find(k=>k.startsWith('local:')&&canonical(k.slice(6))===canonical(home));
@@ -40,8 +39,16 @@ export function seedLocalProjects(source,target,{home,index}){
   if(!Object.keys(projects).length)return target;
   const ids=new Set(Object.keys(projects));for(const p of Object.values(projects))if(typeof p.id==='string')ids.add(p.id);
   const assignments=Object.fromEntries(Object.entries(record(source['thread-project-assignments'])).filter(([id,p])=>index.threads.has(id)&&p?.projectKind==='local'&&ids.has(p.projectId)));
-  const projectless=[...new Set([...list(source['projectless-thread-ids']).filter(id=>index.threads.has(id)),...list(target['projectless-thread-ids'])])];
+  const sourceProjectless=list(source['projectless-thread-ids']).filter(id=>index.threads.has(id));
+  const projectless=[...new Set([...sourceProjectless,...list(target['projectless-thread-ids']).filter(id=>!Object.hasOwn(assignments,id))])];
   for(const id of projectless)delete assignments[id];
+  if(Object.keys(existing).length){
+    const merged={...record(target['thread-project-assignments'])};
+    for(const id of sourceProjectless)if(merged[id]?.projectKind==='local')delete merged[id];
+    for(const [id,assignment] of Object.entries(assignments))if(!merged[id]||merged[id].projectKind==='local')merged[id]=assignment;
+    if(JSON.stringify(merged)===JSON.stringify(record(target['thread-project-assignments']))&&JSON.stringify(projectless)===JSON.stringify(list(target['projectless-thread-ids'])))return target;
+    return {...target,'thread-project-assignments':merged,'projectless-thread-ids':projectless};
+  }
   const migrations=record(source['app-server-projects-migration-by-host']);
   const next={...target,'local-projects':projects,'project-order':list(source['project-order']).filter(id=>ids.has(id)),
     'thread-project-assignments':{...assignments,...record(target['thread-project-assignments'])},'projectless-thread-ids':projectless,

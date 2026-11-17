@@ -30,6 +30,8 @@ export function queueQuotaGate(config,quota,now=Date.now()){
 // Persist before sending so an uncertain delivery is never replayed on restart.
 export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,prepare=async()=>{},interrupt,inhibit=()=>{},canDispatch=()=>true,canSwitchAccounts=()=>false,operation=()=>null,creditsConfig=()=>({}),now=Date.now,id=randomUUID}={}){
   const saved=load()??{},queues=new Map();let monitoringEnabled=saved.monitoringEnabled!==false,ticking=false,suspended=0,timer=null,closed=false,sleep=false,lastSaved='';
+  // Migrate the previous pause choice once, then keep the switches independent.
+  let continuationEnabled=typeof saved.continuationEnabled==='boolean'?saved.continuationEnabled:monitoringEnabled;
   for(const q of Object.values(saved.queues??{})){
     try{if(typeof q.id!=='string'||!Array.isArray(q.tasks))continue;q.config=validateQueueConfig(q.config);for(const t of q.tasks){t.settings=normalizeTaskSettings(t.settings,q.config);const retry=normalizeTaskRetry(t.retry);if(retry)t.retry=retry;else delete t.retry;}
       // Observations are reattached to the live turn after restart; they are
@@ -41,14 +43,20 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
   }
   const active=q=>monitoringEnabled&&q.enabled;
   const scheduleGate=(config,state,at=now())=>contextScheduleQuotaGate(queueQuotaGate(config,state,at),state,creditsConfig(),at);
-  const schedules=createContextSchedules({saved:saved.schedules,save:()=>persist(),thread,start,interrupt,quota,gate:scheduleGate,monitoring:()=>monitoringEnabled,canDispatch,operation,now,id});
-  function persist(){if(closed)return;const value={version:1,monitoringEnabled,queues:Object.fromEntries(queues),schedules:schedules.snapshot()},serialized=JSON.stringify(value);if(serialized!==lastSaved){save(value);lastSaved=serialized;}sync();}
-  function sync(){const needed=!closed&&([...queues.values()].some(active)||monitoringEnabled&&schedules.hasPending()),poll=!closed&&(needed||schedules.hasPending()||[...queues.values()].some(q=>q.tasks.some(t=>t.status==='running')));if(sleep!==needed){sleep=needed;inhibit(needed);}if(poll&&!timer){timer=setInterval(()=>void tick(),1000);timer.unref?.();}if(!poll&&timer){clearInterval(timer);timer=null;}}
-  function list(){return {monitoringEnabled,sleepPrevented:sleep,schedules:schedules.list(),queues:[...queues.values()].map(q=>({...structuredClone(q),tasks:queueTaskHistory(structuredClone(q.tasks.filter(t=>!t.monitorOnly)),now())}))};}
+  const schedules=createContextSchedules({saved:saved.schedules,save:()=>persist(),thread,start,interrupt,quota,gate:scheduleGate,enabled:()=>continuationEnabled,canDispatch,operation,now,id});
+  function persist(){if(closed)return;const value={version:1,monitoringEnabled,continuationEnabled,queues:Object.fromEntries(queues),schedules:schedules.snapshot()},serialized=JSON.stringify(value);if(serialized!==lastSaved){save(value);lastSaved=serialized;}sync();}
+  function sync(){const needed=!closed&&([...queues.values()].some(active)||schedules.hasPending()),poll=!closed&&(needed||[...queues.values()].some(q=>q.tasks.some(t=>t.status==='running')));if(sleep!==needed){sleep=needed;inhibit(needed);}if(poll&&!timer){timer=setInterval(()=>void tick(),1000);timer.unref?.();}if(!poll&&timer){clearInterval(timer);timer=null;}}
+  function list(){return {monitoringEnabled,continuationEnabled,sleepPrevented:sleep,schedules:schedules.list(),queues:[...queues.values()].map(q=>({...structuredClone(q),tasks:queueTaskHistory(structuredClone(q.tasks.filter(t=>!t.monitorOnly)),now())}))};}
   function get(key){return queues.get(key);}
   function command(p){
-    if(p.action==='monitoring'){if(typeof p.enabled!=='boolean')throw Error('开关值无效');monitoringEnabled=p.enabled;if(!p.enabled)schedules.cancelWaiting(null,'monitoring_paused');for(const q of queues.values())if(q.enabled)q.message=p.enabled?'等待检查额度':'全局监视已暂停；保留此聊天的监视设置';persist();void tick();return list();}
-    if(p.action==='disable-all'){schedules.cancelWaiting(null,'queues_paused');for(const q of queues.values()){q.enabled=false;q.message='监视已关闭；当前轮次结束后停止队列';q.revision++;}persist();return list();}
+    if(p.action==='continuation'){
+      if(typeof p.enabled!=='boolean')throw Error('开关值无效');
+      continuationEnabled=p.enabled;
+      if(!p.enabled)schedules.cancelWaiting(null,'continuation_paused');
+      persist();void tick();return list();
+    }
+    if(p.action==='monitoring'){if(typeof p.enabled!=='boolean')throw Error('开关值无效');monitoringEnabled=p.enabled;for(const q of queues.values())if(q.enabled)q.message=p.enabled?'等待检查额度':'全局监视已暂停；保留此聊天的监视设置';persist();void tick();return list();}
+    if(p.action==='disable-all'){for(const q of queues.values()){q.enabled=false;q.message='监视已关闭；当前轮次结束后停止队列';q.revision++;}persist();return list();}
     if(typeof p.id!=='string'||!p.id.length||p.id.length>180||['__proto__','constructor','prototype'].includes(p.id)||!thread(p.id))throw Error('未找到聊天');
     let original=queues.get(p.id);
     if(p.action==='add'&&p.requestId!=null){
@@ -72,14 +80,13 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
     else if(p.action==='retry'){const t=task();if(!['error','interrupted'].includes(t.status))throw Error('该任务无需重试');t.continuation=t.continuation===true||t.status==='interrupted'||t.errorConfirmed===true;t.status='waiting';t.error=null;delete t.retry;q.pause=null;}
     else if(p.action==='stop'){const t=task();if(t.status!=='running')throw Error('当前任务未在执行');q.enabled=false;delete t.retry;q.pause={kind:'manual'};q.message='已请求停止当前任务';void interrupt(q.id,t.executionId).catch(error=>{const current=queues.get(q.id);if(current){current.message=error.message;persist();}});}
     else throw Error('队列操作无效');
-    if(['enable','pause-cycle','stop','config'].includes(p.action))schedules.cancelWaiting(p.id,'chat_paused');
     q.revision++;queues.set(q.id,q);persist();void tick();return list();
   }
   async function tick(){
     if(ticking||suspended||closed||(!schedules.hasPending()&&![...queues.values()].some(q=>active(q)||q.tasks.some(t=>t.status==='running'))))return;
     ticking=true;
     try{
-      if([...queues.values()].some(active)||monitoringEnabled&&schedules.hasPending())await quota.refresh(true);
+      if([...queues.values()].some(active)||schedules.hasPending())await quota.refresh(true);
       if(closed||suspended)return;
       for(const q of queues.values()){
         if(suspended||closed)return;
@@ -152,5 +159,5 @@ export function createTaskQueues({load=()=>({}),save=()=>{},quota,thread,start,p
     }catch(error){for(const q of queues.values())if(active(q)){q.state='waiting-quota';q.message=error.message;}persist();}
     finally{ticking=false;}
   }
-  persist();return {list,get,command,tick,scheduleQuotaGate:chatId=>scheduleGate(queues.get(chatId)?.config??defaultQueueConfig(),quota.state()),schedules:()=>schedules.list(),schedule(p){const result=schedules.schedule({...p,settings:{quota:{...(queues.get(p.id)?.config??defaultQueueConfig()),retryEnabled:false}}});void tick();return result;},cancelSchedule:(chatId,scheduleId)=>schedules.cancel(chatId,scheduleId),observeThread:chat=>schedules.observe(chat),cancelSchedules:(chatId,reason)=>schedules.cancelWaiting(chatId,reason),async suspend(){suspended++;while(ticking)await new Promise(r=>setTimeout(r,20));let resumed=false;return ()=>{if(!resumed){resumed=true;suspended--;}};},close(){closed=true;clearInterval(timer);inhibit(false);}};
+  persist();return {list,get,command,tick,continuationEnabled:()=>continuationEnabled,scheduleQuotaGate:chatId=>scheduleGate(queues.get(chatId)?.config??defaultQueueConfig(),quota.state()),schedules:()=>schedules.list(),schedule(p){const result=schedules.schedule({...p,settings:{quota:{...(queues.get(p.id)?.config??defaultQueueConfig()),retryEnabled:false}}});void tick();return result;},cancelSchedule:(chatId,scheduleId)=>schedules.cancel(chatId,scheduleId),observeThread:chat=>schedules.observe(chat),cancelSchedules:(chatId,reason)=>schedules.cancelWaiting(chatId,reason),async suspend(){suspended++;while(ticking)await new Promise(r=>setTimeout(r,20));let resumed=false;return ()=>{if(!resumed){resumed=true;suspended--;}};},close(){closed=true;clearInterval(timer);inhibit(false);}};
 }

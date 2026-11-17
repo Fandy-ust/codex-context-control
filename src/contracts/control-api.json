@@ -1,6 +1,10 @@
 {
   "version": 1,
   "routes": {
+    "context-reminders": {
+      "method": "POST",
+      "path": "/context-reminders"
+    },
     "account-switch": {
       "method": "POST",
       "path": "/accounts"

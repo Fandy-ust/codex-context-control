@@ -54,6 +54,42 @@ struct RuntimeFixState:Decodable,Equatable {let enabled:Bool;let available:Bool;
 struct NewChatDefaultsState:Decodable,Equatable {let usableWindow:Int;let compact:Int;let revision:Int}
 struct ContextExtensionState:Decodable,Equatable {let enabled:Bool;let effective:Bool;let pending:Bool;let activeCount:Int;let connectedCount:Int;let compatible:Bool;let available:Bool;let message:String}
 struct NewChatDefaultsLimits:Decodable,Equatable {let maximumUsableWindow:Int;let effectivePercent:Int;let extended:Bool}
+struct ContextReminderFrequency:Codable,Equatable {var minIntervalSeconds:Int;var intervalSeconds:Int;var toolCalls:Int;var growthTokens:Int;var maxIntervalSeconds:Int}
+struct ContextReminderConfig:Codable,Equatable {var prompt:String;var template:String;var frequency:ContextReminderFrequency}
+struct ContextReminderDefaults:Decodable {let config:ContextReminderConfig}
+struct ContextReminderPreview:Decodable {let text:String}
+struct ContextDevelopmentNotifications:Decodable {
+    struct Event:Decodable {let kind:String;let id:String?;let at:Double?;let state:String?;let trigger:String?;let delivery:String?;let planner:String?;let plannerTruncated:Bool?;let growth:Int?;let window:Int?;let compact:Int?;let waiting:Bool?;let used:Int?;let includePrompt:Bool?
+        var logTitle:String{
+            switch kind {
+            case "hook-error":return L("上下文提醒 Hook 执行失败")
+            case "expand":return L("扩容请求")
+            case "compact":return L("原生压缩请求")
+            default:return L(includePrompt==true ? "完整 Context Planner + 状态":"上下文状态")
+            }
+        }
+        var logDetail:String{
+            let triggers=["UserPromptSubmit":"提交消息","PostCompact":"压缩后","first":"首次工具回调","settings":"设置已更新","state":"状态变化","growth":"上下文增量","calls":"工具调用次数","interval":"达到最长间隔"]
+            let states=["accepted":"已接受","waiting_for_idle":"等待空闲","executing":"执行中","awaiting_readback":"等待读回","confirmed":"已确认","completed":"已完成","failed":"失败","blocked":"暂缓","cancelled":"已取消","superseded":"已被替代","expired":"已过期","outcome_unknown":"结果未知"]
+            let detail=kind=="expand" ? L("目标窗口 {0} · 压缩阈值 {1}",window?.formatted() ?? "—",compact?.formatted() ?? "—") : kind=="reminder" ? L("估计 {0} tokens",used?.formatted() ?? "—") : ""
+            let meta=trigger=="growth" ? L("上下文增量 +{0} tokens",growth?.formatted() ?? "—") : L(triggers[trigger ?? ""] ?? states[state ?? ""] ?? "")
+            let received=delivery=="accepted" ? L("Codex 已接收") : delivery=="returned" ? L("已返回给 Codex，未收到确认") : ""
+            return [detail,meta,received].filter{!$0.isEmpty}.joined(separator:" · ")
+        }
+        var message:String?{
+            switch kind {
+            case "expand":return L("CLI 已请求扩容：目标窗口 {0}，压缩阈值 {1}。",window?.formatted() ?? "—",compact?.formatted() ?? "—")
+            case "compact":return L(waiting==true ? "CLI 已请求压缩：等待聊天空闲。":"CLI 已请求原生压缩。")
+            case "reminder":return L(includePrompt==true ? "已发送 Context Planner 和状态（估计 {0} tokens）。":"已发送上下文状态（估计 {0} tokens）。",used?.formatted() ?? "—")
+            default:return nil
+            }
+        }
+    }
+    let events:[Event]
+}
+struct ContextRemindersState:Decodable,Equatable {let enabled:Bool;let phase:String;let message:String;let error:String?;let config:ContextReminderConfig?;let revision:Int?;let placeholders:[String]?;let enabledChatIds:[String]?;let allChats:Bool?;let excludedChatIds:[String]?;let operationNotifications:Bool?;let hasOperationNotifications:Bool?
+    func manages(_ id:String)->Bool{enabled && (allChats==true ? excludedChatIds?.contains(id) != true : enabledChatIds?.contains(id)==true)}
+}
 struct UpdateState:Decodable,Equatable {let currentVersion:String;let available:Bool;let version:String?;let phase:String;let error:String?;let retryAt:Int?
     func forDesktop(_ version:String)->UpdateState {UpdateState(currentVersion:version,available:available && newerProductVersion(self.version,than:version),version:self.version,phase:phase,error:error,retryAt:retryAt)}
 }
@@ -67,7 +103,7 @@ struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
 struct ChatSidebar:Decodable,Equatable {let projects:[SidebarProject];let standaloneThreadIds:[String]}
 struct ChatCatalog:Decodable {let revision:String;let threads:[Chat];let sidebar:ChatSidebar}
-struct RuntimeState: Decodable {let chatCatalog:ChatCatalog?;let quotaActivation:QuotaActivationState?;let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let compactionCompensation:CompensationState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct RuntimeState: Decodable {let chatCatalog:ChatCatalog?;let quotaActivation:QuotaActivationState?;let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let contextReminders:ContextRemindersState?;let compactionCompensation:CompensationState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -146,6 +182,9 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var compactionCompensation:CompensationState?
     @Published var changingCompensation=false
     @Published var contextExtension:ContextExtensionState?
+    @Published var contextReminders:ContextRemindersState?
+    @Published private(set) var changingChatContextReminders=false
+    @Published var changingContextReminders=false
     @Published var changingContextExtension=false
     @Published var newChatDefaultsLimits:NewChatDefaultsLimits?
     @Published var newChatDefaults:NewChatDefaultsState?
@@ -212,6 +251,13 @@ struct ServiceSettings: Decodable {let node:String}
             if contextCeilingPending != (state.contextCeilingPending ?? false){contextCeilingPending=state.contextCeilingPending ?? false}
             if compactionCompensation != state.compactionCompensation{compactionCompensation=state.compactionCompensation}
             if contextExtension != state.contextExtension{contextExtension=state.contextExtension}
+            if contextReminders != state.contextReminders{contextReminders=state.contextReminders}
+            if state.contextReminders?.hasOperationNotifications==true {
+                if let data=try? await api(ControlAPI.contextReminders,body:["action":"take-operation-notifications"]),
+                   let result=try? JSONDecoder().decode(ContextDevelopmentNotifications.self,from:data) {
+                    for event in result.events{if let message=event.message{quotaResetNotifier.post(title:L("上下文管理开发通知"),body:message)}}
+                }
+            }
             if newChatDefaultsLimits != state.newChatDefaultsLimits{newChatDefaultsLimits=state.newChatDefaultsLimits}
             if newChatDefaults != state.newChatDefaults{newChatDefaults=state.newChatDefaults}
             if newChatDefaultsPending != (state.newChatDefaultsPending ?? false){newChatDefaultsPending=state.newChatDefaultsPending ?? false}
@@ -251,6 +297,37 @@ struct ServiceSettings: Decodable {let node:String}
     func setContextExtension(_ enabled:Bool) async {
         changingContextExtension=true;defer{changingContextExtension=false}
         do{let data=try await api(ControlAPI.contextExtension,body:["enabled":enabled]);contextExtension=try JSONDecoder().decode(ContextExtensionState.self,from:data);await refresh();fill();notice=contextExtension?.message ?? L("拓展设置已保存")}catch{notice=error.localizedDescription}
+    }
+    func setContextReminders(_ enabled:Bool) async {
+        changingContextReminders=true;defer{changingContextReminders=false}
+        do{contextReminders=try JSONDecoder().decode(ContextRemindersState.self,from:await api(ControlAPI.contextReminders,body:["enabled":enabled]));await refresh();notice=L(contextReminders?.message ?? "上下文提醒已关闭")}catch{notice=error.localizedDescription}
+    }
+    func contextLog(chatID:String) async throws -> [ContextDevelopmentNotifications.Event] {
+        let data=try await api(ControlAPI.contextReminders,body:["action":"log","id":chatID])
+        return try JSONDecoder().decode(ContextDevelopmentNotifications.self,from:data).events
+    }
+    func setContextOperationNotifications(_ enabled:Bool) async {
+        changingContextReminders=true;defer{changingContextReminders=false}
+        do{let data=try await api(ControlAPI.contextReminders,body:["action":"set-operation-notifications","enabled":enabled]);contextReminders=try JSONDecoder().decode(ContextRemindersState.self,from:data)}catch{notice=error.localizedDescription}
+    }
+    func setAllContextReminders(_ enabled:Bool) async {
+        changingContextReminders=true;defer{changingContextReminders=false}
+        do{let data=try await api(ControlAPI.contextReminders,body:["action":"set-all-chats","enabled":enabled]);contextReminders=try JSONDecoder().decode(ContextRemindersState.self,from:data)}catch{notice=error.localizedDescription}
+    }
+    func setChatContextReminders(_ id:String,enabled:Bool) async {
+        guard !changingChatContextReminders else{return}
+        changingChatContextReminders=true;defer{changingChatContextReminders=false}
+        do{let data=try await api(ControlAPI.contextReminders,body:["action":"set-chat","id":id,"enabled":enabled]);contextReminders=try JSONDecoder().decode(ContextRemindersState.self,from:data)}catch{notice=error.localizedDescription}
+    }
+    func saveContextReminderConfig(_ config:ContextReminderConfig,revision:Int) async -> Bool {
+        do{let object=try JSONSerialization.jsonObject(with:JSONEncoder().encode(config));let data=try await api(ControlAPI.contextReminders,body:["action":"configure","config":object,"expectedRevision":revision]);contextReminders=try JSONDecoder().decode(ContextRemindersState.self,from:data);notice=L("实验参数已保存");return true}catch{notice=error.localizedDescription;return false}
+    }
+    func previewContextReminderConfig(_ config:ContextReminderConfig) async throws -> String {
+        let object=try JSONSerialization.jsonObject(with:JSONEncoder().encode(config));var body:[String:Any]=["action":"preview","config":object];if let id=selected?.id{body["id"]=id}
+        return try JSONDecoder().decode(ContextReminderPreview.self,from:await api(ControlAPI.contextReminders,body:body)).text
+    }
+    func defaultContextReminderConfig() async throws -> ContextReminderConfig {
+        try JSONDecoder().decode(ContextReminderDefaults.self,from:await api(ControlAPI.contextReminders,body:["action":"defaults"])).config
     }
     func fill(){
         defer{budgetEdited=false}
@@ -577,6 +654,7 @@ struct ProjectChatSidebar:View {
     @ObservedObject var model:Controller
     @AppStorage("project-sidebar-expanded") private var expandedJSON="[]"
     @State private var hoveredProject:String?
+    @AppStorage("projects-section-expanded") private var projectsExpanded=true
     @AppStorage("recent-sidebar-expanded") private var recentExpanded=true
     @State private var recentHovered=false
     private var expanded:Set<String> {Set((try? JSONDecoder().decode([String].self,from:Data(expandedJSON.utf8))) ?? [])}
@@ -593,10 +671,10 @@ struct ProjectChatSidebar:View {
                 VStack(alignment:.leading,spacing:4){
                     Button{recentExpanded.toggle()}label:{
                         HStack(spacing:7){
-                            SidebarClockIcon().stroke(style:StrokeStyle(lineWidth:1,lineCap:.round,lineJoin:.round)).foregroundStyle(.white.opacity(0.85)).frame(width:17,height:17)
                             Text(L("最近")).font(.system(size:12,weight:.medium))
                             Spacer(minLength:2)
                             Text("\(recent.count)").font(.caption).foregroundStyle(.secondary)
+                            Image(systemName:recentExpanded ? "chevron.down":"chevron.right").font(.system(size:10)).frame(width:12,height:12)
                         }.padding(.horizontal,10).padding(.vertical,6).frame(maxWidth:.infinity,alignment:.leading)
                             .background(Color.white.opacity(recentHovered ? 0.065:0),in:RoundedRectangle(cornerRadius:8))
                             .overlay(RoundedRectangle(cornerRadius:8).stroke(Color.white.opacity(recentHovered ? 0.1:0),lineWidth:1))
@@ -617,8 +695,10 @@ struct ProjectChatSidebar:View {
     private var projectList:some View {
         let byID=Dictionary(model.chats.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
         return LazyVStack(alignment:.leading,spacing:3){
-            heading("项目",count:projects.count)
-            Group{
+            Button{projectsExpanded.toggle()}label:{
+                HStack(spacing:7){Text(L("项目")).font(.system(size:12,weight:.medium));Spacer();Text("\(projects.count)").font(.caption);Image(systemName:projectsExpanded ? "chevron.down":"chevron.right").font(.system(size:10)).frame(width:12,height:12)}.foregroundStyle(.secondary).padding(.horizontal,10).padding(.vertical,6).frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityValue(L(projectsExpanded ? "已展开":"已折叠"))
+            if projectsExpanded{
                 if projects.isEmpty{empty("暂无本地项目")}
                 ForEach(projects){project in
                     let open=expanded.contains(project.id)
@@ -668,8 +748,60 @@ struct ProjectChatSidebar:View {
     }
 }
 
+@MainActor private struct ContextManagementLogView:View {
+    let model:Controller
+    let chat:Chat
+    @Environment(\.dismiss) private var dismiss
+    @State private var events:[ContextDevelopmentNotifications.Event]=[]
+    @State private var loading=true
+    @State private var error:String?
+    var body:some View {
+        VStack(alignment:.leading,spacing:12){
+            HStack{
+                Text(L("上下文管理日志")).font(.title2)
+                Spacer()
+                Button(L("关闭")){dismiss()}.keyboardShortcut(.cancelAction)
+            }
+            HStack{
+                Text(chat.title).foregroundStyle(.secondary)
+                Spacer()
+                Button(L("刷新")){Task{await load()}}.disabled(loading)
+            }
+            if loading{ProgressView().frame(maxWidth:.infinity,maxHeight:.infinity)}
+            else if let error{Text(error).foregroundStyle(.orange).frame(maxHeight:.infinity)}
+            else if events.isEmpty{Text(L("此聊天暂无上下文管理日志")).foregroundStyle(.secondary).frame(maxHeight:.infinity)}
+            else{
+                ScrollView{
+                    VStack(alignment:.leading,spacing:12){
+                        ForEach(events,id:\.id){event in
+                            Divider()
+                            HStack{
+                                Text(event.logTitle).fontWeight(.medium)
+                                Spacer()
+                                if let at=event.at{Text(Date(timeIntervalSince1970:at/1000).formatted()).font(.caption).foregroundStyle(.secondary)}
+                            }
+                            Text(event.logDetail).font(.caption).foregroundStyle(.secondary)
+                            if let planner=event.planner{
+                                DisclosureGroup(L("查看发送的提示词")){
+                                    Text(planner+(event.plannerTruncated==true ? "…" : "")).font(.system(.caption,design:.monospaced)).textSelection(.enabled).padding(.top,4)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }.padding(20).frame(width:540,height:420).task{await load()}
+    }
+    private func load() async{
+        loading=true;defer{loading=false}
+        do{events=try await model.contextLog(chatID:chat.id);error=nil}
+        catch{self.error=error.localizedDescription}
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var model:Controller
+    @State private var contextLogChat:Chat?
     @State private var showControlPanel=false
     @State private var controlTab="general"
     @State private var selectedThumb:BudgetThumb = .window
@@ -703,6 +835,7 @@ struct ContentView: View {
                 .accessibilityLabel((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 .help((model.serviceAvailable && model.bridgeCount>0) ? L("已连接 Codex"):L("等待 Codex 连接"))
                 ProjectChatSidebar(model:model).frame(maxHeight:.infinity).padding(.trailing,-14)
+
                 QuotaSidebarView(model:model,open:{controlTab="quota";showControlPanel=true})
             }.padding().frame(minWidth:310,idealWidth:340,maxWidth:380).background(PanelStyle.background)
             Group {
@@ -715,7 +848,6 @@ struct ContentView: View {
                             VStack(alignment:.leading,spacing:4){
                                 Text(chat.observedWindowTitle+" · "+formatted(chat.displayedContextWindow)).font(.callout).foregroundStyle(.secondary)
                                 Text(phaseName(chat.phase)).font(.caption).foregroundStyle(.secondary).help(L(chat.message ?? ""))
-                                if let compensation=chat.compensation,compensation.enabled,let message=compensation.message{Text(L(message)).font(.caption).foregroundStyle(["limited","unavailable"].contains(compensation.status) ? Color.orange:Color.secondary).fixedSize(horizontal:false,vertical:true)}
                             }
                             Spacer()
                             Button(L("手动压缩")){Task{await model.act("compact")}}.buttonStyle(.bordered).disabled(!chat.canCompact || model.working).help(L("仅在聊天空闲时请求原生压缩"))
@@ -723,6 +855,20 @@ struct ContentView: View {
                         }
                         if let error=model.previewError{Label(error,systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(.orange)}
                         if !model.notice.isEmpty{Text(L(model.notice)).font(.caption).textSelection(.enabled).foregroundStyle(.secondary)}
+                        let canManageContext = model.contextReminders?.enabled==true && chat.ephemeral != true && chat.canAcceptDirectInput != false
+                        if chat.compensation?.enabled==true || canManageContext {
+                            HStack {
+                                if let compensation=chat.compensation,compensation.enabled,let message=compensation.message{Text(L(message)).font(.caption).foregroundStyle(["limited","unavailable"].contains(compensation.status) ? Color.orange:Color.secondary).fixedSize(horizontal:false,vertical:true)}
+                                Spacer()
+                                if canManageContext {
+                                    Toggle(L("自动管理上下文"),isOn:Binding(get:{model.contextReminders?.manages(chat.id)==true},set:{value in Task{await model.setChatContextReminders(chat.id,enabled:value)}}))
+                                        .toggleStyle(.switch).fixedSize().disabled(!model.serviceAvailable || model.changingChatContextReminders)
+                                        .accessibilityIdentifier("chat-context-reminders-toggle")
+                                    Button(L("日志")){contextLogChat=chat}.buttonStyle(.bordered).disabled(!model.serviceAvailable)
+                                        .accessibilityIdentifier("chat-context-log")
+                                }
+                            }
+                        }
                         Divider()
                         TaskQueueStrip(model:model,chatID:chat.id)
                         ContextDetailsView(chatID:chat.id,title:chat.title,model:model).id(chat.id)
@@ -739,6 +885,7 @@ struct ContentView: View {
         .background(PanelStyle.background)
         .preferredColorScheme(.dark).tint(PanelStyle.blue).environment(\.locale,Localization.locale)
         .onChange(of:model.selectedID){_,_ in model.showQuotaAnalytics=false;model.fill();Task{await model.refresh()}}
+        .sheet(item:$contextLogChat){chat in ContextManagementLogView(model:model,chat:chat)}
         .sheet(isPresented:$showControlPanel){MainControlPanelView(model:model,initialTab:controlTab,close:{showControlPanel=false})}
 
     }

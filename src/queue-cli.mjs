@@ -15,14 +15,14 @@ export const queueHelp={
     'queue config <thread-id> --input <file|->',
     'queue task-config <thread-id> <task-id> --input <file|->',
     'queue reorder <thread-id> --input <file|->',
-    'queue command --input <file|->', 'queue pause-all', 'queue monitoring-on | monitoring-off', 'queue account-switch-on | account-switch-off'
+    'queue command --input <file|->', 'queue pause-all', 'queue monitoring-on | monitoring-off', 'queue continuation-on | continuation-off', 'queue account-switch-on | account-switch-off'
   ],
   output:'JSON {schemaVersion:1,ok:true,data} or {schemaVersion:1,ok:false,error:{code,message}}; failures exit nonzero.',
   revisions:'Mutations read the latest revision automatically. Pass --revision N to use your own snapshot. Conflicts are not retried.',
   retries:'Reuse --request-id for an add retry. Dedupe lasts while that task is retained. No blind retries after timeouts.',
   pause:'pause prevents later tasks from starting; stop requests interruption of the specified running task.',
   input:'--input reads JSON; --prompt-file reads literal UTF-8 text. A dash reads stdin. --prompt accepts a literal argument.',
-  rawActions:['add','edit','delete','reorder','config','task-config','enable','pause-cycle','retry','stop','disable-all','monitoring','account-switch']
+  rawActions:['add','edit','delete','reorder','config','task-config','enable','pause-cycle','retry','stop','disable-all','monitoring','continuation','account-switch']
 };
 const fail=(code,message)=>{throw Object.assign(Error(message),{code});};
 export function createControlClient({home,ensure,fetcher=fetch}={}){
@@ -43,7 +43,7 @@ export function createControlClient({home,ensure,fetcher=fetch}={}){
 
 export async function runQueueCLI(args,{client,stdin=process.stdin,readFile=file=>fs.readFile(file,'utf8')}={}){
   if(!args.length||args.includes('--help')||args[0]==='help')return queueHelp;
-  if(args.length===1&&args[0]==='schema')return {schemaVersion:1,defaults:{quota:defaultQueueConfig(),taskSettings:normalizeTaskSettings(null)},commandFields:{action:'One of rawActions',id:'Chat/thread id',taskId:'Required for edit, delete, retry, stop, task-config',prompt:'Literal task text for add/edit; 1–16000 characters',settings:'Task settings for add/edit',config:'Quota config for config/task-config',order:'Complete array of task ids for reorder',enabled:'Boolean for enable',expectedRevision:'Optional non-negative revision',requestId:'Optional add idempotency key, 1–128 ASCII letters/digits/._:-'},...queueHelp};
+  if(args.length===1&&args[0]==='schema')return {schemaVersion:1,defaults:{quota:defaultQueueConfig(),taskSettings:normalizeTaskSettings(null)},commandFields:{action:'One of rawActions',id:'Chat/thread id',taskId:'Required for edit, delete, retry, stop, task-config',prompt:'Literal task text for add/edit; 1–16000 characters',settings:'Task settings for add/edit',config:'Quota config for config/task-config',order:'Complete array of task ids for reorder',enabled:'Boolean for enable, monitoring, continuation or account-switch',expectedRevision:'Optional non-negative revision',requestId:'Optional add idempotency key, 1–128 ASCII letters/digits/._:-'},...queueHelp};
   const positional=[],flags={};
   for(let i=0;i<args.length;i++){
     const arg=args[i];if(arg==='--json')continue;
@@ -76,7 +76,7 @@ export async function runQueueCLI(args,{client,stdin=process.stdin,readFile=file
   if(action==='command'){
     arity(1);only(['--input','--revision']);command=await jsonFile(flags['--input']);
     if(!command||typeof command!=='object'||Array.isArray(command)||!queueHelp.rawActions.includes(command.action))fail('INVALID_ARGUMENT','Invalid queue command object.');
-  }else if(['account-switch-on','account-switch-off'].includes(action)){arity(1);only([]);command={action:'account-switch',enabled:action==='account-switch-on'};}else if(['monitoring-on','monitoring-off'].includes(action)){arity(1);only([]);command={action:'monitoring',enabled:action==='monitoring-on'};}else if(action==='pause-all'){arity(1);only([]);command={action:'disable-all'};}
+  }else if(['account-switch-on','account-switch-off'].includes(action)){arity(1);only([]);command={action:'account-switch',enabled:action==='account-switch-on'};}else if(['monitoring-on','monitoring-off'].includes(action)){arity(1);only([]);command={action:'monitoring',enabled:action==='monitoring-on'};}else if(['continuation-on','continuation-off'].includes(action)){arity(1);only([]);command={action:'continuation',enabled:action==='continuation-on'};}else if(action==='pause-all'){arity(1);only([]);command={action:'disable-all'};}
   else{
     command={id};
     if(['add','edit'].includes(action)){
@@ -94,7 +94,7 @@ export async function runQueueCLI(args,{client,stdin=process.stdin,readFile=file
     }else fail('INVALID_COMMAND','Unknown queue command: '+action);
   }
   if(flags['--revision']!==undefined){const raw=flags['--revision'];if(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw)))fail('INVALID_ARGUMENT','Revision must be a non-negative integer.');command.expectedRevision=Number(raw);}
-  if(!['disable-all','monitoring','account-switch'].includes(command.action)){
+  if(!['disable-all','monitoring','continuation','account-switch'].includes(command.action)){
     if(typeof command.id!=='string'||!command.id)fail('INVALID_ARGUMENT','A thread id is required.');
     if(command.expectedRevision==null){const state=await client('state');if(!state.capabilities?.taskQueues)fail('UNSUPPORTED_SERVICE','Update the controller to a version with task queues.');command.expectedRevision=state.taskQueues.queues.find(q=>q.id===command.id)?.revision??0;}
   }
