@@ -3,6 +3,7 @@ import path from 'node:path';
 import {powershell} from './index.mjs';
 import {root,readJSON,atomicJSON,ensureRoot} from '../paths.mjs';
 import {integrationLog} from '../diagnostic-log.mjs';
+import {removeProtectedJSON} from '../durable-files.mjs';
 
 export function userEnvironment(key='CODEX_CLI_PATH'){
   return powershell('[Environment]::GetEnvironmentVariable($env:CONTEXT_CONTROL_ENV_KEY,"User")',{CONTEXT_CONTROL_ENV_KEY:key});
@@ -37,5 +38,5 @@ export function enableWindowsStartup(shim,options={}){
 export function disableWindowsStartup(options={}){
   const record=readJSON(file(options));if(!record)return {removed:false};
   if(userEnvironment(record.key)===record.value)setEnvironment(record.key,record.previousValue);
-  fs.rmSync(file(options),{force:true});return {removed:true};
+  removeProtectedJSON(file(options));return {removed:true};
 }

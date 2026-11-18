@@ -41,7 +41,10 @@ test('only the connected source of the displayed quota suppresses the refresh wa
   assert.equal(selectedQuota(state.quota,'codex').primary.remainingPercent,40);
   const refreshed=await fetch(`http://127.0.0.1:${c.port}/quota`,{method:'POST',headers,body:'{}'});
   assert.equal(refreshed.status,200);
-  assert.equal(selectedQuota(await refreshed.json(),'codex').primary.remainingPercent,40,'manual refresh without a new observation retains the displayed number');
+  const cached=await refreshed.json();
+  assert.equal(selectedQuota(cached,'codex').primary.remainingPercent,40,'manual refresh without a new observation retains the displayed number');
+  assert.equal(cached.displayFallback.updatedAt,latest.observedAt, 'retained data keeps the original client observation time');
+  assert.equal(cached.displayStale,true,'refreshing the local cache cannot confirm client synchronization');
   await other.call('observeQuota',{...observation,observedAt:Math.max(Date.now(),latest.observedAt+1)});
   state=await request('state');
   assert.equal(state.quota.displayFallback,null);

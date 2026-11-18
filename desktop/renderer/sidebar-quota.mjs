@@ -1,6 +1,15 @@
 import {selectedQuota,quotaWindows,quotaStale,quotaLevel,quotaCountdown} from '../../src/quota-display.mjs';
 import {creditRemaining} from '../../src/credit-baseline.mjs';
 
+export function quotaSyncLabel(quota,{available=true,t,language='zh'}){
+  const at=quota?.displayFallback?.updatedAt??quota?.updatedAt;
+  if(!Number.isFinite(at))return t('等待 Codex 客户端同步','Waiting for Codex to sync quota');
+  const time=new Date(at).toLocaleString(language==='zh'?'zh-CN':'en-US',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  return quotaStale(quota,available)
+    ?t('本地记录 · {0}','Local snapshot · {0}',time)
+    :t('已与 Codex 同步 · {0}','Synced with Codex · {0}',time);
+}
+
 export function sidebarCredits({quota,pool,available=true,observation,t,escape:e,readOnly=false}){
   const bucket=selectedQuota(quota,pool),raw=bucket?.creditBalance;
   const known=raw!=null&&/^\d+(?:\.\d+)?$/.test(String(raw))&&Number.isFinite(Number(raw));
@@ -53,8 +62,9 @@ export function sidebarQuota({quota,pool,available=true,t,escape:e,language='zh'
     return `<span class="sidebar-quota-window ${quotaLevel(remaining)}" title="${e(reset)}"><svg class="quota-outline" data-remaining="${remaining}" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true"><path class="quota-outline-track" d="${outline}"/><path class="quota-outline-value" d="${outline}" pathLength="100" stroke-dasharray="${remaining} 100" ${remaining===0?'visibility="hidden"':''}/><circle class="quota-outline-dot" r="2.5" ${remaining===0?'visibility="hidden"':''}/></svg><span class="sidebar-quota-label"><span>${e(quotaPeriod(window,t))}</span><strong class="num">${Math.round(remaining)}%</strong></span><span class="quota-reset">${quotaReset(window,{t,escape:e,language,compact:true})}</span></span>`;
   }).join('');
   const empty=quota?.loading?t('正在读取额度…','Reading quota…'):bucket?.unlimitedCredits?t('额外额度不限量','Unlimited extra credits'):bucket?.creditBalance!=null?t('额外额度：{0}','Extra credits: {0}',bucket.creditBalance):bucket?.hasCredits?t('额外额度可用','Extra credits available'):t('额度暂不可用','Quota unavailable');
+  const tooltip=cached||readOnly?bucket?.name||label:quotaSyncLabel(quota,{available,t,language});
   const tag=readOnly?'div':'button';
-  return `<${tag} class="sidebar-quota ${windows.length>1?'multiple':'single'} ${stale&&!cached?'stale':''}" ${readOnly?'role="group"':'data-action="quota-details" aria-haspopup="dialog"'} aria-label="${e(label)}" title="${e(bucket?.name||label)}">${rows||`<span class="sidebar-quota-empty">${e(empty)}</span>`}</${tag}>`;
+  return `<${tag} class="sidebar-quota ${windows.length>1?'multiple':'single'} ${stale&&!cached?'stale':''}" ${readOnly?'role="group"':'data-action="quota-details" aria-haspopup="dialog"'} aria-label="${e(label)}" title="${e(tooltip)}">${rows||`<span class="sidebar-quota-empty">${e(empty)}</span>`}</${tag}>`;
 }
 
 export function accountQuotaSummary(options){

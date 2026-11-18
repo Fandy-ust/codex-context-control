@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {enableAutomaticStartup,disableAutomaticStartup,guiEnvironment} from '../src/automatic-startup.mjs';
+import {automaticStartupStatus,enableAutomaticStartup,disableAutomaticStartup,guiEnvironment} from '../src/automatic-startup.mjs';
 
 test('ordinary macOS application launch inherits automatic registration; reinstall and removal are reversible',{skip:process.platform!=='darwin',timeout:60000},async()=>{
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctc-auto-'));
@@ -30,6 +30,8 @@ test('ordinary macOS application launch inherits automatic registration; reinsta
     const report=JSON.parse(fs.readFileSync(output,'utf8'));
     assert.equal(report.value,'/tmp/context-control-probe');assert.equal(report.bundle,bundle);assert.equal(report.parent,1);
     disableAutomaticStartup(options);assert.equal(guiEnvironment(key),'');assert.ok(!fs.existsSync(options.recordFile));
+    assert.deepEqual(automaticStartupStatus(options),{installed:false,environmentActive:false,loginJobLoaded:false});
+    assert.deepEqual(disableAutomaticStartup(options),{removed:false});
     run('/bin/launchctl',['setenv',key,'external-value']);
     assert.throws(()=>enableAutomaticStartup('/tmp/context-control-probe',options),/其他自定义设置/);
     assert.equal(guiEnvironment(key),'external-value');run('/bin/launchctl',['unsetenv',key]);

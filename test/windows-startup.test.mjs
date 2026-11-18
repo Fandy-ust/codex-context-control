@@ -11,8 +11,10 @@ test('Windows environment registration is idempotent and preserves later externa
   const shim=path.join(temp,'launcher.exe'),options={key,recordFile:path.join(temp,'registration.json')};fs.writeFileSync(shim,'fixture');
   try{
     assert.equal(enableAutomaticStartup(shim,options).environmentActive,true);assert.equal(enableAutomaticStartup(shim,options).environmentActive,true);assert.equal(automaticStartupStatus(options).installed,true);
-    powershell('[Environment]::SetEnvironmentVariable($env:CONTEXT_CONTROL_TEST_KEY,"external","User")',{CONTEXT_CONTROL_TEST_KEY:key});
+    powershell('$key=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Environment");try{$key.SetValue($env:CONTEXT_CONTROL_TEST_KEY,"external")}finally{$key.Dispose()}',{CONTEXT_CONTROL_TEST_KEY:key});
     assert.throws(()=>enableAutomaticStartup(shim,options),/其他自定义设置/);disableAutomaticStartup(options);
+    assert.deepEqual(automaticStartupStatus(options),{installed:false,environmentActive:false,loginJobLoaded:false});
+    assert.deepEqual(disableAutomaticStartup(options),{removed:false});
     assert.equal(powershell('[Environment]::GetEnvironmentVariable($env:CONTEXT_CONTROL_TEST_KEY,"User")',{CONTEXT_CONTROL_TEST_KEY:key}),'external');
-  }finally{powershell('[Environment]::SetEnvironmentVariable($env:CONTEXT_CONTROL_TEST_KEY,$null,"User")',{CONTEXT_CONTROL_TEST_KEY:key});fs.rmSync(temp,{recursive:true,force:true});}
+  }finally{powershell('$key=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Environment");try{$key.DeleteValue($env:CONTEXT_CONTROL_TEST_KEY,$false)}finally{$key.Dispose()}',{CONTEXT_CONTROL_TEST_KEY:key});fs.rmSync(temp,{recursive:true,force:true});}
 });

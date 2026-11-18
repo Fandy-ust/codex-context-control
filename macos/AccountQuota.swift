@@ -1,6 +1,12 @@
 import SwiftUI
 import AppKit
 
+func quotaSyncLabel(_ quota:QuotaState?,available:Bool)->String {
+    guard let at=quota?.displayFallback?.updatedAt ?? quota?.updatedAt else{return L("等待 Codex 客户端同步")}
+    let time=Date(timeIntervalSince1970:Double(at)/1000).formatted(date:.numeric,time:.standard)
+    return L(available && quota?.presentationStale == false ? "已与 Codex 同步 · {0}" : "本地记录 · {0}",time)
+}
+
 func quotaPeriod(_ window:QuotaWindow)->String {
     guard let minutes=window.windowDurationMins else{return L("额度周期")}
     if minutes==10080{return L("每周")}
@@ -33,6 +39,7 @@ struct AccountQuotaSection:View {
     private func content(now:Date)->some View {
         VStack(alignment:.leading,spacing:8){
             HStack(spacing:6){Image(systemName:"bolt.fill");Text(L("账户额度")).fontWeight(.medium);Spacer();if model.quotaRefreshing{ProgressView().controlSize(.mini)};Button{Task{await model.refreshQuota()}} label:{Image(systemName:"arrow.clockwise")}.buttonStyle(.plain).disabled(model.quotaRefreshing).help(L("刷新额度"))}.font(.system(size:12)).foregroundStyle(.secondary)
+            Text(quotaSyncLabel(model.quota,available:model.serviceAvailable)).font(.caption2).foregroundStyle(.secondary)
             if (model.quota?.displayBuckets.count ?? 0)>1 {
                 Picker(L("额度类型"),selection:$model.selectedQuotaID){ForEach(model.quota?.displayBuckets ?? []){bucket in Text(bucket.name).tag(bucket.id)}}.labelsHidden()
             }

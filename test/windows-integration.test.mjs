@@ -24,7 +24,7 @@ test('Windows integration requires explicit opt-in and a successful launch probe
     assert.equal(userEnvironment(key),'');assert.equal(windowsIntegrationStatus().enabled,false);
     const enabled=await setWindowsIntegration(true,options);assert.equal(enabled.enabled,true);assert.equal(enabled.registered,true);assert.equal(userEnvironment(key),shim);
     assert.equal(JSON.parse(fs.readFileSync(path.join(codex,'hooks.json'))).hooks.Stop.length,2);
-    powershell('[Environment]::SetEnvironmentVariable($env:CTC_TEST_KEY,"KEEP_EXTERNAL_OVERRIDE","User")',{CTC_TEST_KEY:key});
+    powershell('$key=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Environment");try{$key.SetValue($env:CTC_TEST_KEY,"KEEP_EXTERNAL_OVERRIDE")}finally{$key.Dispose()}',{CTC_TEST_KEY:key});
     await assert.rejects(setWindowsIntegration(true,{...options,probe:async()=>{}}),/其他自定义设置/);
     const integrationLog=fs.readFileSync(path.join(control,'logs/integration.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
     assert.ok(integrationLog.some(entry=>entry.stage==='integration.enable_failed'&&entry.phase==='startup'));
@@ -32,7 +32,7 @@ test('Windows integration requires explicit opt-in and a successful launch probe
     assert.equal(codexLaunchEnvironment({CODEX_CLI_PATH:shim}).CODEX_CLI_PATH,undefined);assert.equal(codexLaunchEnvironment({CODEX_CLI_PATH:'external.exe'}).CODEX_CLI_PATH,'external.exe');
     assert.equal(JSON.parse(fs.readFileSync(path.join(control,'settings.json'))).future,'keep');
   }finally{
-    powershell('[Environment]::SetEnvironmentVariable($env:CTC_TEST_KEY,$null,"User")',{CTC_TEST_KEY:key});
+    powershell('$key=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Environment");try{$key.DeleteValue($env:CTC_TEST_KEY,$false)}finally{$key.Dispose()}',{CTC_TEST_KEY:key});
     fs.rmSync(temp,{recursive:true,force:true});
   }
 });

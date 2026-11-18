@@ -1,3 +1,16 @@
+## 0.28.4
+
+- Display new Codex client quota observations sooner using the local service. Show the last synchronized reading and distinguish it from cached values.
+
+## 0.28.3
+
+- Keep automatic startup disabled after removing its registration. Diagnostics no longer restore the old registration from a recovery copy on Windows or macOS.
+
+## 0.28.2
+
+- Show live Codex bridge connectivity in Windows integration settings instead of always requesting a restart. Distinguish disabled integration with an existing connection from a fully disconnected state.
+- Show connected chats without a budget operation as connected on both Windows and macOS.
+
 ## 0.28.0
 
 - Release the experimental Context Planner, status reminders, injection history and independent same-chat continuation for Windows and macOS.
