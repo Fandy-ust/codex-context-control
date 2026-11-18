@@ -15,6 +15,13 @@ test('only the connected source of the displayed quota suppresses the refresh wa
  const {connect,request}=await import('../src/ipc.mjs');let source,other;
  try{
   const c=JSON.parse(fs.readFileSync(path.join(control,'connection.json'))),headers={authorization:`Bearer ${c.token}`};
+  assert.equal((await request('state')).costPricingMode,'api');
+  const setPricing=mode=>fetch(`http://127.0.0.1:${c.port}/models/prices/mode`,{method:'POST',headers,body:JSON.stringify({mode})});
+  assert.deepEqual(await (await setPricing('flat')).json(),{mode:'flat'});
+  assert.equal((await request('state')).costPricingMode,'flat');
+  assert.equal((await import('../src/model-prices.mjs')).costPricingMode(),'flat');
+  assert.equal((await setPricing('unknown')).status,400);
+  assert.equal((await request('state')).costPricingMode,'flat');
   const response=await fetch(`http://127.0.0.1:${c.port}/quota`,{method:'POST',headers,body:'{}'});assert.equal(response.status,200);
   assert.equal((await response.json()).displayStale,true,'persisted cache is not a live synchronization');
   source=await connect();await assert.rejects(source.call('observeQuota',observation),/未注册/);

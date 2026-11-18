@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-test('preload forwards compensation toggles and rejects unknown actions before IPC',async()=>{
+test('preload forwards settings actions and rejects unknown actions before IPC',async()=>{
  let exposed;
  const calls=[];
  const electron={
@@ -18,6 +18,14 @@ test('preload forwards compensation toggles and rejects unknown actions before I
  }
  await exposed.invoke('cloud-copy-credential',{field:'key'});
  assert.deepEqual(calls.at(-1),['context-manager','cloud-copy-credential',{field:'key'}]);
+ for(const [action,params] of [
+  ['refresh-model-prices',{}],
+  ['refresh-codex-models',{}],
+  ['cost-pricing',{mode:'flat'}]
+ ]){
+  await exposed.invoke(action,params);
+  assert.deepEqual(calls.at(-1),['context-manager',action,params]);
+ }
  await assert.rejects(exposed.invoke('unknown-action'),/Unknown action/);
- assert.equal(calls.length,3);
+ assert.equal(calls.length,6);
 });

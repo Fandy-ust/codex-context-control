@@ -103,7 +103,7 @@ struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
 struct ChatSidebar:Decodable,Equatable {let projects:[SidebarProject];let standaloneThreadIds:[String]}
 struct ChatCatalog:Decodable {let revision:String;let threads:[Chat];let sidebar:ChatSidebar}
-struct RuntimeState: Decodable {let chatCatalog:ChatCatalog?;let quotaActivation:QuotaActivationState?;let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let contextReminders:ContextRemindersState?;let compactionCompensation:CompensationState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
+struct RuntimeState: Decodable {let costPricingMode:String?;let chatCatalog:ChatCatalog?;let quotaActivation:QuotaActivationState?;let taskQueues:TaskQueuesState?;let queueModels:[QueueModel]?;let apiVersion:Int?;let capabilities:ControlCapabilities?;let quota:QuotaState?;let update:UpdateState?;let version:String;let bridgeCount:Int;let threads:[Chat];let sidebar:ChatSidebar?;let runtimeFix:RuntimeFixState?;let contextCeilingPending:Bool?;let newChatDefaults:NewChatDefaultsState?;let newChatDefaultsPending:Bool?;let contextExtension:ContextExtensionState?;let contextReminders:ContextRemindersState?;let compactionCompensation:CompensationState?;let newChatDefaultsLimits:NewChatDefaultsLimits?}
 struct Connection: Decodable {let port:Int;let token:String}
 struct DesktopSettings: Decodable {let desktopExecutable:String}
 struct ServiceSettings: Decodable {let node:String}
@@ -173,6 +173,7 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var checkingUpdates=false
     @Published var quota:QuotaState?
     @Published var quotaRefreshing=false
+    @Published var costPricingMode="api"
     @Published var selectedQuotaID="codex"
     var selectedQuota:QuotaBucket? {quota?.displayBuckets.first{$0.id==selectedQuotaID} ?? quota?.displayBuckets.first}
     var selectedCreditBaseline:CreditBaseline? {guard let id=selectedQuota?.id,let entries=quota?.displayFallback?.creditBaselines ?? quota?.creditBaselines,let value=entries[id] else{return nil};return value}
@@ -230,6 +231,8 @@ struct ServiceSettings: Decodable {let node:String}
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api(ControlAPI.hotState,body:["selectedIds":[selectedID,queueDetailID].compactMap{$0},"includeCatalog":true,"catalogRevision":cachedCatalog?.revision ?? ""]))
             guard !menuDragInProgress else{return}
             supportsVisibleBudget=state.capabilities?.visibleBudget == true;supportsQuotaAnalytics=state.capabilities?.quotaAnalytics == true
+            let pricingMode=state.costPricingMode ?? "api"
+            if costPricingMode != pricingMode{costPricingMode=pricingMode}
             if quota != state.quota{acceptQuota(state.quota)}
             let desktopUpdate=state.update?.forDesktop(appVersion)
             if updateState != desktopUpdate{updateState=desktopUpdate;if updateState?.phase=="installed"{notice=L("更新已安装，请重开 Codex")}else if updateState?.phase=="error",let error=updateState?.error{notice=L("更新失败：{0}",error)}}

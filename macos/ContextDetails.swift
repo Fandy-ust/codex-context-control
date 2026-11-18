@@ -26,7 +26,7 @@ struct ContextStatistics:Decodable,Sendable {
         let breakdown:[CostPart]
         struct Group:Decodable,Sendable,Identifiable {let model:String;let tier:String;let requests:Int;let usd:Double;var id:String{model+":"+tier}}
         let usd:Double?;let upperUSD:Double?;let maxWriteSurcharge:Double;let extraWriteTokens:Int;let pricedRequests:Int;let totalRequests:Int;let unpricedRequests:Int
-        let unknownTier:Int;let unknownModel:Int;let unknownUsage:Int;let unsupportedRate:Int;let longContextCount:Int;let unverifiedWriteRequests:Int
+        let unknownTier:Int;let unknownModel:Int;let unknownUsage:Int;let unsupportedRate:Int;let longContextCount:Int;let pricingMode:String?;let unverifiedWriteRequests:Int
         let groups:[Group];let checkedAt:String;let source:String
     }
     let cost:Cost
@@ -177,7 +177,11 @@ struct ContextSummaryView:View {
                     ForEach(cost.groups){group in HStack {Text(L("{0} · Standard 计价", modelDisplayName(group.model)));Spacer();Text(L("{0} 次 · {1}", group.requests, money(group.usd))).monospacedDigit()}}
                     if cost.unpricedRequests>0{Text(L("未计入：模型价格未知 {0} · 用量缺失 {1} · 不支持的费率 {2}", cost.unknownModel, cost.unknownUsage, cost.unsupportedRate)).foregroundStyle(.orange)}
                     Text(L("价格核对：{0}。仅累计本聊天请求，不含父聊天既有费用、税费、工具费或地区加价。缓存读取、写入分别计价，推理已包含在输出中。", cost.checkedAt))
-                    Text(L("{0} 次已计价请求超过 272K，按长上下文费率。统一使用 Standard 基础单价，不含加速溢价。", cost.longContextCount))
+                    if cost.pricingMode=="flat" {
+                        Text(L("无梯度统一使用 Standard 基础单价。"))
+                    }else{
+                        Text(L("{0} 次已计价请求超过 272K，按长上下文费率。统一使用 Standard 基础单价，不含加速溢价。", cost.longContextCount))
+                    }
                     Link(L("官方 API 价格"),destination:URL(string:cost.source)!)
                 }.font(.caption).foregroundStyle(.secondary).padding(.top,8)
             }.font(.caption).foregroundStyle(.secondary)

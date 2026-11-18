@@ -384,6 +384,28 @@ export class Bridge {
       }
     }).catch(()=>{});
   }
+  async listPickerModels(){
+    const models=new Map(),seen=new Set();
+    let cursor;
+    const deadline=Date.now()+15000;
+    for(let page=0;page<20;page++){
+      const time=deadline-Date.now();
+      if(time<=0)break;
+      const result=await this.rpc('model/list',{limit:100,includeHidden:false,...(cursor?{cursor}:{})},time);
+      if(!Array.isArray(result?.data))throw Error('Codex 返回的模型列表无效');
+      for(const model of result.data){
+        const id=model?.model||model?.id;
+        if(typeof id!=='string'||!id||model.hidden)continue;
+        const efforts=Array.isArray(model.supportedReasoningEfforts)?model.supportedReasoningEfforts:[];
+        models.set(id,{id,name:model.displayName||id,efforts:efforts.map(e=>e?.reasoningEffort).filter(e=>typeof e==='string'),defaultEffort:model.defaultReasoningEffort??null});
+      }
+      cursor=result.nextCursor;
+      if(!cursor)return [...models.values()];
+      if(typeof cursor!=='string'||seen.has(cursor))break;
+      seen.add(cursor);
+    }
+    throw Error('Codex 模型列表未完整加载，请重试');
+  }
   rpc(method,params,timeout=20000){
     const id=this.prefix+(++this.sequence);
     return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.internal.delete(key(id));reject(new Error(`${method} 超时`));},timeout);this.internal.set(key(id),{resolve,reject,timer});this.writeBackend(JSON.stringify({id,method,params}));});

@@ -41,6 +41,7 @@ import {Peer,request} from './ipc.mjs';
 import {root,codexHome,socketPath,ensureRoot,atomicJSON,readJSON,ipcKey} from './paths.mjs';
 import {compareThreadActivity,mergeActivity} from './thread-activity.mjs';
 import {Store} from './store.mjs';
+import {createModelPriceUpdater,costPricingMode,setCostPricingMode} from './model-prices.mjs';
 import {normalizePolicy,preflight} from './policy.mjs';
 import {savedBudget} from './budget.mjs';
 import {ensureMenuBarEntry} from './menu-bar.mjs';
@@ -78,6 +79,35 @@ export async function startDaemon() {
   codexRestore.start();powerProtection.start();
   prepareEndpoint(socketPath);
   const store=new Store();await store.seedRecentMetadata();
+  const refreshPrices=createModelPriceUpdater();
+  let pricingMode=costPricingMode();
+  let codexModelRefresh;
+  function pickerModels(){
+    const desktop=[...bridges.values()].filter(entry=>entry.modelListVersion===1);
+    if(desktop.length===1&&desktop[0].pickerModels)return desktop[0].pickerModels;
+    return [...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null}));
+  }
+  async function refreshCodexModels(){
+    if(codexModelRefresh)return codexModelRefresh;
+    const peers=[...bridges].filter(([,entry])=>entry.modelListVersion===1);
+    if(peers.length!==1)throw Error('请打开或重启 Codex，并确保只有一个桌面接入后再刷新模型列表');
+    const [[peer,entry]]=peers;
+    codexModelRefresh=(async()=>{
+      const models=await peer.call('list-picker-models',{},18000);
+      if(bridges.get(peer)!==entry||accountTransition)throw Error('Codex 连接已变化，请重新刷新模型列表');
+      if(!Array.isArray(models)||!models.length)throw Error('Codex 未返回可用模型');
+      store.catalogStamp=null;
+      store.model(null);
+      entry.pickerModels=models;
+      return {count:models.length};
+    })().finally(()=>{codexModelRefresh=null;});
+    return codexModelRefresh;
+  }
+  let modelPriceTimer;
+  function checkMissingPrices(){
+    const models=[...new Set(Object.values(store.data.threads).filter(t=>(t.usageFresh??t.freshUsage)&&typeof t.model==='string').map(t=>t.model))];
+    Promise.resolve().then(()=>refreshPrices({automatic:true,models})).catch(error=>integrationLog('model-prices.auto_failed',{message:error.message}));
+  }
   for(const t of Object.values(store.data.threads)){t.freshUsage=false;t.usageFresh=false;t.phase='disconnected';}
   store.save();
   const bridges=new Map();const owners=new Map();
@@ -253,7 +283,7 @@ export async function startDaemon() {
     // Keep background monitoring light: speed sampling is needed only while the tray menu is visible.
     try{if(JSON.parse(fs.readFileSync(path.join(root,'ui-status.json'),'utf8')).menuWindowVisible===true)responseSpeeds.observe(threads);}catch{}
     const chatCatalog=includeCatalog&&catalogRevision!==store.catalogRevision?store.sidebarCatalog():null;
-    return {...(includeCatalog?{catalogRevision:store.catalogRevision,chatCatalog}:{}),hotChats:{limit:HOT_CHAT_LIMIT,returned:threads.length},apiVersion:CONTROL_API_VERSION,capabilities:{agentContext:true,contextOperations:true,contextSchedules:true,reasoningBudget:true,visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,queueAccountSwitch:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueueState(),queueModels:[...(store.catalog?.values()??[])].filter(m=>m.visibility!=='hidden').map(m=>({id:m.slug,name:m.display_name||m.slug,efforts:(m.supported_reasoning_levels??[]).map(e=>e.effort),defaultEffort:m.default_reasoning_level??null})),buildId,quota:accountQuotaState(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextReminders:contextReminders.status(),compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
+    return {...(includeCatalog?{catalogRevision:store.catalogRevision,chatCatalog}:{}),hotChats:{limit:HOT_CHAT_LIMIT,returned:threads.length},apiVersion:CONTROL_API_VERSION,capabilities:{agentContext:true,contextOperations:true,contextSchedules:true,reasoningBudget:true,visibleBudget:true,quotaAnalytics:true,creditBaseline:true,taskQueues:true,queueAccountSwitch:true,compactionCompensation:false},quotaActivation:quotaActivation.state(),taskQueues:taskQueueState(),queueModels:pickerModels(),costPricingMode:pricingMode,buildId,quota:accountQuotaState(),update:updater.status(),newChatDefaults:newChatDefaults(),newChatDefaultsLimits:newChatDefaultLimits(defaultModel()),newChatDefaultsPending:[...bridges.values()].some(b=>!b.newChatDefaultsVersion),version,bridgeCount:bridges.size,contextExtension:ext,contextReminders:contextReminders.status(),compactionCompensation:compensation.status([...bridges.values()],threads),contextCeilingPending:ext.pending,runtimeFix:fix,bridges:[...bridges.values()].map(b=>({pid:b.pid,version:b.version??null,runtimeFixId:b.runtimeFixId??null})),threads,sidebar:store.projects.sidebar(threads)};
   }
   async function handle(peer,op,p) {
     if(op==='ping')return {ok:true,version,buildId};
@@ -289,7 +319,7 @@ export async function startDaemon() {
       }catch(error){store.data.policies=oldPolicies;store.data.newChatDefaults=oldDefaults;store.data.extensionRestore=oldRestore;extension.setEnabled(previous);throw error;}
       return extensionState();
     }
-    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),pid:p.pid,reasoningBudgetVersion:p.reasoningBudgetVersion===1?1:null,contextScheduleVersion:p.contextScheduleVersion===1?1:null,contextOperationsVersion:p.contextOperationsVersion===1?1:null,creditsStopVersion:p.creditsStopVersion===1?1:null,nativePid:Number.isSafeInteger(p.nativePid)&&p.nativePid>0?p.nativePid:null,accountSwitchVersion:p.accountSwitchVersion===1?1:null,compensationVersion:[1,2,3].includes(p.compensationVersion)?p.compensationVersion:null,taskQueueVersion:p.taskQueueVersion==null?null:p.taskQueueVersion===4?4:0,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});for(const o of operations.pending(id))if(o.kind==='compact')operations.transition(o.id,id,{state:o.state==='waiting_for_idle'?'cancelled':'outcome_unknown',reason:'connection_closed'});taskQueues.cancelSchedules(id,'connection_closed');}store.save();});return {ok:true};}
+    if(op==='registerBridge'){const first=bridges.size===0;const entry={ids:new Set(),modelListVersion:p.modelListVersion===1?1:null,pid:p.pid,reasoningBudgetVersion:p.reasoningBudgetVersion===1?1:null,contextScheduleVersion:p.contextScheduleVersion===1?1:null,contextOperationsVersion:p.contextOperationsVersion===1?1:null,creditsStopVersion:p.creditsStopVersion===1?1:null,nativePid:Number.isSafeInteger(p.nativePid)&&p.nativePid>0?p.nativePid:null,accountSwitchVersion:p.accountSwitchVersion===1?1:null,compensationVersion:[1,2,3].includes(p.compensationVersion)?p.compensationVersion:null,taskQueueVersion:p.taskQueueVersion==null?null:p.taskQueueVersion===4?4:0,version:typeof p.version==='string'?p.version:null,runtimeFixId:typeof p.runtimeFixId==='string'?p.runtimeFixId:null,contextCeiling:p.contextCeiling===CONTEXT_CEILING_VERSION?CONTEXT_CEILING_VERSION:null,contextCatalogRevision:p.contextCatalogRevision===2?2:null,newChatDefaultsVersion:[1,2].includes(p.newChatDefaultsVersion)?p.newChatDefaultsVersion:null};bridges.set(peer,entry);if(first)ensureMenuBarEntry();peer.socket.on('close',()=>{bridges.delete(peer);rebuildOwners();for(const id of entry.ids){if(!owners.has(id)&&store.data.threads[id])Object.assign(store.data.threads[id],{freshUsage:false,usageFresh:false,phase:'disconnected',message:'连接已断开；显示的是上次观测值。'});for(const o of operations.pending(id))if(o.kind==='compact')operations.transition(o.id,id,{state:o.state==='waiting_for_idle'?'cancelled':'outcome_unknown',reason:'connection_closed'});taskQueues.cancelSchedules(id,'connection_closed');}store.save();});return {ok:true};}
     if(op==='updateContextOperation'){
       if(!bridges.get(peer)?.ids.has(p.id))throw contextError('AUTH_FAILED','This runtime does not own the chat.');
       const operation=operations.get(p.operationId,p.id);if(operation.kind!=='compact'||operation.state!=='executing')return {ignored:true};
@@ -444,6 +474,12 @@ export async function startDaemon() {
       else if(operation==='shutdown'){if(Object.values(store.data.threads).some(t=>t.phase==='reloading'))throw Error('A budget transaction is still active');answer={ok:true};setTimeout(shutdown,100).unref();}
       else if(operation==='check-update')answer=await updater.check(true);
       else if(operation==='install-update')answer=await updater.install();
+      else if(operation==='cost-pricing'){
+        answer=setCostPricingMode(params.mode);
+        pricingMode=answer.mode;
+      }
+      else if(operation==='refresh-model-prices')answer=await refreshPrices();
+      else if(operation==='refresh-codex-models')answer=await refreshCodexModels();
       else if(operation==='scan'){await store.scanLocal();answer=state();}
       else if(operation==='statistics'){
         if(!Object.hasOwn(store.data.threads,params.id))throw new Error('未找到所选聊天');
@@ -491,7 +527,11 @@ export async function startDaemon() {
   const cleanupStart=setTimeout(cleanup,30000);cleanupStart.unref();
   const cleanupTimer=setInterval(cleanup,5*60*1000);cleanupTimer.unref();
   const scanTimer=setInterval(()=>{store.setRequiredIds(criticalThreadIds());store.refreshMetadata();},15000);scanTimer.unref();
-  web.once('close',()=>{contextReminders.flushLog();clearInterval(creditsTimer);queueAccountAuto.close();clearInterval(accountAutoTimer);accountSwitcher.close();clearInterval(activationTimer);quotaActivation.close();cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
+  if(root===defaultRoot()){
+    checkMissingPrices();
+    modelPriceTimer=setInterval(checkMissingPrices,60000);modelPriceTimer.unref();
+  }
+  web.once('close',()=>{clearInterval(modelPriceTimer);contextReminders.flushLog();clearInterval(creditsTimer);queueAccountAuto.close();clearInterval(accountAutoTimer);accountSwitcher.close();clearInterval(activationTimer);quotaActivation.close();cloudSync.close();clearTimeout(analyticsTimer);quotaAnalytics.close();taskQueues.close();});
   const shutdown=()=>{responseSpeeds.close();contextStatistics.close();contextReminders.flushLog();try{store.flush();}catch{}for(const p of bridges.keys())p.socket.destroy();ipcServer.close();web.close();try{prepareEndpoint(socketPath);}catch{}try{fs.unlinkSync(path.join(root,'connection.json'));}catch{};process.exit(0);};
   process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);
   return {ipcServer,web,store};

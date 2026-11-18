@@ -16,6 +16,9 @@ enum ControlAPI {
     static let defaults = "/new-chat-defaults"
     static let contextExtension = "/context-extension"
     static let scan = "/scan"
+    static let refreshModelPrices = "/models/prices/refresh"
+    static let refreshCodexModels = "/models/codex/refresh"
+    static let costPricing = "/models/prices/mode"
     static let quotaRefresh = "/quota"
     static let checkUpdate = "/updates/check"
     static let installUpdate = "/updates/install"
@@ -46,6 +49,9 @@ enum ControlAPI {
         "defaults": "/new-chat-defaults",
         "extension": "/context-extension",
         "scan": "/scan",
+        "refresh-model-prices": "/models/prices/refresh",
+        "refresh-codex-models": "/models/codex/refresh",
+        "cost-pricing": "/models/prices/mode",
         "quota-refresh": "/quota",
         "check-update": "/updates/check",
         "install-update": "/updates/install",

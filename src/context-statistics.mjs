@@ -187,8 +187,8 @@ export function buildTimeline(events,id,countTokens=tokens){
   return {responses:points,timelineEvents};
 }
 export function responseTimeline(events,id){return buildTimeline(events,id).responses;}
-export function analyzeEvents(events,id){
-  const timeline=buildTimeline(events,id),cost=estimateConversation(timeline.responses);
+export function analyzeEvents(events,id,prices,pricingMode){
+  const timeline=buildTimeline(events,id),cost=estimateConversation(timeline.responses,prices,pricingMode);
   return {...summarizeSnapshot(selectRequestSnapshot(events,id),id),...timeline,cost};
 }
 

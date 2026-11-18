@@ -264,7 +264,7 @@ CONTEXT_CONTROL_TEST_INSTALL=1 node --test test/install.test.mjs
 
 顶部仅显示最近请求的「活跃上下文」及其「缓存命中」，不是容量上限。下方费用卡累计当前聊天自己的已记录请求，包括压缩响应；分支不会重复计入父聊天已经发生的费用。计价明细显示普通输入、缓存读取、缓存写入、输出的 token 总量及各自费用；时间线「更多信息」也可查看单次费用。
 
-价格快照核对于 2026-10-16，随版本打包在 `src/api-prices.json`，来源为 [官方 API 价格](https://developers.openai.com/api/docs/pricing)，不是 ChatGPT 套餐扣费或实际账单。支持表内 GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 与 GPT-5.6 Sol/Terra/Luna 的已核实档位。未知模型或未列出的费率不推测；价格快照不会后台自动联网更新。
+内置价格快照随版本打包在 `src/api-prices.json`，来源为 [官方 API 价格](https://developers.openai.com/api/docs/pricing)，不是 ChatGPT 套餐扣费或实际账单。支持表内 GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 与 GPT-5.6 Sol/Terra/Luna 的已核实档位。未知模型或未列出的费率不推测；可在「关于与维护」从 OpenAI 官方价格文档手动更新 Manager 价格快照，或从已接入的 Codex 刷新可用模型列表。Manager 缺少本地价格快照或发现正在使用的模型没有价格时，每个本地自然日最多自动请求一次价格快照。下载失败时继续使用现有价格。
 
 面板费用统一按每次请求所用模型的 **Standard 基础单价**估算，不计算 Fast 等加速溢价。总额、四项明细、模型小计和单次响应使用相同口径。实际模型配置独立保留，显示为 `GPT-6 Astra · High · Fast`；`priority`/`fast` 显示为 Fast。未指定档位不影响基础价格估算，未知模型或缺失用量仍不计入。生成开始后配置变化不会回填此前响应。
 

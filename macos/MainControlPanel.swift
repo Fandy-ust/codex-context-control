@@ -6,6 +6,8 @@ struct MainControlPanelView:View {
     var close:()->Void
     @State private var tab:String
     @State private var feedback:String?
+    @State private var refreshingModels=false
+    @State private var savingPricingMode=false
     @State private var shortcutDraft="Control+Shift+M"
     @State private var shortcutEnabled=true
     @StateObject private var shortcutRecorder=ShortcutRecorder()
@@ -62,6 +64,13 @@ struct MainControlPanelView:View {
         else if tab=="quota" {
                     VStack(alignment:.leading,spacing:18){
                         AccountQuotaSection(model:model)
+                        Picker(L("费用估算"),selection:Binding(get:{model.costPricingMode},set:{mode in
+                            Task{await savePricingMode(mode)}
+                        })) {
+                            Text(L("API 分档")).tag("api")
+                            Text(L("无梯度")).tag("flat")
+                        }.disabled(savingPricingMode || !model.serviceAvailable)
+                        Text(L("无梯度统一使用 Standard 基础单价。此设置只影响费用估算。")).font(.caption).foregroundStyle(.secondary)
                         Button(L("额度分析"),systemImage:"chart.xyaxis.line"){close();model.showQuotaAnalytics=true}.disabled(!model.supportsQuotaAnalytics)
                         HStack{Button(L("重置 Credits 基准")){Task{await model.resetCredits();feedback=model.notice}}.disabled(!model.serviceAvailable || model.quotaRefreshing || model.quota?.stale==true || model.selectedQuota?.creditBalance==nil || model.selectedQuota?.unlimitedCredits==true)
                             if let baseline=model.selectedCreditBaseline?.baseline{Text(L("当前基准：{0}",baseline.formatted(.number.precision(.fractionLength(0...8))))).font(.caption).foregroundStyle(.secondary)}}
@@ -157,6 +166,29 @@ struct MainControlPanelView:View {
         Spacer()
         Button(L("保存实验参数")){guard let config=reminderDraft else{return};reminderBusy=true;Task{defer{reminderBusy=false};if await model.saveContextReminderConfig(config,revision:reminderRevision){loadReminderDraft()};feedback=model.notice}}.buttonStyle(.borderedProminent)
     }.disabled(reminderBusy || !model.serviceAvailable)}
+    private func savePricingMode(_ mode:String) async {
+        guard !savingPricingMode else{return}
+        savingPricingMode=true
+        defer{savingPricingMode=false}
+        do {
+            _ = try await model.api(ControlAPI.costPricing,body:["mode":mode])
+            model.costPricingMode=mode
+        } catch {feedback=error.localizedDescription}
+    }
+    private func refreshModels(prices:Bool) async {
+        guard !refreshingModels else{return}
+        refreshingModels=true
+        defer{refreshingModels=false}
+        do {
+            struct Result:Decodable {let count:Int;let updatedModels:[String]?}
+            let route=prices ? ControlAPI.refreshModelPrices:ControlAPI.refreshCodexModels
+            let result=try JSONDecoder().decode(Result.self,from:await model.api(route,body:[:]))
+            await model.refresh()
+            if !prices {feedback=L("已刷新 {0} 个 Codex 模型",result.count)}
+            else if let updated=result.updatedModels,!updated.isEmpty {feedback=L("已更新模型价格：{0}",updated.joined(separator:", "))}
+            else {feedback=L("已核对 {0} 个模型的官方价格，费率无变化",result.count)}
+        } catch {feedback=error.localizedDescription}
+    }
     private var maintenance:some View {
         VStack(alignment:.leading,spacing:18){
             HStack{Text("Context Manager").font(.headline);Spacer();Text("v"+model.appVersion).foregroundStyle(.secondary)}
@@ -169,6 +201,10 @@ struct MainControlPanelView:View {
             Divider()
             Text(L("维护工具")).font(.headline)
             HStack{Button(L("同步本地聊天"),systemImage:"arrow.clockwise"){Task{await model.scanChats();feedback=model.notice}}.disabled(model.working);Button(L("打开 Codex"),systemImage:"arrow.up.forward.app"){model.launchCodex()}}
+            HStack {
+                Button(L("更新 Manager 模型价格"),systemImage:"arrow.clockwise"){Task{await refreshModels(prices:true)}}
+                Button(L("刷新 Codex 模型列表"),systemImage:"arrow.clockwise"){Task{await refreshModels(prices:false)}}
+            }.disabled(refreshingModels || !model.serviceAvailable)
         }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(.white.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
     }
 }

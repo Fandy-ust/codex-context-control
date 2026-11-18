@@ -1,5 +1,5 @@
-import fs from 'node:fs';
-export const priceBook=JSON.parse(fs.readFileSync(new URL('./api-prices.json',import.meta.url),'utf8'));
+import {bundledPrices,readModelPrices,costPricingMode} from './model-prices.mjs';
+export const priceBook=bundledPrices;
 const bucketLabels={ordinary_input:'普通输入',cache_read:'缓存读取',cache_write:'缓存写入',output:'输出'};
 const integer=value=>Number.isSafeInteger(value)&&value>=0;
 export function pricingTier(value){
@@ -8,15 +8,16 @@ export function pricingTier(value){
   if(value==='ultrafast'||value==='flex')return value;
   return null; // Unset/auto is not proof of Standard; project defaults can differ.
 }
-export function estimateResponse(row,overrideTier){
-  const model=priceBook.models[row.config?.model];
+export function estimateResponse(row,overrideTier,priceBook=readModelPrices(),mode=costPricingMode()){
+  const slug=row.config?.model;
+  const model=Object.hasOwn(priceBook.models,slug)?priceBook.models[slug]:null;
   const tier=overrideTier??pricingTier(row.config?.serviceTier);
   const fail=reason=>({usd:null,reason,tier,contextBand:null});
   if(!model)return fail('unknown_model');
   const {inputTokens:input,cachedInputTokens:cached,cacheWriteTokens:written,outputTokens:output}=row;
   if(![input,cached,written,output].every(integer)||cached+written>input)return fail('unknown_usage');
   if(!tier)return fail('unknown_tier');
-  const band=input>priceBook.longContextAbove?'long':'short';
+  const band=mode!=='flat'&&input>priceBook.longContextAbove?'long':'short';
   const rates=model[tier]?.[band];if(!rates||rates.some(n=>n==null))return fail('unsupported_rate');
   // Cache reads and writes partition input. Reasoning is already in output.
   const counts=[input-cached-written,cached,written,output];
@@ -30,20 +31,20 @@ export function estimateResponse(row,overrideTier){
 }
 // The requested rough estimate treats uncached input as newly written when
 // the runtime provides no positive write count. Preserve raw usage on the row.
-export function estimateResponseWithWrites(row,tier){
-  const reported=estimateResponse(row,tier);
+export function estimateResponseWithWrites(row,tier,priceBook=readModelPrices(),mode=costPricingMode()){
+  const reported=estimateResponse(row,tier,priceBook,mode);
   if(reported.usd==null)return reported;
   const writeEstimated=row.cacheWriteTokens===0&&row.inputTokens>row.cachedInputTokens;
   if(!writeEstimated)return {...reported,writeEstimated:false};
-  return {...estimateResponse({...row,cacheWriteTokens:row.inputTokens-row.cachedInputTokens},tier),writeEstimated:true};
+  return {...estimateResponse({...row,cacheWriteTokens:row.inputTokens-row.cachedInputTokens},tier,priceBook,mode),writeEstimated:true};
 }
-export function estimateConversation(responses){
+export function estimateConversation(responses,priceBook=readModelPrices(),mode=costPricingMode()){
   let usd=0,upperUSD=0,maxWriteSurcharge=0,extraWriteTokens=0,priced=0,unknownTier=0,unknownModel=0,unknownUsage=0,unsupportedRate=0,longContextCount=0,unverifiedWriteRequests=0;
   const groups=new Map(),seen=new Set(),breakdown=Object.entries(bucketLabels).map(([category,label])=>({category,label,tokens:0,usd:0}));
   for(const response of responses){
     if(seen.has(response.id))continue;seen.add(response.id);
     // Display policy uses base rates independently of the recorded runtime mode.
-    const cost=estimateResponseWithWrites(response,'standard');response.costEstimate=cost;
+    const cost=estimateResponseWithWrites(response,'standard',priceBook,mode);response.costEstimate=cost;
     if(cost.usd!=null){
       for(let i=0;i<breakdown.length;i++){breakdown[i].tokens+=cost.breakdown[i].tokens;breakdown[i].usd+=cost.breakdown[i].usd;}
       if(response.cacheWriteTokens===0)unverifiedWriteRequests++;
@@ -56,7 +57,7 @@ export function estimateConversation(responses){
     else if(cost.reason==='unknown_usage')unknownUsage++;
     else unsupportedRate++;
   }
-  return {currency:'USD',checkedAt:priceBook.checkedAt,source:priceBook.source,scope:'own_thread',basis:'standard_rates',writeEstimateMethod:'uncached_input_when_zero',
+  return {currency:'USD',checkedAt:priceBook.checkedAt,source:priceBook.source,pricingMode:mode,scope:'own_thread',basis:'standard_rates',writeEstimateMethod:'uncached_input_when_zero',
     usd:priced>0?usd:null,upperUSD:priced>0?upperUSD:null,maxWriteSurcharge,extraWriteTokens,rangeBasis:'zero_to_all_uncached_input',pricedRequests:priced,totalRequests:seen.size,unpricedRequests:seen.size-priced,
     unknownTier,unknownModel,unknownUsage,unsupportedRate,longContextCount,unverifiedWriteRequests,
     breakdown,groups:[...groups.values()]};

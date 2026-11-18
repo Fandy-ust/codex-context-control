@@ -1,3 +1,9 @@
+## 0.28.7
+
+- Update model prices from OpenAI's official pricing documentation and list added models or changed rates after a manual refresh. Keep existing prices when a download fails or cannot be parsed.
+- Add maintenance actions for refreshing prices and the connected Codex model list. Limit automatic price update attempts to one per local day when prices are missing.
+- Keep API pricing bands as the default for cost estimates and add a flat Standard-rate option. The setting applies to chat and quota cost estimates.
+
 ## 0.28.4
 
 - Display new Codex client quota observations sooner using the local service. Show the last synchronized reading and distinguish it from cached values.

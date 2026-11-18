@@ -5,6 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {historySourcesUnchanged} from './context-history.mjs';
 import {performance} from 'node:perf_hooks';
 import {localUsageObservation} from './core/usage-observation.mjs';
+import {readModelPrices,costPricingMode} from './model-prices.mjs';
 import {readHistory,createHistoryCache,analyzeEvents,buildTimeline,tokenCacheStats} from './context-statistics.mjs';
 const history=createHistoryCache({projectEvent:statisticsEvent}),results=new Map();
 parentPort.on('message',({taskId,id,refresh,mode='statistics',knownResultKey})=>{
@@ -13,15 +14,19 @@ parentPort.on('message',({taskId,id,refresh,mode='statistics',knownResultKey})=>
   try {
     if(refresh){history.files.clear();history.rolloutPaths?.clear();}
     const previous=results.get(resultId);
+    const prices=mode==='statistics'?readModelPrices():undefined;
+    const pricingMode=prices?costPricingMode():undefined;
+    const priceKey=prices?JSON.stringify([pricingMode,prices]):null;
+    const samePrices=previous?.priceKey===priceKey;
     let entry=previous;
-    if(!refresh&&previous&&historySourcesUnchanged(workerData.home,previous.sources)){resultCacheHit=true;}
+    if(!refresh&&previous&&samePrices&&historySourcesUnchanged(workerData.home,previous.sources)){resultCacheHit=true;}
     else {
       const events=readHistory(workerData.home,id,history);
-      if(previous?.revision===events.revision){resultCacheHit=true;entry={...previous,sources:events.sources};}
+      if(previous?.revision===events.revision&&samePrices){resultCacheHit=true;entry={...previous,sources:events.sources};}
       else {
-        const candidate=mode==='observation'?{...localUsageObservation(events),...(!historySourcesUnchanged(workerData.home,events.sources)?{known:false}:{})}:mode==='speed-report'?{responses:buildTimeline(events,id,()=>0).responses.slice(-200)}:mode==='speed'?latestObservedSpeed(buildTimeline(events,id,()=>0).responses):analyzeEvents(events,id),{generatedAt,...content}=candidate??{},fingerprint=JSON.stringify(content);
+        const candidate=mode==='observation'?{...localUsageObservation(events),...(!historySourcesUnchanged(workerData.home,events.sources)?{known:false}:{})}:mode==='speed-report'?{responses:buildTimeline(events,id,()=>0).responses.slice(-200)}:mode==='speed'?latestObservedSpeed(buildTimeline(events,id,()=>0).responses):analyzeEvents(events,id,prices,pricingMode),{generatedAt,...content}=candidate??{},fingerprint=JSON.stringify(content);
         resultUnchanged=previous?.fingerprint===fingerprint;
-        entry={revision:events.revision,sources:events.sources,result:resultUnchanged?previous.result:candidate,
+        entry={revision:events.revision,priceKey,sources:events.sources,result:resultUnchanged?previous.result:candidate,
           fingerprint,key:resultUnchanged?previous.key:randomUUID()};
       }
     }

@@ -57,6 +57,18 @@
       "method": "POST",
       "path": "/scan"
     },
+    "refresh-model-prices": {
+      "method": "POST",
+      "path": "/models/prices/refresh"
+    },
+    "refresh-codex-models": {
+      "method": "POST",
+      "path": "/models/codex/refresh"
+    },
+    "cost-pricing": {
+      "method": "POST",
+      "path": "/models/prices/mode"
+    },
     "quota-refresh": {
       "method": "POST",
       "path": "/quota"
