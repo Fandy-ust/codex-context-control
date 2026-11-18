@@ -426,7 +426,7 @@ export async function startDaemon() {
       else if(operation==='cloud-sync')answer=await cloudSync.command(params);
       else if(operation==='task-queue'){if(params.action==='account-switch'){queueAccountAuto.configure(params.enabled);}else{if(params.action==='enable'&&params.enabled&&typeof params.id==='string'&&Object.hasOwn(store.data.threads,params.id)&&!(owners.get(params.id)||[]).length&&queueSupported(params.id))await queueCall(params.id,'queue-prepare',{});taskQueues.command(params);}answer=taskQueueState();}
       else if(operation==='quota-activation'){answer=quotaActivation.command(params);void quotaActivation.tick().catch(()=>{});}
-      else if(operation==='quota-refresh')answer=await quota.refresh(true);
+      else if(operation==='quota-refresh'){await quota.refresh(true);answer=accountQuotaState();}
       else if(operation==='quota-credit-baseline')answer=quota.resetCredits(params.id,params.legacy??null);
       else if(operation==='quota-analytics'){
         if(params.days!=null&&![28,56,84].includes(params.days))throw Error('Invalid quota history range');

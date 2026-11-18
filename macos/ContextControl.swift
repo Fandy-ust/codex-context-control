@@ -97,7 +97,7 @@ struct QuotaWindow:Decodable,Equatable {let usedPercent:Double;let remainingPerc
 struct QuotaBucket:Decodable,Equatable,Identifiable {let id:String;let name:String;let primary:QuotaWindow?;let secondary:QuotaWindow?;let hasCredits:Bool?;let unlimitedCredits:Bool?;let creditBalance:String?}
 struct CreditBaseline:Decodable,Equatable {let last:Double;let baseline:Double}
 struct QuotaAccount:Decodable,Equatable,Identifiable {var id:String{scope};let scope:String;let label:String?;let current:Bool;let showQuota:Bool?;let loginId:String?;let remote:Bool?;let sourceName:String?;let buckets:[QuotaBucket];let updatedAt:Int?;let creditBaselines:[String:CreditBaseline?]?}
-struct QuotaDisplayFallback:Decodable,Equatable {let buckets:[QuotaBucket];let creditBaselines:[String:CreditBaseline?]}
+struct QuotaDisplayFallback:Decodable,Equatable {let buckets:[QuotaBucket];let creditBaselines:[String:CreditBaseline?];let updatedAt:Int?}
 struct QuotaState:Decodable,Equatable {let accounts:[QuotaAccount]?;let resetNotification:QuotaResetEvent?;let creditBaselines:[String:CreditBaseline?]?;let buckets:[QuotaBucket];let updatedAt:Int?;let loading:Bool;let stale:Bool;let displayStale:Bool?;let error:String?;let displayFallback:QuotaDisplayFallback?;var presentationStale:Bool {displayStale ?? stale};var displayBuckets:[QuotaBucket]{buckets.isEmpty ? displayFallback?.buckets ?? [] : buckets}}
 struct ControlCapabilities:Decodable {let visibleBudget:Bool?;let quotaAnalytics:Bool?;let creditBaseline:Bool?}
 struct SidebarProject:Decodable,Equatable,Identifiable {let id:String;let name:String;let roots:[String];let threadIds:[String]}
@@ -412,8 +412,8 @@ struct ServiceSettings: Decodable {let node:String}
 }
 
 func formatted(_ n:Int?) -> String {guard let n else{return L("待观测")};return n.formatted()+" tokens"}
-func phaseName(_ value:String?) -> String {
-    switch value {case "connection_conflict":return L("接入进程冲突");case "extension_pending":return L("等待重开 Codex");case "compacting":return L("正在保护性压缩");case "confirmed":return L("窗口已确认");case "awaiting_runtime_confirmation":return L("预算已加载 · 待确认");case "reloading":return L("正在应用");case "waiting_for_idle","queued":return L("等待轮次结束");case "needs_compaction":return L("需要先压缩");case "needs_observation":return L("等待用量记录");case "error","mismatch":return L("需要处理");case "saved":return L("已保存");default:return L("尚未接入")}
+func phaseName(_ value:String?, connected:Bool = false) -> String {
+    switch value {case "connection_conflict":return L("接入进程冲突");case "extension_pending":return L("等待重开 Codex");case "compacting":return L("正在保护性压缩");case "confirmed":return L("窗口已确认");case "awaiting_runtime_confirmation":return L("预算已加载 · 待确认");case "reloading":return L("正在应用");case "waiting_for_idle","queued":return L("等待轮次结束");case "needs_compaction":return L("需要先压缩");case "needs_observation":return L("等待用量记录");case "error","mismatch":return L("需要处理");case "saved":return L("已保存");default:return L(connected ? "已接入":"尚未接入")}
 }
 
 enum PanelStyle {
@@ -847,7 +847,7 @@ struct ContentView: View {
                         HStack(alignment:.center,spacing:16){
                             VStack(alignment:.leading,spacing:4){
                                 Text(chat.observedWindowTitle+" · "+formatted(chat.displayedContextWindow)).font(.callout).foregroundStyle(.secondary)
-                                Text(phaseName(chat.phase)).font(.caption).foregroundStyle(.secondary).help(L(chat.message ?? ""))
+                                Text(phaseName(chat.phase, connected:chat.connected)).font(.caption).foregroundStyle(.secondary).help(L(chat.message ?? ""))
                             }
                             Spacer()
                             Button(L("手动压缩")){Task{await model.act("compact")}}.buttonStyle(.bordered).disabled(!chat.canCompact || model.working).help(L("仅在聊天空闲时请求原生压缩"))

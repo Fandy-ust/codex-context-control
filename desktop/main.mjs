@@ -282,7 +282,7 @@ if(args.includes('--quit')){app.quit();}else{
   main??=createWindow();trayWindow??=createWindow(true);
   shortcutManager.start();
   if(!args.includes('--background')&&!smoke){if(main.webContents.isLoading())main.once('ready-to-show',()=>showMain());else showMain();}
-  const refresh=async()=>{try{lastState=await api('state');serviceOnline=true;updateTray();}catch{serviceOnline=false;if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};}updateTray();if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting&&!main.isDestroyed()&&!trayWindow.isDestroyed())timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:10000);};refresh();
+  const refresh=async()=>{try{lastState=await api('state');serviceOnline=true;updateTray();}catch{serviceOnline=false;if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};}updateTray();if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting&&!main.isDestroyed()&&!trayWindow.isDestroyed())timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:lastState?.bridgeCount?3000:10000);};refresh();
   if(!demo&&!smoke)main.webContents.once('did-finish-load',()=>{updatePrompt.run(true).then(refreshUpdateUI).catch(error=>console.error('Startup update check:',error.message));});
   if(smoke){
     if(process.platform==='win32'){

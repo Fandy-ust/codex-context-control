@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {root,readJSON,atomicJSON} from './paths.mjs';
+import {removeProtectedJSON} from './durable-files.mjs';
 import {userEnvironment,windowsStartupStatus,enableWindowsStartup,disableWindowsStartup} from './platform/windows-startup.mjs';
 
 const label='io.github.codex-context-control.environment';
@@ -72,6 +73,6 @@ export function disableAutomaticStartup(options={}){
   if(fs.existsSync(record.plist)&&digest(fs.readFileSync(record.plist,'utf8'))!==record.plistHash)throw new Error('自动接入的登录项已被修改；为保留你的设置，未自动删除。');
   launchctl(['bootout',`${record.domain}/${record.label}`],false);
   if(guiEnvironment(record.key)===record.value)restoreEnvironment(record.key,record.previousValue);
-  fs.rmSync(record.plist,{force:true});fs.rmSync(loc.recordFile,{force:true});
+  fs.rmSync(record.plist,{force:true});removeProtectedJSON(loc.recordFile);
   return {removed:true};
 }

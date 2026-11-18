@@ -60,7 +60,7 @@ export function createQuotaManager({read=async()=>{throw Error('等待 ChatGPT �
   const displayStale=isConnected?!!error||!updatedAt||!isConnected(updatedAt):stale;
   // Keep the previous display separate from live quota consumed by automation.
   const saved=displayScope&&Object.hasOwn(accounts,displayScope)?accounts[displayScope]:null;
-  const displayFallback=!buckets.length&&saved?.buckets?.length?{buckets:saved.buckets,creditBaselines:creditAccounts[displayScope]??{}}:null;
+  const displayFallback=!buckets.length&&saved?.buckets?.length?{buckets:saved.buckets,updatedAt:saved.updatedAt,creditBaselines:creditAccounts[displayScope]??{}}:null;
   return {accounts:Object.entries(accounts).map(([scope,value])=>({...value,scope,current:scope===creditScope,creditBaselines:creditAccounts[scope]??{}})).sort((a,b)=>Number(b.current)-Number(a.current)||b.updatedAt-a.updatedAt),buckets,displayFallback,resetNotification:resetState?.scope===creditScope?resetState?.event??null:null,accountScope:creditScope,creditBaselines,updatedAt,loading:!!pending,stale,displayStale,error};
  }
  async function refresh(force=false,fromObservation=false){

@@ -80,7 +80,7 @@ struct QuotaSidebarAccountRow:View {
                             if let reset=window.resetsAt{HStack(spacing:3){Text(Date(timeIntervalSince1970:Double(reset)),format:window.windowDurationMins==300 ? .dateTime.hour().minute():.dateTime.month(.twoDigits).day().hour().minute());Text(compactCountdown(reset,now:timeline.date))}.font(.system(size:9)).monospacedDigit().foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)}else{Text(L("重置时间暂不可用")).font(.system(size:9)).foregroundStyle(.secondary)}
                         }.padding(.horizontal,8).frame(maxWidth:.infinity).frame(height:44).background(QuotaProgressBorder(remaining:window.remainingPercent,stale:stale))
                     }
-                }.frame(maxWidth:.infinity).contentShape(Rectangle())}.buttonStyle(.plain).help(L("账户剩余额度"))
+                }.frame(maxWidth:.infinity).contentShape(Rectangle())}.buttonStyle(.plain).help(account?.current == false ? L("账户剩余额度") : quotaSyncLabel(model.quota,available:model.serviceAvailable))
             }
         }
     }

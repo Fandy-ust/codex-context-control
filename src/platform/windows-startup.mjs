@@ -2,12 +2,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {powershell} from './index.mjs';
 import {root,readJSON,atomicJSON,ensureRoot} from '../paths.mjs';
+import {integrationLog} from '../diagnostic-log.mjs';
+import {removeProtectedJSON} from '../durable-files.mjs';
 
 export function userEnvironment(key='CODEX_CLI_PATH'){
   return powershell('[Environment]::GetEnvironmentVariable($env:CONTEXT_CONTROL_ENV_KEY,"User")',{CONTEXT_CONTROL_ENV_KEY:key});
 }
 function setEnvironment(key,value){
-  powershell('[Environment]::SetEnvironmentVariable($env:CONTEXT_CONTROL_ENV_KEY,$env:CONTEXT_CONTROL_ENV_VALUE,"User");Add-Type -TypeDefinition \'using System;using System.Runtime.InteropServices;public class ContextControlBroadcast{[DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)]public static extern IntPtr SendMessageTimeout(IntPtr h,uint m,UIntPtr w,string l,uint f,uint t,out UIntPtr r);}\';$r=[UIntPtr]::Zero;[void][ContextControlBroadcast]::SendMessageTimeout([IntPtr]65535,26,[UIntPtr]::Zero,"Environment",2,2000,[ref]$r)',{CONTEXT_CONTROL_ENV_KEY:key,CONTEXT_CONTROL_ENV_VALUE:value||''});
+  // SetEnvironmentVariable(User) also broadcasts synchronously. A slow desktop
+  // window can keep it blocked after the registry value has already changed.
+  powershell('$key=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Environment");try{if([string]::IsNullOrEmpty($env:CONTEXT_CONTROL_ENV_VALUE)){$key.DeleteValue($env:CONTEXT_CONTROL_ENV_KEY,$false)}else{$key.SetValue($env:CONTEXT_CONTROL_ENV_KEY,$env:CONTEXT_CONTROL_ENV_VALUE,[Microsoft.Win32.RegistryValueKind]::String)}}finally{$key.Dispose()}',{CONTEXT_CONTROL_ENV_KEY:key,CONTEXT_CONTROL_ENV_VALUE:value||''});
+  integrationLog('integration.environment_written',{key});
+  try{
+    powershell('Add-Type -TypeDefinition \'using System;using System.Runtime.InteropServices;public class ContextControlBroadcast{[DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)]public static extern IntPtr SendMessageTimeout(IntPtr h,uint m,UIntPtr w,string l,uint f,uint t,out UIntPtr r);}\';$r=[UIntPtr]::Zero;if([ContextControlBroadcast]::SendMessageTimeout([IntPtr]65535,26,[UIntPtr]::Zero,"Environment",2,2000,[ref]$r)-eq [IntPtr]::Zero){throw "Environment notification failed"}',{}, {timeout:5000});
+    integrationLog('integration.environment_notified',{key});
+  }catch(error){
+    // Notification is advisory. Registration succeeds when readback confirms it.
+    integrationLog('integration.environment_notification_failed',{key,message:error.message});
+  }
 }
 const file=options=>options.recordFile||path.join(root,'automatic-startup.json');
 export function windowsStartupStatus(options={}){
@@ -26,5 +38,5 @@ export function enableWindowsStartup(shim,options={}){
 export function disableWindowsStartup(options={}){
   const record=readJSON(file(options));if(!record)return {removed:false};
   if(userEnvironment(record.key)===record.value)setEnvironment(record.key,record.previousValue);
-  fs.rmSync(file(options),{force:true});return {removed:true};
+  removeProtectedJSON(file(options));return {removed:true};
 }

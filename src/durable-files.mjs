@@ -35,3 +35,7 @@ export function readProtectedJSON(file,fallback=null){
   throw error;
  }
 }
+export function removeProtectedJSON(file){
+ // Remove recovery copies first so the reader cannot restore a deleted file.
+ for(const suffix of ['.safe-1','.safe-2',''])fs.rmSync(file+suffix,{force:true});
+}
