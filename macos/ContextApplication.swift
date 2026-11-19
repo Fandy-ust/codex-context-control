@@ -17,6 +17,9 @@ import AppKit
     private let model=Controller()
     private lazy var statusController=StatusItemController{[weak self] in self?.toggleContextPopover()}
     private lazy var mainWindow=MainWindowController(model:model)
+    private let startupTime=ProcessInfo.processInfo.systemUptime
+    private var windowVisibleMs:Int?
+    private var firstStateMs:Int?
     private var started=false
     private var shortcutManager:GlobalShortcutManager?
     private var refreshTask:Task<Void,Never>?
@@ -43,7 +46,6 @@ import AppKit
         mainWindow.onVisibilityChanged={[weak self] visible in self?.publishStatus(windowVisible:visible)}
         statusController.start()
         updateStatusIcon()
-        startLocalService()
         model.loadGlobalShortcutSettings()
         let hotKeyManager=GlobalShortcutManager{[weak self] in self?.toggleMainWindow()}
         shortcutManager=hotKeyManager
@@ -60,19 +62,22 @@ import AppKit
                 Task{@MainActor [weak self] in self?.installMainMenu();self?.updateStatusIcon()}
             })
         }
-        if !background{showSettings()}
+        if !background{mainWindow.show()}
         publishStatus()
+        startLocalService()
         refreshNow()
     }
     private func refreshNow(){
-        guard started else{return}
+        guard started,serviceStarter==nil else{return}
         refreshTimer?.invalidate();refreshTimer=nil
         if refreshInProgress{refreshPending=true;return}
         refreshInProgress=true
         refreshTask=Task{[weak self] in
             guard let self else{return}
+            if serviceStarter != nil{refreshInProgress=false;return}
             await model.refresh()
             guard !Task.isCancelled else{refreshInProgress=false;return}
+            if model.serviceAvailable && firstStateMs==nil{firstStateMs=startupElapsedMs()}
             updateStatusIcon()
             if menuPanel?.isVisible==true,!model.menuDragInProgress,NSEvent.pressedMouseButtons==0{positionContextMenu()}
             publishStatus()
@@ -153,6 +158,13 @@ import AppKit
         guard FileManager.default.fileExists(atPath:cli.path) else{return}
         let process=Process();process.executableURL=URL(fileURLWithPath:settings.node)
         process.arguments=[cli.path,"start"];process.standardOutput=FileHandle.nullDevice;process.standardError=FileHandle.nullDevice
+        process.terminationHandler={[weak self] finished in
+            Task{@MainActor [weak self] in
+                guard let self,self.serviceStarter === finished else{return}
+                self.serviceStarter=nil
+                self.refreshNow()
+            }
+        }
         do{try process.run();serviceStarter=process}catch{model.notice=L("无法启动本地服务：{0}", error.localizedDescription)}
     }
     private func installMainMenu(){
@@ -178,10 +190,16 @@ import AppKit
         guard notification.object as? NSWindow === menuPanel else{return}
         DispatchQueue.main.async{[weak self] in if self?.menuPanel?.isKeyWindow==false{self?.closeContextMenu()}}
     }
+    private func startupElapsedMs()->Int {
+        Int((ProcessInfo.processInfo.systemUptime-startupTime)*1000)
+    }
     private func publishStatus(windowVisible:Bool?=nil){
         guard started else{return}
+        let visible=windowVisible ?? mainWindow.isVisible
+        if visible && windowVisibleMs==nil{windowVisibleMs=startupElapsedMs()}
         var state=statusController.diagnostics
-        state.merge(["quotaIntegrated":true,"pid":ProcessInfo.processInfo.processIdentifier,"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":windowVisible ?? mainWindow.isVisible,"bridgeCount":model.bridgeCount,"displayedChatCount":model.chats.count,"startedInBackground":background,"runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()],uniquingKeysWith:{$1})
+        state["startup"]=["windowVisibleMs":windowVisibleMs as Any? ?? NSNull(),"firstStateMs":firstStateMs as Any? ?? NSNull()]
+        state.merge(["quotaIntegrated":true,"pid":ProcessInfo.processInfo.processIdentifier,"bundleIdentifier":Bundle.main.bundleIdentifier ?? "","windowVisible":visible,"bridgeCount":model.bridgeCount,"displayedChatCount":model.chats.count,"startedInBackground":background,"runningChats":model.runningChats.count,"highestContextPercent":model.busiestContext?.contextFraction.map{Int(($0*100).rounded())} as Any? ?? NSNull()],uniquingKeysWith:{$1})
         guard let data=try? JSONSerialization.data(withJSONObject:state,options:.sortedKeys),data != lastStatus else{return}
         do {
             try FileManager.default.createDirectory(at:model.home,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])

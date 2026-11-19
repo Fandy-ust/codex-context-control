@@ -191,6 +191,7 @@ struct ServiceSettings: Decodable {let node:String}
     @Published var newChatDefaults:NewChatDefaultsState?
     @Published var newChatDefaultsPending=false
     @Published var serviceAvailable=false
+    @Published private(set) var initialStatePending=true
     @Published var menuHeightLimit:CGFloat=560
     @Published var runtimeFix:RuntimeFixState?
     @Published var changingRuntimeFix=false
@@ -227,7 +228,12 @@ struct ServiceSettings: Decodable {let node:String}
         return data
     }
     func refresh() async {
-        if refreshing || menuDragInProgress{return};refreshing=true;defer{refreshing=false}
+        if refreshing || menuDragInProgress{return}
+        refreshing=true
+        defer {
+            refreshing=false
+            if initialStatePending{initialStatePending=false}
+        }
         do {let state=try JSONDecoder().decode(RuntimeState.self,from:await api(ControlAPI.hotState,body:["selectedIds":[selectedID,queueDetailID].compactMap{$0},"includeCatalog":true,"catalogRevision":cachedCatalog?.revision ?? ""]))
             guard !menuDragInProgress else{return}
             supportsVisibleBudget=state.capabilities?.visibleBudget == true;supportsQuotaAnalytics=state.capabilities?.quotaAnalytics == true
@@ -875,6 +881,10 @@ struct ContentView: View {
                         Divider()
                         TaskQueueStrip(model:model,chatID:chat.id)
                         ContextDetailsView(chatID:chat.id,title:chat.title,model:model).id(chat.id)
+                    }else if model.initialStatePending{
+                        ProgressView(L("正在读取本地状态…")).frame(maxWidth:.infinity)
+                    }else if !model.serviceAvailable{
+                        ContentUnavailableView(L("本地服务暂不可用"),systemImage:"exclamationmark.circle",description:Text(model.notice))
                     }else{
                         ContentUnavailableView(L("等待聊天接入"),systemImage:"bubble.left.and.bubble.right",description:Text(L("照常打开 Codex 并进入聊天，控制连接会随运行时自动启动。首次安装后请正常重开一次客户端。")))
                     }

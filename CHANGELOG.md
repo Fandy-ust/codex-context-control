@@ -1,3 +1,7 @@
+## 0.28.8
+
+- Show the desktop window while the local service starts. Record first window visibility and first successful state load in the local UI diagnostics on Windows and macOS.
+
 ## 0.28.7
 
 - Update model prices from OpenAI's official pricing documentation and list added models or changed rates after a manual refresh. Keep existing prices when a download fails or cannot be parsed.

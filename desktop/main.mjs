@@ -49,6 +49,8 @@ app.setName('Context Manager');app.setAppUserModelId('io.github.codex-context-co
 app.setPath('userData',path.join(root,'ui-profile'));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
 let main,trayWindow,quitting=false,lastState=null,serviceOnline=false,ready=false,timer,menuDragging=false,lastServiceAttempt=Date.now();
+let serviceStart;
+const startup={windowVisibleMs:null,firstStateMs:null};
 const shortcutManager=createShortcutManager({read:()=>readJSON(path.join(root,'ui-settings.json'),{}),write:doc=>atomicJSON(path.join(root,'ui-settings.json'),doc),register:(key,callback)=>globalShortcut.register(key,callback),unregister:key=>globalShortcut.unregister(key),onTrigger:()=>toggleMain(),inactive:smoke});
 const trayController=createTrayController({create:image=>new Tray(image),render:({remaining,stale,dark})=>icon(remaining,stale,dark),handlers:{click:()=>toggleMenu(),'double-click':()=>showMain(),'right-click':()=>trayController.entry?.popUpContextMenu(trayMenu())}});
 const resetNotifier=createResetNotifier({read:()=>readJSON(path.join(root,'quota-notification-delivery.json'),{}),save:value=>atomicJSON(path.join(root,'quota-notification-delivery.json'),value),show:([cn,en])=>{if(demo||smoke||!Notification.isSupported())return;const n=new Notification({title:'Context Manager',body:label(cn,en)});n.on('click',()=>showSettings());n.on('failed',(_event,error)=>console.error('Quota notification:',error));n.show();}});
@@ -131,11 +133,16 @@ async function api(action,params={}){
     return {ok:true};
   }
   const route=assertControlOperation(action==='state'?'hot-state':action);
+  await serviceStart;
   if(action==='state')params={selectedIds:Array.isArray(params?.selectedIds)?params.selectedIds:typeof params?.selectedId==='string'?[params.selectedId]:[],includeCatalog:params?.includeCatalog===true,catalogRevision:params?.catalogRevision??null};
   const connection=readJSON(path.join(root,'connection.json'));
   if(!Number.isSafeInteger(connection?.port)||connection.port<1||connection.port>65535||!/^[a-f0-9]{64}$/.test(connection.token||''))throw Error('Local service connection is unavailable');
   const response=await fetch(`http://127.0.0.1:${connection.port}${route.path}`,{method:route.method,headers:{Authorization:`Bearer ${connection.token}`},...(route.method==='POST'?{body:JSON.stringify(params)}:{}),signal:AbortSignal.timeout(['statistics','quota-analytics'].includes(action)?60000:30000)});
   const body=await response.json();if(!response.ok)throw Error(localize(body.error||'Local service error'));
+  if(action==='state'&&startup.firstStateMs==null){
+    startup.firstStateMs=Math.round(performance.now());
+    publish();
+  }
   if(action==='state'){body.update=uiUpdater.status();creditsNotifier.observe(body.quotaActivation?.creditsProtection?.event,{enabled:body.quotaActivation?.config?.creditsNotificationsEnabled!==false,stale:body.quota?.stale!==false});resetNotifier.observe(body.quota?.resetNotification,{enabled:body.quotaActivation?.config?.notificationsEnabled!==false,stale:body.quota?.stale!==false});}
   if(action==='state'&&body.contextReminders?.hasOperationNotifications&&Notification.isSupported()){
     void api('context-reminders',{action:'take-operation-notifications'}).then(({events})=>{
@@ -152,8 +159,15 @@ async function api(action,params={}){
   }
   return body;
 }
-const publish=()=>{if(!ready)return;atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,shortcut:shortcutManager.status(),menuReady:trayController.ready,menuImageReady:trayController.ready,menuVisibilityEvidence:'unverified',menuWindowVisible:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),menuOnScreen:null,windowVisible:!!(main&&!main.isDestroyed()&&main.isVisible()),bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow&&!trayWindow.isDestroyed()?trayWindow.getBounds():undefined});};
-async function ensureUiService(){return ensureDaemon();}
+const publish=()=>{
+  if(!ready)return;
+  const windowVisible=!!(main&&!main.isDestroyed()&&main.isVisible());
+  if(windowVisible&&startup.windowVisibleMs==null)startup.windowVisibleMs=Math.round(performance.now());
+  atomicJSON(path.join(root,'ui-status.json'),{pid:process.pid,version:pkg.version,startup,shortcut:shortcutManager.status(),menuReady:trayController.ready,menuImageReady:trayController.ready,menuVisibilityEvidence:'unverified',menuWindowVisible:!!(trayWindow&&!trayWindow.isDestroyed()&&trayWindow.isVisible()),menuOnScreen:null,windowVisible,bundleIdentifier:'io.github.codex-context-control',menuFrame:trayWindow&&!trayWindow.isDestroyed()?trayWindow.getBounds():undefined});
+};
+function ensureUiService(){
+  return serviceStart??=ensureDaemon().finally(()=>{serviceStart=undefined;});
+}
 function createWindow(menu=false){
   const win=new BrowserWindow({width:menu?400:1080,height:menu?450:760,minWidth:menu?320:960,minHeight:menu?180:670,show:false,frame:!menu,resizable:!menu,skipTaskbar:menu,alwaysOnTop:menu,backgroundColor:'#181818',title:'Context Manager',icon:path.join(repo,'macos/Assets/ContextManager.png'),webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   win.setMenuBarVisibility(false);win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
@@ -276,12 +290,10 @@ app.whenReady().then(async()=>{ensureRoot();ready=true;
   }
 trayController.start();updateTray();nativeTheme.on('updated',updateTray);
 if(args.includes('--quit')){app.quit();}else{
-  if(!demo){try{await ensureUiService();}catch(e){console.error(e.message);}}
-  // A Dock/shortcut launch can create the main window while ensureUiService awaits.
-  // Reuse it: replacing the reference leaves the first window unmanaged.
   main??=createWindow();trayWindow??=createWindow(true);
   shortcutManager.start();
   if(!args.includes('--background')&&!smoke){if(main.webContents.isLoading())main.once('ready-to-show',()=>showMain());else showMain();}
+  if(!demo)void ensureUiService().catch(error=>console.error(error.message));
   const refresh=async()=>{try{lastState=await api('state');serviceOnline=true;updateTray();}catch{serviceOnline=false;if(lastState){lastState={...lastState,bridgeCount:0,threads:lastState.threads.map(t=>({...t,connected:false,freshUsage:false}))};}updateTray();if(!demo&&Date.now()-lastServiceAttempt>15000){lastServiceAttempt=Date.now();try{await ensureUiService();}catch{}}}publish();if(!quitting&&!main.isDestroyed()&&!trayWindow.isDestroyed())timer=setTimeout(refresh,main.isVisible()||trayWindow.isVisible()?2000:lastState?.bridgeCount?3000:10000);};refresh();
   if(!demo&&!smoke)main.webContents.once('did-finish-load',()=>{updatePrompt.run(true).then(refreshUpdateUI).catch(error=>console.error('Startup update check:',error.message));});
   if(smoke){

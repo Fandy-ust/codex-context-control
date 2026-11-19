@@ -36,6 +36,7 @@
   "运行时读回窗口（与目标不符）": "Observed window (target mismatch)",
   "最近读回窗口": "Latest observed window",
   "正在读取本地状态…": "Reading local status…",
+  "本地服务暂不可用": "Local service unavailable",
   "本地服务暂时不可用": "The local service is temporarily unavailable",
   "读取失败：": "Unable to read: ",
   "已接入 Codex。": "Connected to Codex.",
